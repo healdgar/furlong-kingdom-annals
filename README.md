@@ -113,14 +113,32 @@ Acts are sealed while you rule; the crown's own levers take their place:
   town reaches further out along its highways and lays new lanes, and when it
   can spread no further its houses rise a storey and take lodgers. A town
   that loses its people leaves its outermost houses empty to fall in.
-- The countryside follows the people. Parcels of strip-field with hedgerows
-  ring every settlement over plough-land and woodland alike; as mouths grow,
-  old pasture is ploughed again, then open meadow, then the wood is cleared
-  (assarts). After plague or war the far fields go to grass, the grass to
-  scrub, and at last the wood returns. Besiegers burn the standing crops;
-  land under the plough bounds the harvest, and a place with no land left
-  sends its younger sons to found daughter villages. Suburbs and new roads
-  build over the fields.
+- The whole realm is surveyed. Every settlement holds a domain (its parish
+  and lordship): the ground it reaches before a neighbour does, by effort
+  over slopes and rivers, drawn on the parchment map as dotted bounds.
+  Mountains and land beyond anyone's reach are not divided. Within the bounds
+  the land lies in furlongs, each divided as its place demands: open-field
+  strips running down the slope in unhedged furlongs of different headings,
+  grouped into three great fields that rotate winter corn, spring corn and
+  fallow year by year; Waldhufen (long hedged holdings running back from the
+  street) for forest and colonists' villages; hay meadows on the floodplain;
+  crofts behind the houses; vineyards on a town's best south slopes; the
+  lord's demesne in broad strips by the castle; hedged closes won from the
+  wood. Land within a walk of the village is ploughed as the mouths require
+  and the rest lies as common grazing and waste. The terrain shader draws
+  the strips, ridge and furrow, headlands and hedgerows from small data
+  textures.
+- The countryside follows the people. As they multiply, old pasture is
+  ploughed again, then common waste, then the wood is assarted, and in the
+  end the bounds are driven out into unclaimed land. After plague or war the
+  far fields go to grass, then scrub, and at last the wood returns.
+  Besiegers burn the standing crops. Land under the plough bounds the
+  harvest, and a place with no land left sends its younger sons to found
+  Hufen villages in the waste.
+- Growth decisions (which lot is built on, which house empties, which
+  furlong is taken in or given up, where colonists settle) are weighted
+  choices: candidates are scored and one is drawn at a temperature, so the
+  likely usually happens but not always.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →
