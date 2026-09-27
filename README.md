@@ -128,6 +128,20 @@ Acts are sealed while you rule; the crown's own levers take their place:
   and the rest lies as common grazing and waste. The terrain shader draws
   the strips, ridge and furrow, headlands and hedgerows from small data
   textures.
+- The ground is dressed by its surroundings rather than a texture library.
+  Distance fields (about 6 m) to water, walls, roads, the wood's edge and
+  buildings are kept current as the map changes, and the terrain shader
+  paints by circumstance and by combinations of circumstance:
+  - river + town: stone embankments; river alone: mud and reeds;
+  - river + wood: alder carr; river + steep: a raw cut bank;
+  - the tide line: sand and shingle;
+  - walls: a trampled foot;
+  - roads: worn verges and ditches, hollow ways where they climb, mud at fords and landings;
+  - the wood's edge: bracken and a wood bank with its ditch, and wattle fences where fields meet it;
+  - steep ground: scree down the fall line;
+  - sloping ploughland: lynchet terraces;
+  - houses: yards and kitchen-garden beds;
+  - open ground: tussock and flowers.
 - The countryside follows the people. As they multiply, old pasture is
   ploughed again, then common waste, then the wood is assarted, and in the
   end the bounds are driven out into unclaimed land. After plague or war the

@@ -1997,6 +1997,7 @@ function buildTrees(){
   G.treeHash=makeHash(40);G.treeSpots=spots;
   for(const k of['dec','pine'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
   linkTrees();
+  featInit();hookTerrainShader(G.terrain.material);
   G.decid.castShadow=G.pine.castShadow=true;
   scene.add(G.decid);scene.add(G.pine);
 }
@@ -2524,7 +2525,8 @@ function setFurlong(f,state){
   if(was!==state)for(const t of f.trees)showTree(t,!treeGone(f,t));
 }
 function showTree(t,on){
-  const m=t.k==='dec'?G.decid:G.pine;
+  const m=t.k==='dec'?G.decid:G.pine,vis=!!on&&!t.cut;
+  if(G.feat&&(t.shown!==false)!==vis)featTree(t,vis?1:-1);t.shown=vis;
   if(on&&!t.cut)setInst(m,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(t.k==='dec'?0.9+t.v*0.3:1+t.v*0.4),t.s);
   else setInst(m,t.i,t.x,-500,t.z,0,0.001,0.001,0.001);
   m.instanceMatrix.needsUpdate=true;
@@ -2563,18 +2565,18 @@ function recolorFields(si,blend,snowT){
 function hookTerrainShader(mat){ // strips, headlands and hedges, drawn per pixel from the furlong textures
   const L=G.land;
   L.uni={uSeed:{value:L.seedTex},uData:{value:L.dataTex},uMask:{value:L.maskTex},uFG:{value:FG},uFN:{value:FN},uSize:{value:SIZE},uGrid:{value:GRID},
-    uYear:{value:0},uCol:{value:LANDCOL.map(t=>new THREE.Color(t[0]))}};
+    uYear:{value:0},uCol:{value:LANDCOL.map(t=>new THREE.Color(t[0]))},uFeat1:{value:G.feat.tex1},uFeat2:{value:G.feat.tex2},uSea:{value:SEA}};
   mat.onBeforeCompile=sh=>{
     Object.assign(sh.uniforms,L.uni);
-    sh.vertexShader='varying vec3 vWP;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vWP=(modelMatrix*vec4(transformed,1.0)).xyz;');
+    sh.vertexShader='varying vec3 vWP;varying vec3 vWN;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vWP=(modelMatrix*vec4(transformed,1.0)).xyz;vWN=normalize(objectNormal);');
     sh.fragmentShader=`varying vec3 vWP;
-uniform sampler2D uSeed,uData,uMask;uniform float uFG,uFN,uSize,uGrid,uYear;uniform vec3 uCol[11];
+uniform sampler2D uSeed,uData,uMask,uFeat1,uFeat2;uniform float uFG,uFN,uSize,uGrid,uYear,uSea;uniform vec3 uCol[11];varying vec3 vWN;
 float lh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float lnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(lh(i),lh(i+vec2(1.,0.)),f.x),mix(lh(i+vec2(0.,1.)),lh(i+vec2(1.,1.)),f.x),f.y);}
 vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
 {
-  vec2 wp=vWP.xz;
+  vec2 wp=vWP.xz;float fieldA=0.;
   float nz=lnoise(wp*0.09);
   vec2 fp=(wp+uSize*0.5)/uFG+(vec2(lnoise(wp*0.03),lnoise(wp*0.03+17.3))-0.5)*0.1; // hedges wander
   vec2 fc=floor(fp);float d1=1e9,d2=1e9;vec2 s1=vec2(0.),s2=vec2(0.),c1=vec2(0.),c2=vec2(0.);
@@ -2621,16 +2623,146 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
         if(hedge)col=mix(uCol[9]*(0.75+0.5*nz),col,smoothstep(1.3,2.8,eb));   // hedgerow, or a parish bank
         else col=mix(uCol[3]*0.95,col,smoothstep(2.,4.,eb));                  // an unploughed headland
       }
-      diffuseColor.rgb=mix(diffuseColor.rgb,col,ok*(isCommon?0.4:0.94));
+      diffuseColor.rgb=mix(diffuseColor.rgb,col,ok*(isCommon?0.4:0.94));fieldA=isCommon?0.:ok;
     }
+  }
+  { // ground detail from context
+    vec2 fu=(wp+uSize*0.5)/uSize;
+    vec4 T=texture2D(uFeat1,fu),T2=texture2D(uFeat2,fu);
+    float dW=T.r*63.75,dWall=T.g*63.75,dRd=T.b*63.75,dWd=T.a*63.75,dB=T2.r*63.75;
+    if(dWd>0.)dWd=max(0.3,dWd+(lnoise(wp*0.045)-0.5)*16.); // the wood's edge wanders
+    vec3 nrm=normalize(vWN);float slope=1.-clamp(nrm.y,0.,1.),h=vWP.y;
+    vec2 fall=length(nrm.xz)>0.001?normalize(nrm.xz):vec2(1.,0.),cont=vec2(-fall.y,fall.x);
+    float n2=lnoise(wp*0.35),n3=lnoise(wp*1.3),urb=1.-smoothstep(10.,30.,min(dWall,dB));
+    vec3 c=diffuseColor.rgb;
+    bool wild=fieldA<0.05&&dWd>0.5;
+    if(wild)c*=0.93+0.12*lnoise(wp*0.06)+0.06*(n3-0.5)+0.05*step(0.93,lh(floor(wp*0.8)))*(0.6+0.4*n2); // tussock and flowers on the open ground
+    if(slope>0.3){ // steep: bare earth and scree streaked down the fall line (valley sides below this stay grass)
+      float t=smoothstep(0.32,0.52,slope+(n2-0.5)*0.12)*0.8;
+      float st=lnoise(vec2(dot(wp,cont)*0.45,dot(wp,fall)*0.04));
+      c=mix(c,mix(vec3(0.45,0.41,0.35),vec3(0.6,0.57,0.52),st)*(0.85+0.3*n3),t*(dWd<0.5?0.45:0.8));
+    }else if(fieldA>0.3&&slope>0.07){ // ploughing along a slope builds lynchets: grassy risers between terraces
+      float r=fract(h/3.2+n2*0.15);c=mix(c,vec3(0.42,0.5,0.28),(1.-smoothstep(0.0,0.12,r))*0.55*smoothstep(0.07,0.12,slope));
+    }
+    if(dWd>0.3&&dWd<14.&&dW>3.){ // the edge of the wood: bracken, then the wood bank and its ditch
+      float t=1.-smoothstep(2.,14.,dWd);
+      c=mix(c,mix(vec3(0.36,0.43,0.21),vec3(0.52,0.47,0.25),n3)*(0.85+0.2*n2),t*0.5);
+      c*=1.+0.16*(1.-smoothstep(0.,0.9,abs(dWd-4.6)))-0.24*(1.-smoothstep(0.,0.9,abs(dWd-6.2)));
+      if(fieldA>0.3)c=mix(c,vec3(0.34,0.26,0.17),(1.-smoothstep(0.,0.35,abs(dWd-8.)))*0.85*step(0.3,fract(dot(wp,cont)/2.4))); // a wattle fence keeps the deer off the corn
+    }
+    if(dRd<6.&&dW>1.5){ // road verges worn to earth; a ditch beside the country roads; banks where it climbs
+      float t=1.-smoothstep(0.6,3.4,dRd);
+      c=mix(c,vec3(0.56,0.5,0.39)*(0.88+0.24*n3),t*(0.6-0.3*urb));
+      if(urb<0.5)c*=1.-0.26*(1.-smoothstep(0.,0.8,abs(dRd-4.4)))*(1.-urb*2.);
+      if(slope>0.1)c*=1.-0.3*smoothstep(0.1,0.2,slope)*(1.-smoothstep(1.,5.,dRd)); // a hollow way, worn deep
+    }
+    if(dRd<14.&&dW<14.){float t=1.-smoothstep(3.,14.,max(dRd,dW));c=mix(c,vec3(0.34,0.29,0.21)*(0.9+0.2*n3),t*0.6);} // mud at the landing and the ford
+    if(dWall<10.&&dW>2.){float t=1.-smoothstep(2.,10.,dWall);c=mix(c,vec3(0.5,0.45,0.37)*(0.8+0.3*n3)+0.05*step(0.85,lh(floor(wp*0.6))),t*0.7);} // trampled earth and rubble at the wall's foot
+    if(dB<15.&&dRd>0.8&&fieldA<0.5){ // yards about the houses, and kitchen gardens behind
+      c=mix(c,vec3(0.5,0.44,0.34)*(0.85+0.3*n3),(1.-smoothstep(1.5,5.,dB))*0.6);
+      float ga=lnoise(wp*0.004)*6.28;vec2 gu=vec2(cos(ga),sin(ga)),gq=vec2(dot(wp,gu)/5.5,dot(wp,vec2(-gu.y,gu.x))/13.);
+      vec2 gc=floor(gq),gf=fract(gq);float hh=lh(gc);
+      if(dB>4.&&hh>0.45){float r=fract(gq.y*13./1.3);                                       // oblong beds, dug in rows
+        float edge=smoothstep(0.02,0.08,min(min(gf.x,1.-gf.x),min(gf.y,1.-gf.y)));
+        vec3 bed=mix(vec3(0.3,0.44,0.2),vec3(0.44,0.35,0.24),step(0.5,r))*(0.85+0.3*hh);
+        c=mix(c,bed,edge*0.42*(1.-smoothstep(10.,14.,dB)));}
+    }
+    if(h<uSea+2.2&&dW<22.&&T.r>0.){c=mix(c,vec3(0.78,0.72,0.56)*(0.9+0.15*n3),(1.-smoothstep(uSea+1.,uSea+2.2,h))*0.8);} // sand and shingle at the tide line
+    if(dW<7.){ // the river bank
+      float band=1.-smoothstep(3.5,7.,dW);
+      vec3 bank=dW<2.5?vec3(0.4,0.34,0.26)*(0.9+0.2*n3):mix(vec3(0.43,0.49,0.27),vec3(0.6,0.57,0.34),n3); // mud, then reeds
+      if(slope>0.25)bank=vec3(0.52,0.38,0.27)*(0.85+0.25*n2);                   // a raw cut bank where the river undercuts
+      if(dWd<9.)bank=mix(bank,vec3(0.2,0.29,0.17),0.7);                         // alders crowding the water
+      vec3 stone=vec3(0.62,0.6,0.55)*(0.82+0.18*step(0.5,fract(h/0.7+n3*0.15)))*(0.92+0.1*n2); // coursed masonry of the town's quays and embankments
+      c=mix(c,mix(bank,stone,urb),band*0.88);
+    }
+    diffuseColor.rgb=c;
   }
 }`);
   };
   mat.needsUpdate=true;
 }
+/* ---------------- ground detail from context ---------------------------------
+   No texture library: the ground is dressed by what lies around it. Distance
+   fields (≈6 m cells) to water, walls, roads, the wood's edge and buildings
+   are kept up to date as the map changes; the terrain shader reads them and
+   paints by circumstance — and by combinations of circumstance:
+   river + town → a stone embankment; river alone → mud and reeds; river +
+   wood → alder carr; river + steep → a raw cut bank; sea-edge → sand;
+   wall → a trampled foot; road → worn verges and a ditch; road on a slope → a
+   sunken hollow way; road + river → a muddy landing; wood + open land →
+   bracken and a wood bank with its ditch, and a wattle fence where fields
+   come up to it; steep → scree down the fall line; sloping ploughland →
+   lynchet terraces; houses → yards and kitchen gardens; open ground →
+   tussock and flower mottling. */
+const FR=1024,FPX=SIZE/FR,FMAX=63.75; // field resolution, metres per texel, farthest distance kept
+function featInit(){
+  const N=FR*FR,F={src:[new Uint8Array(N),new Uint8Array(N),new Uint8Array(N),new Uint16Array(N),new Uint8Array(N)], // water, wall, road, wood (tree count), buildings
+    d1:new Uint8Array(N*4),d2:new Uint8Array(N*4),dirty:null,t:0};
+  G.feat=F;
+  // water: rivers and canals, mill-ponds, the sea
+  for(const st of G.rivStrips||[])featStroke(0,st.pts,k=>st.hw[k]);
+  for(const s of W.settlements)if(s.lake){const P=s.lake.poly;let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const q of P){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);z0=Math.min(z0,q.z);z1=Math.max(z1,q.z);}
+    featRect(x0,z0,x1,z1,(i,x,z)=>{if(inPoly(P,x,z))F.src[0][i]=1;});}
+  for(let j=0;j<FR;j++)for(let i=0;i<FR;i++){const x=(i+0.5)*FPX-SIZE/2,z=(j+0.5)*FPX-SIZE/2,c=cIdx(toCell(x),toCell(z));
+    if(W.water[c]===1||(W.h[c]<SEA+6&&hAt(x,z)<SEA+0.2))F.src[0][j*FR+i]=1;}
+  for(const s of W.settlements)featWalls(s);
+  featRoads();
+  for(const k of['dec','pine'])for(const t of G.treeSpots[k])if(t.shown!==false)featTree(t,1);
+  for(const s of W.settlements)for(const b of s.buildings)featBuilding(b);
+  featCompute(0,0,FR-1,FR-1);
+  const mk=d=>{const t=new THREE.DataTexture(d,FR,FR,THREE.RGBAFormat);t.magFilter=t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;t.needsUpdate=true;return t;};
+  F.tex1=mk(F.d1);F.tex2=mk(F.d2);
+}
+const fI=v=>clamp(Math.floor((v+SIZE/2)/FPX),0,FR-1);
+function featRect(x0,z0,x1,z1,fn){for(let j=fI(z0);j<=fI(z1);j++)for(let i=fI(x0);i<=fI(x1);i++)fn(j*FR+i,(i+0.5)*FPX-SIZE/2,(j+0.5)*FPX-SIZE/2);}
+function featDisc(ch,x,z,r,add){const a=G.feat.src[ch];
+  featRect(x-r,z-r,x+r,z+r,(i,px,pz)=>{if((px-x)**2+(pz-z)**2<=r*r){if(ch===3)a[i]=Math.max(0,a[i]+add);else a[i]=1;}});
+  featDirty(x-r,z-r,x+r,z+r);}
+function featStroke(ch,pts,hw){for(let k=0;k<pts.length-1;k++){const a=pts[k],b=pts[k+1],L=Math.hypot(b.x-a.x,b.z-a.z),n=Math.max(1,Math.ceil(L/(FPX*0.7)));
+  for(let t=0;t<=n;t++)featDisc(ch,a.x+(b.x-a.x)*t/n,a.z+(b.z-a.z)*t/n,Math.max(FPX*0.6,typeof hw==='function'?hw(k):hw),1);}}
+function featWalls(s){
+  if(!s.wallRad)return;const P=[];
+  for(let k=0;k<=360;k++){const a=k/360*Math.PI*2;if(wallKindAt(s,a)===1){featStroke(1,P,3.5);P.length=0;continue;}
+    const r=wallRadAt(s,a);P.push({x:s.pos.x+Math.cos(a)*r,z:s.pos.z+Math.sin(a)*r});}
+  featStroke(1,P,3.5);
+  if(s.citadel){const c=s.citadel,ux=Math.cos(c.rot),uz=Math.sin(c.rot),h=c.S/2,cor=[[1,1],[1,-1],[-1,-1],[-1,1],[1,1]].map(([a,b])=>({x:c.x+(ux*a-uz*b)*h,z:c.z+(uz*a+ux*b)*h}));featStroke(1,cor,4);}
+}
+function featRoads(){
+  for(const r of W.roads)featStroke(2,r.drawn||r.path,3.2);
+  for(const s of W.settlements)for(const st of s.streets)if(!st.hidden&&st.kind!=='edge')featStroke(2,st.pts,st.hw);
+}
+function featTree(t,add){ // a wood, not clumps: each standing tree claims its whole ground cell
+  const a=G.feat.src[3],cx=cellX(toCell(t.x)),cz=cellZ(toCell(t.z)),r=CELL/2+3;
+  featRect(cx-r,cz-r,cx+r,cz+r,i=>{a[i]=Math.max(0,a[i]+add);});featDirty(cx-r,cz-r,cx+r,cz+r);}
+function featBuilding(b){featDisc(4,b.x,b.z,Math.hypot(b.w,b.d)/2,1);}
+function featDirty(x0,z0,x1,z1){const F=G.feat;if(!F||!F.tex1)return;const d=F.dirty;
+  F.dirty=d?[Math.min(d[0],x0),Math.min(d[1],z0),Math.max(d[2],x1),Math.max(d[3],z1)]:[x0,z0,x1,z1];}
+function featCompute(i0,j0,i1,j1){ // chamfer distance transform over a window (padded so nothing beyond FMAX is missed), written back inside it
+  const F=G.feat,pad=Math.ceil(FMAX/FPX)+2,a0=Math.max(0,i0-pad),b0=Math.max(0,j0-pad),a1=Math.min(FR-1,i1+pad),b1=Math.min(FR-1,j1+pad);
+  const w=a1-a0+1,h=b1-b0+1,D=new Float32Array(w*h),R2=Math.SQRT2*FPX;
+  for(let ch=0;ch<5;ch++){
+    const S=F.src[ch];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++)D[y*w+x]=S[(y+b0)*FR+x+a0]?0:1e6;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=y*w+x;let v=D[k];if(!v)continue;
+      if(x>0)v=Math.min(v,D[k-1]+FPX);if(y>0){v=Math.min(v,D[k-w]+FPX);if(x>0)v=Math.min(v,D[k-w-1]+R2);if(x<w-1)v=Math.min(v,D[k-w+1]+R2);}D[k]=v;}
+    for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){const k=y*w+x;let v=D[k];if(!v)continue;
+      if(x<w-1)v=Math.min(v,D[k+1]+FPX);if(y<h-1){v=Math.min(v,D[k+w]+FPX);if(x<w-1)v=Math.min(v,D[k+w+1]+R2);if(x>0)v=Math.min(v,D[k+w-1]+R2);}D[k]=v;}
+    const out=ch<4?F.d1:F.d2,o=ch<4?ch:0;
+    for(let y=Math.max(j0,b0);y<=Math.min(j1,b1);y++)for(let x=Math.max(i0,a0);x<=Math.min(i1,a1);x++)
+      out[(y*FR+x)*4+o]=Math.min(255,Math.round(Math.min(FMAX,D[(y-b0)*w+x-a0])*4));
+  }
+  for(let y=j0;y<=j1;y++)for(let x=i0;x<=i1;x++)F.d2[(y*FR+x)*4+3]=255;
+}
+function featFlush(now){ // apply pending changes (at most every second or so)
+  const F=G.feat;if(!F||!F.dirty||now-F.t<1.2)return;
+  const d=F.dirty;F.dirty=null;F.t=now;
+  featCompute(fI(d[0]),fI(d[1]),fI(d[2]),fI(d[3]));F.tex1.needsUpdate=F.tex2.needsUpdate=true;
+}
+
 function buildFields(){
   if(W.villages0===undefined)W.villages0=W.settlements.filter(o=>o.kind==='village').length;
-  genLand();hookTerrainShader(G.terrain.material);
+  genLand();
 }
 function tickLand(){ // monthly: the countryside follows the people
   if(!G.land||day()%30!==15)return;
@@ -2722,6 +2854,7 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
     if(!s.growSlots.length){
       if(day()<(s._extT||0)||!L.extend())return null;
       s._extT=day()+360*2;s.growSlots=L.queue();stitchRoads();G.roadsDirty=true;
+      if(G.feat)for(const st of s.streets)if(st.kind==='road')featStroke(2,st.pts,st.hw);
       if(!s.growSlots.length)return null;
     }
     // the likeliest lots are near the heart and on the busy streets, but people build where they can get a plot
@@ -2732,9 +2865,9 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
     const f=frontFoot(c,arch,tier,()=>rand('sim'));
     if(!L.fits(f,L.gapFor(c)))continue;
     const b=L.place(arch,tier,f,'residential');b.grown=day();
-    if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;} // the first house on a new lane: the lane appears
+    if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);} // the first house on a new lane: the lane appears
     b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;
-    updateBuildingInstance(b);clearLandUnder(b);
+    updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);
     return b;
   }
   return null;
@@ -4932,7 +5065,7 @@ function settlementCmd(cmd,si){
     s.stores.grain+=s.pop*0.4;s.unrest=clamp(s.unrest-6,0,100);emit('trade',3,s.pos,`Royal grain is distributed at the market cross of ${s.name}.`);}
   else if(cmd==='garrison'){if(!pay(400))return;s.garrison+=40;emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
   else if(cmd==='walls'){if(s.walls>=2||!pay(1500*(s.walls+1)))return;s.walls++;
-    if(!s.wallRad){riverStrips();traceWall(s,14);(s.history||(s.history=[])).push({ago:0,t:'Walled by order of the crown.'});
+    if(!s.wallRad){riverStrips();traceWall(s,14);if(G.feat)featWalls(s);(s.history||(s.history=[])).push({ago:0,t:'Walled by order of the crown.'});
       for(const b of clearWallLine(s)){b.state='ruin';b.rebuildT=1e9;s.ruinCount++;updateBuildingInstance(b);}} // pulled down for the wall
     rebuildWalls();
     emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
@@ -5856,6 +5989,7 @@ function animate(t){
   animateWorld(dt,now);
   W.clock.day=saveDay;
   if(G.detDirty&&now-(G.detT||0)>0.5){G.detT=now;rebuildDetails();}
+  featFlush(now);
   if(G.roadsDirty&&now-(G.roadT||0)>2){G.roadT=now;G.roadsDirty=false;rebuildRoadMesh();} // chimneys & spires follow fire and rebuilding
   hudT-=dt;
   if(hudT<=0){hudT=0.5;updateHUD();refreshInspect();renderPetition();
