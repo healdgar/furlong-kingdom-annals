@@ -968,9 +968,9 @@ const ROLE_NAME={seat:'seat of the crown',fort:'fortress town',border:'border fo
    streets; sieges raze suburbs that grow back. Every town keeps its story. */
 function layoutSettlement(s){
   const idx=W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
-  const isCap=s.kind==='capital',isTown=s.kind==='town',isVil=s.kind==='village';
+  let isCap=s.kind==='capital',isTown=s.kind==='town',isVil=s.kind==='village';
   const role=s.role||(isCap?'seat':isTown?'market':'farm');s.role=role;
-  const C=s.pos,R0=isCap?440:isTown?310:170;let Rmax=R0; // the reach of the built-up town; it widens as the town outgrows it
+  const C=s.pos;let R0=isCap?440:isTown?310:170,Rmax=R0; // the reach of the built-up town; it widens as the town outgrows it
   const count=Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:isTown?280:48);
   const HW=isCap?3.4:isTown?3:2.4,RHW=isVil?3.2:4;
   riverStrips();
@@ -983,7 +983,7 @@ function layoutSettlement(s){
   const E=isCap?6:isTown?5:3;
   const FRAC=isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
   const agoYears=e=>Math.round((E-e)*(isVil?70:55)/10)*10;
-  const hist=(e,t)=>s.history.push({ago:agoYears(e),t});
+  let live=false;const hist=(e,t)=>s.history.push(live?{yr:year(),t}:{ago:agoYears(e),t}); // live entries are dated in the annals' own years
   const addSeg=(a,b,hw,st)=>{const o={a,b,hw,st,x:(a.x+b.x)/2,z:(a.z+b.z)/2};segH.add(o,dist2d(a.x,a.z,b.x,b.z)/2+hw+2);};
   const addStreet=(pts,hw,kind,extra)=>{
     if(pts.length<2)return null;
@@ -1382,9 +1382,10 @@ function layoutSettlement(s){
     s.wallRad=null;s.wallKind=null;
   };
   const fire=e=>{
+    const at=typeof e==='object'?e:null;if(at)e=curE;
     const cand=liveB().filter(b=>!b.inst&&dist2d(b.x,b.z,C.x,C.z)<extent(0.6));
-    if(cand.length<10)return;
-    const b0=rpick(cand),R2=28+rr()*30;
+    if(!at&&cand.length<10)return;
+    const b0=at||rpick(cand),R2=at?at.r:28+rr()*30;
     const gone=liveB().filter(b=>!b.inst&&dist2d(b.x,b.z,b0.x,b0.z)<R2);
     gone.forEach(unplace);built=s.buildings.length;
     s.burns.push({x:b0.x,z:b0.z,r:R2,e});
@@ -1547,7 +1548,30 @@ function layoutSettlement(s){
     return true;
   };
   s.growSlots=queue();
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend};
+  /* the same processes, driven by the live history instead of the generated past */
+  const liveOps={
+    wall(){ // raise the first wall, or a wider one when the town has outgrown the old
+      live=true;curE=E;const first=!s.wallRad;
+      if(s.wallRad){oldWallToStreet();hist(0,'The town had outgrown its walls; the old wall was pulled down and its line became a street, a few towers left standing.');
+        if(s.villageOut){s.villageOut=false;hist(0,'The old village was at last taken within the walls.');}}
+      const bast=bastioned&&!first&&year()>40;
+      traceWall(s,bast?20:14);s.bastions=bast;s.walls=Math.max(s.walls+1,first?1:2);
+      const cleared=clearWallLine(s);cleared.forEach(unplace);
+      let gl=[];if(bast){gl=liveB().filter(b=>!b.inst&&wallSide(b.x,b.z)>0&&wallSide(b.x,b.z)<70);gl.forEach(unplace);}
+      hist(0,(first?'Walled':(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':'A new, wider wall was raised around the suburbs'))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for it`:'')+'.');
+      live=false;return true;},
+    fire(at){live=true;curE=E;fire(at);live=false;},
+    siege(){live=true;curE=E;siege(0);live=false;},
+    rebuildKeep(){if(!keep||keep.removed||s._keepRebuilt)return false;live=true;curE=E;s._keepRebuilt=true;
+      enlarge(keep,isCap?24:20,isCap?28:24,isCap?1.25:1.05,'The old tower keep was rebuilt as a castle of stone on the same ground.');live=false;return true;},
+    rebuildChurch(){if(!church||church.removed||s._churchRebuilt)return false;live=true;curE=E;s._churchRebuilt=true;
+      enlarge(church,church.w*1.35,church.d*1.4,1.3,'The parish church was pulled down and rebuilt larger on its own ground.');live=false;return true;},
+    promote(){ // a village granted a market becomes a town: it may now reach further, and build as townsfolk do
+      live=true;curE=E;isVil=false;isTown=true;R0=Math.max(R0,310);Rmax=Math.max(Rmax,200);s.kind='town';
+      hist(0,'Granted a charter for a weekly market; the village became a town.');branch(4,true);live=false;},
+    lanes(n){curE=E;return branch(n,true,Rmax*0.8);}
+  };
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,live:liveOps};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   W.roads.forEach((r,ri)=>{
@@ -2136,7 +2160,7 @@ function buildBuildings(){
   for(const s of W.settlements)for(const b of s.buildings)G.bldList.push(b);
   const N=G.bldList.length;
   const body=new THREE.BoxGeometry(1,1,1);body.translate(0,0.5,0);
-  const SP=Math.max(1400,N); // room for the towns to double
+  const SP=Math.max(2600,N*2); // room for the towns to grow a great deal
   G.bodies=new THREE.InstancedMesh(body,new THREE.MeshLambertMaterial({map:wallTexture()}),N+SP);
   const roofG=gableGeom();
   G.roofs=new THREE.InstancedMesh(roofG,new THREE.MeshLambertMaterial({map:roofTexture()}),N+SP);
@@ -2176,6 +2200,7 @@ function updateBuildingInstance(b){
   G.detDirty=true;
   let h=b.h,col,roofCol;
   const hue=b.hue??hash01(i);
+  if(b.state==='gone'){setInst(G.bodies,i,0,-500,0,0,0.01,0.01,0.01);setInst(G.roofs,i,0,-500,0,0,0.01,0.01,0.01);G.bodies.instanceMatrix.needsUpdate=G.roofs.instanceMatrix.needsUpdate=true;return;}
   if(b.state==='burning'){col=0x4a3020;roofCol=0x30201a;}
   else if(b.state==='ruin'||b.state==='rubble'){col=0x4a443e;roofCol=0x2c2824;h=b.h*0.35;}
   else{col=PAL.tierWall[b.tier];roofCol=ROOFS[b.tier][Math.floor(hue*3)%3];
@@ -2936,7 +2961,7 @@ function foundDaughter(s){
   if(doAct('village',best,{from:s})&&W.settlements.length>n)s.pop=Math.max(40,s.pop-45);
 }
 function settleLand(s){ // a new village takes up the waste nearest it, laid out in Hufen
-  const si=W.settlements.indexOf(s);computeDomains();
+  const si=W.settlements.indexOf(s);s.furl=s.furl||[];computeDomains();
   for(const f of G.land.F){
     if(f.dom===si)continue;
     const c=cIdx(toCell(f.x),toCell(f.z));
@@ -3640,7 +3665,7 @@ function showInspect(pk){
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
     if(s.ruinCount)h+=row('Ruins',s.ruinCount);
     if(s.quarantineUntil>day())h+=row('Gates','sealed until '+dateStr(s.quarantineUntil));
-    if(s.history&&s.history.length)h+=`<div class="agline" style="font-size:11.5px">${s.history.map(x=>(x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div>`;
+    if(s.history&&s.history.length)h+=`<div class="agline" style="font-size:11.5px">${s.history.map(x=>(x.yr?`<i>Year ${x.yr}:</i> `:x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div>`;
     flyToBtn(fb,'Visit',()=>flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340));
     if(sovOn())actsH=settlementActsHTML(s);
   }else if(pk.type==='building'){
@@ -3931,7 +3956,18 @@ function tickEconomy(){
 }
 
 /* ============================ POPULATION ================================= */
-function carryingCap(s){ // souls the place can keep: its kind, its fields and fisheries, its fortune
+function carryingCap(s){ // souls the place can keep: the land it actually ploughs, its fisheries, and (for towns) its market
+  if(G.land&&s.furl&&s.furl.length&&G.land.perHead>0){
+    let bearing=0;for(const f of s.furl)if(ARABLE.has(f.kind)&&f.state===LS.TILLED)bearing+=f.area;
+    const yieldF=(1+Math.max(0,year()-1)*0.002)*MOD.harvest*(W.drought?0.7:1); // better ploughs and rotations, slowly, over the centuries
+    const fed=bearing*yieldF/(landWt(s)*G.land.perHead)+s.res.fish*12;
+    let hinter=0; // the seat lives off the realm's rents and tolls; a market town off the surplus of its villages
+    if(s.kind==='capital')for(const o of W.settlements){if(o!==s)hinter+=o.pop*0.12;}
+    else if(s.kind==='town')for(const o of W.settlements)if(o.kind==='village'&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1600)hinter+=o.pop*0.3;
+    const market=((s.kind==='capital'?1200:s.kind==='town'?450:0)+hinter)*clamp(s.prosperity/60,0.4,1.4);
+    // while there is still land to take in, the land is no limit: people clear more as they need it; once it is gone, it is
+    return Math.max(40,s.landShort?fed+market:Math.max(fed+market,s.pop*1.18));
+  }
   const base=s.kind==='capital'?3600:s.kind==='town'?1500:320;
   const land=clamp(0.55+(s.res.farm*MOD.harvest)/160+s.res.fish/45,0.5,1.45);
   return base*land*(0.8+s.prosperity/250);
@@ -3947,13 +3983,13 @@ function tickPopulation(){
        a place fills up and settle it near 85% of capacity; towns bury more than villages (crowding,
        foul water); crowded villages send their young to the towns. Plague and famine still bite, but
        the realm now recovers from them instead of either dwindling or swelling without end. */
-    const K=carryingCap(s);s.K=K;
+    const K=Math.min(carryingCap(s),housing(s)*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
     const pf=clamp(s.prosperity/60,0.6,1.25),x=s.pop/K;
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
     const dbase=s.kind==='capital'?0.032:s.kind==='town'?0.030:0.026;
     const deaths=s.pop*(dbase/360)*MOD.mort*(1+hunger*4)*(s.siegeBy?1.5:1)*(x>1.3?1+(x-1.3):1);
-    s.pop=Math.max(5,s.pop+births-deaths);
-    if(s.kind==='village'&&x>0.8&&day()%30===0){ // the young leave for the towns
+    s.pop=Math.max(5,s.pop+births-deaths);if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
+    if(s.kind==='village'&&(x>0.97||s.landShort&&x>0.85)&&day()%30===0){ // the young leave for the towns when there is no room or no land
       const town=W.settlements.filter(o=>o.kind!=='village'&&(o.hunger||0)<0.1).sort((a,b)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(b.pos.x,b.pos.z,s.pos.x,s.pos.z))[0];
       if(town){const go=s.pop*0.012*(x-0.7);s.pop-=go;town.pop+=go;}
     }
@@ -4549,6 +4585,7 @@ function tickThreats(){
       b.burnT++;
       if(b.burnT>=3){
         b.state='ruin';b.rebuildT=day()+180+randi('sim',300);s.ruinCount++;
+        (s._burned||(s._burned=[])).push({x:b.x,z:b.z});
         updateBuildingInstance(b);continue;
       }
       // spread through the adjacency graph, biased by wind
@@ -4568,6 +4605,11 @@ function tickThreats(){
       if(s.ruinCount>=6){W.stats.greatFires++;
         emit('fates',8,s.pos,`The great fire of ${s.name} is spent at last. ${s.ruinCount} roofs are fallen to ash; the survivors sift the ruins.`);
         s.prosperity=clamp(s.prosperity-12,1,100);}
+      const B=s._burned||[];s._burned=[];
+      if(B.length>=8&&s._lay&&s._lay.live){ // the burned district is cleared and laid out again: stone houses, and a straight street across it
+        const cx=B.reduce((t,q)=>t+q.x,0)/B.length,cz=B.reduce((t,q)=>t+q.z,0)/B.length,r=clamp(Math.max(...B.map(q=>dist2d(q.x,q.z,cx,cz)))+8,24,75);
+        s._lay.live.fire({x:cx,z:cz,r});syncLive(s);
+        emit('trade',5,{x:cx,z:cz},`In ${s.name} the burned streets are cleared; the council lays out a new, straight street and orders the houses rebuilt in stone.`);}
     }
     if(s.fires.length===5&&!s._gfAnnounced){s._gfAnnounced=true;
       emit('fates',8,s.pos,`Fire leaps from roof to roof in ${s.name}! The wind ${wet?'and the rain contend with':'feeds'} the blaze.`);}
@@ -4807,6 +4849,40 @@ function tickOmens(myth,dis){
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
 const RESID=new Set(['house','longhouse','burgher','shop','tavern','smithy']);
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
+function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
+  for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
+  for(const b of s.buildings)if(b.idx===undefined&&G.bldList.length<G.bodies.instanceMatrix.count){b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);if(G.land)clearLandUnder(b);}
+  G.bodies.count=G.roofs.count=G.bldList.length;G.bodies.instanceMatrix.needsUpdate=G.roofs.instanceMatrix.needsUpdate=true;
+  if(s.wallRad)s.wallR=Math.max(...s.wallRad);
+  s.growSlots=s._lay.queue();stitchRoads();G.roadsDirty=true;G.detDirty=true;rebuildWalls();
+  if(G.land)markSettlementBuilt(s);
+  if(G.feat){G.feat.src[1].fill(0);for(const o of W.settlements)featWalls(o);featRoads();featDirty(-SIZE/2,-SIZE/2,SIZE/2,SIZE/2);}
+}
+function outsideFrac(s){ // how much of the town now stands outside its wall
+  if(!s.wallRad)return 1;let o=0,n=0;
+  for(const b of s.buildings)if(b.state==='sound'&&RESID.has(b.arch)){n++;const a=Math.atan2(b.z-s.pos.z,b.x-s.pos.x);if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>wallRadAt(s,a)+4)o++;}
+  return n?o/n:0;
+}
+function tickHistory(){ // once a year for each place (staggered): the town's own history continues
+  W.settlements.forEach((s,si)=>{
+    const L=s._lay;if(!L||!L.live||day()%360!==(si*47+90)%360)return;
+    if(s.pop0===undefined)s.pop0=s.pop;
+    const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
+    if(s.kind==='village'&&s.pop>420&&s.prosperity>50&&(roadsN>=2||s.river||s.harbor)&&chance('sim',0.4)){
+      L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}
+    else if(s.kind!=='village'&&!s.wallRad&&s.pop>850&&s.prosperity>48&&chance('sim',0.3)){
+      L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
+    else if(s.wallRad&&s.kind!=='village'&&outsideFrac(s)>0.45&&s.pop>(s._wallPop||s.pop0)*1.4&&year()-(s._wallYr||-99)>=45&&s.prosperity>52&&!s.siegeBy&&chance('sim',0.3)){ // walls are dear: a generation or two between circuits
+      L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`${s.name} has outgrown its walls: a new circuit is raised about the suburbs, and the old wall becomes a street.`;}
+    else if(s.prosperity>68&&s.pop>s.pop0*1.4&&chance('sim',0.25)&&L.live.rebuildKeep())did=`The keep of ${s.name} is rebuilt as a castle of stone.`;
+    else if(s.kind!=='village'&&s.prosperity>65&&s.pop>s.pop0*1.6&&chance('sim',0.2)&&L.live.rebuildChurch())did=`The church of ${s.name} is pulled down and rebuilt larger, its new tower visible for leagues.`;
+    if(did){syncLive(s);emit('trade',6,s.pos,did);}
+    else if(s.growSlots&&s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}
+    // aftermath of a siege: the suburbs burned to deny the enemy cover
+    if(s._besieged&&!s.siegeBy){s._besieged=false;if(s.wallRad){L.live.siege();syncLive(s);}}
+    if(s.siegeBy)s._besieged=true;
+  });
+}
 function tickGrowth(){
   if(day()%6!==0)return;
   for(const s of W.settlements){
@@ -4946,7 +5022,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();
   tickThreats();
-  tickGrowth();tickLand();
+  tickGrowth();tickLand();tickHistory();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);

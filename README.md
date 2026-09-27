@@ -142,6 +142,18 @@ Acts are sealed while you rule; the crown's own levers take their place:
   - sloping ploughland: lynchet terraces;
   - houses: yards and kitchen-garden beds;
   - open ground: tussock and flowers.
+- The history keeps going while you play. The generation steps that shaped
+  each town's past also run live, triggered by the simulation: a town that
+  outgrows its wall raises a wider circuit and the old line becomes a
+  street; a great fire's burned district is cleared and laid out again in
+  stone on a straight street; a siege burns the suburbs outside the gates;
+  a thriving village is chartered as a town; keeps and churches are rebuilt
+  larger on their own ground. Dated entries appear in each town's history.
+- How many a place can hold is not a fixed number. It is the land actually
+  under the plough (while more can be taken in, land is no limit), plus
+  fisheries, plus for towns the surplus of their market villages and for
+  the seat the rents of the realm, and it is also bounded by housing: a
+  cramped site builds upward and then stops growing.
 - The countryside follows the people. As they multiply, old pasture is
   ploughed again, then common waste, then the wood is assarted, and in the
   end the bounds are driven out into unclaimed land. After plague or war the
