@@ -99,6 +99,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
   that are rebuilt in stone on straighter streets; sieges raze suburbs that
   grow back. Each town's history is in its inspector card, and natural
   defences lengthen sieges.
+- Not every town is founded the same way. Besides the grown town
+  (Göttingen), a **border fortress** or old capital starts from a Roman
+  grid with a square forum and cathedral, later ringed by a bastioned trace
+  with a ditch, a cleared glacis and a star citadel for which a quarter is
+  razed (Metz); a **port** grows twin nuclei, the bishop's burg on the rise
+  and the merchants' waterfront, with canals cut inland (Hamburg); a
+  **market town** may be laid out by a duke: one broad market street with
+  runnels (Bächle), back streets, a minster square and a castle on the hill
+  above (Freiburg). Mill dams upstream of river towns back up a pond.
 - Strip fields with hedgerows ring each settlement.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
