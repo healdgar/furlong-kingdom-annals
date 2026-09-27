@@ -389,12 +389,41 @@ const cellX=(cx)=>cx*CELL-SIZE/2;   // lattice-aligned with the terrain mesh ver
 const cellZ=(cz)=>cz*CELL-SIZE/2;
 const toCell=(x)=>clamp(Math.round((x+SIZE/2)/CELL),0,GRID-1);
 
-function hAt(x,z){ // bilinear world-space height
+function hAt(x,z){ // exact height of the RENDERED surface: PlaneGeometry splits each quad along
+  // its (0,1)-(1,0) diagonal, so bilinear sampling put roads, walls and houses metres off the ground
   const fx=clamp((x+SIZE/2)/CELL,0,GRID-1.001), fz=clamp((z+SIZE/2)/CELL,0,GRID-1.001);
-  const x0=Math.floor(fx),z0=Math.floor(fz),tx=fx-x0,tz=fz-z0;
-  const x1=Math.min(x0+1,GRID-1),z1=Math.min(z0+1,GRID-1),h=W.h;
-  return lerp(lerp(h[cIdx(x0,z0)],h[cIdx(x1,z0)],tx),lerp(h[cIdx(x0,z1)],h[cIdx(x1,z1)],tx),tz);
+  const x0=Math.floor(fx),z0=Math.floor(fz),tx=fx-x0,tz=fz-z0,h=W.h;
+  const h00=h[cIdx(x0,z0)],h10=h[cIdx(x0+1,z0)],h01=h[cIdx(x0,z0+1)],h11=h[cIdx(x0+1,z0+1)];
+  return tx+tz<=1?h00+(h10-h00)*tx+(h01-h00)*tz:h11+(h01-h11)*(1-tx)+(h10-h11)*(1-tz);
 }
+/* ---------------- polyline helpers ---------------------------------------- */
+function polyLen(p){let L=0;for(let k=1;k<p.length;k++)L+=dist2d(p[k-1].x,p[k-1].z,p[k].x,p[k].z);return L;}
+function lerpPt(a,b,f){const o={x:lerp(a.x,b.x,f),z:lerp(a.z,b.z,f)};if(a.w!==undefined)o.w=lerp(a.w,b.w??a.w,f);return o;}
+function resample(p,step){ // evenly spaced points along a polyline (keeps both ends)
+  if(p.length<2)return p.map(q=>({...q}));
+  const out=[{...p[0]}];let need=step;
+  for(let i=1;i<p.length;i++){
+    const a=p[i-1],b=p[i],L=dist2d(a.x,a.z,b.x,b.z);let pos=0;
+    while(L-pos>=need){pos+=need;out.push(lerpPt(a,b,pos/L));need=step;}
+    need-=L-pos;
+  }
+  const last=p[p.length-1],o=out[out.length-1];
+  if(dist2d(o.x,o.z,last.x,last.z)>step*0.35)out.push({...last});else out[out.length-1]={...last};
+  return out;
+}
+function smoothPath(p,iters){ // [1 2 1] passes; the ends stay pinned
+  let q=p.map(o=>({...o}));
+  for(let k=0;k<iters;k++){
+    const r=q.map(o=>({...o}));
+    for(let i=1;i<q.length-1;i++){
+      r[i].x=(q[i-1].x+q[i].x*2+q[i+1].x)/4;r[i].z=(q[i-1].z+q[i].z*2+q[i+1].z)/4;
+      if(q[i].w!==undefined)r[i].w=(q[i-1].w+q[i].w*2+q[i+1].w)/4;
+    }
+    q=r;
+  }
+  return q;
+}
+function segDist(px,pz,a,b){const dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz||1;const t=clamp(((px-a.x)*dx+(pz-a.z)*dz)/L2,0,1);return Math.hypot(px-(a.x+dx*t),pz-(a.z+dz*t));}
 function slopeAt(cx,cz){
   const h=W.h,c=h[cIdx(cx,cz)];let m=0;
   for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]])if(inB(cx+dx,cz+dz))m=Math.max(m,Math.abs(h[cIdx(cx+dx,cz+dz)]-c));
@@ -497,7 +526,18 @@ async function generateWorld(seed,progress){
   if(srcBest>=0){let c=srcBest,guard=0;while(c>=0&&guard++<2000){if(!W.water[c])W.water[c]=2;if(W.h[c]<=SEA)break;c=down[c];}}
   // carve river cells & record paths for rendering
   const isRiv=(i)=>W.water[i]===2;
-  for(let i=0;i<GRID*GRID;i++)if(isRiv(i)){W.h[i]-=Math.min(7,2+W.flow[i]*0.004);}
+  { // carve a soft valley, not a one-cell trench (the trench read as blocky diamonds)
+    const carve=new Float32Array(GRID*GRID);
+    for(let i=0;i<GRID*GRID;i++)if(isRiv(i)){
+      const dep=Math.min(7,2+W.flow[i]*0.004),cx=i%GRID,cz=(i/GRID)|0;
+      for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++){
+        if(!inB(cx+dx,cz+dz))continue;const j=cIdx(cx+dx,cz+dz);
+        const f=Math.pow(clamp(1-Math.hypot(dx,dz)/2.3,0,1),1.4);
+        if(dep*f>carve[j])carve[j]=dep*f;
+      }
+    }
+    for(let i=0;i<GRID*GRID;i++)if(carve[i]>0)W.h[i]=W.water[i]?W.h[i]-carve[i]:Math.max(W.h[i]-carve[i],Math.min(W.h[i],0.6));
+  }
   // collect river polylines (from sources: river cells whose upstream has no river)
   const hasUp=new Uint8Array(GRID*GRID);
   for(let i=0;i<GRID*GRID;i++)if(isRiv(i)&&down[i]>=0&&isRiv(down[i]))hasUp[down[i]]=1;
@@ -580,6 +620,7 @@ async function generateWorld(seed,progress){
 
   await progress('Raising timber and stone…',0.75);
   for(const s of W.settlements)layoutSettlement(s);
+  stitchRoads();
 
   await progress('Blazoning the great houses…',0.88);
   makeHousesAndCast();
@@ -652,13 +693,11 @@ function buildRoads(){
     const a=W.settlements[i],b=W.settlements[bj];
     const cells=astar(cIdx(a.cx,a.cz),cIdx(b.cx,b.cz));
     if(cells){
-      const path=cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)}));
-      let len=0;for(let k=1;k<path.length;k++)len+=dist2d(path[k-1].x,path[k-1].z,path[k].x,path[k].z);
-      for(const c of cells){
-        if(W.water[c]===2)W.bridges.push({x:cellX(c%GRID),z:cellZ((c/GRID)|0)});
-        else W.roadCells[c]=1; // tint the ground under the king's roads
-      }
-      W.roads.push({a:i,b:bj,path,len});
+      // an 8-connected A* path is a staircase; resample and relax it into a surveyor's curve
+      const raw=cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)}));
+      const path=resample(smoothPath(resample(raw,9),14),8);
+      for(const c of cells)if(!W.water[c])W.roadCells[c]=1;
+      W.roads.push({a:i,b:bj,path,len:polyLen(path)});
     }else{
       // no path found: lay a terrain-following track so the route is at least visible
       const path=[];const n=Math.max(2,Math.round(bd/25));
@@ -718,127 +757,231 @@ function riverRoute(ai,bi){
   return {poly,len};
 }
 
-/* ---------------- settlement layout: streets, lots, buildings ------------ */
-function layoutSettlement(s){
-  const idx=W.settlements.indexOf(s);
-  const isCap=s.kind==='capital';
-  const R=isCap?240:s.kind==='town'?150:70; // walled/initial core radius
-  s.radius=R+40;
-  const count=Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:s.kind==='town'?280:48);
-  const buildable=(x,z)=>{const ci=toCell(x),cj=toCell(z);const i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;};
-  /* street directions seeded from where the king's roads enter town */
-  const dirs=[];
-  for(const r of W.roads){
-    if(r.a===idx||r.b===idx){
-      const p=r.a===idx?r.path[Math.min(4,r.path.length-1)]:r.path[Math.max(0,r.path.length-5)];
-      dirs.push(Math.atan2(p.z-s.pos.z,p.x-s.pos.x));
+/* ---------------- settlement layout: streets, lots, buildings ------------
+   Streets radiate from a market square (each king's road enters along its
+   own spoke), ring lanes cross them, and buildings stand shoulder to
+   shoulder along the frontages, facing the street, filled from the square
+   outward. Unused frontage — gaps, outer lanes, the roads out of town —
+   becomes the growth queue, so new roofs extend streets instead of
+   scattering. A private RNG per town keeps layout tweaks from reshuffling
+   the rest of the world. */
+function layoutRng(idx){return seedStreams((SEED^Math.imul(idx+1,0x9E3779B1))>>>0).gen;}
+function obbCorners(x,z,w,d,rot){ // footprint corners; three.js Y-rotation maps local x→(cos,−sin)
+  const c=Math.cos(rot),sn=Math.sin(rot),o=[];
+  for(const[ox,oz]of[[w/2,d/2],[-w/2,d/2],[-w/2,-d/2],[w/2,-d/2]])o.push({x:x+ox*c+oz*sn,z:z-ox*sn+oz*c});
+  return o;
+}
+function obbOverlap(A,B){ // separating-axis test on two footprints {x,z,w,d,rot}
+  const ca=obbCorners(A.x,A.z,A.w,A.d,A.rot),cb=obbCorners(B.x,B.z,B.w,B.d,B.rot);
+  for(const o of[A,B]){
+    const c=Math.cos(o.rot),sn=Math.sin(o.rot);
+    for(const[ax,az]of[[c,-sn],[sn,c]]){
+      let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9;
+      for(const p of ca){const v=p.x*ax+p.z*az;if(v<a0)a0=v;if(v>a1)a1=v;}
+      for(const p of cb){const v=p.x*ax+p.z*az;if(v<b0)b0=v;if(v>b1)b1=v;}
+      if(a1<b0||b1<a0)return false;
     }
   }
-  const nd=isCap?6:s.kind==='town'?4:3;
-  while(dirs.length<nd)dirs.push(rand('gen')*Math.PI*2);
-  /* streets: wiggling spokes from the market square + ring streets */
-  s.streets=[];
-  for(const d of dirs){
-    const pts=[];let a=d;
-    for(let r=12;r<=R;r+=13){
-      a+=(rand('gen')-0.5)*0.13;
+  return true;
+}
+function makeHash(cs){ // tiny spatial hash for footprints and street segments
+  const m=new Map(),key=(i,j)=>i*100003+j;
+  return{
+    add(o,r){for(let i=Math.floor((o.x-r)/cs);i<=Math.floor((o.x+r)/cs);i++)for(let j=Math.floor((o.z-r)/cs);j<=Math.floor((o.z+r)/cs);j++){
+      const k=key(i,j);let a=m.get(k);if(!a)m.set(k,a=[]);a.push(o);}},
+    near(x,z,r){const out=new Set();
+      for(let i=Math.floor((x-r)/cs);i<=Math.floor((x+r)/cs);i++)for(let j=Math.floor((z-r)/cs);j<=Math.floor((z+r)/cs);j++){
+        const a=m.get(key(i,j));if(a)for(const o of a)out.add(o);}
+      return out;}
+  };
+}
+function groundBuilding(b){ // floor on the highest corner, foundations down to the lowest
+  let lo=1e9,hi=-1e9;
+  for(const c of obbCorners(b.x,b.z,b.w,b.d,b.rot)){const y=hAt(c.x,c.z);if(y<lo)lo=y;if(y>hi)hi=y;}
+  const yc=hAt(b.x,b.z);lo=Math.min(lo,yc);hi=Math.max(hi,yc);
+  b.y=hi;b.y0=lo-0.8;
+}
+function frontFoot(c,arch,tier,rnd){ // a footprint set back from the street edge, facing it
+  const a=ARCH[arch],k=0.85+tier*0.15;
+  const w=a[0]*k*(0.92+rnd()*0.16),d=a[1]*k*(0.92+rnd()*0.16);
+  const set=c.hw+0.9+d/2+(tier===0?rnd()*1.6:rnd()*0.4);
+  const px=-c.uz*c.side,pz=c.ux*c.side;
+  return{x:c.mx+px*set,z:c.mz+pz*set,w,d,rot:-Math.atan2(c.uz,c.ux)};
+}
+function layoutSettlement(s){
+  const idx=W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
+  const isCap=s.kind==='capital',isTown=s.kind==='town';
+  const R=isCap?240:isTown?150:70; // walled/initial core radius
+  s.radius=R+40;s.coreR=R;s.wallR=R+14;s.plazaR=isCap?24:isTown?17:11;
+  const count=Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:isTown?280:48);
+  const buildable=(x,z)=>{const ci=toCell(x),cj=toCell(z);const i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;};
+  /* spokes: each king's road gets its own, then lanes spread into the widest gaps */
+  const spokes=[];
+  W.roads.forEach((r,ri)=>{
+    if(r.a!==idx&&r.b!==idx)return;
+    const path=r.a===idx?r.path:[...r.path].reverse();
+    let q=path[path.length-1];
+    for(const p of path)if(dist2d(p.x,p.z,s.pos.x,s.pos.z)>R*0.8){q=p;break;}
+    spokes.push({a:Math.atan2(q.z-s.pos.z,q.x-s.pos.x),road:ri});
+  });
+  const nd=isCap?6:isTown?4:3;
+  for(let t=0;t<60&&spokes.length<nd;t++){
+    const a=rr()*Math.PI*2;
+    if(spokes.every(o=>Math.abs(Math.atan2(Math.sin(a-o.a),Math.cos(a-o.a)))>0.75))spokes.push({a,road:null});
+  }
+  const HW=isCap?3.4:isTown?3:2.4; // street half-width
+  s.streets=[];s.roadSpoke={};s.spokeDirs=[];
+  for(const sp of spokes){
+    const pts=[];let a=sp.a;
+    const reach=sp.road!=null?R:R*(s.kind==='village'?1.9:1.45); // lanes run on past the walls into the fields
+    for(let r=s.plazaR;r<=reach+0.1;r+=10){
+      a+=(rr()-0.5)*0.07;
       const x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;
       if(!buildable(x,z))break;
       pts.push({x,z});
     }
-    if(pts.length>=2)s.streets.push(pts);
+    if(pts.length>=2){s.streets.push({pts,hw:HW,kind:'spoke'});s.spokeDirs.push(sp.a);if(sp.road!=null)s.roadSpoke[sp.road]=pts;}
   }
-  const rings=isCap?[0.42,0.78]:s.kind==='town'?[0.62]:[];
-  for(const rf of rings){
-    const rr=R*rf;let pts=[];
-    const n=Math.max(10,Math.round(rr*2*Math.PI/14));
+  for(const rf of isCap?[0.34,0.58,0.83]:isTown?[0.42,0.77]:[]){
+    const rr2=R*rf;let pts=[];
+    const n=Math.max(12,Math.round(rr2*2*Math.PI/10));
     for(let i=0;i<=n;i++){
-      const a=i/n*Math.PI*2;
-      const x=s.pos.x+Math.cos(a)*rr,z=s.pos.z+Math.sin(a)*rr;
-      if(!buildable(x,z)){if(pts.length>=3)s.streets.push(pts);pts=[];continue;}
+      const a=i/n*Math.PI*2,x=s.pos.x+Math.cos(a)*rr2,z=s.pos.z+Math.sin(a)*rr2;
+      if(!buildable(x,z)){if(pts.length>=3)s.streets.push({pts,hw:HW*0.8,kind:'ring'});pts=[];continue;}
       pts.push({x,z});
     }
-    if(pts.length>=3)s.streets.push(pts);
+    if(pts.length>=3)s.streets.push({pts,hw:HW*0.8,kind:'ring'});
   }
-  /* building slots line the street frontages, facing the street */
-  const slots=[];
-  for(const st of s.streets){
-    for(let i=0;i<st.length-1;i++){
-      const a=st[i],b=st[i+1];
-      const dx=b.x-a.x,dz=b.z-a.z,L=Math.hypot(dx,dz)||1;
-      const ux=dx/L,uz=dz/L,px=-uz,pz=ux;
-      for(let t=5;t<L;t+=12.5){
+  /* obstacles: streets, and king's roads outside the core */
+  const segH=makeHash(24),roadHW=5;
+  const addSeg=(a,b,hw)=>{const o={a,b,hw,x:(a.x+b.x)/2,z:(a.z+b.z)/2};segH.add(o,dist2d(a.x,a.z,b.x,b.z)/2+hw+2);};
+  for(const st of s.streets)for(let i=0;i<st.pts.length-1;i++)addSeg(st.pts[i],st.pts[i+1],st.hw);
+  const roadRuns=[];
+  for(const r of W.roads){
+    let run=[];
+    for(let i=0;i<r.path.length;i++){
+      const p=r.path[i],d=dist2d(p.x,p.z,s.pos.x,s.pos.z);
+      if(i&&d>R*0.95&&d<R*2.2)addSeg(r.path[i-1],p,roadHW);
+      if(d>R+18&&d<R*1.9)run.push(p);else{if(run.length>1)roadRuns.push(run);run=[];}
+    }
+    if(run.length>1)roadRuns.push(run);
+  }
+  /* frontage candidates every few metres, nearest the square first */
+  const cands=[];
+  const frontage=(pts,hw,tag,jit)=>{
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i],b=pts[i+1],dx=b.x-a.x,dz=b.z-a.z,L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+      for(let t=0;t<L;t+=3.5){
         const mx=a.x+ux*t,mz=a.z+uz*t;
-        for(const side of[-1,1]){
-          slots.push({x:mx+px*side*8.5,z:mz+pz*side*8.5,
-            rot:Math.atan2(uz,ux)+(side<0?Math.PI:0),
-            d:dist2d(mx,mz,s.pos.x,s.pos.z)});
-        }
+        for(const side of[-1,1])cands.push({mx,mz,ux,uz,side,hw,tag,d:dist2d(mx,mz,s.pos.x,s.pos.z)+rr()*jit});
       }
     }
-  }
-  for(let i=slots.length-1;i>0;i--){const j=randi('gen',i+1);const t=slots[i];slots[i]=slots[j];slots[j]=t;}
-  const occ=[];
-  const free=(x,z,rr)=>occ.every(o=>dist2d(x,z,o.x,o.z)>rr+o.r);
-  function place(arch,tier,x,z,rot,district){
+  };
+  for(const st of s.streets)frontage(st.pts,st.hw,st.kind,10);
+  for(const run of roadRuns)frontage(run,roadHW,'road',40);
+  cands.sort((p,q)=>p.d-q.d);
+  /* placement */
+  const placed=makeHash(16);
+  const probe=(f)=>{const c=obbCorners(f.x,f.z,f.w,f.d,f.rot),o=[...c,{x:f.x,z:f.z}];
+    for(let i=0;i<4;i++)o.push({x:(c[i].x+c[(i+1)%4].x)/2,z:(c[i].z+c[(i+1)%4].z)/2});return o;};
+  const fits=(f,gap,noBuild)=>{
+    let inside=0,outside=0;
+    for(const c of probe(f)){
+      if(!noBuild&&!buildable(c.x,c.z))return false;
+      const dc=dist2d(c.x,c.z,s.pos.x,s.pos.z);
+      if(dc<s.plazaR+1.5)return false;
+      if(Math.abs(dc-s.wallR)<5)return false; // keep the wall line clear (walls may be raised later)
+      if(dc<s.wallR)inside++;else outside++;
+      for(const g of segH.near(c.x,c.z,1))if(segDist(c.x,c.z,g.a,g.b)<g.hw+0.8)return false;
+    }
+    if(inside&&outside)return false; // straddling the wall line
+    const r=Math.hypot(f.w,f.d)/2+gap;
+    const F={x:f.x,z:f.z,w:f.w+gap*2,d:f.d+gap*2,rot:f.rot};
+    for(const o of placed.near(f.x,f.z,r))if(obbOverlap(F,o))return false;
+    return true;
+  };
+  function place(arch,tier,f,district,hm){
     const a=ARCH[arch];
-    const b={arch,tier,x,z,rot,w:a[0]*(0.85+tier*0.15),d:a[1]*(0.85+tier*0.15),h:a[2]*(0.8+tier*0.25),
-      roof:a[3],district,state:'sound',s:s,y:hAt(x,z),burnT:0,rebuildT:0};
-    s.buildings.push(b);occ.push({x,z,r:Math.max(b.w,b.d)*0.62});
+    const b={arch,tier,x:f.x,z:f.z,rot:f.rot,w:f.w,d:f.d,h:a[2]*(0.8+tier*0.25)*(hm||1),
+      roof:a[3],district,state:'sound',s,burnT:0,rebuildT:0,hue:rr()};
+    groundBuilding(b);s.buildings.push(b);placed.add(b,Math.hypot(b.w,b.d)/2+1);
     return b;
   }
+  s._lay={fits,place,placed,segH}; // growth (and the fields) reuse the same rules
   /* keep on defensible high ground inside the walls */
   if(isCap){
-    let bx=s.pos.x,bz=s.pos.z,bh=-1;
-    for(let a=0;a<24;a++){const ang=a/24*Math.PI*2,x=s.pos.x+Math.cos(ang)*R*0.55,z=s.pos.z+Math.sin(ang)*R*0.55;
-      if(buildable(x,z)&&hAt(x,z)>bh){bh=hAt(x,z);bx=x;bz=z;}}
-    s.keepPos={x:bx,z:bz,y:hAt(bx,bz)};
-    place('keep',2,bx,bz,rand('gen')*Math.PI,'keep');
+    let best=null,bh=-1e9;
+    for(const rf of[0.55,0.45,0.65,0.35])for(let a=0;a<24;a++){
+      const ang=a/24*Math.PI*2,x=s.pos.x+Math.cos(ang)*R*rf,z=s.pos.z+Math.sin(ang)*R*rf;
+      const f={x,z,w:20,d:24,rot:rr()*Math.PI};
+      if(fits(f,2)&&hAt(x,z)>bh){bh=hAt(x,z);best=f;}
+    }
+    if(best){s.keepPos={x:best.x,z:best.z,y:hAt(best.x,best.z)};place('keep',2,best,'keep');}
   }
-  /* civic core around the market square */
-  place(isCap||s.kind==='town'?'temple':'granary',isCap?2:1,s.pos.x+20,s.pos.z-17,rand('gen')*0.6,'temple');
-  place('tavern',isCap?2:1,s.pos.x-21,s.pos.z+15,rand('gen')*0.6,'market');
-  place('granary',1,s.pos.x+24,s.pos.z+21,rand('gen')*0.6,'market');
-  if(s.harbor||s.river)place('warehouse',1,s.pos.x-26,s.pos.z-23,rand('gen')*0.6,'market');
-  if(s.river){ // mill on the watercourse
+  /* civic buildings ring the market square, between the streets, facing it */
+  const angs=s.spokeDirs.map(a=>(a%(Math.PI*2)+Math.PI*2)%(Math.PI*2)).sort((a,b)=>a-b);
+  const gaps=[];
+  for(let i=0;i<angs.length;i++){const a=angs[i],b=i+1<angs.length?angs[i+1]:angs[0]+Math.PI*2;gaps.push({m:(a+b)/2,g:b-a});}
+  if(!gaps.length)gaps.push({m:rr()*6.28,g:6.28});
+  gaps.sort((p,q)=>q.g-p.g);
+  const civic=[isCap||isTown?'temple':'granary','tavern','granary'];
+  if(s.harbor||s.river)civic.push('warehouse');
+  if(isCap)civic.push('shop','shop');
+  civic.forEach((arch,k)=>{
+    const gp=gaps[k%gaps.length],m=gp.m+(k>=gaps.length?(rr()-0.5)*gp.g*0.5:0);
+    const a=ARCH[arch],tier=isCap||arch==='temple'?2:1,kk=0.85+tier*0.15,w=a[0]*kk,d=a[1]*kk;
+    for(let push=0;push<8;push++){
+      const dist=s.plazaR+d/2+2+push*4;
+      const f={x:s.pos.x+Math.cos(m)*dist,z:s.pos.z+Math.sin(m)*dist,w,d,rot:-Math.atan2(Math.cos(m),-Math.sin(m))};
+      if(fits(f,1)){place(arch,tier,f,arch==='temple'?'temple':'market');break;}
+    }
+  });
+  /* a mill on the watercourse */
+  if(s.river){
     let best=null,bd=1e9;
     for(let dz=-6;dz<=6;dz++)for(let dx=-6;dx<=6;dx++){
       const ci=s.cx+dx,cj=s.cz+dz;if(!inB(ci,cj)||W.water[cIdx(ci,cj)]!==2)continue;
-      const d=dx*dx+dz*dz;if(d<bd){bd=d;best={x:cellX(ci)+CELL*0.8,z:cellZ(cj)};}
+      const d=dx*dx+dz*dz;if(d<bd){bd=d;best={x:cellX(ci),z:cellZ(cj)};}
     }
-    if(best&&buildable(best.x,best.z))s.mill=place('mill',1,best.x,best.z,rand('gen')*Math.PI,'artisan');
+    if(best){
+      const a=Math.atan2(s.pos.z-best.z,s.pos.x-best.x);
+      for(let t=16;t<60;t+=4){
+        const f={x:best.x+Math.cos(a)*t,z:best.z+Math.sin(a)*t,w:9,d:9,rot:-Math.atan2(Math.cos(a),-Math.sin(a))};
+        if(buildable(f.x,f.z)&&fits(f,1,true)){s.mill=place('mill',1,f,'artisan');break;}
+      }
+    }
   }
-  /* fill street frontage: district & tier by distance from the square */
-  let placed=0;
-  for(const sl of slots){
-    if(placed>=count)break;
-    if(!buildable(sl.x,sl.z))continue;
-    const dc=clamp(sl.d/R,0,1);
+  /* fill the frontages */
+  let n=0;const grow=[];
+  for(const c of cands){
+    const inCore=c.tag!=='road'&&dist2d(c.mx,c.mz,s.pos.x,s.pos.z)<=R;
+    if(!inCore||n>=count){grow.push(c);continue;}
+    const dc=clamp(c.d/R,0,1);
     let district,arch;
-    if(dc<0.3){district='market';arch=pick('gen',['shop','shop','tavern','house','warehouse']);}
-    else if(dc<0.55){district='artisan';arch=pick('gen',['smithy','shop','house','house','longhouse']);}
-    else{district='residential';arch=pick('gen',['house','house','house','longhouse','granary']);}
+    if(dc<0.3){district='market';arch=rpick(['shop','shop','house','tavern','warehouse','shop']);}
+    else if(dc<0.55){district='artisan';arch=rpick(['smithy','shop','house','house','longhouse']);}
+    else{district='residential';arch=rpick(['house','house','house','longhouse','house','granary']);}
     let tier=dc<0.3?2:dc<0.65?1:0;
     if(s.kind==='village')tier=Math.max(0,tier-1);
-    if(rand('gen')<0.2)tier=Math.max(0,tier-1);
-    if(!free(sl.x,sl.z,Math.max(ARCH[arch][0],ARCH[arch][1])*0.6))continue;
-    place(arch,tier,sl.x,sl.z,sl.rot+(rand('gen')-0.5)*0.08,district);
-    placed++;
+    if(rr()<0.2)tier=Math.max(0,tier-1);
+    const f=frontFoot(c,arch,tier,rr);
+    if(!fits(f,district==='market'?0.3:district==='artisan'?0.9:1.8))continue;
+    place(arch,tier,f,district);n++;
   }
-  /* walls enclose the whole initial town; growth later spills outside */
-  if(s.walls>0){
-    const wr=R+14;const segs=Math.round(wr*2*Math.PI/13);
-    s.wallSegs=[];
-    for(let i=0;i<segs;i++){
-      const a=i/segs*Math.PI*2,x=s.pos.x+Math.cos(a)*wr,z=s.pos.z+Math.sin(a)*wr;
-      if(!buildable(x,z))continue;
-      const isGate=dirs.some(d=>Math.abs(Math.atan2(Math.sin(a-d),Math.cos(a-d)))<0.1);
-      if(isGate)continue;
-      s.wallSegs.push({x,z,rot:a+Math.PI/2,y:hAt(x,z)});
-      if(i%7===0)place('tower',s.walls,x,z,a,'keep');
-    }
-  }
-  s.coreR=R;
+  s.growSlots=grow;
+}
+function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
+  W.roads.forEach((r,ri)=>{
+    const A=W.settlements[r.a],B=W.settlements[r.b];
+    if(!r.open)r.open=r.path; // the untrimmed open-country road
+    const pts=r.open.filter(p=>dist2d(p.x,p.z,A.pos.x,A.pos.z)>(A.coreR||0)*0.98&&dist2d(p.x,p.z,B.pos.x,B.pos.z)>(B.coreR||0)*0.98);
+    const sa=A.roadSpoke&&A.roadSpoke[ri],sb=B.roadSpoke&&B.roadSpoke[ri];
+    const head=[{x:A.pos.x,z:A.pos.z},...(sa||[])],tail=[...(sb?[...sb].reverse():[]),{x:B.pos.x,z:B.pos.z}];
+    r.path=[...head,...pts,...tail];r.len=polyLen(r.path);
+    // the stretch drawn as a king's road (spoke ends included so it joins the street)
+    r.drawn=[...(sa?[sa[sa.length-1]]:[]),...pts,...(sb?[sb[sb.length-1]]:[])];
+  });
+  W.routes={};
 }
 
 /* ---------------- houses, dynasty & the cast ----------------------------- */
@@ -986,8 +1129,9 @@ function initGraphics(){
   const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:G.skyU,
     vertexShader:'varying vec3 vp;void main(){vp=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader:'uniform vec3 top;uniform vec3 bot;uniform vec3 sunPos;uniform vec3 sunCol;varying vec3 vp;\n'+
-      'void main(){float h=normalize(vp).y*0.5+0.5;vec3 c=mix(bot,top,pow(h,0.7));\n'+
-      'float s=max(0.0,dot(normalize(vp),normalize(sunPos)));c+=sunCol*pow(s,220.0)*1.4;c+=sunCol*pow(s,10.0)*0.16;\n'+
+      'void main(){vec3 d=normalize(vp);float h=max(d.y,0.0)*0.5+0.5;vec3 c=mix(bot,top,pow(h,0.7));\n'+
+      'c=mix(c,bot*vec3(0.62,0.7,0.74),clamp(-d.y*4.0,0.0,1.0));\n'+ /* below the horizon: distant haze, not a white void */
+      'float s=max(0.0,dot(d,normalize(sunPos)));c+=sunCol*pow(s,220.0)*1.4;c+=sunCol*pow(s,24.0)*0.12;\n'+
       'gl_FragColor=vec4(c,1.0);}'});
   G.sky=new THREE.Mesh(new THREE.SphereGeometry(12500,24,14),skyMat);scene.add(G.sky);
   // stars
@@ -1009,43 +1153,125 @@ function initGraphics(){
 }
 
 /* ---------------- terrain, water, roads ---------------------------------- */
-function chaikin(pts,passes){ // corner-cutting smoothing
-  for(let k=0;k<passes;k++){
-    const out=[pts[0]];
-    for(let i=0;i<pts.length-1;i++){
-      const a=pts[i],b=pts[i+1];
-      out.push({x:a.x*0.75+b.x*0.25,z:a.z*0.75+b.z*0.25,w:(a.w||8)*0.75+(b.w||8)*0.25});
-      out.push({x:a.x*0.25+b.x*0.75,z:a.z*0.25+b.z*0.75,w:(a.w||8)*0.25+(b.w||8)*0.75});
+function terrNormal(x,z){const e=5,dx=hAt(x+e,z)-hAt(x-e,z),dz=hAt(x,z+e)-hAt(x,z-e),l=Math.hypot(dx,2*e,dz);return[-dx/l,2*e/l,-dz/l];}
+function newAcc(){return{p:[],n:[],c:[],i:[]};}
+function accMesh(acc,mat){
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(acc.p,3));
+  g.setAttribute('normal',new THREE.Float32BufferAttribute(acc.n,3));
+  g.setAttribute('color',new THREE.Float32BufferAttribute(acc.c,3));
+  g.setIndex(acc.i);
+  return new THREE.Mesh(g,mat);
+}
+/* one connected strip along a polyline: shared vertices at every joint (the old per-segment quads
+   gapped and overlapped at bends), several samples across for painted verges and ruts */
+function strip(pts,acc,o){
+  const n=pts.length;if(n<2)return;
+  const fr=o.fr,m=fr.length,base=acc.p.length/3;
+  for(let k=0;k<n;k++){
+    const a=pts[Math.max(0,k-1)],b=pts[Math.min(n-1,k+1)];
+    let tx=b.x-a.x,tz=b.z-a.z;const L=Math.hypot(tx,tz)||1;tx/=L;tz/=L;
+    const hw=o.hw(k),yc=o.flatY?o.flatY(k):0;
+    for(let j=0;j<m;j++){
+      const x=pts[k].x-tz*hw*fr[j],z=pts[k].z+tx*hw*fr[j];
+      acc.p.push(x,o.flatY?yc:hAt(x,z)+o.lift,z);
+      const nn=o.flatY?[0,1,0]:terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
+      C1.setHex(o.col(k,j,x,z));acc.c.push(C1.r,C1.g,C1.b);
     }
-    out.push(pts[pts.length-1]);
-    pts=out;
   }
-  return pts;
-}
-function ribbon(pts,acc,hw,lift){ // append triangles for a terrain-following strip
-  for(let k=0;k<pts.length-1;k++){
-    const a=pts[k],b=pts[k+1];
-    const dx=b.x-a.x,dz=b.z-a.z,L=Math.hypot(dx,dz)||1;
-    const wA=hw??(Math.max(10,a.w||10)/2),wB=hw??(Math.max(10,b.w||10)/2);
-    const px=-dz/L,pz=dx/L;
-    const ya=hAt(a.x,a.z)+lift,yb=hAt(b.x,b.z)+lift;
-    acc.p.push(a.x+px*wA,ya,a.z+pz*wA, a.x-px*wA,ya,a.z-pz*wA, b.x-px*wB,yb,b.z-pz*wB,
-               a.x+px*wA,ya,a.z+pz*wA, b.x-px*wB,yb,b.z-pz*wB, b.x+px*wB,yb,b.z+pz*wB);
-    for(let i=0;i<6;i++)acc.n.push(0,1,0);
+  for(let k=0;k<n-1;k++)for(let j=0;j<m-1;j++){
+    const i0=base+k*m+j,i1=i0+1,i2=i0+m,i3=i2+1;
+    acc.i.push(i0,i1,i2,i1,i3,i2);
   }
 }
-function rebuildRoadMesh(){ // king's roads (wide) + settlement streets (narrow), one merged mesh
+function disc(acc,cx,cz,R,lift,colFn){ // draped polar grid (market squares)
+  const rings=6,sect=28,base=acc.p.length/3;
+  for(let r=0;r<=rings;r++)for(let k=0;k<sect;k++){
+    const rr=R*r/rings,a=k/sect*Math.PI*2,x=cx+Math.cos(a)*rr,z=cz+Math.sin(a)*rr;
+    acc.p.push(x,hAt(x,z)+lift,z);const nn=terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
+    C1.setHex(colFn(r,k));acc.c.push(C1.r,C1.g,C1.b);
+    if(r===0)break; // a single centre vertex
+  }
+  for(let r=0;r<rings;r++)for(let k=0;k<sect;k++){
+    const k2=(k+1)%sect;
+    const a=r===0?base:base+1+(r-1)*sect+k,b=r===0?base:base+1+(r-1)*sect+k2;
+    const c=base+1+r*sect+k,d=base+1+r*sect+k2;
+    if(r===0)acc.i.push(base,d,c);
+    else acc.i.push(a,b,c,b,d,c);
+  }
+}
+/* river strips are cached: roads need them to find where bridges go */
+function riverStrips(){
+  if(G.rivStrips)return G.rivStrips;
+  G.rivStrips=[];G.rivHash=makeHash(40);
+  for(const path of W.riverPaths){
+    const pts=resample(smoothPath(resample(path,10),6),6);
+    const hw=pts.map((p,k)=>Math.max(4,(p.w||10)/2)*Math.min(1,0.35+k/14)); // springs start as a trickle
+    // surface: sit above the channel across its middle, and never run uphill (downstream max envelope)
+    const t=pts.map((p,k)=>{
+      const a=pts[Math.max(0,k-1)],b=pts[Math.min(pts.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1,px=-(b.z-a.z)/L,pz=(b.x-a.x)/L,o=hw[k]*0.4;
+      return Math.max(hAt(p.x,p.z),hAt(p.x+px*o,p.z+pz*o),hAt(p.x-px*o,p.z-pz*o))+0.9;});
+    const ys=t.slice();for(let k=ys.length-2;k>=0;k--)ys[k]=Math.max(ys[k],ys[k+1]);
+    const st={pts,ys,hw};G.rivStrips.push(st);
+    for(let k=0;k<pts.length-1;k++){const o={a:pts[k],b:pts[k+1],hw:hw[k],y:ys[k],x:pts[k].x,z:pts[k].z};G.rivHash.add(o,dist2d(o.a.x,o.a.z,o.b.x,o.b.z)+hw[k]);}
+  }
+  return G.rivStrips;
+}
+function riverAt(x,z,pad){ // the river segment under (x,z), if any
+  for(const o of G.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;
+  return null;
+}
+const ROADCOL={verge:0x6d6a44,dirt:0x8f7a52,rut:0x7a6546,crown:0x9c8660};
+const PAVECOL={verge:0x6f685a,dirt:0x8d8576,rut:0x80796b,crown:0x9a9384};
+function rebuildRoadMesh(){ // king's roads, streets and market squares: one draped, vertex-coloured mesh; bridges where roads meet rivers
   if(G.roads){scene.remove(G.roads);G.roads.geometry.dispose();}
-  const rd={p:[],n:[]};
-  for(const r of W.roads)ribbon(chaikin(r.path,1),rd,5.2,0.9);
-  for(const s of W.settlements)if(s.streets)for(const st of s.streets)ribbon(st,rd,2.6,0.8);
-  const rrg=new THREE.BufferGeometry();
-  rrg.setAttribute('position',new THREE.Float32BufferAttribute(rd.p,3));
-  rrg.setAttribute('normal',new THREE.Float32BufferAttribute(rd.n,3));
-  G.roads=new THREE.Mesh(rrg,G.roadMat||(G.roadMat=new THREE.MeshLambertMaterial({color:0x8f7c55,
-    polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));
+  if(G.bridges){scene.remove(G.bridges);G.bridges.dispose();}
+  riverStrips();
+  const acc=newAcc(),spans=[];
+  const FR=[-1,-0.78,-0.45,0,0.45,0.78,1];
+  const roadCol=(pal)=>(k,j)=>j===0||j===6?pal.verge:j===2||j===4?pal.rut:j===3?pal.crown:pal.dirt;
+  for(const r of W.roads){
+    const pts=resample(smoothPath(resample(r.drawn||r.path,6),2),5);
+    // split into dry runs; each wet run becomes a bridge between the dry banks
+    let run=[],wet=null;
+    const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>4.2,lift:0.3,col:roadCol(ROADCOL)});run=[];};
+    for(let k=0;k<pts.length;k++){
+      const w=riverAt(pts[k].x,pts[k].z,2.5);
+      if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y};flush();}wet.y=Math.max(wet.y,w.y);}
+      else{if(wet){spans.push({a:wet.from,b:pts[k],y:wet.y});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
+    }
+    flush();
+  }
+  for(const s of W.settlements){
+    const paved=s.kind!=='village';
+    for(const st of s.streets||[]){
+      const pts=resample(st.pts,5);
+      strip(pts,acc,{fr:FR,hw:()=>st.hw,lift:0.28,col:(k,j,x,z)=>roadCol(paved&&dist2d(x,z,s.pos.x,s.pos.z)<s.coreR?PAVECOL:ROADCOL)(k,j)});
+    }
+    if(s.plazaR)disc(acc,s.pos.x,s.pos.z,s.plazaR+1.5,0.32,(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
+  }
+  G.roads=accMesh(acc,G.roadMat||(G.roadMat=new THREE.MeshLambertMaterial({vertexColors:true,
+    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-4})));
+  G.roads.receiveShadow=true;
   scene.add(G.roads);
+  // bridges: a timber/stone deck spanning bank to bank, parapets, and a pier in midstream
+  const bx=new THREE.BoxGeometry(1,1,1);
+  G.bridges=new THREE.InstancedMesh(bx,new THREE.MeshLambertMaterial({}),Math.max(1,spans.length*4));
+  let bi=0;
+  for(const sp of spans){
+    const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L=Math.hypot(dx,dz)+6,ry=-Math.atan2(dz,dx);
+    const mx=(sp.a.x+sp.b.x)/2,mz=(sp.a.z+sp.b.z)/2;
+    const deck=Math.max(hAt(sp.a.x,sp.a.z),hAt(sp.b.x,sp.b.z),sp.y+2.2)+0.4;
+    const px=-dz/(L-6||1),pz=dx/(L-6||1);
+    setInst(G.bridges,bi,mx,deck-0.6,mz,ry,L,1.2,8.6);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
+    for(const sd of[-1,1]){setInst(G.bridges,bi,mx+px*sd*4.1,deck+0.5,mz+pz*sd*4.1,ry,L,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
+    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,deck-sp.y+2.4,7);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
+  }
+  G.bridges.count=bi;G.bridges.castShadow=true;G.bridges.receiveShadow=true;
+  G.bridges.instanceMatrix.needsUpdate=true;if(G.bridges.instanceColor)G.bridges.instanceColor.needsUpdate=true;
+  scene.add(G.bridges);
 }
+const TV_DRY=new THREE.Color(0xa39d5e);
 function colorForVertex(i,sp,snowT,seed){
   const bio=W.biome[i],h=W.h[i];
   const nn=Math.sin(i*127.1+(seed%97))*43758.5453; const n=nn-Math.floor(nn); // stable patternless jitter
@@ -1068,6 +1294,10 @@ function colorForVertex(i,sp,snowT,seed){
     default:c=C1.setHex(0xe8ecef);
   }
   c.multiplyScalar(0.92+n*0.16);
+  if(bio===B.MEADOW||bio===B.FARM||bio===B.FOREST||bio===B.MARSH){ // broad, soft variation: dry swales and lush hollows
+    const v=G.tvar?G.tvar[i]:0;
+    if(v>0)c.lerp(TV_DRY,v*0.3);else c.multiplyScalar(1+v*0.18);
+  }
   if(bio===B.ROCK||bio===B.SNOW){ // coherent snowcaps: whiten smoothly with height
     const t=clamp((h-470)/130,0,1);
     c.lerp(new THREE.Color(0xe9edf2),t*t);
@@ -1082,8 +1312,10 @@ function colorForVertex(i,sp,snowT,seed){
   return c;
 }
 function buildTerrain(){
-  const g=new THREE.PlaneGeometry(SIZE,SIZE,GRID-1,GRID-1);
-  g.rotateX(-Math.PI/2);
+  // vertex (cx,cz) must sit exactly at (cellX(cx),cellZ(cz)): a SIZE-wide plane spaces vertices SIZE/(GRID-1)
+  // apart, not CELL, which slid the ground up to a whole cell away from everything placed with hAt()
+  const g=new THREE.PlaneGeometry(CELL*(GRID-1),CELL*(GRID-1),GRID-1,GRID-1);
+  g.rotateX(-Math.PI/2);g.translate(-CELL/2,0,-CELL/2);
   const p=g.attributes.position;
   for(let i=0;i<p.count;i++)p.setY(i,W.h[i]);
   g.computeVertexNormals();
@@ -1099,24 +1331,20 @@ function buildTerrain(){
     G.sea=new THREE.Mesh(sg,new THREE.MeshPhongMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:90,specular:0x88aabb}));
     G.sea.position.y=SEA+0.5;scene.add(G.sea);
   }
-  const riv={p:[],n:[]};
-  for(const path of W.riverPaths)ribbon(chaikin(path,2),riv,null,1.3);
-  const rg=new THREE.BufferGeometry();
-  rg.setAttribute('position',new THREE.Float32BufferAttribute(riv.p,3));
-  rg.setAttribute('normal',new THREE.Float32BufferAttribute(riv.n,3));
-  G.rivers=new THREE.Mesh(rg,new THREE.MeshPhongMaterial({color:0x2e6ea0,transparent:true,opacity:0.95,shininess:110,specular:0x99bbcc,
-    polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));
+  // rivers: smoothed, level-across water surfaces with pale shallows at the banks
+  const riv=newAcc();
+  for(const st of riverStrips())
+    strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>st.ys[k],
+      col:(k,j)=>j===2?0x2b5a7e:(j===1||j===3)?0x356a8f:0x5b8ea8});
+  G.rivers=accMesh(riv,new THREE.MeshPhongMaterial({vertexColors:true,transparent:true,opacity:0.94,shininess:90,specular:0x10181e,
+    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));
   scene.add(G.rivers);
   rebuildRoadMesh();
-  // bridges
-  const bg=new THREE.BoxGeometry(1,1,1);
-  G.bridges=new THREE.InstancedMesh(bg,new THREE.MeshLambertMaterial({color:0x7d6748}),Math.max(1,W.bridges.length));
-  W.bridges.forEach((b,i)=>setInst(G.bridges,i,b.x,hAt(b.x,b.z)+1.6,b.z,0,26,2.2,9));
-  G.bridges.instanceMatrix.needsUpdate=true;
-  scene.add(G.bridges);
 }
 let lastSeasonKey='';
 function updateTerrainColors(si,blend){
+  if(!G.tvar){const nv=makeNoise(SEED^0x7A11);G.tvar=new Float32Array(GRID*GRID);
+    for(let i=0;i<GRID*GRID;i++){const cx=i%GRID,cz=(i/GRID)|0;G.tvar[i]=clamp((fbm(nv,cx/26,cz/26,3,2,0.5)-0.5)*3,-1,1);}}
   const sp0=PAL.seasons[si],sp1=PAL.seasons[(si+1)%4];
   const snowT=si===3?0.85:(si===0?Math.max(0,0.5-blend*2)*0.8:0);
   const key=si+'_'+(blend*8|0)+'_'+(W.drought?1:0);
@@ -1142,18 +1370,14 @@ function updateTerrainColors(si,blend){
     }
     col.setXYZ(i,r/ws,g/ws,b/ws);
   }
-  // crisp overlays AFTER the blur: rivers stay blue, roads stay packed earth
-  const riverC=new THREE.Color(0x3a6d8e).lerp(new THREE.Color(0xcfdae2),snowT>0.5?0.5:0);
-  const roadC=new THREE.Color(0x8a7448);
-  for(let i=0;i<N;i++){
-    if(W.water[i]===2){
-      col.setXYZ(i,riverC.r,riverC.g,riverC.b);
-    }else if(W.roadCells[i]){
-      C1.setRGB(col.getX(i),col.getY(i),col.getZ(i)).lerp(roadC,0.85);
-      col.setXYZ(i,C1.r,C1.g,C1.b);
-    }
+  // river cells: darker wet banks under the water strip (painting them blue made blocky diamonds;
+  // roads are real meshes now, so the ground under them is left alone)
+  const bankC=new THREE.Color(snowT>0.5?0x9aa39a:0x4d6a3c);
+  for(let i=0;i<N;i++)if(W.water[i]===2){
+    C1.setRGB(col.getX(i),col.getY(i),col.getZ(i)).lerp(bankC,0.55);col.setXYZ(i,C1.r,C1.g,C1.b);
   }
   col.needsUpdate=true;
+  recolorFields(si,blend,snowT);
   // trees seasonal tint
   if(G.decid){
     const dc=new THREE.Color([0x40682f,0x4a6c2e,0x96541e,0x5e5344][si]);
@@ -1164,7 +1388,7 @@ function updateTerrainColors(si,blend){
 
 /* ---------------- trees --------------------------------------------------- */
 function buildTrees(){
-  const trunk=new THREE.CylinderGeometry(0.5,0.8,3.2,5);trunk.translate(0,1.6,0);
+  const trunk=new THREE.CylinderGeometry(0.5,0.8,3.2,5,1,true);trunk.translate(0,1.6,0);
   const blob=new THREE.IcosahedronGeometry(3.4,0);blob.translate(0,5.4,0);blob.scale(1,1.15,1);
   const decidG=mergeGeoms([[trunk,new THREE.Matrix4()],[blob,new THREE.Matrix4()]]);
   const cone=new THREE.ConeGeometry(2.6,7.5,6);cone.translate(0,5.2,0);
@@ -1174,18 +1398,20 @@ function buildTrees(){
   for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
     const i=cIdx(cx,cz),bio=W.biome[i];
     if(bio!==B.FOREST&&bio!==B.PINE)continue;
-    if(W.settlements.some(s=>dist2d(cellX(cx),cellZ(cz),s.pos.x,s.pos.z)<s.radius*0.8))continue;
+    if(W.roadCells[i]||W.settlements.some(s=>dist2d(cellX(cx),cellZ(cz),s.pos.x,s.pos.z)<(s.wallR||s.radius)*1.5))continue;
     const dens=bio===B.FOREST?3:2;
     for(let t=0;t<dens;t++){
       const x=cellX(cx)+ (nj(cx*3+t*7,cz*3)-0.5)*CELL*1.4, z=cellZ(cz)+(nj(cx*3,cz*3+t*13)-0.5)*CELL*1.4;
       const arr=bio===B.FOREST?spots.dec:spots.pine;
-      if(arr.length<7000)arr.push({x,z,s:1.0+nj(cx+t,cz-t)*1.0});
+      arr.push({x,z,s:0.8+nj(cx+t,cz-t)*1.2,v:nj(cx*5+t,cz*5-t)});
     }
   }
+  // thin evenly to the instance budget (capping in scan order used to plant only the northern forests)
+  for(const k of['dec','pine']){const a=spots[k],cap=9000;if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
   G.decid=new THREE.InstancedMesh(decidG,new THREE.MeshLambertMaterial({color:0x4c7a3c}),Math.max(1,spots.dec.length));
   G.pine=new THREE.InstancedMesh(pineG,new THREE.MeshLambertMaterial({color:0x2e5138}),Math.max(1,spots.pine.length));
-  spots.dec.forEach((t,i)=>setInst(G.decid,i,t.x,hAt(t.x,t.z),t.z,t.x,t.s,t.s,t.s));
-  spots.pine.forEach((t,i)=>setInst(G.pine,i,t.x,hAt(t.x,t.z),t.z,t.x,t.s,t.s*1.1,t.s));
+  spots.dec.forEach((t,i)=>{setInst(G.decid,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(0.9+t.v*0.3),t.s);G.decid.setColorAt(i,C1.setRGB(0.82+t.v*0.3,0.86+t.v*0.26,0.8+t.v*0.2));});
+  spots.pine.forEach((t,i)=>{setInst(G.pine,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(1+t.v*0.4),t.s);G.pine.setColorAt(i,C1.setRGB(0.85+t.v*0.2,0.88+t.v*0.2,0.86+t.v*0.2));});
   G.decid.instanceMatrix.needsUpdate=true;G.pine.instanceMatrix.needsUpdate=true;
   G.decid.castShadow=G.pine.castShadow=true;
   scene.add(G.decid);scene.add(G.pine);
@@ -1212,68 +1438,284 @@ function buildBuildings(){
   G.bodies=new THREE.InstancedMesh(body,new THREE.MeshLambertMaterial({}),Math.max(1,N+400));
   const roofG=gableGeom();
   G.roofs=new THREE.InstancedMesh(roofG,new THREE.MeshLambertMaterial({}),Math.max(1,N+400));
-  const spire=new THREE.ConeGeometry(0.5,1,6);spire.translate(0,0.5,0);
-  G.spires=new THREE.InstancedMesh(spire,new THREE.MeshLambertMaterial({color:0x5c626e}),64);
-  G.spireCount=0;
-  G.bodies.castShadow=G.roofs.castShadow=true;G.bodies.receiveShadow=true;
+  G.bodies.castShadow=G.roofs.castShadow=true;G.bodies.receiveShadow=G.roofs.receiveShadow=true;
   for(let i=0;i<G.bldList.length;i++){G.bldList[i].idx=i;updateBuildingInstance(G.bldList[i]);}
   for(let i=N;i<N+400;i++){setInst(G.bodies,i,0,-500,0,0,0.01,0.01,0.01);setInst(G.roofs,i,0,-500,0,0,0.01,0.01,0.01);}
-  G.bodies.count=G.roofs.count=N+400;
+  G.bodies.count=G.roofs.count=N; // draw only real buildings; the spare slots are for growth
   G.bodies.instanceMatrix.needsUpdate=true;G.roofs.instanceMatrix.needsUpdate=true;
-  scene.add(G.bodies);scene.add(G.roofs);scene.add(G.spires);
-  // walls
-  const wallSegs=[];
-  for(const s of W.settlements)if(s.wallSegs)for(const w of s.wallSegs)wallSegs.push(w);
-  const wg=new THREE.BoxGeometry(1,1,1);wg.translate(0,0.5,0);
-  G.walls=new THREE.InstancedMesh(wg,new THREE.MeshLambertMaterial({color:0xa39a8c}),Math.max(1,wallSegs.length));
-  wallSegs.forEach((w,i)=>setInst(G.walls,i,w.x,w.y-1,w.z,w.rot,13.5,8,3));
-  G.walls.instanceMatrix.needsUpdate=true;G.walls.castShadow=true;
-  scene.add(G.walls);
-  // mill wheels
+  scene.add(G.bodies);scene.add(G.roofs);
+  // detail props: chimneys, bell towers & spires, keep turrets, wells, market stalls
+  const cap=(N+400)*2+600;
+  const box=new THREE.BoxGeometry(1,1,1);box.translate(0,0.5,0);
+  const cyl=new THREE.CylinderGeometry(0.5,0.5,1,10);cyl.translate(0,0.5,0);
+  const cone=new THREE.ConeGeometry(0.5,1,10);cone.translate(0,0.5,0);
+  const pyr=new THREE.ConeGeometry(0.5,1,4);pyr.rotateY(Math.PI/4);pyr.translate(0,0.5,0);
+  G.det={};
+  for(const[k,g,n]of[['box',box,cap],['cyl',cyl,800],['cone',cone,800],['pyr',pyr,600]]){
+    const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),n);
+    m.castShadow=true;m.receiveShadow=true;m.frustumCulled=false;scene.add(m);G.det[k]=m;
+  }
+  rebuildDetails();
+  rebuildWalls();
+  // mill wheels turn on the building's side, aligned with it
   G.wheels=[];
   for(const s of W.settlements)if(s.mill){
-    const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1,10),new THREE.MeshLambertMaterial({color:0x6e5636}));
-    wh.rotation.z=Math.PI/2;wh.position.set(s.mill.x+s.mill.w*0.7,s.mill.y+3,s.mill.z);
-    scene.add(wh);G.wheels.push(wh);
+    const b=s.mill,grp=new THREE.Group();
+    const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1.2,12),new THREE.MeshLambertMaterial({color:0x6e5636}));
+    wh.rotation.z=Math.PI/2;wh.position.set(b.w/2+0.9,3.2,0);grp.add(wh);
+    grp.position.set(b.x,b.y0,b.z);grp.rotation.y=b.rot;
+    scene.add(grp);G.wheels.push(wh);
   }
 }
+function hash01(n){const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
+const ROOFS=[[0x9a8352,0x8a7444,0xa38c58],[0x8e4a32,0x7d5636,0x9a5a3a],[0x55606e,0x5f5a57,0x8f4a34]]; // thatch · tile/shingle · slate/tile
 function updateBuildingInstance(b){
   const i=b.idx;if(i===undefined)return;
+  G.detDirty=true;
   let h=b.h,col,roofCol;
+  const hue=b.hue??hash01(i);
   if(b.state==='burning'){col=0x4a3020;roofCol=0x30201a;}
-  else if(b.state==='ruin'||b.state==='rubble'){col=0x3a3430;roofCol=0x2c2824;h=b.h*0.35;}
-  else{col=PAL.tierWall[b.tier];roofCol=PAL.tierRoof[b.tier];
-    if(b.arch==='temple'){col=0xcfc7b4;}
-    if(b.arch==='keep'||b.arch==='tower'){col=0x9a948a;}}
-  setInst(G.bodies,i,b.x,b.y,b.z,b.rot,b.w,h,b.d);
-  G.bodies.setColorAt(i,C1.setHex(col));
+  else if(b.state==='ruin'||b.state==='rubble'){col=0x4a443e;roofCol=0x2c2824;h=b.h*0.35;}
+  else{col=PAL.tierWall[b.tier];roofCol=ROOFS[b.tier][Math.floor(hue*3)%3];
+    if(b.arch==='temple'){col=0xd6ceba;roofCol=0x4f5866;}
+    if(b.arch==='keep'||b.arch==='tower'){col=0x9a948a;roofCol=0x4f5866;}
+    if(b.arch==='smithy')roofCol=0x5a5048;}
+  const y0=b.y0??b.y-0.5;
+  setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
+  C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
+  G.bodies.setColorAt(i,C1);
   const ruined=b.state==='ruin'||b.state==='rubble';
   if(b.roof===0&&!ruined){
-    setInst(G.roofs,i,b.x,b.y+h,b.z,b.rot,b.w*1.18,h*0.62,b.d*1.18);
+    setInst(G.roofs,i,b.x,b.y+h,b.z,b.rot,b.w*1.1,h*0.62,b.d*1.16);
   }else if(b.roof===2&&!ruined){
-    setInst(G.roofs,i,b.x,b.y+h,b.z,b.rot,b.w*1.1,h*0.9,b.d*1.1);
+    setInst(G.roofs,i,b.x,b.y+h,b.z,b.rot,b.w*1.06,h*0.8,b.d*1.06);
   }else{
     setInst(G.roofs,i,0,-500,0,0,0.01,0.01,0.01);
   }
-  G.roofs.setColorAt(i,C1.setHex(roofCol));
+  C1.setHex(roofCol);if(b.state==='sound')C1.offsetHSL(0,0,(hash01(i+3)-0.5)*0.08);
+  G.roofs.setColorAt(i,C1);
   G.bodies.instanceMatrix.needsUpdate=true;G.roofs.instanceMatrix.needsUpdate=true;
   if(G.bodies.instanceColor)G.bodies.instanceColor.needsUpdate=true;
   if(G.roofs.instanceColor)G.roofs.instanceColor.needsUpdate=true;
 }
-function addBuildingLive(s){ // growth: new building appears
-  const dirs=[rand('sim')*Math.PI*2,rand('sim')*Math.PI*2,rand('sim')*Math.PI*2];
-  for(let t=0;t<30;t++){
-    const dir=pick('sim',dirs),d=s.radius*0.4+rand('sim')*s.radius*0.75;
-    const x=s.pos.x+Math.cos(dir)*d,z=s.pos.z+Math.sin(dir)*d;
-    const ci=toCell(x),cj=toCell(z);
-    if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.3)continue;
-    if(s.buildings.some(b=>dist2d(x,z,b.x,b.z)<11))continue;
-    const arch=pick('sim',['house','house','house','shop','longhouse']);
-    const a=ARCH[arch];
-    const b={arch,tier:chance('sim',0.3)?1:0,x,z,rot:dir,w:a[0],d:a[1],h:a[2],roof:a[3],
-      district:'residential',state:'sound',s,y:hAt(x,z),burnT:0,rebuildT:0,idx:G.bldList.length};
-    if(b.idx>=G.bodies.count)return null;
-    s.buildings.push(b);G.bldList.push(b);
+function rebuildDetails(){
+  G.detDirty=false;
+  const cnt={box:0,cyl:0,cone:0,pyr:0};
+  const put=(k,x,y,z,ry,sx,sy,sz,col)=>{const m=G.det[k];if(cnt[k]>=m.instanceMatrix.count)return;setInst(m,cnt[k],x,y,z,ry,sx,sy,sz);m.setColorAt(cnt[k]++,C1.setHex(col));};
+  const at=(b,ox,oz)=>{const c=Math.cos(b.rot),sn=Math.sin(b.rot);return[b.x+ox*c+oz*sn,b.z-ox*sn+oz*c];};
+  for(const b of G.bldList){
+    if(b.state!=='sound')continue;
+    const h=b.h,hu=b.hue??0.5;
+    if(['house','longhouse','shop','tavern','smithy'].includes(b.arch)){
+      const[x,z]=at(b,b.w*(hu>0.5?0.3:-0.3),b.d*0.16);
+      const base=b.y+h*0.6,top=b.y+h+h*0.62*0.72+1.1,sz=b.arch==='smithy'?1.8:1.1;
+      put('box',x,base,z,b.rot,sz,top-base,sz,b.arch==='smithy'?0x4d4640:(b.tier===0?0x857a6c:0x7a5a48));
+    }else if(b.arch==='temple'){ // bell tower at the west end, with a spire
+      const tw=b.w*0.44,[x,z]=at(b,0,-b.d/2-tw*0.15),top=b.y+h*1.85;
+      put('box',x,b.y0,z,b.rot,tw,top-b.y0,tw,0xd2cab6);
+      put('pyr',x,top,z,b.rot,tw*1.35,h*1.25,tw*1.35,0x4f5866);
+    }else if(b.arch==='keep'){ // corner turrets with conical caps
+      for(const[sx,sz]of[[1,1],[-1,1],[-1,-1],[1,-1]]){
+        const[x,z]=at(b,sx*b.w/2,sz*b.d/2),top=b.y+h*1.22;
+        put('cyl',x,b.y0,z,0,6.4,top-b.y0,6.4,0x958f85);
+        put('cone',x,top,z,0,7.6,6.5,7.6,0x4f5866);
+      }
+      const[x,z]=at(b,0,0);put('box',x,b.y+h,z,b.rot,b.w*0.5,6,b.d*0.4,0x8f897f); // the donjon's upper stage
+    }else if(b.arch==='granary'){
+      const[x,z]=at(b,0,0);put('pyr',x,b.y+h+h*0.62,z,b.rot,2.4,2.6,2.4,0x8a7444);
+    }
+  }
+  for(const s of W.settlements){ // the well and market stalls on each square
+    if(!s.plazaR)continue;
+    const y=hAt(s.pos.x,s.pos.z);
+    put('cyl',s.pos.x,y-0.5,s.pos.z,0,3.4,1.6,3.4,0x8f887a);
+    put('pyr',s.pos.x,y+3,s.pos.z,0,4.2,1.8,4.2,0x7d5636);
+    if(s.kind==='village')continue;
+    const n=s.kind==='capital'?12:7,awn=[0xa8452f,0x3e5f8a,0xc4a24a,0x5b7a3a,0xe0d6bd];
+    for(let k=0;k<n;k++){
+      const a=k/n*Math.PI*2+0.3,r=s.plazaR*0.62,x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r,yy=hAt(x,z);
+      const ry=-a;
+      put('box',x,yy,z,ry,2.2,1.1,3,0x7a6246);
+      put('box',x,yy+2.3,z,ry,2.8,0.25,3.6,awn[(k*3+s.name.length)%awn.length]);
+    }
+  }
+  for(const k in G.det){
+    const m=G.det[k];m.count=cnt[k]; // unused slots are simply not drawn
+    m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;
+  }
+}
+/* ---------------- town walls: one continuous curtain per town ------------
+   Curtain runs follow the wall line and the ground, broken only by water and
+   by gates where streets and roads pass out; towers stand at every gate and
+   at intervals, a gatehouse spans each gate, merlons crown stone walls. */
+function wallGates(s){
+  const g=[],wr=s.wallR,c=s.pos;
+  const scan=p=>{for(let i=1;i<p.length;i++){
+    const d0=dist2d(p[i-1].x,p[i-1].z,c.x,c.z)-wr,d1=dist2d(p[i].x,p[i].z,c.x,c.z)-wr;
+    if(d0*d1<=0&&d0!==d1){const f=d0/(d0-d1);const x=lerp(p[i-1].x,p[i].x,f),z=lerp(p[i-1].z,p[i].z,f);
+      const a=Math.atan2(z-c.z,x-c.x);if(g.every(o=>Math.abs(Math.atan2(Math.sin(a-o),Math.cos(a-o)))>0.04))g.push(a);}}};
+  for(const st of s.streets||[])scan(st.pts);
+  for(const r of W.roads)if(r.a===W.settlements.indexOf(s)||r.b===W.settlements.indexOf(s))scan(r.path);
+  return g;
+}
+function rebuildWalls(){
+  if(G.wallGrp){scene.remove(G.wallGrp);disposeTree(G.wallGrp);}
+  const grp=new THREE.Group(),acc=newAcc(),inst={merlon:[],tower:[],cap:[],gate:[]};
+  const quad=(a,b,c,d,n,col)=>{ // a,b,c,d counter-clockwise seen from the normal's side
+    const base=acc.p.length/3;
+    for(const v of[a,b,c,d]){acc.p.push(v[0],v[1],v[2]);acc.n.push(n[0],n[1],n[2]);C1.setHex(col);acc.c.push(C1.r,C1.g,C1.b);}
+    acc.i.push(base,base+1,base+2,base,base+2,base+3);
+  };
+  for(const s of W.settlements){
+    if(!(s.walls>0))continue;
+    const stone=s.walls>=2,wr=s.wallR||((s.coreR||70)+14),c=s.pos;
+    const H=stone?7.5:5,T=stone?2.6:1.3,col=stone?0xa59c8d:0x6e5334;
+    const gates=wallGates(s),gh=7.5/wr;
+    const N=Math.max(24,Math.round(wr*2*Math.PI/4));
+    const ok=[];
+    for(let i=0;i<N;i++){
+      const a=i/N*Math.PI*2,x=c.x+Math.cos(a)*wr,z=c.z+Math.sin(a)*wr,ci=toCell(x),cj=toCell(z);
+      ok.push(!W.water[cIdx(ci,cj)]&&slopeAt(ci,cj)<0.6&&gates.every(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))>gh));
+    }
+    let st=ok.indexOf(false);const loop=st<0;if(loop)st=0;
+    const runs=[];let run=[];
+    for(let k=0;k<=N;k++){
+      const i=(st+k)%N;
+      if(ok[i])run.push(i);
+      if(!ok[i]||k===N){if(run.length>1)runs.push(run);run=[];}
+    }
+    if(loop&&runs.length)runs[0].push(runs[0][0]); // unbroken ring: close it
+    for(const rn of runs){
+      const P=rn.map(i=>{const a=i/N*Math.PI*2;return{a,x:c.x+Math.cos(a)*wr,z:c.z+Math.sin(a)*wr};});
+      P.forEach(p=>{p.g=hAt(p.x,p.z);p.top=p.g+H;p.ox=Math.cos(p.a);p.oz=Math.sin(p.a);});
+      for(let k=0;k<P.length-1;k++){
+        const p=P[k],q=P[k+1],h2=T/2,sh=0.93+hash01(k+s.name.length)*0.07;
+        const cc=new THREE.Color(col).multiplyScalar(sh).getHex();
+        const O=(v,y)=>[v.x+v.ox*h2,y,v.z+v.oz*h2],I=(v,y)=>[v.x-v.ox*h2,y,v.z-v.oz*h2];
+        const mo=[(p.ox+q.ox)/2,0,(p.oz+q.oz)/2];
+        quad(O(p,p.g-2.5),O(q,q.g-2.5),O(q,q.top),O(p,p.top),mo,cc);                 // outer face
+        quad(I(q,q.g-2.5),I(p,p.g-2.5),I(p,p.top),I(q,q.top),[-mo[0],0,-mo[2]],cc);  // inner face
+        quad(O(p,p.top),O(q,q.top),I(q,q.top),I(p,p.top),[0,1,0],new THREE.Color(cc).multiplyScalar(0.9).getHex()); // wall-walk
+        if(stone){ // merlons along the outer parapet
+          const L=dist2d(p.x,p.z,q.x,q.z);
+          for(let t=1;t<L;t+=3.2){const f=t/L;inst.merlon.push([lerp(p.x,q.x,f)+p.ox*(h2-0.5),lerp(p.top,q.top,f),lerp(p.z,q.z,f)+p.oz*(h2-0.5),-Math.atan2(q.z-p.z,q.x-p.x)]);}
+        }
+      }
+      // end caps where a run stops (gates, water)
+      if(!(loop&&runs.length===1)){
+        for(const[e,sg]of[[P[0],-1],[P[P.length-1],1]]){
+          const tx=-e.oz*sg,tz=e.ox*sg,h2=T/2;
+          quad([e.x-e.ox*h2,e.g-2.5,e.z-e.oz*h2],[e.x+e.ox*h2,e.g-2.5,e.z+e.oz*h2],[e.x+e.ox*h2,e.top,e.z+e.oz*h2],[e.x-e.ox*h2,e.top,e.z-e.oz*h2],[tx,0,tz],col);
+        }
+      }
+      // towers: at both ends of every run, and every ~45 m along it
+      const every=Math.max(1,Math.round((stone?45:60)/(2*Math.PI*wr/N)));
+      P.forEach((p,k)=>{if(k===0||k===P.length-1||k%every===0)inst.tower.push([p.x,p.g,p.z,stone,H]);});
+    }
+    // gatehouses spanning each gate
+    for(const g of gates){
+      const x=c.x+Math.cos(g)*wr,z=c.z+Math.sin(g)*wr,ci=toCell(x),cj=toCell(z);
+      if(W.water[cIdx(ci,cj)])continue;
+      inst.gate.push([x,hAt(x,z),z,g,stone,H,wr*gh*2]);
+    }
+  }
+  const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true}));
+  mesh.castShadow=true;mesh.receiveShadow=true;grp.add(mesh);
+  const bx=new THREE.BoxGeometry(1,1,1);bx.translate(0,0.5,0);
+  const cy=new THREE.CylinderGeometry(0.5,0.56,1,10);cy.translate(0,0.5,0);
+  const cn=new THREE.ConeGeometry(0.5,1,10);cn.translate(0,0.5,0);
+  const mk=(g,n)=>{const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),Math.max(1,n));m.castShadow=true;m.receiveShadow=true;grp.add(m);return m;};
+  const mer=mk(bx,inst.merlon.length);
+  inst.merlon.forEach((v,i)=>{setInst(mer,i,v[0],v[1],v[2],v[3],1.4,1.3,0.9);mer.setColorAt(i,C1.setHex(0xa39a8b));});
+  const tw=mk(cy,inst.tower.length),tc=mk(cn,inst.tower.length);
+  inst.tower.forEach((v,i)=>{
+    const[x,g,z,stone,H]=v,r=stone?9:4.2,top=g+H+(stone?5:2.5);
+    setInst(tw,i,x,g-2.5,z,0,r,top-g+2.5,r);tw.setColorAt(i,C1.setHex(stone?0x9c9384:0x6a4f32));
+    setInst(tc,i,x,top,z,0,r*1.25,stone?7:3,r*1.25);tc.setColorAt(i,C1.setHex(stone?0x4f5866:0x5e4a30));
+  });
+  const gt=mk(bx,inst.gate.length*2);let gi=0;
+  inst.gate.forEach(v=>{
+    const[x,g,z,a,stone,H,span]=v,ry=-Math.atan2(Math.cos(a),-Math.sin(a));
+    setInst(gt,gi,x,g+H-1,z,ry,span+4,3.6,(stone?2.6:1.3)+1.2);gt.setColorAt(gi++,C1.setHex(stone?0x958c7e:0x5f472d));
+    setInst(gt,gi,x,g+H+2.6,z,ry,span+2,1.2,(stone?2.6:1.3)+0.6);gt.setColorAt(gi++,C1.setHex(stone?0x4f5866:0x7d6441));
+  });
+  for(const m of[mer,tw,tc,gt]){m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
+  G.wallGrp=grp;scene.add(grp);
+}
+/* ---------------- fields: strip-farmed parcels between the lanes ---------- */
+const FIELDCOL={ // spring, summer, autumn, winter
+  wheat:[0x7ea24c,0xcdb05a,0x9c7c47,0xd4d8db],green:[0x6c9a45,0x7c9c46,0x86804a,0xced2d5],
+  plough:[0x7b6245,0x8f8c4e,0x6d5337,0xcbced0],fallow:[0x8a9a55,0x9f9c5c,0x8d7d50,0xd1d4d7]};
+function buildFields(){
+  const acc=newAcc(),meta=[],taken=makeHash(80);
+  for(const s of W.settlements){
+    if(!s._lay)continue;
+    const rng=layoutRng(1000+W.settlements.indexOf(s)),rr=()=>rng();
+    const inner=(s.wallR||s.coreR+14)+28,outer=inner+(s.kind==='capital'?330:s.kind==='town'?240:160);
+    for(let rad=inner+45;rad<outer;rad+=90){
+      const nA=Math.floor(2*Math.PI*rad/50);
+      for(let k=0;k<nA;k++){
+        const a=(k+rr()*0.3)/nA*Math.PI*2,rd=rad+(rr()-0.5)*14;
+        const x=s.pos.x+Math.cos(a)*rd,z=s.pos.z+Math.sin(a)*rd;
+        const W2=42+rr()*6,L=80+rr()*10,rot=-Math.atan2(Math.cos(a),-Math.sin(a))+(rr()<0.3?Math.PI/2:0);
+        const cs=obbCorners(x,z,W2,L,rot);
+        let good=true;
+        for(const q of[...cs,{x,z}]){
+          const ci=toCell(q.x),cj=toCell(q.z),i=cIdx(ci,cj),bio=W.biome[i];
+          if(W.water[i]||slopeAt(ci,cj)>0.22||(bio!==B.FARM&&bio!==B.MEADOW)){good=false;break;}
+          for(const g of s._lay.segH.near(q.x,q.z,34))if(segDist(q.x,q.z,g.a,g.b)<g.hw+30){good=false;break;}
+          if(!good)break;
+          if(W.settlements.some(o=>o!==s&&dist2d(q.x,q.z,o.pos.x,o.pos.z)<(o.wallR||o.radius)+30))good=false;
+          for(const r of W.roads)for(let j=0;j<r.path.length&&good;j+=2)if(dist2d(q.x,q.z,r.path[j].x,r.path[j].z)<24)good=false;
+          if(!good)break;
+        }
+        if(!good)continue;
+        const F={x,z,w:W2+2,d:L+2,rot};
+        if([...taken.near(x,z,70)].some(o=>obbOverlap(F,o)))continue;
+        taken.add(F,70);
+        // five furrow strips along the parcel, draped on the ground
+        const type=['wheat','wheat','green','plough','fallow'][Math.floor(rr()*5)],strips=5,segs=6;
+        const c=Math.cos(rot),sn=Math.sin(rot),base=acc.p.length/3;
+        for(let u=0;u<=segs;u++)for(let v=0;v<=strips;v++){
+          const lx=(v/strips-0.5)*W2,lz=(u/segs-0.5)*L;
+          const px=x+lx*c+lz*sn,pz=z-lx*sn+lz*c;
+          acc.p.push(px,hAt(px,pz)+0.35,pz);const nn=terrNormal(px,pz);acc.n.push(nn[0],nn[1],nn[2]);acc.c.push(0,0,0);
+          meta.push(type,(v===0||v===strips||u===0||u===segs)?2:v%2); // 2 = hedgerow edge
+        }
+        for(let u=0;u<segs;u++)for(let v=0;v<strips;v++){
+          const i0=base+u*(strips+1)+v,i1=i0+1,i2=i0+strips+1,i3=i2+1;
+          acc.i.push(i0,i2,i1,i1,i2,i3);
+        }
+      }
+    }
+  }
+  if(!acc.i.length)return;
+  G.fields=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,
+    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  G.fields.receiveShadow=true;G.fieldMeta=meta;
+  scene.add(G.fields);
+}
+function recolorFields(si,blend,snowT){
+  if(!G.fields)return;
+  const col=G.fields.geometry.attributes.color,m=G.fieldMeta,c0=new THREE.Color(),c1=new THREE.Color(),dr=new THREE.Color(0xb3a35c);
+  for(let i=0;i<col.count;i++){
+    const t=FIELDCOL[m[i*2]];c0.setHex(t[si]).lerp(c1.setHex(t[(si+1)%4]),blend*blend);
+    if(W.drought&&m[i*2]!=='plough')c0.lerp(dr,0.5);
+    c0.multiplyScalar(m[i*2+1]===2?0.62:m[i*2+1]?0.84:0.92); // hedged edges, alternate furrows
+    col.setXYZ(i,c0.r,c0.g,c0.b);
+  }
+  col.needsUpdate=true;
+}
+function addBuildingLive(s){ // growth: take the next frontage lot in the queue (street gaps, then outward)
+  const L=s._lay;if(!L||!s.growSlots)return null;
+  for(let t=0;t<14&&s.growSlots.length;t++){
+    const c=s.growSlots.shift();
+    const arch=pick('sim',['house','house','house','shop','longhouse']),tier=chance('sim',0.3)?1:0;
+    const f=frontFoot(c,arch,tier,()=>rand('sim'));
+    if(!L.fits(f,dist2d(c.mx,c.mz,s.pos.x,s.pos.z)<s.coreR?1:2.6))continue;
+    if(G.bldList.length>=G.bodies.instanceMatrix.count)return null;
+    const b=L.place(arch,tier,f,'residential');
+    b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;
     updateBuildingInstance(b);
     return b;
   }
@@ -1305,6 +1747,8 @@ function buildLabels(){
   // keep banner with crown sigil
   G.banners=[];
   const cap=W.capital;
+  const keep=cap&&cap.buildings.find(b=>b.arch==='keep');
+  if(keep)cap.keepPos.y=keep.y+keep.h-14; // banner flies just above the donjon
   if(cap&&cap.keepPos){
     const tex=new THREE.CanvasTexture(makeSigil(W.houses[0].sigilHue,W.houses[0].charge));
     const bn=new THREE.Mesh(new THREE.PlaneGeometry(8,10),new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}));
@@ -1532,6 +1976,9 @@ function updateCamera(dt,now){
   }
   camera.position.set(px,py,pz);
   camera.lookAt(fx,fy,fz);
+  // a near plane of 2 m at map altitude starved the depth buffer: rivers and roads flickered into dashes
+  const nr=clamp(d*0.02,1,60);
+  if(Math.abs(nr-camera.near)>camera.near*0.08){camera.near=nr;camera.updateProjectionMatrix();}
 }
 function agentPos(t){
   if(t.pos&&t.pos.x!==undefined&&!t.path)return {x:t.pos.x,y:(t.pos.y??hAt(t.pos.x,t.pos.z))+20,z:t.pos.z};
@@ -2856,7 +3303,7 @@ function tickGrowth(){
         const b=pick('sim',ups);
         b.tier++;
         const a=ARCH[b.arch];
-        b.w=a[0]*(0.85+b.tier*0.15);b.d=a[1]*(0.85+b.tier*0.15);b.h=a[2]*(0.8+b.tier*0.25);
+        b.h=a[2]*(0.8+b.tier*0.25); // taller and finer on the same lot (growing the footprint overlapped the neighbours)
         updateBuildingInstance(b);
         if(chance('sim',0.04))
           emit('trade',3,s.pos,`A ${a[4]} in ${s.name} is rebuilt in ${b.tier===2?'good stone':'timber and plaster'}; the street is the finer for it.`);
@@ -2936,10 +3383,13 @@ function doAct(act,p){
         const rc=cIdx(toCell(x),toCell(z));
         if(!W.water[rc])W.roadCells[rc]=1;
       }
-      W.roads.push({a:si,b:bj,path,len:bd});W.routes={};
+      W.roads.push({a:si,b:bj,path:resample(path,8),len:bd});W.routes={};
       W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});
-      rebuildRoadMesh();lastSeasonKey=''; // show the new track and its ground tint
-      for(let i=0;i<10;i++)addBuildingLive(s);
+      // lay the village out like any other: square, lanes, frontages
+      s.pop=60;layoutSettlement(s);stitchRoads();
+      for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
+      G.bodies.count=G.roofs.count=G.bldList.length;
+      rebuildRoadMesh();
       const sp=makeTextSprite(s.name,1.6);sp.position.set(p.x,s.pos.y+90,p.z);scene.add(sp);G.labels.push(sp);
       const m=new THREE.Mesh(new THREE.SphereGeometry(60,8,6),new THREE.MeshBasicMaterial({visible:false}));
       m.position.set(p.x,s.pos.y+18,p.z);m.userData.pick={type:'settlement',s};scene.add(m);G.pickS.push(m);
@@ -3319,7 +3769,7 @@ function settlementCmd(cmd,si){
   if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
     s.stores.grain+=s.pop*0.4;s.unrest=clamp(s.unrest-6,0,100);emit('trade',3,s.pos,`Royal grain is distributed at the market cross of ${s.name}.`);}
   else if(cmd==='garrison'){if(!pay(400))return;s.garrison+=40;emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
-  else if(cmd==='walls'){if(s.walls>=2||!pay(1500*(s.walls+1)))return;s.walls++;
+  else if(cmd==='walls'){if(s.walls>=2||!pay(1500*(s.walls+1)))return;s.walls++;rebuildWalls();
     emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
   else if(cmd==='seal')sealGates(s,!(s.quarantineUntil>day()));
   else if(cmd==='suppress'){if(!pay(150))return;
@@ -3685,62 +4135,148 @@ function initUI(){
    PARCHMENT MAP — the realm drawn as the chroniclers would draw it
    ========================================================================= */
 function buildMapCanvas(){
-  const S=900,c=document.createElement('canvas');c.width=c.height=S;
+  const S=1000,c=document.createElement('canvas');c.width=c.height=S;
   const g=c.getContext('2d'),px=S/GRID;
-  g.fillStyle='#E9DCC3';g.fillRect(0,0,S,S);
-  const tint={[B.WATER]:'#87a9bd',[B.MARSH]:'#a9b58f',[B.MEADOW]:'#cdd2a2',[B.FARM]:'#dbcf9b',
-    [B.FOREST]:'#96ab7f',[B.PINE]:'#7f987f',[B.ROCK]:'#bdb4a2',[B.SNOW]:'#e6e2d6'};
-  g.globalAlpha=0.62;
-  for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
-    const i=cIdx(cx,cz);
-    if(W.water[i]===2)continue; // rivers drawn as strokes below
-    g.fillStyle=tint[W.biome[i]]||'#cdd2a2';
-    g.fillRect(cx*px,cz*px,px+0.5,px+0.5);
-  }
-  g.globalAlpha=1;
   const mx=(x)=>(x+SIZE/2)/SIZE*S,mz=(z)=>(z+SIZE/2)/SIZE*S;
-  // rivers
-  g.strokeStyle='#5b7f96';g.lineCap='round';g.lineJoin='round';
-  for(const path of W.riverPaths){
-    g.lineWidth=Math.max(1.4,(path[Math.floor(path.length/2)].w||8)*0.16);
-    g.beginPath();g.moveTo(mx(path[0].x),mz(path[0].z));
-    for(const p of path)g.lineTo(mx(p.x),mz(p.z));
-    g.stroke();
+  const rng=layoutRng(777),rr=()=>rng();
+  /* parchment with a little foxing */
+  g.fillStyle='#E9DCC3';g.fillRect(0,0,S,S);
+  for(let i=0;i<2600;i++){g.fillStyle=`rgba(${120+rr()*40|0},${90+rr()*30|0},${50+rr()*20|0},${rr()*0.05})`;g.beginPath();g.arc(rr()*S,rr()*S,1+rr()*7,0,7);g.fill();}
+  /* land tint + hill-shading, drawn per cell into a small image and scaled up smoothly */
+  const img=document.createElement('canvas');img.width=img.height=GRID;const ig=img.getContext('2d'),id=ig.createImageData(GRID,GRID);
+  const tint={[B.MARSH]:[169,181,143],[B.MEADOW]:[214,210,168],[B.FARM]:[222,210,160],[B.FOREST]:[176,190,146],[B.PINE]:[160,178,146],[B.ROCK]:[196,186,166],[B.SNOW]:[236,232,222]};
+  for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
+    const i=cIdx(cx,cz),o=i*4;
+    if(W.water[i]===1){ // sea: paler near the shore
+      let near=9;for(let r=1;r<=8&&near===9;r++)for(let d=-r;d<=r&&near===9;d++)for(const[a,b]of[[d,-r],[d,r],[-r,d],[r,d]])if(inB(cx+a,cz+b)&&!W.water[cIdx(cx+a,cz+b)]){near=r;break;}
+      const t=clamp(near/8,0,1);id.data[o]=lerp(176,138,t);id.data[o+1]=lerp(198,166,t);id.data[o+2]=lerp(200,182,t);id.data[o+3]=255;continue;
+    }
+    const col=tint[W.biome[i]]||tint[B.MEADOW];
+    const hx=W.h[cIdx(Math.max(0,cx-1),cz)]-W.h[cIdx(Math.min(GRID-1,cx+1),cz)],hz=W.h[cIdx(cx,Math.max(0,cz-1))]-W.h[cIdx(cx,Math.min(GRID-1,cz+1))];
+    const sh=clamp(1+(hx+hz)*0.006,0.72,1.18); // light from the north-west
+    id.data[o]=clamp(col[0]*sh,0,255);id.data[o+1]=clamp(col[1]*sh,0,255);id.data[o+2]=clamp(col[2]*sh*0.98,0,255);id.data[o+3]=255;
   }
-  // roads
-  g.strokeStyle='#7a5f3a';g.lineWidth=1.6;g.setLineDash([5,3]);
+  ig.putImageData(id,0,0);
+  g.imageSmoothingEnabled=true;g.globalAlpha=0.85;g.drawImage(img,0,0,S,S);g.globalAlpha=1;
+  /* coastline */
+  g.strokeStyle='rgba(60,80,95,0.55)';g.lineWidth=1.2;
+  for(let cz=1;cz<GRID-1;cz++)for(let cx=1;cx<GRID-1;cx++){
+    const i=cIdx(cx,cz);if(W.water[i]!==1)continue;
+    if(!W.water[cIdx(cx+1,cz)]){g.beginPath();g.moveTo((cx+0.5)*px,cz*px);g.lineTo((cx+0.5)*px,(cz+1)*px);g.stroke();}
+    if(!W.water[cIdx(cx-1,cz)]){g.beginPath();g.moveTo((cx-0.5)*px,cz*px);g.lineTo((cx-0.5)*px,(cz+1)*px);g.stroke();}
+    if(!W.water[cIdx(cx,cz+1)]){g.beginPath();g.moveTo(cx*px,(cz+0.5)*px);g.lineTo((cx+1)*px,(cz+0.5)*px);g.stroke();}
+    if(!W.water[cIdx(cx,cz-1)]){g.beginPath();g.moveTo(cx*px,(cz-0.5)*px);g.lineTo((cx+1)*px,(cz-0.5)*px);g.stroke();}
+  }
+  /* territories: soft washes in each house's colour */
+  for(const s of W.settlements){
+    const h=W.houses[s.owner];if(!h)continue;
+    const col='#'+h.sigilHue[0].toString(16).padStart(6,'0'),R=(s.kind==='capital'?800:s.kind==='town'?600:380)/SIZE*S;
+    const gr=g.createRadialGradient(mx(s.pos.x),mz(s.pos.z),R*0.2,mx(s.pos.x),mz(s.pos.z),R);
+    gr.addColorStop(0,col+'33');gr.addColorStop(1,col+'00');g.fillStyle=gr;g.beginPath();g.arc(mx(s.pos.x),mz(s.pos.z),R,0,7);g.fill();
+  }
+  /* mountains and forests as the old map-makers drew them */
+  const glyphs=[];
+  for(let cz=1;cz<GRID-1;cz+=2)for(let cx=1;cx<GRID-1;cx+=2){
+    const jx=cx+(rr()-0.5)*1.6,jz=cz+(rr()-0.5)*1.6,i=cIdx(Math.round(jx),Math.round(jz)),bio=W.biome[i];
+    if(W.water[i])continue;
+    const nearTown=W.settlements.some(s=>dist2d(cellX(jx),cellZ(jz),s.pos.x,s.pos.z)<(s.wallR||s.radius)+60);
+    if(nearTown)continue;
+    if((bio===B.ROCK||bio===B.SNOW)&&(cx+cz)%4===0)glyphs.push({t:'m',x:jx*px,y:jz*px,s:bio===B.SNOW?1.35:1});
+    else if(bio===B.FOREST&&rr()<0.8)glyphs.push({t:'d',x:jx*px,y:jz*px,s:0.8+rr()*0.4});
+    else if(bio===B.PINE&&rr()<0.8)glyphs.push({t:'p',x:jx*px,y:jz*px,s:0.8+rr()*0.4});
+  }
+  glyphs.sort((a,b)=>a.y-b.y);
+  for(const o of glyphs){
+    const x=o.x,y=o.y,k=o.s;
+    if(o.t==='m'){
+      const w=11*k,h=10*k;
+      g.fillStyle='#e8dcc2';g.beginPath();g.moveTo(x-w,y+2);g.lineTo(x,y-h);g.lineTo(x+w,y+2);g.closePath();g.fill();
+      g.fillStyle='rgba(90,70,50,0.35)';g.beginPath();g.moveTo(x,y-h);g.lineTo(x+w,y+2);g.lineTo(x+w*0.15,y+2);g.closePath();g.fill();
+      g.strokeStyle='#5a4a3a';g.lineWidth=1.1;g.beginPath();g.moveTo(x-w,y+2);g.lineTo(x,y-h);g.lineTo(x+w,y+2);g.stroke();
+      if(k>1.2){g.fillStyle='#fbf7ee';g.beginPath();g.moveTo(x-w*0.3,y-h*0.7);g.lineTo(x,y-h);g.lineTo(x+w*0.3,y-h*0.7);g.closePath();g.fill();}
+    }else if(o.t==='d'){
+      g.strokeStyle='#5a4a3a';g.lineWidth=1;g.beginPath();g.moveTo(x,y+3*k);g.lineTo(x,y);g.stroke();
+      g.fillStyle='#8fa476';g.beginPath();g.arc(x,y-2*k,3.4*k,0,7);g.fill();g.strokeStyle='#4f5a3c';g.lineWidth=0.8;g.stroke();
+    }else{
+      g.fillStyle='#6f8d6d';g.strokeStyle='#3f4f3a';g.lineWidth=0.8;
+      g.beginPath();g.moveTo(x,y-6*k);g.lineTo(x+3.2*k,y+2*k);g.lineTo(x-3.2*k,y+2*k);g.closePath();g.fill();g.stroke();
+    }
+  }
+  /* rivers: smooth, swelling toward the mouth */
+  g.lineCap='round';g.lineJoin='round';
+  for(const st of riverStrips()){
+    const p=st.pts;
+    for(let k=1;k<p.length;k++){
+      g.strokeStyle='#4f7892';g.lineWidth=Math.max(1.1,st.hw[k]*2*S/SIZE*0.9);
+      g.beginPath();g.moveTo(mx(p[k-1].x),mz(p[k-1].z));g.lineTo(mx(p[k].x),mz(p[k].z));g.stroke();
+    }
+  }
+  /* roads: the king's roads as double-lined tracks */
   for(const r of W.roads){
-    g.beginPath();g.moveTo(mx(r.path[0].x),mz(r.path[0].z));
-    for(const p of r.path)g.lineTo(mx(p.x),mz(p.z));
-    g.stroke();
+    const p=resample(r.drawn||r.path,20);if(p.length<2)continue;
+    const line=()=>{g.beginPath();g.moveTo(mx(p[0].x),mz(p[0].z));for(const q of p)g.lineTo(mx(q.x),mz(q.z));g.stroke();};
+    g.strokeStyle='#6d5433';g.lineWidth=3.2;g.setLineDash([]);line();
+    g.strokeStyle='#ead9b6';g.lineWidth=1.6;line();
   }
-  g.setLineDash([]);
-  // dragon lair
+  /* the dragon's peak */
   if(W.dragon&&!W.dragon.dead&&MOD.myth>=1){
-    g.fillStyle='#8a2f22';g.font='italic 13px "IM Fell English",Georgia,serif';g.textAlign='center';
-    g.fillText('✠ here dwells '+W.dragon.name,mx(W.dragon.lair.x),mz(W.dragon.lair.z)-8);
+    const x=mx(W.dragon.lair.x),y=mz(W.dragon.lair.z);
+    g.fillStyle='#8a2f22';g.font='italic 14px "IM Fell English",Georgia,serif';g.textAlign='center';
+    g.strokeStyle='rgba(233,220,195,0.9)';g.lineWidth=3;g.strokeText('here dwells '+W.dragon.name,x,y+22);g.fillText('here dwells '+W.dragon.name,x,y+22);
+    g.font='18px serif';g.fillText('🐉',x,y+4);
   }
-  // settlements + names
+  /* settlements: walled towns, a castle for the capital, clustered roofs for villages */
   g.textAlign='center';
   for(const s of W.settlements){
-    const x=mx(s.pos.x),z=mz(s.pos.z);
-    g.fillStyle='#2B2320';
-    g.beginPath();g.arc(x,z,s.kind==='capital'?6:s.kind==='town'?4.2:2.8,0,7);g.fill();
-    if(s.kind==='capital'){g.strokeStyle='#C9A227';g.lineWidth=2;g.beginPath();g.arc(x,z,9,0,7);g.stroke();}
-    g.font=(s.kind==='capital'?'bold 17px':s.kind==='town'?'15px':'12px')+' "IM Fell English",Georgia,serif';
-    g.strokeStyle='rgba(233,220,195,0.85)';g.lineWidth=3;g.strokeText(s.name,x,z-9);
-    g.fillText(s.name,x,z-9);
+    const x=mx(s.pos.x),y=mz(s.pos.z),rW=(s.wallR||s.radius)/SIZE*S;
+    if(s.walls>0){g.strokeStyle='#3b3029';g.lineWidth=s.walls>=2?2.4:1.4;g.setLineDash(s.walls>=2?[]:[2,2]);g.beginPath();g.arc(x,y,rW,0,7);g.stroke();g.setLineDash([]);}
+    const n=s.kind==='capital'?9:s.kind==='town'?6:3,rr2=s.kind==='village'?3:rW*0.55;
+    for(let k=0;k<n;k++){ // little roofs
+      const a=k/n*Math.PI*2+0.4,hx=x+Math.cos(a)*rr2*(k%2?0.55:1),hy=y+Math.sin(a)*rr2*(k%2?0.55:1);
+      g.fillStyle='#b0674a';g.strokeStyle='#3b3029';g.lineWidth=0.8;
+      g.beginPath();g.rect(hx-2.6,hy-1,5.2,3.6);g.fill();g.stroke();
+      g.beginPath();g.moveTo(hx-3.2,hy-1);g.lineTo(hx,hy-3.8);g.lineTo(hx+3.2,hy-1);g.closePath();g.fillStyle='#7d4632';g.fill();g.stroke();
+    }
+    if(s.kind==='capital'){ // a castle
+      g.fillStyle='#d8cfbd';g.strokeStyle='#2B2320';g.lineWidth=1.2;
+      g.beginPath();g.rect(x-8,y-9,16,11);g.fill();g.stroke();
+      for(const tx of[-9,5]){g.beginPath();g.rect(x+tx,y-14,4,16);g.fill();g.stroke();}
+      g.fillStyle='#8a2f22';g.beginPath();g.moveTo(x-1,y-9);g.lineTo(x-1,y-19);g.lineTo(x+6,y-16.5);g.lineTo(x-1,y-14);g.fill();
+    }else if(s.kind==='town'){
+      g.fillStyle='#d8cfbd';g.strokeStyle='#2B2320';g.lineWidth=1;g.beginPath();g.rect(x-2.5,y-10,5,11);g.fill();g.stroke();
+      g.beginPath();g.moveTo(x-3.5,y-10);g.lineTo(x,y-15);g.lineTo(x+3.5,y-10);g.closePath();g.fillStyle='#5a5f6b';g.fill();g.stroke();
+    }
+    g.font=(s.kind==='capital'?'bold 20px':s.kind==='town'?'17px':'14px')+' "IM Fell English",Georgia,serif';
+    const ly=y-rW-6-(s.kind==='capital'?8:0);
+    g.strokeStyle='rgba(233,220,195,0.92)';g.lineWidth=4;g.strokeText(s.name,x,ly);
+    g.fillStyle='#2B2320';g.fillText(s.name,x,ly);
   }
-  // frame, title, compass
-  g.strokeStyle='#2B2320';g.lineWidth=3;g.strokeRect(8,8,S-16,S-16);
-  g.lineWidth=1;g.strokeRect(14,14,S-28,S-28);
-  g.fillStyle='#E9DCC3';g.fillRect(S/2-170,2,340,34);
-  g.fillStyle='#2B2320';g.font='22px "IM Fell English",Georgia,serif';
-  g.fillText('The Realm of '+W.name,S/2,27);
+  /* compass rose */
+  {const cx=S-78,cy=S-92,R=38;
+    g.save();g.translate(cx,cy);
+    g.strokeStyle='#5a4a3a';g.lineWidth=1;g.beginPath();g.arc(0,0,R*0.72,0,7);g.stroke();g.beginPath();g.arc(0,0,R*0.62,0,7);g.stroke();
+    for(let k=0;k<8;k++){const a=k*Math.PI/4,L=k%2?R*0.55:R;
+      g.save();g.rotate(a);
+      g.fillStyle=k%2?'#c9b58f':'#2B2320';g.beginPath();g.moveTo(0,-L);g.lineTo(L*0.13,0);g.lineTo(0,L*0.1);g.closePath();g.fill();
+      g.fillStyle=k%2?'#e6d8ba':'#8a2f22';g.beginPath();g.moveTo(0,-L);g.lineTo(-L*0.13,0);g.lineTo(0,L*0.1);g.closePath();g.fill();
+      g.restore();}
+    g.fillStyle='#2B2320';g.font='bold 15px "IM Fell English",Georgia,serif';g.textAlign='center';g.fillText('N',0,-R-6);
+    g.restore();}
+  /* scale bar */
+  {const x0=40,y0=S-44,m=1000/SIZE*S;
+    g.fillStyle='#2B2320';for(let k=0;k<2;k++){g.fillStyle=k%2?'#E9DCC3':'#2B2320';g.fillRect(x0+k*m,y0,m,5);}
+    g.strokeStyle='#2B2320';g.lineWidth=1;g.strokeRect(x0,y0,2*m,5);
+    g.font='italic 12px "IM Fell English",Georgia,serif';g.textAlign='left';g.fillStyle='#2B2320';g.fillText('two leagues',x0,y0-5);}
+  /* frame and cartouche */
+  g.strokeStyle='#2B2320';g.lineWidth=4;g.strokeRect(8,8,S-16,S-16);
+  g.lineWidth=1;g.strokeRect(16,16,S-32,S-32);
+  g.strokeStyle='#8a2f22';g.lineWidth=0.8;g.strokeRect(20,20,S-40,S-40);
+  const tw=420;g.fillStyle='#E9DCC3';g.strokeStyle='#2B2320';g.lineWidth=1.5;
+  g.beginPath();g.moveTo(S/2-tw/2,14);g.lineTo(S/2+tw/2,14);g.lineTo(S/2+tw/2-14,34);g.lineTo(S/2+tw/2,54);g.lineTo(S/2-tw/2,54);g.lineTo(S/2-tw/2+14,34);g.closePath();g.fill();g.stroke();
+  g.fillStyle='#2B2320';g.font='26px "IM Fell English",Georgia,serif';g.textAlign='center';
+  g.fillText('The Realm of '+W.name,S/2,43);
   g.font='italic 12px "IM Fell English",Georgia,serif';
-  g.fillText('as the chroniclers know it · seed '+SEED,S/2,S-22);
-  g.font='16px "IM Fell English",Georgia,serif';
-  g.fillText('N',S-40,44);g.beginPath();g.moveTo(S-40,50);g.lineTo(S-40,74);g.moveTo(S-46,58);g.lineTo(S-40,50);g.lineTo(S-34,58);g.stroke();
+  g.fillText('as the chroniclers know it · seed '+SEED,S/2,S-24);
   return c;
 }
 function toggleMap(){
@@ -3825,14 +4361,14 @@ function animateWorld(dt,now){
   const daylight=clamp(el2*1.6+0.12,0.14,1); // nights stay readable, never pitch black
   const eclipseF=W.eclipse>0?0.12:1;
   const overcastF=(W.weather.state==='clear')?1:(W.weather.state==='overcast'?0.72:0.5);
-  G.sun.intensity=1.25*daylight*eclipseF*overcastF;
+  G.sun.intensity=0.98*daylight*eclipseF*overcastF;
   G.sun.position.copy(sunDir).multiplyScalar(2600).add(cam.cur.focus);
   G.sun.target.position.copy(cam.cur.focus);
   G.sun.castShadow=cam.cur.dist<1600&&daylight>0.05;
   const sc=G.sun.shadow.camera,ext=clamp(cam.cur.dist*0.9,220,1200);
   sc.left=-ext;sc.right=ext;sc.top=ext;sc.bottom=-ext;sc.updateProjectionMatrix();
-  G.hemi.intensity=0.2+0.42*daylight*eclipseF;
-  G.amb.intensity=0.18+0.12*daylight;
+  G.hemi.intensity=0.16+0.3*daylight*eclipseF;
+  G.amb.intensity=0.1+0.06*daylight;
   G.sunDisc.position.copy(sunDir).multiplyScalar(11800).add(camera.position);
   G.sunDisc.visible=el2>-0.06;
   G.moonDisc.position.copy(sunDir).multiplyScalar(-11800).add(camera.position);
@@ -4108,6 +4644,7 @@ function animate(t){
   updateCamera(dt,now);
   animateWorld(dt,now);
   W.clock.day=saveDay;
+  if(G.detDirty&&now-(G.detT||0)>0.5){G.detT=now;rebuildDetails();} // chimneys & spires follow fire and rebuilding
   hudT-=dt;
   if(hudT<=0){hudT=0.5;updateHUD();refreshInspect();renderPetition();
     if((uiT=(uiT+1)%2)===0)refreshCrownPanel();}
@@ -4127,7 +4664,7 @@ async function boot(){
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
   initGraphics();
-  buildTerrain();buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildDynamic();
+  buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildDynamic();
   simInit();
   initUI();initInput();
   // opening entries

@@ -74,9 +74,17 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - Deterministic worldgen via seeded `sfc32` RNG with **separate streams** for
   generation and history — intervening in history never changes the map.
 - Worldgen pipeline: fBm terrain with domain warping and a mountain spine →
-  flow-accumulation rivers → biomes → settlement siting → A* king's roads →
-  organic street/building layout (12 archetypes × 3 tiers) → houses, heraldry,
+  flow-accumulation rivers carved as soft valleys → biomes → settlement siting →
+  A* king's roads relaxed into smooth curves → town layout → houses, heraldry,
   and a cast of ~140 named notables.
+- Towns: streets radiate from a paved market square (each king's road enters
+  along its own street) and ring lanes cross them; buildings are packed along
+  the frontages facing the street, densest at the square. Leftover frontage is
+  the growth queue, so towns grow outward along lanes and roads. Walls are one
+  continuous curtain with towers, merlons and gatehouses wherever a street
+  leaves town; strip fields with hedgerows ring each settlement.
+- Roads, streets and rivers are draped, connected strips (verges and ruts,
+  shallows and deep water); bridges span wherever a road meets a river.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →
   Threats → Growth → Chronicle. Every positive feedback loop ships with a
   predator (big treasuries attract dragons and courtly waste; strong houses
