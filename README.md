@@ -32,7 +32,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 | Input | Action |
 |---|---|
 | drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
-| click | inspect settlements, buildings, armies, caravans, the dragon |
+| click | inspect anything: settlements, buildings, armies, caravans, the dragon, walls, roads, streets, rivers, land parcels (tenure, lord, crop, state) |
 | `Space` | pause · `1–4` speeds (up to 30 sim-days/sec) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
@@ -67,7 +67,10 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - **Settlements** (inspector): relief grain, garrison, walls, quarantine,
   suppress unrest.
 - **War**: click a crown host → *Order a march* → click a town. Hosts hold
-  where you send them until released to their captains.
+  where you send them until released to their captains. A host too weak to
+  storm a place raids it instead — burns and occupies its fields for a
+  season, then withdraws with the plunder; taking a town means a siege.
+  Zoomed out, hosts, camps and the dragon show as heraldic badges.
 - **Ambitions & legacy**: eight ambitions (coffers, multitude, concord,
   beloved, ten years' peace, crush a rebellion, slay the dragon, found a
   village) plus two points per year build your dynasty's **legacy** (✦). If

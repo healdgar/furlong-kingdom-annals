@@ -1029,7 +1029,7 @@ function layoutSettlement(s){
     return st;
   };
   const nearStreet=(x,z,pad,skip)=>{let best=null,bd=1e9;
-    for(const g of segH.near(x,z,pad+8)){if(g.st===skip)continue;/* hidden (future) lanes stay reserved too */const d=segDist(x,z,g.a,g.b)-g.hw;if(d<pad&&d<bd){bd=d;best=g;}}return best;};
+    for(const g of segH.near(x,z,pad+8)){if(g.st===skip||g.st.gone)continue; /* a burned-out lane frees its ground *//* hidden (future) lanes stay reserved too */const d=segDist(x,z,g.a,g.b)-g.hw;if(d<pad&&d<bd){bd=d;best=g;}}return best;};
   const inPlace=(x,z,pad)=>s.places.some(p=>placeHit(p,x,z,pad));
   const wallSide=(x,z)=>s.wallRad?dist2d(x,z,C.x,C.z)-wallRadAt(s,Math.atan2(z-C.z,x-C.x)):-1e9;
   const probe=(f)=>{const c=obbCorners(f.x,f.z,f.w,f.d,f.rot),o=[...c,{x:f.x,z:f.z}];
@@ -1445,15 +1445,23 @@ function layoutSettlement(s){
     s.burns.push({x:b0.x,z:b0.z,r:R2,e});
     for(const st of s.streets)if(st.cands)for(const c of st.cands)if(dist2d(c.mx,c.mz,b0.x,b0.z)<R2+6)c.done=false;
     // the rebuilders cut a straight new street across the burned ground
+    // the burned lanes go with the houses; the rebuilders may cut one straight street across the ground instead
+    const burnedLane=st=>st.kind==='lane'&&!st.gone&&st.pts.filter(q=>dist2d(q.x,q.z,b0.x,b0.z)<R2).length>st.pts.length*0.6;
+    const drop=s.streets.filter(burnedLane);
     let best=null;
-    for(let k=0;k<12&&!best;k++){
+    if(R2>=30&&s.streets.filter(t=>t.fireSt&&!t.gone).length<4)for(let k=0;k<12&&!best;k++){
       const a=k/12*Math.PI*2+rr()*0.3,p1={x:b0.x+Math.cos(a)*R2,z:b0.z+Math.sin(a)*R2},p2={x:b0.x-Math.cos(a)*R2,z:b0.z-Math.sin(a)*R2};
       const g1=nearStreet(p1.x,p1.z,12),g2=nearStreet(p2.x,p2.z,12);
-      if(!g1||!g2||g1.st===g2.st)continue;
-      const line=resample([p1,p2],8);
-      if(line.every(q=>buildable(q.x,q.z)&&!inPlace(q.x,q.z,2)&&(!s.wallRad||wallSide(q.x,q.z)<-8)))best=line;
+      if(!g1||!g2||g1.st===g2.st||drop.includes(g1.st)||drop.includes(g2.st))continue;
+      const line=resample([p1,p2],8),L=line.length;
+      if(!line.every(q=>buildable(q.x,q.z)&&!inPlace(q.x,q.z,2)&&(!s.wallRad||wallSide(q.x,q.z)<-8)))continue;
+      // its length must run clear of other streets: it joins them at its ends, it does not slice through them
+      if(line.slice(2,L-2).some(q=>{const g=nearStreet(q.x,q.z,9);return g&&!drop.includes(g.st);}))continue;
+      best=line;
     }
-    if(best)addStreet(best,HW*0.95,'lane',{straight:true});
+    for(const st of drop){st.gone=true;st.hidden=true;}
+    if(drop.length)G.roadsDirty=true;
+    if(best)addStreet(best,HW*0.95,'lane',{straight:true,fireSt:true});
     const mat=AD()>=1150?'stone':'timber, as before';hist(e,`A great fire burned ${gone.length} houses${best?`; the district was rebuilt in ${mat} along a new, straight street`:`; it was rebuilt in ${mat}`}.`);
   };
   const siege=e=>{
@@ -1583,7 +1591,7 @@ function layoutSettlement(s){
   branch(isCap?10:isTown?6:3,true);
   const queue=()=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first
     const q=[];
-    for(const st of s.streets)candsOf(st).forEach((c,i)=>{
+    for(const st of s.streets)if(!st.gone)candsOf(st).forEach((c,i)=>{
       if(c.done)return;
       if((i>>1)&1||!fits(frontFoot(c,'house',0,rr),gapFor(c))){c.done=true;return;}
       c.key=keyOf(c);q.push(c);});
@@ -3197,9 +3205,9 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       for(const s of W.settlements)if((s.owner===p.a||s.owner===p.b)&&s.landShort)t+=0.4;
       t+=(100-W.legitimacy)/80;return t;};
     const p=cand.length?wpick(cand,tension,0.6):null;
-    if(p&&chance('sim',0.08*tension(p))){
+    if(p&&chance('sim',0.05*tension(p))){
       const A=W.houses[p.a],B=W.houses[p.b];
-      const fd={a:p.a,b:p.b,start:day(),until:day()+360*(1+randi('sim',3)),name:`the ${pick('sim',FEUD_NAMES)} of ${A.name.replace('House ','')} and ${B.name.replace('House ','')}`,
+      const fd={a:p.a,b:p.b,start:day(),until:day()+360*(1+randi('sim',2)),name:`the ${pick('sim',FEUD_NAMES)} of ${A.name.replace('House ','')} and ${B.name.replace('House ','')}`,
         la:G.land.F.filter(f=>f.lord===p.a).length,lb:G.land.F.filter(f=>f.lord===p.b).length};
       W.feuds.push(fd);
       for(const hi of[p.a,p.b]){const seat=W.settlements.findIndex(s=>s.owner===hi);if(seat>=0)raiseArmy(hi,seat,hostTarget(hi)*1.6,'host');} // the lords call out their tenants
@@ -3486,6 +3494,26 @@ function spawnCarts(c){
   for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,d:-k*15-Math.random()*6,spd:(c.sea?11:c.river?7:5.5)*(0.9+Math.random()*0.2),
     info:{origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
 }
+/* map markers: from altitude every host, outlaw camp and the dragon shows as a round badge that stays legible
+   (only caravans had one); scaled with the camera's distance, drawn over the terrain */
+const MARKTEX={};
+function markerTex(key,draw){
+  if(MARKTEX[key])return MARKTEX[key];
+  const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');draw(g);
+  const t=new THREE.CanvasTexture(c);return MARKTEX[key]=t;
+}
+function badge(g,fill,ring){g.beginPath();g.arc(32,32,28,0,7);g.fillStyle=fill;g.fill();g.lineWidth=5;g.strokeStyle=ring;g.stroke();}
+function houseMarker(hi){const h=W.houses[hi]||W.houses[0];return markerTex('h'+hi+'_'+h.sigilHue[0]+h.charge,g=>{
+  badge(g,'#'+h.sigilHue[0].toString(16).padStart(6,'0'),'#f0e6cf');const img=makeSigil(h.sigilHue,h.charge);g.save();g.beginPath();g.arc(32,32,24,0,7);g.clip();g.drawImage(img,10,10,44,44);g.restore();});}
+function placeMarker(obj,tex,x,y,z,px){ // px: on-screen size in pixels, roughly
+  let sp=obj._marker;
+  if(!sp){sp=obj._marker=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false,fog:false}));sp.renderOrder=5;scene.add(sp);}
+  if(sp.material.map!==tex){sp.material.map=tex;sp.material.needsUpdate=true;}
+  const far=cam.cur.dist>900;sp.visible=far;if(!far)return;
+  const ds=camera.position.distanceTo(new THREE.Vector3(x,y,z))*(px/innerHeight)*1.1;
+  sp.position.set(x,y+ds*0.7,z);sp.scale.set(ds,ds,1);
+}
+function dropMarker(obj){if(obj&&obj._marker){scene.remove(obj._marker);obj._marker.material.dispose();obj._marker=null;}}
 function buildAgents(){
   // caravans: ox-drawn covered wagons, the cover coloured by the cargo
   const cg=cartGeom();
@@ -3957,9 +3985,28 @@ function onClick(e){
     if(pk.type==='settlement'){town=town||pk;continue;}
     showInspect(pk);return;
   }
-  if(town){showInspect(town);return;}
+  const gp=groundPoint(e);const gpk=gp&&groundPick(gp.x,gp.z);
+  if(town){ // inside a town, a click is the town, unless it lands on its wall, or (close up) on a street or the river
+    if(gpk&&(gpk.type==='wall'||(gpk.type==='street'||gpk.type==='river')&&cam.cur.dist<350)){showInspect(gpk);return;}
+    showInspect(town);return;}
+  if(gpk){showInspect(gpk);return;}
   hideInspect();
   if(cam.follow){cam.follow=null;}
+}
+function groundPick(x,z){ // what lies on the ground here: a wall, a road or street, a river, or else the land itself
+  for(const s of W.settlements)if(s.wallRad){const a=Math.atan2(z-s.pos.z,x-s.pos.x);if(Math.abs(dist2d(x,z,s.pos.x,s.pos.z)-wallRadAt(s,a))<7)return{type:'wall',s};}
+  for(const s of W.settlements)for(const st of s.streets||[]){if(st.hidden||st.kind==='edge')continue;const P=st.pts;
+    for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<st.hw+1.5)return{type:'street',s,st};}
+  for(const r of W.roads){const P=r.drawn||r.path;for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<5.5)return{type:'road',r};}
+  const rv=riverAt(x,z,2);if(rv){const st=G.rivStrips.find(q=>q.pts.includes(rv.a));return{type:'river',st,o:rv};}
+  if(G.land){const f=furlongAt(x,z);if(f)return{type:'land',f,x,z};}
+  return null;
+}
+const STREET_NAME={road:'High street',lane:'Lane',quay:'Quay',wallst:'Wall street, on the line of the old wall',grid:'Roman street',mstreet:'Market street',edge:'Edge'};
+function riverName(st){ // rivers are named from the land they drain, the same name every time
+  if(!st)return'The river';if(st.canal)return'A canal';
+  if(!st.name){const i=G.rivStrips.indexOf(st),pf=NAMEB.pfx[(i*7+(SEED%97))%NAMEB.pfx.length];st.name='the '+pf+['water','burn','brook','ea','bourne'][(i*3+SEED)%5];}
+  return st.name[0].toUpperCase()+st.name.slice(1);
 }
 let placeArg=null;
 function setPlaceMode(mode,arg,hint){
@@ -4048,6 +4095,68 @@ function showInspect(pk){
     h+=row('Cargo',c.good+' × '+Math.round(c.qty));
     h+=row('Value',Math.round(c.value)+' gold');
     flyToBtn(fb,'Follow',()=>{markManual();cam.follow=c;cam.dist=140;});
+  }else if(pk.type==='land'){
+    const f=pk.f,s=f.dom>=0?W.settlements[f.dom]:null,lord=f.lord>=0?W.houses[f.lord]:null,c=cIdx(toCell(pk.x),toCell(pk.z));
+    const ha=a=>(a/10000).toFixed(a<100000?1:0)+' ha',yrs=d=>Math.max(0,Math.round((day()-d)/360));
+    const CROP=['winter corn (wheat and rye)','spring corn (barley, oats, peas)','fallow, grazed by the village beasts'];
+    const bio={[B.MARSH]:'marsh',[B.MEADOW]:'grassland',[B.FARM]:'good loam',[B.FOREST]:'broadleaf wood',[B.PINE]:'pine wood',[B.ROCK]:'rock',[B.SNOW]:'snowfield',[B.WATER]:'water'}[W.biome[c]]||'ground';
+    const use=f.state===LS.TILLED?(f.kind===LK.FIELD||f.kind===LK.DEMESNE?`Under the plough: ${CROP[(f.gf+year())%3]} this year`
+        :f.kind===LK.HUFE?'Under the plough: each holding in its own rotation':f.kind===LK.CLOSE?'Under the plough: a hedged close in its own rotation'
+        :f.kind===LK.MEADOW?'Hay meadow, mown at midsummer':f.kind===LK.GARDEN?'Crofts and kitchen gardens':f.kind===LK.VINE?'Vines':'Worked land')
+      :f.state===LS.PASTURE?`Gone to grass ${yrs(f.wild0??f.since)} years since last ploughed`
+      :f.state===LS.SCRUB?`Thorn and scrub, the wood coming back (${yrs(f.wild0??f.since)} of ~20 years)`
+      :f.state===LS.WOOD?'Woodland':f.state===LS.BURNT?'Crops burned by an army; to be ploughed again in spring'
+      :s?'Common grazing and waste':'Waste beyond anyone\'s bounds';
+    setHTML(title,(lord?`<img src="${sigURL(f.lord)}">`:'')+esc(f.kind?KIND_NAME[f.kind][0].toUpperCase()+KIND_NAME[f.kind].slice(1):(f.state===LS.WOOD?'Woodland':'Open land')));
+    sub.textContent='a furlong'+(s?' of '+s.name:'')+(lord?' · '+lord.name:' · unclaimed');
+    h+=row('Use',use);
+    if(f.held&&lord)h+=row('Held',`<span style="color:#c0392b">by the sword</span>, by ${esc(lord.name)} — it goes back to its people unless a fort holds it`);
+    else if(lord)h+=row('Lord',esc(lord.name));
+    if(s)h+=row('Worked from',`${esc(s.name)} (${(dist2d(f.x,f.z,s.pos.x,s.pos.z)/1000).toFixed(1)} km)`);
+    h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);
+    if(f.w>1&&f.state===LS.TILLED&&f.kind!==LK.VINE)h+=row('Strips',`${Math.round(f.w)} m wide, running ${f.kind===LK.HUFE?'back from the village street':'down the slope for drainage'}`);
+    if(f.kind===LK.FIELD)h+=row('Great field',['the first','the second','the third'][f.gf]+' of three, in rotation');
+    h+=row('Ground',`${bio}, ${Math.round(W.h[c])} m, ${slopeAt(toCell(pk.x),toCell(pk.z))>0.22?'steep':slopeAt(toCell(pk.x),toCell(pk.z))>0.08?'sloping':'level'}`);
+    const trees=f.trees.filter(t=>t.shown!==false).length+(f.sap?f.sap.length:0);if(trees)h+=row('Trees',trees+(f.sap?' (young growth)':''));
+    if(f.worked)h+=row('History','worked land before'+(f.state===LS.TILLED?'':'; now abandoned'));
+  }else if(pk.type==='road'){
+    const r=pk.r,A=W.settlements[r.a],Bs=W.settlements[r.b];
+    setHTML(title,'The king\'s road');sub.textContent=A.name+' — '+Bs.name;
+    h+=row('Length',(polyLen(r.path)/1000).toFixed(1)+' km');
+    h+=row('Traffic',(r.vol||0)>3?'busy':(r.vol||0)>1?'steady':(r.vol||0)>0.2?'light':'quiet');
+    const carts=(G.traffic||[]).filter(t=>t.poly===r.path||t.info&&((t.info.origin===r.a&&t.info.dest===r.b)||(t.info.origin===r.b&&t.info.dest===r.a))).length;
+    if(carts)h+=row('On the road now',carts+' cart'+(carts>1?'s':''));
+    const camps=W.banditCamps.filter(c=>r.path.some(q=>dist2d(q.x,q.z,c.x,c.z)<500)).length;if(camps)h+=row('Danger',`<span style="color:#c0392b">${camps} outlaw camp${camps>1?'s':''} near the road</span>`);
+  }else if(pk.type==='street'){
+    const st=pk.st,s=pk.s,n=s.buildings.filter(b=>b.st===st&&b.state==='sound').length;
+    setHTML(title,esc(STREET_NAME[st.kind]||'Street'));sub.textContent=s.name;
+    h+=row('Length',Math.round(polyLen(st.pts))+' m');h+=row('Houses on it',n);
+    if(st.fireSt)h+=row('Laid out','straight across ground cleared by a great fire');
+    else if(st.neu)h+=row('Laid out','as the lord\'s “New Town”: one street of equal plots');
+    else if(st.planned)h+=row('Laid out','in one stroke, when the town was founded');
+    else if(st.castlePath)h+=row('Leads to','the castle');
+    if(st.market)h+=row('Market','the market is held along it'+(s.baechle?'; runnels of water run down its sides':''));
+  }else if(pk.type==='river'){
+    const st=pk.st,w=pk.o.hw*2;
+    setHTML(title,esc(riverName(st)));sub.textContent=st&&st.canal?'dug from the harbour into the town':'a river';
+    h+=row('Width',Math.round(w)+' m');h+=row('Surface',Math.round(pk.o.y)+' m above the sea');
+    const towns=W.settlements.filter(o=>st&&st.pts.some(q=>dist2d(q.x,q.z,o.pos.x,o.pos.z)<o.radius+60)).map(o=>o.name);
+    if(towns.length)h+=row('Towns on its banks',esc(towns.join(', ')));
+    const bridges=W.roads.reduce((t,r)=>t+(r.path.some(q=>riverAt(q.x,q.z,0)&&st&&riverAt(q.x,q.z,0).a&&st.pts.includes(riverAt(q.x,q.z,0).a))?1:0),0);if(bridges)h+=row('Bridged by',bridges+' road'+(bridges>1?'s':''));
+    const boats=(G.traffic||[]).filter(t=>t.info.river).length;if(boats)h+=row('Barges on the rivers',boats);
+  }else if(pk.type==='wall'){
+    const s=pk.s,kinds=[0,0,0,0];for(const k of s.wallKind||[])kinds[k]++;const n=(s.wallKind||[]).length||1;
+    setHTML(title,`<img src="${sigURL(s.owner)}">`+esc('The walls of '+s.name));
+    sub.textContent=s.bastions?'a bastioned trace, with a ditch':s.walls>=2?'a curtain of stone':'a palisade and ditch';
+    let L=0;for(let k=0;k<WALLN;k++){const a0=k/WALLN*Math.PI*2,a1=(k+1)/WALLN*Math.PI*2;L+=dist2d(Math.cos(a0)*wallRadAt(s,a0),Math.sin(a0)*wallRadAt(s,a0),Math.cos(a1)*wallRadAt(s,a1),Math.sin(a1)*wallRadAt(s,a1));}
+    h+=row('Circuit',(L/1000).toFixed(2)+' km');h+=row('Gates',wallGates(s).length);
+    if(kinds[1])h+=row('Cliffs',Math.round(kinds[1]/n*100)+'% of the circuit needs no wall');
+    if(kinds[2])h+=row('Water',Math.round(kinds[2]/n*100)+'% runs along the bank');
+    if(kinds[3])h+=row('Hillside',Math.round(kinds[3]/n*100)+'% rides a falling slope');
+    if(s.citadel)h+=row('Citadel','a star fort astride the walls');
+    if(s.oldWalls&&s.oldWalls.length)h+=row('Older circuits',s.oldWalls.length+', their lines now streets');
+    const built=(s.history||[]).filter(x=>/wall|palisade/i.test(x.t)).map(x=>(x.yr?'AD '+(W.startAD+x.yr-1):'c. '+x.ago+' yrs before')+': '+x.t);
+    if(built.length)h+=`<div class="agline" style="font-size:11.5px">${built.map(esc).join('<br>')}</div>`;
   }else if(pk.type==='dragon'){
     const d=W.dragon;
     setHTML(title,esc(d.name));
@@ -4697,7 +4806,7 @@ function tickMilitary(){
       a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;
     }
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
-    if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35){
+    if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())){
       // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
       let tgt=-1,bd=1e18;
       W.settlements.forEach((s,si)=>{
@@ -4716,7 +4825,13 @@ function tickMilitary(){
       a.at=a.target;a.state='arrived';
       const s=W.settlements[a.at];
       if(hostileTo(a,s)){
-        if(s.walls>0&&s.garrison>20){
+        const defend=(s.garrison||0)+s.pop*0.05*(s.walls>0?2:1);
+        if(!inRebellion(a)&&a.strength<defend*2){ // too weak to take it: a raid, the fields burned and the land about it held for a season
+          a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};
+          emit('war',6,s.pos,`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`);
+        }else if(!(s.walls>0&&s.garrison>20)){ // no walls: still days of skirmish before the place is theirs, longer against a garrison
+          a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:18)+Math.round((s.garrison||0)/6+s.pop/60);s.siegeBy={houseName:W.houses[a.house].name,army:a}; // the townsfolk defend their homes: weeks, not days
+        }else if(s.walls>0&&s.garrison>20){
           a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40)+(s.bastions?35:0)+(s.citadel?25:0); // river-girt, bastioned or citadel towns hold out longer
           s.siegeBy={houseName:W.houses[a.house].name,army:a};
           emit('war',8,s.pos,`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`);
@@ -4727,7 +4842,9 @@ function tickMilitary(){
       const s=W.settlements[a.at];
       s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
       if(now>=a.siegeUntil){
-        s.siegeBy=null;takeSettlement(a,s);
+        s.siegeBy=null;
+        if(a.raid){a.raid=false;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
+        else takeSettlement(a,s);
       }else if(chance('sim',0.01)){ // sortie
         if(resolveClash(a,{strength:s.garrison*3,morale:60,house:s.owner,name:'garrison of '+s.name})){
           emit('war',6,s.pos,`A sortie from ${s.name} is beaten back with slaughter at the gates.`);
@@ -4843,14 +4960,14 @@ function takeSettlement(a,s){
   const cmd=notableById(a.commander);
   const cruel=cmd&&cmd.traits.includes('cruel');
   const feud=!inRebellion(a); // a lord taking a neighbour's town in a private war wants it whole; rebels and royal hosts are less careful
-  if(chance('sim',cruel?(feud?0.4:1):(feud?0.06:0.25))){
+  if(chance('sim',(cruel?(feud?0.4:1):(feud?0.06:0.25))*(s.walls>0?1:0.35))){ // a walled town that held out is sacked; an open village mostly just changes hands
     s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;
     igniteFire(s,2,'sack');
     emit('war',9,s.pos,`${s.name} is taken and given over to sack! Smoke rises from the ${pick('sim',['market','temple quarter','granaries'])} and the chronicler weeps to record it.`);
   }else{
     emit('war',8,s.pos,`${s.name} opens its gates to ${a.name}; the banner of ${W.houses[a.house].name} flies from its walls.`);
   }
-  s.owner=a.house;s.garrison=Math.round(a.strength*0.1);syncOwner(s);
+  s.owner=a.house;s.garrison=Math.max(s.garrison*0.3,Math.round(a.strength*0.25));syncOwner(s);a.holdUntil=day()+60; // the victors stay to hold what they took
   if(inRebellion(a))warScore(a.house===0?30:-30);
   a.state='idle';
   refreshOverlay();
@@ -4861,7 +4978,7 @@ function disbandArmy(a){
   if(a.gone)return;
   const s=W.settlements[a.home];if(s)s.pop+=a.strength*0.6;
   liftSiege(a); // a dead army lifts its siege
-  if(a.flag){scene.remove(a.flag);a.flag=null;}
+  if(a.flag){scene.remove(a.flag);a.flag=null;}dropMarker(a);
   a.gone=true;
   W.armies=W.armies.filter(x=>x!==a);
 }
@@ -5052,7 +5169,7 @@ function tickBandits(dis){
   for(const camp of[...W.banditCamps]){
     // outlaws drift away if the pickings are thin
     if(day()-camp.born>900&&camp.raids<2){
-      const g=G.campMeshes.get(camp);if(g)scene.remove(g);G.campMeshes.delete(camp);
+      const g=G.campMeshes.get(camp);if(g)scene.remove(g);G.campMeshes.delete(camp);dropMarker(camp);
       W.banditCamps=W.banditCamps.filter(x=>x!==camp);
       continue;
     }
@@ -5085,7 +5202,7 @@ function tickBandits(dis){
     }
     if(camp.patrol&&day()>=camp.patrolArrive){
       if(chance('sim',camp.king?0.45:0.75)){
-        const g=G.campMeshes.get(camp);if(g)scene.remove(g);G.campMeshes.delete(camp);
+        const g=G.campMeshes.get(camp);if(g)scene.remove(g);G.campMeshes.delete(camp);dropMarker(camp);
         W.banditCamps=W.banditCamps.filter(x=>x!==camp);
         if(camp.kingId){const bk=notableById(camp.kingId);if(bk)killNotable(bk,'hanged at the crossroads',true);}
         emit('war',5,camp,`The bandit camp near ${nearestPlaceName(camp.x,camp.z)} is burned and its brigands ${camp.king?'scattered — '+camp.king+' swings at the crossroads':'hanged in a row'}.`);
@@ -6559,6 +6676,7 @@ function animateWorld(dt,now){
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
     const y=hAt(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
+    placeMarker(a,houseMarker(a.house),p.x,y,p.z,a.standing?26:32);
     if(a.flag){
       const fs=clamp(cam.cur.dist*0.0011,0.3,4.5); // a real banner up close, a legible marker from on high
       a.flag.position.set(p.x+Math.cos(p.dir||0)*2,y+19*fs+Math.sin(now*2+a.id)*0.2*fs,p.z+Math.sin(p.dir||0)*2);
@@ -6587,6 +6705,10 @@ function animateWorld(dt,now){
     }
   }
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
+  for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
+  if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
+    placeMarker(W.dragon,markerTex('dragon',g2=>{badge(g2,'#7a1f1f','#e8c247');g2.font='32px serif';g2.textAlign='center';g2.fillText('🐉',32,44);}),vis?dm.position.x:W.dragon.lair.x,(vis?dm.position.y:W.dragon.lair.y)-20,vis?dm.position.z:W.dragon.lair.z,vis?30:20);}
+  else if(W.dragon)dropMarker(W.dragon);
   /* --- dragon --- */
   const d=W.dragon;
   const dsc=clamp(cam.cur.dist*0.0011,1,3);G.dragonMesh.scale.setScalar(dsc);
