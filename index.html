@@ -14,6 +14,7 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#101318;}
 body{font-family:'Segoe UI',system-ui,'Helvetica Neue',sans-serif;color:var(--ink);}
 #gl{position:absolute;inset:0;}
+#gl canvas{touch-action:none;} /* our own orbit/pinch handlers, not the browser's scroll/zoom */
 canvas{display:block;}
 .serif{font-family:'IM Fell English',Georgia,'Times New Roman',serif;}
 
@@ -36,6 +37,13 @@ canvas{display:block;}
 #hud img.sig{width:18px;height:18px;border-radius:3px;border:1px solid rgba(233,220,195,.4);}
 #datechip{font-family:'IM Fell English',Georgia,serif;font-size:16px !important;}
 #timec{margin-left:auto;pointer-events:auto;display:flex;gap:4px;}
+#rulebtn{pointer-events:auto;background:rgba(201,162,39,.18);border:1px solid var(--gold);color:var(--gold);height:26px;padding:0 10px;
+  border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;}
+#rulebtn:hover{background:rgba(201,162,39,.32);}
+body.sov #rulebtn{background:var(--gold);color:#241d10;}
+#rulebtn .pc{display:inline-block;min-width:16px;margin-left:5px;padding:0 4px;border-radius:8px;background:var(--red);color:var(--parch);font-size:11px;}
+#legacychip{display:none !important;}
+body.sov #legacychip{display:flex !important;}
 #timec button{background:rgba(233,220,195,.12);border:1px solid rgba(233,220,195,.35);color:var(--parch);
   min-width:34px;height:26px;border-radius:4px;cursor:pointer;font-size:12px;}
 #timec button.on{background:var(--gold);color:#241d10;border-color:var(--gold);font-weight:700;}
@@ -46,7 +54,12 @@ canvas{display:block;}
   background:linear-gradient(160deg,var(--parch),var(--parch2));border:1px solid var(--edge);border-radius:6px;
   box-shadow:0 6px 24px rgba(0,0,0,.5);overflow:hidden;}
 #chron header{padding:8px 12px 4px;border-bottom:1px solid var(--edge);}
-#chron h2{font-family:'IM Fell English',Georgia,serif;font-size:19px;font-weight:normal;color:var(--ink);}
+#chron header{display:flex;align-items:center;gap:6px;cursor:pointer;}
+#chron h2{font-family:'IM Fell English',Georgia,serif;font-size:19px;font-weight:normal;color:var(--ink);flex:1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#chronmin{background:none;border:none;color:var(--ink2);font-size:14px;cursor:pointer;padding:0 2px;}
+#chron.min{bottom:auto;}
+#chron.min #chronfilters,#chron.min #chronlist,#chron.min #chronfoot{display:none;}
 #chronfilters{display:flex;gap:4px;padding:5px 10px;border-bottom:1px solid var(--edge);flex-wrap:wrap;}
 #chronfilters .f{font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--edge);cursor:pointer;color:var(--ink2);background:transparent;}
 #chronfilters .f.on{background:var(--ink);color:var(--parch);border-color:var(--ink);}
@@ -68,11 +81,12 @@ canvas{display:block;}
   background:linear-gradient(160deg,var(--parch),var(--parch2));border:1px solid var(--edge);border-radius:6px;
   box-shadow:0 6px 24px rgba(0,0,0,.5);overflow:hidden;transition:transform .3s;}
 #drawer.closed{transform:translateX(-262px);}
-#drawertab{position:absolute;right:-1px;top:8px;width:0;}
-#drawertoggle{position:absolute;left:0;top:0;width:22px;height:44px;background:var(--parch);border:1px solid var(--edge);
-  border-left:none;border-radius:0 5px 5px 0;cursor:pointer;color:var(--ink2);font-size:12px;}
+/* the toggle lives outside the drawer: #drawer clips its overflow, which used to hide it */
+#drawertoggle{position:absolute;left:280px;top:52px;z-index:16;width:22px;height:44px;background:var(--parch);border:1px solid var(--edge);
+  border-left:none;border-radius:0 5px 5px 0;cursor:pointer;color:var(--ink2);font-size:12px;transition:left .3s;}
+body.drawerclosed #drawertoggle{left:18px;}
 #dtabs{display:flex;border-bottom:1px solid var(--edge);}
-#dtabs .t{flex:1;text-align:center;font-size:12px;padding:7px 0;cursor:pointer;color:var(--ink2);border-right:1px solid var(--edge);}
+#dtabs .t{flex:1;text-align:center;font-size:11.5px;padding:7px 0;cursor:pointer;color:var(--ink2);border-right:1px solid var(--edge);}
 #dtabs .t:last-child{border-right:none;}
 #dtabs .t.on{background:var(--ink);color:var(--parch);}
 #dbody{flex:1;overflow-y:auto;padding:10px;scrollbar-width:thin;}
@@ -100,6 +114,33 @@ canvas{display:block;}
 .houserow.exiled .hname{text-decoration:line-through;opacity:.55;}
 .dhead{font-family:'IM Fell English',Georgia,serif;font-size:14px;color:var(--red);margin:8px 0 6px;border-bottom:1px solid var(--edge);padding-bottom:2px;}
 .succline{font-size:11.5px;color:var(--ink2);margin-bottom:3px;}
+.succline.pk,.houserow.pk{cursor:pointer;}
+.succline.pk:hover,.houserow.pk:hover .hname{text-decoration:underline;}
+.note{font-size:11.5px;color:var(--ink2);font-style:italic;margin:4px 0 8px;line-height:1.35;}
+.slrow input[type=range]:disabled{opacity:.4;}
+/* ---------- crown (sovereign) panel ---------- */
+.cstat{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);padding:1px 0;}
+.cstat b{color:var(--ink);font-weight:600;}
+.cbtn{display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;text-align:left;font-size:12px;padding:5px 8px;margin-bottom:4px;
+  cursor:pointer;background:rgba(43,35,32,.06);border:1px solid var(--edge);border-radius:4px;color:var(--ink);}
+.cbtn:hover:not(:disabled){background:var(--gold);border-color:var(--gold);color:#241d10;}
+.cbtn:disabled{opacity:.45;cursor:default;}
+.cbtn .cost{font-size:11px;color:var(--red);white-space:nowrap;}
+.cbtn small{display:block;font-size:10.5px;color:var(--ink2);margin-top:1px;}
+.cbtn:hover:not(:disabled) .cost{color:#241d10;}
+.chouse{border:1px solid var(--edge);border-radius:4px;padding:5px 6px;margin-bottom:6px;}
+.chouse .houserow{margin-bottom:4px;}
+.chouse .hb{display:flex;flex-wrap:wrap;gap:3px;}
+.chouse .hb button{flex:1 1 45%;font-size:10.5px;padding:3px 4px;cursor:pointer;background:transparent;border:1px solid var(--edge);border-radius:3px;color:var(--ink);}
+.chouse .hb button:hover:not(:disabled){background:var(--gold);border-color:var(--gold);}
+.chouse .hb button:disabled{opacity:.4;cursor:default;}
+.tag{font-size:10px;color:var(--red);font-style:italic;margin-left:3px;}
+.amb{font-size:11.5px;color:var(--ink2);margin-bottom:2px;}
+.amb.done{color:var(--ink);}
+.amb.done:before{content:"✓ ";color:#3d6b2a;font-weight:700;}
+.amb:not(.done):before{content:"○ ";}
+.warbar{height:7px;border-radius:4px;background:linear-gradient(90deg,var(--red),#d9c89b 50%,#3d6b2a);position:relative;margin:4px 0 6px;}
+.warbar i{position:absolute;top:-3px;width:3px;height:13px;background:var(--ink);border-radius:1px;}
 
 /* ---------- Inspector ---------- */
 #insp{position:absolute;left:290px;bottom:14px;width:290px;z-index:16;display:none;
@@ -114,6 +155,10 @@ canvas{display:block;}
 #inspx{position:absolute;top:6px;right:9px;cursor:pointer;color:var(--ink2);font-size:14px;background:none;border:none;}
 #inspfollow{margin-top:7px;width:100%;font-size:11.5px;padding:4px;cursor:pointer;background:transparent;border:1px solid var(--edge);border-radius:4px;color:var(--ink2);}
 #inspfollow:hover{border-color:var(--ink);color:var(--ink);}
+#inspacts{margin-top:6px;}
+#inspacts:empty{display:none;}
+#inspacts .cbtn{font-size:11.5px;padding:4px 7px;}
+body.drawerclosed #insp{left:30px;}
 
 /* ---------- beat card ---------- */
 #beat{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);max-width:620px;z-index:14;
@@ -132,8 +177,39 @@ canvas{display:block;}
 body.hideui #hud,body.hideui #chron,body.hideui #drawer,body.hideui #insp,body.hideui #hint{display:none !important;}
 body.watch #chron,body.watch #drawer,body.watch #insp,body.watch #hint,body.watch #hud{display:none !important;}
 body.watch #watchdate{display:block;}
-#placehint{position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:30;display:none;
-  background:var(--red);color:var(--parch);padding:5px 16px;border-radius:4px;font-size:13px;}
+#placehint{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:30;display:none;
+  background:var(--red);color:var(--parch);padding:5px 16px;border-radius:4px;font-size:13px;white-space:nowrap;}
+body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hideui #petition{display:none !important;}
+/* ---------- petitions: the court awaits a decision ---------- */
+#petition{position:absolute;top:48px;left:50%;transform:translateX(-50%);width:min(460px,calc(100vw - 24px));z-index:25;display:none;
+  background:linear-gradient(160deg,var(--parch),var(--parch2));border:2px solid var(--gold);border-radius:6px;
+  box-shadow:0 10px 40px rgba(0,0,0,.6);padding:10px 14px 9px;}
+#petition h4{font-family:'IM Fell English',Georgia,serif;font-size:18px;font-weight:normal;color:var(--red);margin-bottom:3px;display:flex;gap:8px;align-items:baseline;}
+#petition h4 span{flex:1;}
+#petition h4 a{font-family:system-ui,sans-serif;font-size:11px;color:var(--ink2);cursor:pointer;text-decoration:underline;}
+#petition .pt{font-family:'IM Fell English',Georgia,serif;font-size:14px;line-height:1.35;color:var(--ink);margin-bottom:8px;}
+#petition .pf{font-size:10.5px;color:var(--ink2);font-style:italic;margin-top:4px;}
+/* ---------- narrow screens: panels stop overlapping ---------- */
+@media (max-width:900px){
+  #chron{width:280px;}
+  #insp{width:min(290px,calc(100vw - 20px));}
+  #hint{display:none;}
+}
+@media (max-width:760px){ /* HUD: chips wrap, then the time controls take their own row */
+  #hud{flex-wrap:wrap;row-gap:3px;gap:8px;padding:4px 8px;}
+  #hud .chip{font-size:12px;}
+  #datechip{font-size:14px !important;}
+  #timec{margin-left:0;width:100%;justify-content:flex-end;}
+  #timec button{min-width:28px;}
+  #chron{top:auto;bottom:10px;left:10px;right:10px;width:auto;max-height:40vh;}
+  #chron.min{bottom:10px;}
+  #drawer{top:100px;width:min(270px,calc(100vw - 40px));}
+  #drawertoggle{top:108px;left:min(280px,calc(100vw - 30px));}
+  #insp,body.drawerclosed #insp{left:10px;bottom:auto;top:100px;}
+  #beat{bottom:auto;top:100px;max-width:calc(100vw - 20px);}
+  #petition{top:100px;}
+  #placehint{white-space:normal;width:calc(100vw - 40px);text-align:center;}
+}
 </style>
 </head>
 <body>
@@ -146,15 +222,17 @@ body.watch #watchdate{display:block;}
   <span class="chip" id="crownchip"><img class="sig" id="crownsig" alt=""><b id="crownname">—</b></span>
   <span class="chip">⛁ <b id="treasury">0</b></span>
   <span class="chip">☺ <b id="realmpop">0</b></span>
-  <span class="chip" id="legitchip">♛ <b id="legit">0</b></span>
+  <span class="chip" id="legitchip" title="Legitimacy">♛ <b id="legit">0</b></span>
+  <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
+    <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
     <button data-s="0" title="Pause (Space)">⏸</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button>
   </div>
 </div>
 <div id="watchdate">—</div>
 
 <div id="chron">
-  <header><h2 id="chrontitle">The Annals</h2></header>
+  <header id="chronhead"><h2 id="chrontitle">The Annals</h2><button id="chronmin" title="Collapse / expand">▾</button></header>
   <div id="chronfilters">
     <button class="f on" data-f="all">All</button>
     <button class="f" data-f="crown">Crown</button>
@@ -171,26 +249,29 @@ body.watch #watchdate{display:block;}
 
 <div id="drawer">
   <div id="dtabs">
+    <div class="t" data-t="crown">Crown</div>
     <div class="t on" data-t="rates">Rates</div>
     <div class="t" data-t="acts">Acts</div>
     <div class="t" data-t="over">Overlays</div>
     <div class="t" data-t="world">Realm</div>
   </div>
   <div id="dbody"></div>
-  <div id="drawertab"><button id="drawertoggle">◂</button></div>
 </div>
+<button id="drawertoggle" title="Hide / show the panel">◂</button>
 
 <div id="insp">
   <button id="inspx">✕</button>
   <h3 id="insptitle">—</h3>
   <div class="sub" id="inspsub"></div>
   <div id="inspbody"></div>
+  <div id="inspacts"></div>
   <button id="inspfollow">Follow</button>
 </div>
 
 <div id="beat"><div class="bt" id="beattext"></div><div class="bd" id="beatdate"></div></div>
 <div id="placehint">Click the map to place — Esc to cancel</div>
-<div id="hint">drag orbit · right-drag pan · scroll zoom · click to inspect · Space pause · 1–4 speed · M map · C watch · H hide UI</div>
+<div id="petition"></div>
+<div id="hint">drag orbit · right-drag pan · scroll zoom · click to inspect · Space pause · 1–4 speed · R rule · M map · C watch · H hide UI</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -1343,16 +1424,17 @@ function buildParticles(){
 
 /* ---------------- overlays ------------------------------------------------- */
 let overlayMode=null;
+function disposeTree(o){o.traverse(x=>{if(x.geometry)x.geometry.dispose();if(x.material)x.material.dispose();});}
 function setOverlay(mode){
   overlayMode=(overlayMode===mode)?null:mode;
-  if(G.overlay){scene.remove(G.overlay);G.overlay.traverse(o=>{if(o.geometry)o.geometry.dispose();});G.overlay=null;}
+  if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);G.overlay=null;}
   document.querySelectorAll('.ovbtn').forEach(b=>b.classList.toggle('on',b.dataset.o===overlayMode));
   if(!overlayMode)return;
   refreshOverlay();
 }
 function refreshOverlay(){
   if(!overlayMode)return;
-  if(G.overlay){scene.remove(G.overlay);G.overlay.traverse(o=>{if(o.geometry)o.geometry.dispose();});}
+  if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);} // materials leaked every refresh before
   const grp=new THREE.Group();
   const disc=(s,color,op,rad)=>{
     const m=new THREE.Mesh(new THREE.CircleGeometry(rad||s.radius*2.2,24),
@@ -1464,12 +1546,25 @@ function perfNow(){return performance.now()/1000;}
 function initInput(){
   const el=renderer.domElement;
   let drag=null;
+  const touches=new Map();let pinch=null; // two-finger pinch zooms
   el.addEventListener('contextmenu',e=>e.preventDefault());
   el.addEventListener('pointerdown',e=>{
+    touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(touches.size===2){
+      const[a,b]=[...touches.values()];
+      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist};drag=null;return;
+    }
     drag={x:e.clientX,y:e.clientY,b:e.button,moved:false,shift:e.shiftKey};
     el.setPointerCapture(e.pointerId);
   });
   el.addEventListener('pointermove',e=>{
+    if(touches.has(e.pointerId))touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch&&touches.size>=2){
+      const[a,b]=[...touches.values()];
+      markManual();
+      cam.dist=clamp(pinch.dist*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),6,4200);
+      return;
+    }
     if(!drag)return;
     const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
     if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;
@@ -1490,24 +1585,29 @@ function initInput(){
     }
     drag.x=e.clientX;drag.y=e.clientY;
   });
+  const endPtr=e=>{touches.delete(e.pointerId);if(touches.size<2)pinch=null;drag=null;};
   el.addEventListener('pointerup',e=>{
     if(drag&&!drag.moved&&e.button===0)onClick(e);
-    drag=null;
+    endPtr(e);
   });
+  el.addEventListener('pointercancel',endPtr); // a cancelled touch must not leave a drag stuck on
   el.addEventListener('wheel',e=>{
     e.preventDefault();markManual();
     cam.dist=clamp(cam.dist*Math.exp(e.deltaY*0.0011),6,4200);
   },{passive:false});
   window.addEventListener('keydown',e=>{
     if(e.target.tagName==='INPUT'&&e.target.type==='text')return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return; // Ctrl+C copies text; it must not toggle watch mode
     switch(e.key){
-      case ' ':e.preventDefault();setSpeed(speedIdx===0?lastSpeed||2:0);break;
+      case ' ':e.preventDefault();sovPausedFrom=0;setSpeed(speedIdx===0?lastSpeed||2:0);break;
       case '1':setSpeed(1);break;case '2':setSpeed(2);break;case '3':setSpeed(3);break;case '4':setSpeed(4);break;
       case 'h':case 'H':document.body.classList.toggle('hideui');break;
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
+      case 'r':case 'R':setSovereign(!sovOn());break;
       case 'Escape':
-        if(placeMode)setPlaceMode(null);
+        if(document.getElementById('mapview'))toggleMap();
+        else if(placeMode)setPlaceMode(null);
         else{hideInspect();cam.follow=null;}
         break;
     }
@@ -1522,29 +1622,50 @@ function groundPoint(e){
 }
 function onClick(e){
   if(placeMode){
-    const p=groundPoint(e);
-    if(p)doAct(placeMode,p);
+    const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
+    if(p){
+      if(mode==='order')orderArmy(arg,nearestSettlementIdx(p.x,p.z));
+      else if(mode==='charter'){if(W.treasury>=arg&&doAct('village',p)){W.treasury-=arg;setCd('d_charter',360);sovAmbition('founder');}}
+      else doAct(mode,p);
+    }
     return;
   }
   const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
   raycaster.setFromCamera(m,camera);
-  const targets=[...G.pickS,G.dragonMesh,...G.cairns,...W.armies.filter(a=>a.flag).map(a=>a.flag),G.bodies];
+  // raycasting ignores .visible, so hidden things (a dragon that flew off) must be filtered out here
+  const targets=[...G.pickS,...G.cairns,...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),G.bodies];
+  if(G.dragonMesh.visible)targets.push(G.dragonMesh);
   for(const c of W.caravans)if(c.proxy)targets.push(c.proxy);
   const hits=raycaster.intersectObjects(targets,true);
+  // the invisible settlement pick-spheres enclose the town, so they'd swallow every click on a
+  // building, host or caravan inside it: prefer the specific thing, fall back to the settlement
+  let town=null;
   for(const h of hits){
     let o=h.object,pk=null;
     while(o&&!pk){pk=o.userData.pick;o=o.parent;}
     if(h.object===G.bodies&&h.instanceId!==undefined&&h.instanceId<G.bldList.length)
       pk={type:'building',b:G.bldList[h.instanceId]};
-    if(pk){showInspect(pk);return;}
+    if(!pk)continue;
+    if(pk.type==='settlement'){town=town||pk;continue;}
+    showInspect(pk);return;
   }
+  if(town){showInspect(town);return;}
   hideInspect();
   if(cam.follow){cam.follow=null;}
 }
-function setPlaceMode(mode){
-  placeMode=mode;
-  document.getElementById('placehint').style.display=mode?'block':'none';
+let placeArg=null;
+function setPlaceMode(mode,arg,hint){
+  placeMode=mode;placeArg=arg??null;
+  if(mode)hideBeat();
+  const ph=document.getElementById('placehint');
+  ph.textContent=hint||'Click the map to place — Esc to cancel';
+  ph.style.display=mode?'block':'none';
+}
+function nearestSettlementIdx(x,z){
+  let bi=0,bd=1e18;
+  W.settlements.forEach((s,i)=>{const d=dist2d(x,z,s.pos.x,s.pos.z);if(d<bd){bd=d;bi=i;}});
+  return bi;
 }
 
 /* ---------------- inspector ------------------------------------------------ */
@@ -1553,13 +1674,14 @@ function esc(t){const d=document.createElement('span');d.textContent=t;return d.
 function showInspect(pk){
   inspTarget=pk;
   const el=document.getElementById('insp'),body=document.getElementById('inspbody');
+  const acts=document.getElementById('inspacts');let actsH='';
   const title=document.getElementById('insptitle'),sub=document.getElementById('inspsub');
   const fb=document.getElementById('inspfollow');fb.style.display='none';
   let h='';
   const row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`;
   if(pk.type==='settlement'){
     const s=pk.s,house=W.houses[s.owner];
-    title.innerHTML=`<img src="${sigURL(s.owner)}">`+esc(s.name);
+    setHTML(title,`<img src="${sigURL(s.owner)}">`+esc(s.name));
     sub.textContent=s.kind+(s.harbor?' · harbor':'')+(s.river?' · riverside':'')+' · '+house.name;
     h+=row('Population',Math.round(s.pop).toLocaleString());
     h+=row('Prosperity',Math.round(s.prosperity));
@@ -1570,10 +1692,12 @@ function showInspect(pk){
     if(s.infected>0.5)h+=row('Plague',Math.round(s.infected)+' sick, '+Math.round(s.plagueDead)+' dead');
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
     if(s.ruinCount)h+=row('Ruins',s.ruinCount);
+    if(s.quarantineUntil>day())h+=row('Gates','sealed until '+dateStr(s.quarantineUntil));
     flyToBtn(fb,'Visit',()=>flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340));
+    if(sovOn())actsH=settlementActsHTML(s);
   }else if(pk.type==='building'){
     const b=pk.b;
-    title.textContent=(TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4];
+    setHTML(title,esc((TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4]));
     sub.textContent=b.s.name+' · '+b.district+' district'+(b.state!=='sound'?' · '+b.state:'');
     h+=row('Households',b.arch==='house'||b.arch==='longhouse'?1+b.tier:0);
     h+=row('State',b.state);
@@ -1582,52 +1706,64 @@ function showInspect(pk){
     flyToBtn(fb,'Visit',()=>flyTo(b.x,b.z,60));
   }else if(pk.type==='notable'){
     const n=pk.n;
-    title.innerHTML=`<img src="${sigURL(n.house)}">`+esc(fullTitle(n));
+    setHTML(title,`<img src="${sigURL(n.house)}">`+esc(fullTitle(n)));
     sub.textContent=n.role+' · '+houseOf(n).name+(n.alive?'':' · deceased');
-    h+=row('Age',n.age);
+    h+=row('Age',n.alive?ageOf(n):(n.age??'—'));
     h+=row('Traits',n.traits.join(', '));
     if(n.spouse){const sp=notableById(n.spouse);if(sp)h+=row('Spouse',sp.name);}
     if(n.heirs.length)h+=row('Children',n.heirs.map(id=>notableById(id)?.name).filter(Boolean).join(', '));
     h+=`<div class="agline">“${esc(n.agenda)}.”</div>`;
   }else if(pk.type==='army'){
     const a=pk.a||pk.army;
-    title.innerHTML=`<img src="${sigURL(a.house)}">`+esc(a.name);
+    setHTML(title,`<img src="${sigURL(a.house)}">`+esc(a.name));
     sub.textContent='army of '+W.houses[a.house].name;
     h+=row('Strength',Math.round(a.strength));
     h+=row('Morale',Math.round(a.morale));
     h+=row('Supply',Math.round(a.supply));
     const c=notableById(a.commander);
     if(c)h+=row('Commander',fullTitle(c));
-    flyToBtn(fb,'Follow',()=>{cam.follow=a;cam.dist=260;});
+    h+=row('Orders',{march:'on the march',siege:'besieging',battle:'in battle',rout:'in retreat',idle:'encamped',arrived:'encamped'}[a.state]||a.state);
+    if(a.target!=null&&a.state==='march')h+=row('Bound for',W.settlements[a.target].name);
+    flyToBtn(fb,'Follow',()=>{markManual();cam.follow=a;cam.dist=260;});
+    if(sovOn()&&a.side==='crown')actsH=armyActsHTML(a);
   }else if(pk.type==='caravan'){
     const c=pk.c;
-    title.textContent=c.sea?'Trading cog':(c.river?'River barge':'Caravan');
+    setHTML(title,esc(c.sea?'Trading cog':(c.river?'River barge':'Caravan')));
     sub.textContent=W.settlements[c.origin].name+' → '+W.settlements[c.dest].name;
     h+=row('Cargo',c.good+' × '+Math.round(c.qty));
     h+=row('Value',Math.round(c.value)+' gold');
-    flyToBtn(fb,'Follow',()=>{cam.follow=c;cam.dist=140;});
+    flyToBtn(fb,'Follow',()=>{markManual();cam.follow=c;cam.dist=140;});
   }else if(pk.type==='dragon'){
     const d=W.dragon;
-    title.textContent=d.name;
+    setHTML(title,esc(d.name));
     sub.textContent='the dragon of the high peak';
     h+=row('Mood',d.mood);
     h+=row('Hoard',Math.round(d.hoard)+' gold');
     h+=row('Raids',d.wakes);
-    flyToBtn(fb,'Follow',()=>{cam.follow=d;cam.dist=300;});
+    flyToBtn(fb,'Follow',()=>{markManual();cam.follow=d;cam.dist=300;});
   }else if(pk.type==='cairn'){
-    title.textContent='Battle cairn';
+    setHTML(title,esc('Battle cairn'));
     sub.textContent='';
     h+=`<div class="agline">${esc(pk.text)}</div>`;
   }else if(pk.type==='camp'){
-    title.textContent=pk.camp.king?('Camp of '+pk.camp.king):'Bandit camp';
+    setHTML(title,esc(pk.camp.king?('Camp of '+pk.camp.king):'Bandit camp'));
     sub.textContent='outlaws of the greenwood';
     h+=row('Raids',pk.camp.raids);
+    if(pk.camp.patrol)h+=row('Crown riders','on the way');
+    flyToBtn(fb,'Visit',()=>flyTo(pk.camp.x,pk.camp.z,260));
   }
-  body.innerHTML=h;
+  setHTML(body,h);setHTML(acts,actsH); // live refresh only touches the DOM when something changed
   el.style.display='block';
 }
-function flyToBtn(fb,label,fn){fb.style.display='block';fb.textContent=label;fb.onclick=fn;}
+function flyToBtn(fb,label,fn){fb.style.display='block';fb.textContent=label;fb.onclick=()=>{markManual();fn();};}
 function hideInspect(){document.getElementById('insp').style.display='none';inspTarget=null;}
+function refreshInspect(){ // live numbers; close the card when its subject has left the stage
+  const pk=inspTarget;if(!pk||uiBusy())return;
+  if((pk.type==='caravan'&&pk.c.gone)||(pk.type==='army'&&(pk.a||pk.army).gone)||
+     (pk.type==='camp'&&!W.banditCamps.includes(pk.camp))){hideInspect();return;}
+  if(pk.type==='cairn')return;
+  showInspect(pk);
+}
 function sigURL(hi){
   const h=W.houses[hi]||W.houses[0];
   if(!h._url)h._url=makeSigil(h.sigilHue,h.charge).toDataURL();
@@ -1671,6 +1807,8 @@ function simInit(){
       }
     }
   }
+  W.player={on:false,started:false,legacy:0,since:0,startPop:0,peaceSince:0,amb:{},cd:{},pause:true,confirm:null};
+  W.petitions=[];W.dynasty=1;
   // the river is a road that flows: barge routes between river-linked towns
   W.riverPairs=[];
   for(let i=0;i<W.settlements.length;i++)for(let j=i+1;j<W.settlements.length;j++){
@@ -1700,6 +1838,7 @@ function tickWeather(){
 }
 
 /* ============================ ECONOMY ==================================== */
+function closedToTrade(s){return s.infected/Math.max(1,s.pop)>0.15||!!s.siegeBy||s.quarantineUntil>day();}
 const NEED={grain:0.007,fish:0.003,timber:0.0006,ore:0.0002,tools:0.0004,cloth:0.0005,wine:0.0004};
 function price(s,g){
   const need=s.pop*NEED[g]*25+5;
@@ -1722,18 +1861,19 @@ function tickEconomy(){
       s.stores[g]-=s.pop*NEED[g]*(g==='grain'||g==='fish'?0:1); // food eaten in population tick
       s.stores[g]=clamp(s.stores[g],0,s.pop*NEED[g]*220+400);
     }
-    // taxes on production
-    W.treasury+=s.pop*0.0016*(MOD.tax/12)*(s.prosperity/60);
+    // taxes on production (towns held by houses in arms against the crown pay nothing)
+    if(!inRevolt(s.owner))
+      W.treasury+=s.pop*0.0016*(MOD.tax/12)*(s.prosperity/60);
   }
   // caravans
   if(W.caravans.length<Math.round(30*MOD.trade)&&day()%2===0){
     for(let attempt=0;attempt<3;attempt++){
       const oi=randi('sim',W.settlements.length),o=W.settlements[oi];
-      if(o.infected/Math.max(1,o.pop)>0.15||o.siegeBy)continue;
+      if(closedToTrade(o))continue;
       let best=null;
       for(let di=0;di<W.settlements.length;di++){
         if(di===oi)continue;const d=W.settlements[di];
-        if(d.infected/Math.max(1,d.pop)>0.15||d.siegeBy)continue; // emergent quarantine
+        if(closedToTrade(d))continue; // emergent quarantine (or the crown's sealed gates)
         for(const g of GOODS){
           const margin=price(d,g)-price(o,g);
           if(margin>GOODBASE[g]*0.5&&o.stores[g]>40){
@@ -1763,7 +1903,7 @@ function tickEconomy(){
     const oi=randi('sim',W.settlements.length);let di=randi('sim',W.settlements.length);
     if(oi!==di){
       const o=W.settlements[oi],d2=W.settlements[di];
-      if(o.infected/Math.max(1,o.pop)<=0.15&&d2.infected/Math.max(1,d2.pop)<=0.15&&!o.siegeBy&&!d2.siegeBy){
+      if(!closedToTrade(o)&&!closedToTrade(d2)){
         const g=GOODS.reduce((a,b)=>o.stores[a]>o.stores[b]?a:b);
         if(o.stores[g]>25){
           const r=route(oi,di);
@@ -1784,7 +1924,7 @@ function tickEconomy(){
     const downstream=chance('sim',0.5);
     const oi=downstream?pr.a:pr.b,di=downstream?pr.b:pr.a;
     const o=W.settlements[oi],d2=W.settlements[di];
-    if(o.infected/Math.max(1,o.pop)<=0.15&&d2.infected/Math.max(1,d2.pop)<=0.15&&!o.siegeBy&&!d2.siegeBy){
+    if(!closedToTrade(o)&&!closedToTrade(d2)){
       const g=GOODS.reduce((a,b)=>o.stores[a]>o.stores[b]?a:b);
       if(o.stores[g]>25){
         const qty=Math.min(o.stores[g]*0.3,70);o.stores[g]-=qty;
@@ -1801,7 +1941,7 @@ function tickEconomy(){
     if(ai!==bi){
       const a=W.settlements[ai],b=W.settlements[bi];
       const g=pick('sim',['fish','grain','cloth','wine']);
-      if(a.stores[g]>50){
+      if(a.stores[g]>50&&!closedToTrade(a)&&!closedToTrade(b)){ // cogs used to sail into plague ports and sieges
         const qty=Math.min(a.stores[g]*0.4,90);a.stores[g]-=qty;
         const poly=[{x:a.pos.x,z:a.pos.z},{x:(a.pos.x+b.pos.x)/2+(rand('sim')-0.5)*600,z:(a.pos.z+b.pos.z)/2+(rand('sim')-0.5)*600},{x:b.pos.x,z:b.pos.z}];
         const len=dist2d(a.pos.x,a.pos.z,b.pos.x,b.pos.z)*1.2;
@@ -1825,6 +1965,7 @@ function tickEconomy(){
         if(o.infected/Math.max(1,o.pop)>0.02&&d.infected<1&&chance('sim',0.35*MOD.vir)){
           d.infected+=3;
           emit('fates',7,d.pos,`The pestilence has come to ${d.name}, borne on the ${c.sea?'tide':'road'} from ${o.name}.`);
+          plagueArrives(d);
         }
       }
       if(c.proxy){scene.remove(c.proxy);c.proxy=null;}
@@ -1852,11 +1993,12 @@ function tickPopulation(){
     const deaths=s.pop*(0.026/360)*MOD.mort*(1+hunger*5)*(s.siegeBy?1.5:1);
     s.pop=Math.max(5,s.pop+births-deaths);
     s.unrest=clamp(s.unrest+hunger*1.6+(MOD.tax-12)*0.012-(s.festivalUntil>day()?0.5:0)-0.14,0,100);
-    s.prosperity=clamp(s.prosperity+(hunger>0.25?-0.35:0.06)-(s.siegeBy?0.5:0),1,100);
+    s.prosperity=clamp(s.prosperity+(hunger>0.25?-0.35:0.06)-(s.siegeBy?0.5:0)-(s.quarantineUntil>day()?0.12:0),1,100);
     if(hunger>0.4&&!s.famineFlag&&s.pop>100){
       s.famineFlag=true;
       emit('trade',7,s.pos,`Famine stalks ${s.name}; the granaries stand empty and the ${['young','old','poor'][randi('sim',3)]} perish first.`);
       W.legitimacy=clamp(W.legitimacy-4,0,100);
+      famineStrikes(s);
     }
     if(hunger<0.15)s.famineFlag=false;
     // migration under misery
@@ -1914,9 +2056,16 @@ function tickPolitics(){
         `A hunting dispute on the borders of ${nearestPlaceName(seatPos.x,seatPos.z)} ends in drawn steel; ${h.name} nurses the insult.`,
         `The crown seizes a contested toll-bridge claimed by ${h.name}. Harsh words are spoken in the hall.`,
         `At the feast, the herald seats ${h.name} below the salt. The slight is not forgotten.`]));
-    }else if(h.loyalty<35&&W.treasury>3000&&chance('sim',0.004)){
-      W.treasury-=600;h.loyalty=clamp(h.loyalty+12,0,100);
-      emit('crown',4,W.capital.pos,`Seeking peace at home, the crown grants lands and offices to ${h.name}; old wounds are salved with gold.`);
+    }else if(h.loyalty<35&&(sovOn()||W.treasury>3000)&&chance('sim',0.004)&&!inRevolt(hi)){
+      const seatPos=W.settlements[h.seat]?.pos||W.capital.pos;
+      petition({key:'grant'+hi,title:`${h.name} is restive`,pos:seatPos,
+        text:`Envoys of ${h.name} come to court with a list of grievances. Their loyalty stands at ${Math.round(h.loyalty)}; they hint that a house so ill-used might look to its own banners.`,
+        ai:0,opts:[
+        {label:'Grant them lands and offices',cost:600,act:()=>{h.loyalty=clamp(h.loyalty+12,0,100);
+          emit('crown',4,W.capital.pos,`Seeking peace at home, the crown grants lands and offices to ${h.name}; old wounds are salved with gold.`);}},
+        {label:'Demand a hostage for their good faith',act:()=>takeHostage(hi)},
+        {label:'Send the envoys away empty-handed',act:()=>{h.loyalty=clamp(h.loyalty-5,0,100);W.legitimacy=clamp(W.legitimacy+1,0,100);
+          emit('crown',4,seatPos,`The crown dismisses the grievances of ${h.name}. Its envoys ride home in silence.`);}}]});
     }
   }
   // riots & revolts
@@ -1998,6 +2147,7 @@ function tickPolitics(){
       h.name='House '+(chance('sim',0.5)?pick('sim',NAMEB.pfx)+pick('sim',NAMEB.sfx):pick('sim',beasts)+pick('sim',['mane','fell','marck','wood','helm']));
       h.charge=pick('sim',CHARGES);h.exiled=false;h.loyalty=68;h.might=0.6+rand('sim')*0.7;h.grudges={};
       delete h._url;
+      if(W.settlements[h.seat]&&h.seat!==0)W.settlements[h.seat].owner=exiledIdx; // the forfeit seat really is granted
       const sx=chance('sim',0.5)?'m':'f';
       const head=mkNotable({name:personName(sx),sex:sx,age:32+randi('sim',15),house:exiledIdx,role:'head',
         traits:twoTraits(),agenda:'means to prove the new blood worthy'});
@@ -2090,7 +2240,12 @@ function succession(){
     W.monarch=head;head.role='monarch';
     const rival=claimants.find(i=>i!==ci&&W.houses[i].loyalty<55);
     W.reignNum[head.name]=(W.reignNum[head.name]||0)+1;W.reignStart=day();
-    head.house=0;if(ci>0){W.houses[ci].loyalty=95;adoptDynasty(ci);}
+    head.house=0;
+    if(ci>0){W.houses[ci].loyalty=95;adoptDynasty(ci);
+      // the house needs a new head, or it would later "rebel" under the monarch themself
+      const nh=W.notables.filter(n=>n.alive&&n.house===ci&&n!==head&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0];
+      if(nh){nh.role='head';W.houses[ci].head=nh.id;}
+    }else dynastyChanged();
     reignHeader(head);
     if(rival!==undefined&&!W.war)startWar(rival,'presses a rival claim to the throne');
   }
@@ -2146,6 +2301,7 @@ function checkWarSpark(){
   for(let hi=1;hi<W.houses.length;hi++){
     const h=W.houses[hi];
     if(h.exiled)continue;
+    if(h.hostageUntil>day()&&h.loyalty>=12)continue; // a son at court stays a father's hand
     if(h.loyalty<30&&chance('sim',0.0045*MOD.aggr*mythMult())){
       startWar(hi,pick('sim',['can stomach the crown’s taxes no longer','declares the crown unfit to rule','rises to avenge old slights']));
       return;
@@ -2153,6 +2309,7 @@ function checkWarSpark(){
   }
 }
 function armySimPos(a){ // authoritative position in sim time (render _rpos may lag)
+  if(a.state==='battle'&&a.battlePos)return {x:a.battlePos.x,z:a.battlePos.z};
   if((a.state==='march'||a.state==='rout')&&a.poly){
     const f=clamp((day()-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay),0,1);
     const p=polyPos(a.poly,f);
@@ -2166,26 +2323,32 @@ function tickMilitary(){
   const now=day();
   for(const a of W.armies)a._spos=armySimPos(a);
   for(const a of W.armies){
+    if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
     a.supply-=a.state==='march'?0.8:0.4;
     if(a.supply<=0){a.strength*=0.995;a.morale=Math.max(20,a.morale-0.3);}
-    if(a.state==='idle'&&W.war){
-      // pick objective
-      const enemyOwner=(si)=>a.side==='crown'?(W.settlements[si].owner===W.war.rebel||(W.armies.some(x=>x.side==='rebel'&&x.house===W.settlements[si].owner))):(W.settlements[si].owner===0);
+    if(a.state==='idle'&&W.war&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
+      a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;
+    }
+    if(a.state==='idle'&&W.war&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
+    if(a.state==='idle'&&W.war&&!a.hold){
+      // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
       let tgt=-1,bd=1e18;
       W.settlements.forEach((s,si)=>{
-        if(si===a.at)return;
-        const hostile=a.side==='crown'?s.owner!==0:si===0||s.owner===0;
-        if(!hostile)return;
+        if(si===a.at||!hostileTo(a,s))return;
         const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);
         if(d<bd){bd=d;tgt=si;}
       });
+      if(tgt<0){ // nothing to besiege: ride for the nearest enemy host instead
+        let foe=null,fd=1e18;
+        for(const b of W.armies){if(b.side===a.side||b.gone)continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}}
+        if(foe){const t=nearestSettlementIdx(foe._spos.x,foe._spos.z);if(t!==a.at)tgt=t;}
+      }
       if(tgt>=0)marchArmy(a,tgt);
     }
     if(a.state==='march'&&now>=a.arriveDay){
       a.at=a.target;a.state='arrived';
       const s=W.settlements[a.at];
-      const hostile=a.side==='crown'?s.owner!==0&&(s.owner===W.war?.rebel||W.armies.some(x=>x.side==='rebel'&&x.house===s.owner)):s.owner===0;
-      if(W.war&&hostile){
+      if(W.war&&hostileTo(a,s)){
         if(s.walls>0&&s.garrison>20){
           a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6);
           s.siegeBy={houseName:W.houses[a.house].name,army:a};
@@ -2199,11 +2362,10 @@ function tickMilitary(){
       if(now>=a.siegeUntil){
         s.siegeBy=null;takeSettlement(a,s);
       }else if(chance('sim',0.01)){ // sortie
-        const cmd=notableById(a.commander);
         if(resolveClash(a,{strength:s.garrison*3,morale:60,house:s.owner,name:'garrison of '+s.name})){
           emit('war',6,s.pos,`A sortie from ${s.name} is beaten back with slaughter at the gates.`);
         }else{
-          a.state='rout';routHome(a);s.siegeBy=null;
+          liftSiege(a);routHome(a);
           emit('war',8,s.pos,`The defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`);
           warScore(a.side==='crown'?-14:14);
         }
@@ -2216,6 +2378,10 @@ function tickMilitary(){
     const a=W.armies[i],b=W.armies[j];
     if(a.side===b.side||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
     if(dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z)<130){
+      for(const x of[a,b]){ // remember the road each host was on, and abandon any siege
+        x._resume=x.state==='march'?{f:clamp((now-x.departDay)/Math.max(0.01,x.arriveDay-x.departDay),0,1)}:null;
+        x.battleStart=now;liftSiege(x);
+      }
       a.state=b.state='battle';a.battleUntil=b.battleUntil=now+2;a.foe=b;b.foe=a;
       const where=nearestPlaceName(a._spos.x,a._spos.z);
       a.battleName=b.battleName='the Battle of '+where;a.battlePos={x:a._spos.x,z:a._spos.z};b.battlePos=a.battlePos;
@@ -2223,9 +2389,10 @@ function tickMilitary(){
     }
   }
   for(const a of W.armies){
+    if(a.gone)continue;
     if(a.state==='battle'&&day()>=a.battleUntil&&a.foe){
       const b=a.foe;
-      if(b.state!=='battle'){a.state='idle';continue;}
+      if(b.state!=='battle'||b.gone){resumeAfterBattle(a);continue;}
       const aWins=resolveClash(a,b);
       const w=aWins?a:b,l=aWins?b:a;
       const cw=notableById(w.commander),cl=notableById(l.commander);
@@ -2238,8 +2405,9 @@ function tickMilitary(){
       emit('war',8,pos,line);
       addCairn(pos.x,pos.z,a.battleName+', Year '+year()+' — here '+w.name+' prevailed.');
       warScore(w.side==='crown'?20:-20);
-      a.state=b.state='idle';a.foe=b.foe=null;
-      routHome(l);l.state='rout';
+      a.foe=b.foe=null;
+      resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
+      routFromField(l);
       if(l.strength<60)disbandArmy(l);
       if(w.strength<60)disbandArmy(w);
     }
@@ -2262,10 +2430,41 @@ function tickMilitary(){
   }
 }
 function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
+function inRevolt(hi){ // is this house in arms against the crown right now?
+  return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
+}
+function hostileTo(a,s){ // is settlement s an enemy of army a in the current war?
+  if(!W.war)return false;
+  if(a.side==='crown')return s.owner===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===s.owner);
+  return s.owner===0;
+}
+function liftSiege(a){
+  W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
+}
 function routHome(a){
   const r=route(a.at,a.home);
-  if(r){a.target=a.home;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/900;}
-  else{a.state='idle';}
+  if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/900;}
+  else{a.state='idle';a.at=a.home;}
+}
+function resumeAfterBattle(a){
+  const r=a._resume;a._resume=null;
+  if(r&&a.poly&&a.target!=null){ // pick the march back up where the battle interrupted it
+    const span=a.arriveDay-a.departDay;
+    a.state='march';a.departDay=day()-r.f*span;a.arriveDay=a.departDay+span;
+  }else a.state='idle';
+}
+function routFromField(a){
+  const r=a._resume;a._resume=null;
+  if(r&&a.poly&&a.poly.length>1){ // fall back along the road it came by, from the battlefield
+    const total=a.poly.reduce((t,p,i)=>i?t+dist2d(a.poly[i-1].x,a.poly[i-1].z,p.x,p.z):0,0);
+    const want=r.f*total,back=[];let acc=0;
+    back.push(a.poly[0]);
+    for(let i=1;i<a.poly.length;i++){acc+=dist2d(a.poly[i-1].x,a.poly[i-1].z,a.poly[i].x,a.poly[i].z);if(acc>=want)break;back.push(a.poly[i]);}
+    const here=a.battlePos||polyPos(a.poly,r.f);
+    back.push({x:here.x,z:here.z});back.reverse();
+    let len=0;for(let k=1;k<back.length;k++)len+=dist2d(back[k-1].x,back[k-1].z,back[k].x,back[k].z);
+    a.state='rout';a.target=a.at;a.poly=back;a.departDay=day();a.arriveDay=day()+Math.max(0.5,len/900);
+  }else routHome(a);
 }
 function resolveClash(a,b){
   const ca=notableById(a.commander),cb=notableById(b.commander);
@@ -2293,16 +2492,19 @@ function takeSettlement(a,s){
   else if(W.war&&si===W.houses[W.war.rebel].seat&&a.side==='crown')endWar(1);
 }
 function disbandArmy(a){
+  if(a.gone)return;
   const s=W.settlements[a.home];if(s)s.pop+=a.strength*0.6;
-  W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;}); // a dead army lifts its siege
+  liftSiege(a); // a dead army lifts its siege
   if(a.flag){scene.remove(a.flag);a.flag=null;}
   a.gone=true;
   W.armies=W.armies.filter(x=>x!==a);
 }
 function adoptDynasty(hi){ // the crown takes the victorious house's name and arms
   const h=W.houses[hi],c=W.houses[0];
+  const oldName=c.name;
   c.name=h.name;c.sigilHue=h.sigilHue;c.charge=h.charge;delete c._url;
   const img=document.getElementById('crownsig');if(img)img.src=sigURL(0);
+  dynastyChanged(oldName);
 }
 function endWar(result){ // 1 crown wins, -1 rebels win, 0 white peace
   if(!W.war)return;
@@ -2314,6 +2516,7 @@ function endWar(result){ // 1 crown wins, -1 rebels win, 0 white peace
     h.exiled=true;h.exiledDay=day();
     W.settlements.forEach(s=>{if(s.owner===W.war.rebel)s.owner=0;});
     W.legitimacy=clamp(W.legitimacy+15,0,100);
+    sovAmbition('victor');
     const head=notableById(h.head);
     emit('war',10,W.capital.pos,`${warName} is ended after ${dur} months. ${h.name} is attainted and driven into exile beyond the mountains; its sigil is struck from the rolls.`);
     if(head&&chance('sim',0.5))killNotable(head,'on the scaffold, unrepentant',true);
@@ -2340,6 +2543,7 @@ function endWar(result){ // 1 crown wins, -1 rebels win, 0 white peace
     emit('war',8,W.capital.pos,`${warName} ends after ${dur} months, with neither side master of the field. A weary peace is sworn at the border stones.`);
   }
   W.war=null;W.truceUntil=day()+1500;
+  if(W.player)W.player.peaceSince=day();
   refreshOverlay();
 }
 function nearestPlaceName(x,z){
@@ -2366,6 +2570,7 @@ function tickThreats(){
     const s=pick('sim',W.settlements.filter(x=>x.harbor||x.kind==='capital'))||W.capital;
     s.infected=4;
     emit('fates',7,s.pos,`A strange sickness appears in ${s.name}: fevers, and dark blooms upon the skin. The learned mutter of ill airs.`);
+    plagueArrives(s);
   }
   // fires: spread & burn out
   for(const s of W.settlements){
@@ -2444,11 +2649,12 @@ function tickThreats(){
   }
   // bandits
   tickBandits(dis);
-  // dragon
-  if(myth>=1)tickDragon();
+  // dragon (Myth gates its waking inside; a raid already under way must always resolve)
+  tickDragon();
   // omens
   tickOmens(myth,dis);
 }
+let campN=0;
 function tickBandits(dis){
   const avgUnrest=W.settlements.reduce((t,s)=>t+s.unrest,0)/W.settlements.length;
   if(W.banditCamps.length<3&&chance('sim',(0.0012+avgUnrest*0.00006+(W.war?0.002:0))*MOD.bandit)){
@@ -2458,7 +2664,7 @@ function tickBandits(dis){
       if(W.biome[i]!==B.FOREST&&W.biome[i]!==B.PINE)continue;
       const x=cellX(cx),z=cellZ(cz);
       if(W.settlements.some(s=>dist2d(x,z,s.pos.x,s.pos.z)<700))continue;
-      const camp={x,z,raids:0,king:null,born:day()};
+      const camp={id:++campN,x,z,raids:0,king:null,born:day()};
       W.banditCamps.push(camp);
       const g=campGroup(0x4a4038);g.position.set(x,hAt(x,z),z);
       g.traverse(o=>o.userData.pick={type:'camp',camp});
@@ -2493,10 +2699,13 @@ function tickBandits(dis){
       emit('fates',6,camp,`The outlaws have crowned a king of thieves: men whisper the name ${camp.king}.`);
     }
     // crown response: bounty patrol
-    if(camp.raids>=2&&!camp.patrol&&W.treasury>400&&chance('sim',0.02)){
-      camp.patrol=true;W.treasury-=200;
-      camp.patrolArrive=day()+dist2d(camp.x,camp.z,W.capital.pos.x,W.capital.pos.z)/700;
-      emit('war',4,W.capital.pos,`The crown posts a bounty and sends riders against the outlaws of ${nearestPlaceName(camp.x,camp.z)}.`);
+    if(camp.raids>=2&&!camp.patrol&&(sovOn()||W.treasury>400)&&!(camp.ignoreUntil>day())&&chance('sim',0.02)){
+      petition({key:'bounty'+camp.id,title:'Outlaws on the roads',pos:camp,
+        text:`Merchants petition the crown: the robbers near ${nearestPlaceName(camp.x,camp.z)}${camp.king?', led by '+camp.king+',':''} have taken ${camp.raids} caravans. Will the crown send riders?`,
+        ai:0,opts:[
+        {label:'Post a bounty and send riders',cost:200,act:()=>sendRiders(camp)},
+        {label:'The roads must look to themselves',act:()=>{camp.ignoreUntil=day()+240;W.legitimacy=clamp(W.legitimacy-1,0,100);
+          emit('trade',3,camp,`The crown will not spare riders for the roads near ${nearestPlaceName(camp.x,camp.z)}; the merchants hire their own guards.`);}}]});
     }
     if(camp.patrol&&day()>=camp.patrolArrive){
       if(chance('sim',camp.king?0.45:0.75)){
@@ -2512,6 +2721,20 @@ function tickBandits(dis){
     }
   }
 }
+function wakeDragon(msg){
+  const d=W.dragon,tgt=[...W.settlements].sort((a,b)=>b.prosperity*b.pop-a.prosperity*a.pop)[0];
+  const L=d.lair;
+  d.state='raiding';d.wakes++;d.target=tgt;d.mood='wrathful';
+  d.path=[{x:L.x,z:L.z,y:L.y+120},{x:(L.x+tgt.pos.x)/2,z:(L.z+tgt.pos.z)/2,y:500},{x:tgt.pos.x,z:tgt.pos.z,y:tgt.pos.y+60}];
+  d.departDay=day();d.arriveDay=day()+dist2d(L.x,L.z,tgt.pos.x,tgt.pos.z)/3000;
+  emit('fates',10,{x:L.x,z:L.z},msg(d,tgt));
+}
+function sendRiders(camp){
+  if(camp.patrol||!W.banditCamps.includes(camp))return;
+  camp.patrol=true;
+  camp.patrolArrive=day()+dist2d(camp.x,camp.z,W.capital.pos.x,W.capital.pos.z)/700;
+  emit('war',4,W.capital.pos,`The crown posts a bounty and sends riders against the outlaws of ${nearestPlaceName(camp.x,camp.z)}.`);
+}
 function tickDragon(){
   const d=W.dragon;
   if(d.dead){
@@ -2525,16 +2748,9 @@ function tickDragon(){
   }
   if(d.state==='sleeping'){
     d.mood=W.treasury>8000?'dreaming of gold':'slumbering';
-    if(day()>(d.peaceUntil||0)&&chance('sim',clamp(W.treasury/30000,0,1)*0.0035*mythMult())){
-      d.state='raiding';d.wakes++;
-      const tgt=[...W.settlements].sort((a,b)=>b.prosperity*b.pop-a.prosperity*a.pop)[0];
-      d.target=tgt;
-      const L=d.lair;
-      d.path=[{x:L.x,z:L.z,y:L.y+120},{x:(L.x+tgt.pos.x)/2,z:(L.z+tgt.pos.z)/2,y:500},{x:tgt.pos.x,z:tgt.pos.z,y:tgt.pos.y+60}];
-      d.departDay=day();d.arriveDay=day()+dist2d(L.x,L.z,tgt.pos.x,tgt.pos.z)/3000;
-      d.mood='wrathful';
-      emit('fates',10,{x:L.x,z:L.z},`${d.name} has woken! The dragon lifts from the high peak on wings like storm-cloud, and turns toward ${tgt.name}.`);
-    }
+    // Myth gates only spontaneous waking; a wyrm already aloft always finishes its flight home
+    if(MOD.myth>=1&&day()>(d.peaceUntil||0)&&chance('sim',clamp(W.treasury/30000,0,1)*0.0035*mythMult()))
+      wakeDragon((d,tgt)=>`${d.name} has woken! The dragon lifts from the high peak on wings like storm-cloud, and turns toward ${tgt.name}.`);
   }else if(d.state==='raiding'&&day()>=d.arriveDay){
     const t=d.target;
     igniteFire(t,3,'dragon');
@@ -2551,24 +2767,28 @@ function tickDragon(){
     // the crown responds, per the monarch's valor
     const m=W.monarch;
     if(m&&m.alive&&ageOf(m)>=16){
-      if(m.traits.includes('bold')||(!m.traits.includes('craven')&&chance('sim',0.5))){
-        d.slayAt=day()+25;d.slayer=m.id;
-        emit('crown',8,W.capital.pos,`${fullTitle(m)} swears before the court to slay the wyrm, and calls for volunteers of good courage.`);
-      }else{
-        const tribute=W.treasury*0.2;
-        W.treasury-=tribute;d.hoard+=tribute;d.peaceUntil=day()+1800;
+      const swear=()=>{d.slayAt=day()+25;d.slayer=m.id;
+        emit('crown',8,W.capital.pos,`${fullTitle(m)} swears before the court to slay the wyrm, and calls for volunteers of good courage.`);};
+      const tribute=()=>{const t=Math.max(0,W.treasury*0.2);
+        W.treasury-=t;d.hoard+=t;d.peaceUntil=day()+1800;
         W.legitimacy=clamp(W.legitimacy-6,0,100);
-        emit('crown',7,W.capital.pos,`${fullTitle(m)} sends tribute of ${Math.round(tribute)} gold to the dragon's peak, buying an uneasy peace. The smallfolk grumble at the cost.`);
-      }
+        emit('crown',7,W.capital.pos,`${fullTitle(m)} sends tribute of ${Math.round(t)} gold to the dragon's peak, buying an uneasy peace. The smallfolk grumble at the cost.`);};
+      petition({key:'wyrm',title:`${d.name} returns to its peak`,pos:{x:d.lair.x,z:d.lair.z},
+        text:`The wyrm has fed on ${d.target.name} and flown home. The court looks to ${fullTitle(m)}: will the crown ride against it, or pay for peace?`,
+        ai:()=>m.traits.includes('bold')||(!m.traits.includes('craven')&&chance('sim',0.5))?0:1,
+        opts:[{label:`Swear to slay it (${m.traits.includes('bold')?'bold — ':''}the monarch rides in person)`,act:swear},
+              {label:'Send tribute (a fifth of the treasury)',act:tribute},
+              {label:'Do nothing, and bar the gates',act:()=>{W.legitimacy=clamp(W.legitimacy-3,0,100);
+                emit('crown',5,W.capital.pos,`The crown neither fights nor pays; the smallfolk mutter that the wyrm will come again.`);}}]});
     }
   }
   if(d.slayAt&&day()>=d.slayAt){
     const m=notableById(d.slayer);d.slayAt=null;
     if(m&&m.alive){
-      if(chance('sim',0.45)){
+      if(chance('sim',0.45+(m.traits.includes('bold')?0.08:0)-(m.traits.includes('craven')?0.15:0))){
         d.dead=true;d.state='dead';d.mood='slain';
         W.treasury+=d.hoard;W.legitimacy=clamp(W.legitimacy+25,0,100);
-        m.epithet='the Dragonslayer';
+        m.epithet='the Dragonslayer';sovAmbition('wyrm');
         emit('crown',10,{x:d.lair.x,z:d.lair.z},`Wonder of the age! ${fullTitle(m)} has slain ${d.name} upon the high peak. The hoard — ${Math.round(d.hoard)} in old gold — is carried down by torchlight.`,{festival:true});
       }else{
         emit('fates',10,{x:d.lair.x,z:d.lair.z},`Woe! ${fullTitle(m)} is burned upon the mountainside by ${d.name}, and the host returns bearing only a scorched shield.`);
@@ -2579,6 +2799,7 @@ function tickDragon(){
   }
 }
 function tickOmens(myth,dis){
+  if(W.comet&&day()>W.comet.until)W.comet=null; // expire even with Myth off, or a fanged comet doubles fate forever
   if(myth<1)return;
   // comet
   if(!W.comet&&chance('sim',0.0006*dis)){
@@ -2649,7 +2870,7 @@ function doAct(act,p){
   const nearS=()=>{let b=W.settlements[0],bd=1e18;for(const s of W.settlements){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;b=s;}}return b;};
   switch(act){
     case 'plague':{const s=nearS();s.infected=Math.max(s.infected,6);
-      emit('fates',7,s.pos,`A pestilence breaks out in ${s.name}; the first houses are marked with white crosses.`);break;}
+      emit('fates',7,s.pos,`A pestilence breaks out in ${s.name}; the first houses are marked with white crosses.`);plagueArrives(s);break;}
     case 'fire':{const s=nearS();if(igniteFire(s,2,'act'))emit('fates',6,s.pos,`Fire! Flames leap up in ${s.name}.`);break;}
     case 'flood':{W.snowpack=90;W.flooding=8;
       for(const s of W.settlements)if(s.river){s.prosperity=clamp(s.prosperity-8,1,100);
@@ -2661,10 +2882,12 @@ function doAct(act,p){
         for(const b of s.buildings)if(b.state==='sound'&&chance('sim',0.07)){b.state='ruin';b.rebuildT=day()+240;s.ruinCount++;updateBuildingInstance(b);n++;}
         if(chance('sim',0.5))igniteFire(s,1,'quake');}
       emit('fates',9,p,`The earth heaves${n?' and '+n+' buildings fall':''}; a long groan runs through the hills.`);break;}
-    case 'dragon':{if(W.dragon&&!W.dragon.dead){W.dragon.peaceUntil=0;W.treasury=Math.max(W.treasury,9000);
-      const d=W.dragon;d.state='sleeping';/* will wake next ticks */
-      d.forceWake=true;emit('fates',6,{x:d.lair.x,z:d.lair.z},`Something stirs on the high peak; shepherds drive their flocks down before nightfall.`);}break;}
-    case 'bandits':{const camp={x:p.x,z:p.z,raids:0,king:null,born:day()};W.banditCamps.push(camp);
+    case 'dragon':{const d=W.dragon; // (used to also set the treasury to 9,000 — free gold for the crown)
+      if(!d||d.dead){emit('fates',2,null,'The high peak is silent; no wyrm lairs there now.');return false;}
+      if(d.state!=='sleeping'){emit('fates',2,null,`${d.name} is already aloft.`);return false;}
+      d.peaceUntil=0;d.forceWake=true;
+      emit('fates',6,{x:d.lair.x,z:d.lair.z},`Something stirs on the high peak; shepherds drive their flocks down before nightfall.`);break;}
+    case 'bandits':{const camp={id:++campN,x:p.x,z:p.z,raids:0,king:null,born:day()};W.banditCamps.push(camp);
       const g=campGroup(0x4a4038);g.position.set(p.x,hAt(p.x,p.z),p.z);
       g.traverse(o=>o.userData.pick={type:'camp',camp});
       scene.add(g);G.campMeshes.set(camp,g);
@@ -2674,14 +2897,18 @@ function doAct(act,p){
       W.legitimacy=clamp(W.legitimacy-15,0,100);
       W.settlements.forEach(s=>s.unrest=clamp(s.unrest+12,0,100));
       killNotable(m,'by an assassin’s blade',true);}break;}
-    case 'contest':{if(!W.war){const c=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled);
+    case 'contest':{if(W.war){emit('war',2,null,`The realm is already at war; no further claimant dares stir.`);return false;}
+      const c=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled);
       if(c.length){const hi=c.sort((a,b)=>W.houses[a].loyalty-W.houses[b].loyalty)[0];
         W.houses[hi].loyalty=Math.min(W.houses[hi].loyalty,25);W.truceUntil=0;
-        startWar(hi,'contests the succession');}}break;}
-    case 'marriage':{const single=W.notables.filter(n=>n.alive&&!n.spouse&&ageOf(n)>=17&&ageOf(n)<=45);
+        startWar(hi,'contests the succession');}break;}
+    case 'marriage':{ // nobles only — the Prophet and the Bandit King are nobody's match
+      const MARRY=['monarch','heir','scion','cousin','head'];
+      const single=W.notables.filter(n=>n.alive&&!n.spouse&&MARRY.includes(n.role)&&ageOf(n)>=17&&ageOf(n)<=45);
       const a=single.find(n=>n.house===0)||single[0];
       const b=single.find(n=>n&&a&&n!==a&&n.sex!==a.sex&&n.house!==a.house);
-      if(a&&b){a.spouse=b.id;b.spouse=a.id;
+      if(!(a&&b)){emit('crown',2,null,'The heralds search the rolls in vain: there is no suitable match to be made.');return false;}
+      {a.spouse=b.id;b.spouse=a.id;
         const oh=W.houses[a.house===0?b.house:a.house];if(oh)oh.loyalty=clamp(oh.loyalty+12,0,100);
         W.capital.festivalUntil=day()+3;
         emit('crown',6,W.capital.pos,`A royal match is arranged: ${fullTitle(a)} weds ${fullTitle(b)}. ${W.capital.name} feasts beneath bright banners.`,{festival:true});}break;}
@@ -2690,7 +2917,9 @@ function doAct(act,p){
     case 'comet':{W.comet={start:day(),until:day()+(MOD.myth>=2?360:12),teeth:MOD.myth>=2};
       emit('fates',6,W.capital.pos,`A great comet unfurls across the heavens, bright enough to read by.`);break;}
     case 'village':{const ci=toCell(p.x),cj=toCell(p.z);
-      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){emit('trade',2,p,'The surveyors find no good ground here.');break;}
+      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){emit('trade',2,p,'The surveyors find no good ground here.');return false;}
+      if(W.settlements.some(o=>dist2d(p.x,p.z,o.pos.x,o.pos.z)<(o.radius||90)+150)){
+        emit('trade',2,p,'The surveyors will not charter a village in the shadow of another.');return false;}
       const s={name:placeName(),kind:'village',pos:{x:p.x,z:p.z,y:hAt(p.x,p.z)},cx:ci,cz:cj,pop:60,
         prosperity:45,unrest:5,walls:0,stores:{grain:60,fish:5,timber:30,ore:5,tools:8,cloth:4,wine:2},
         harbor:false,river:false,owner:0,buildings:[],garrison:4,infected:0,recovered:0,plagueDead:0,
@@ -2722,6 +2951,7 @@ function doAct(act,p){
       if(bb&&bd<80){bb.state='ruin';bb.rebuildT=day()+300;bb.s.ruinCount++;updateBuildingInstance(bb);
         emit('fates',2,p,`A ${ARCH[bb.arch][4]} in ${bb.s.name} is pulled down by order of the crown.`);}break;}
   }
+  return true;
 }
 
 /* ============================ MASTER TICK ================================ */
@@ -2736,13 +2966,9 @@ function simTick(){
   tickGrowth();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
-    // force immediate wake
-    const d=W.dragon,tgt=[...W.settlements].sort((a,b)=>b.prosperity*b.pop-a.prosperity*a.pop)[0];
-    d.state='raiding';d.wakes++;d.target=tgt;d.mood='wrathful';
-    d.path=[{x:d.lair.x,z:d.lair.z,y:d.lair.y+120},{x:(d.lair.x+tgt.pos.x)/2,z:(d.lair.z+tgt.pos.z)/2,y:500},{x:tgt.pos.x,z:tgt.pos.z,y:tgt.pos.y+60}];
-    d.departDay=day();d.arriveDay=day()+dist2d(d.lair.x,d.lair.z,tgt.pos.x,tgt.pos.z)/3000;
-    emit('fates',10,{x:d.lair.x,z:d.lair.z},`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
+    wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
   }
+  tickSovereign();
 }
 /* =========================================================================
    CHRONICLE — the product. Dated entries in annalist voice; click to fly.
@@ -2776,8 +3002,9 @@ function reignHeader(n){
   const t=`Here begin the years of ${n.sex==='f'?'Queen':'King'} ${n.name}${num>1?', '+(ORD[num-1]||num+'th')+' of that name':''}.`;
   allLines.push('\n=== '+t+' ===\n');
   const el=document.createElement('div');el.className='creign';el.textContent=t;
-  chronList().appendChild(el);
-  chronList().scrollTop=chronList().scrollHeight;
+  const list=chronList(),stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
+  list.appendChild(el);
+  if(stick)list.scrollTop=list.scrollHeight; // don't yank a reader who scrolled back
   document.getElementById('crownname').textContent=fullTitle(W.monarch);
 }
 
@@ -2862,10 +3089,428 @@ function toggleWatch(){
   else{cam.mode='free';hideBeat();}
 }
 
+
+/* =========================================================================
+   SOVEREIGN — rule the realm yourself. Decrees cost gold and cool down; the
+   court brings petitions that wait on your word (or the council decides);
+   crown hosts take your marching orders; ambitions build a dynasty's legacy.
+   Out of Sovereign mode every petition is answered at once by the council,
+   exactly as the old automatic court did, so the documentary is unchanged.
+   ========================================================================= */
+let sovPausedFrom=0,uiDownAt=0;
+function sovOn(){return !!(W&&W.player&&W.player.on)&&!document.body.classList.contains('watch');}
+function uiBusy(){return uiDownAt>0&&performance.now()-uiDownAt<1500;} // don't rebuild a button mid-click
+function realmPop(){return W.settlements.reduce((t,s)=>t+s.pop,0);}
+function setHTML(el,h){if(el&&el._h!==h){el.innerHTML=h;el._h=h;}}
+function cdLeft(k){return Math.max(0,Math.ceil((W.player.cd[k]||0)-day()));}
+function setCd(k,d){W.player.cd[k]=day()+d;}
+function bestLegacy(){try{return +localStorage.getItem('annals-best-'+SEED)||0;}catch(e){return 0;}}
+function saveBest(v){try{if(v>bestLegacy())localStorage.setItem('annals-best-'+SEED,String(v));}catch(e){}}
+
+/* ---- petitions ---- */
+function petition(p){
+  if(!sovOn()){if(p.sovOnly)return;runPetition(p,aiPick(p),true);return;}
+  if(W.petitions.some(q=>q.key===p.key))return;
+  p.born=day();p.due=day()+(p.days||30);
+  W.petitions.push(p);
+  if(W.player.pause&&speedIdx>0&&!sovPausedFrom){sovPausedFrom=speedIdx;setSpeed(0);}
+  renderPetition();
+}
+function aiPick(p){
+  let i=typeof p.ai==='function'?p.ai():(p.ai||0);
+  const ok=o=>o&&!(o.cost&&W.treasury<o.cost);
+  if(!ok(p.opts[i]))i=Math.max(0,p.opts.findIndex(ok));
+  return i;
+}
+function runPetition(p,i){
+  const o=p.opts[i];if(!o)return;
+  if(o.cost)W.treasury-=o.cost;
+  if(o.act)o.act();
+}
+function answerPetition(i){
+  const p=W.petitions[0];if(!p)return;
+  const o=p.opts[i];if(!o||(o.cost&&W.treasury<o.cost))return;
+  W.petitions.shift();runPetition(p,i);afterPetition();
+}
+function afterPetition(){
+  renderPetition();
+  if(!W.petitions.length&&sovPausedFrom){const sp=sovPausedFrom;sovPausedFrom=0;if(speedIdx===0)setSpeed(sp);}
+  refreshCrownPanel();updateHUD();
+}
+function renderPetition(){
+  const el=document.getElementById('petition'),p=W.petitions[0];
+  if(!p||!sovOn()){el.style.display='none';el._h='';return;}
+  const more=W.petitions.length-1;
+  setHTML(el,`<h4><span>${esc(p.title)}</span>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${esc(p.text)}</div>`+
+    p.opts.map((o,i)=>`<button class="cbtn" data-pi="${i}" ${o.cost&&W.treasury<o.cost?'disabled':''}><span>${esc(o.label)}</span>`+
+      `<span class="cost">${o.cost?o.cost.toLocaleString()+' gold':''}</span></button>`).join('')+
+    `<div class="pf">If the crown is silent, the council decides on ${dateStr(p.due)}${more?` · ${more} more petition${more>1?'s':''} waiting`:''}.</div>`);
+  el.style.display='block';
+}
+function famineStrikes(s){
+  const cost=Math.round(clamp(s.pop*0.3,150,1500));
+  petition({key:'famine'+W.settlements.indexOf(s),sovOnly:true,title:`Famine in ${s.name}`,pos:s.pos,
+    text:`The granaries of ${s.name} are bare and ${Math.round(s.pop).toLocaleString()} souls go hungry. The reeve begs the crown to send grain from the royal stores.`,
+    ai:1,opts:[
+    {label:'Open the royal granaries to them',cost,act:()=>{s.stores.grain+=s.pop*0.6;s.unrest=clamp(s.unrest-10,0,100);W.legitimacy=clamp(W.legitimacy+2,0,100);
+      emit('trade',5,s.pos,`Wagons of royal grain roll into ${s.name}; the bells ring for the crown's mercy.`);}},
+    {label:'They must endure',act:()=>{s.unrest=clamp(s.unrest+5,0,100);}}]});
+}
+function plagueArrives(s){
+  // one plague question at a time, and not again for the same town within the year — it spreads often
+  if(s.quarantineUntil>day()||s.plagueAskedUntil>day()||s.pop<100)return;
+  if(sovOn())s.plagueAskedUntil=day()+360;
+  petition({key:'plague',sovOnly:true,title:`Pestilence in ${s.name}`,pos:s.pos,
+    text:`The sickness has come to ${s.name}. The physicians urge that its gates be sealed and the roads closed, though the merchants will howl and the town will suffer for it.`,
+    ai:1,opts:[
+    {label:`Seal the gates of ${s.name} for three months`,act:()=>sealGates(s,true)},
+    {label:'Keep the roads open',act:()=>{}}]});
+}
+function sealGates(s,on){
+  if(on){s.quarantineUntil=day()+90;emit('fates',4,s.pos,`By order of the crown the gates of ${s.name} are sealed; no cart may pass in or out.`);}
+  else{s.quarantineUntil=0;emit('trade',3,s.pos,`The gates of ${s.name} are opened once more.`);}
+}
+function takeHostage(hi){
+  const h=W.houses[hi];
+  h.loyalty=clamp(h.loyalty-6,0,100);h.hostageUntil=day()+720;
+  const kid=W.notables.find(n=>n.alive&&n.house===hi&&(n.role==='scion'||n.role==='cousin'));
+  emit('crown',4,W.settlements[h.seat]?.pos||W.capital.pos,`${kid?kid.name+' of '+h.name:'A child of '+h.name} is sent to court as a ward of the crown — a guest, the heralds say; a hostage, say the lords.`);
+}
+function courtDilemma(){
+  const live=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&!inRevolt(i));
+  const S=pick('sim',W.settlements);
+  const all=[
+    ()=>({key:'coin',title:'The Master of Coin proposes a remedy',pos:W.capital.pos,
+      text:'He would clip the silver of the realm’s coin: the treasury would swell by 1,800 at a stroke, though merchants will soon learn to weigh every penny.',
+      opts:[{label:'Debase the coinage (+1,800 gold)',act:()=>{W.treasury+=1800;W.settlements.forEach(x=>x.prosperity=clamp(x.prosperity-8,1,100));W.legitimacy=clamp(W.legitimacy-3,0,100);
+              emit('trade',5,W.capital.pos,'The mint strikes a lighter penny. Prices rise in every market of the realm.');}},
+            {label:'Keep the coin honest',act:()=>{}}]}),
+    ()=>{if(live.length<2)return null;const a=pick('sim',live);let b=pick('sim',live);if(b===a)b=live.find(x=>x!==a);
+      const A=W.houses[a],Bh=W.houses[b];
+      return {key:'border',title:'A quarrel over the border stones',pos:W.settlements[A.seat]?.pos,
+      text:`${A.name} and ${Bh.name} both claim the same water-meadows, and both appeal to the crown. Whoever is refused will remember it.`,
+      opts:[{label:`Find for ${A.name}`,act:()=>{A.loyalty=clamp(A.loyalty+10,0,100);Bh.loyalty=clamp(Bh.loyalty-12,0,100);emit('crown',4,W.capital.pos,`The crown finds for ${A.name} in the matter of the water-meadows; ${Bh.name} leaves court in a fury.`);}},
+            {label:`Find for ${Bh.name}`,act:()=>{Bh.loyalty=clamp(Bh.loyalty+10,0,100);A.loyalty=clamp(A.loyalty-12,0,100);emit('crown',4,W.capital.pos,`The crown finds for ${Bh.name} in the matter of the water-meadows; ${A.name} leaves court in a fury.`);}},
+            {label:'Divide the meadows between them',act:()=>{A.loyalty=clamp(A.loyalty-3,0,100);Bh.loyalty=clamp(Bh.loyalty-3,0,100);W.legitimacy=clamp(W.legitimacy+2,0,100);emit('crown',3,W.capital.pos,`The crown divides the disputed meadows; neither ${A.name} nor ${Bh.name} is pleased, but the realm calls it just.`);}}]};},
+    ()=>({key:'guild',title:'The merchant guilds seek a charter',pos:W.capital.pos,
+      text:'The guildmasters would pay for royal privileges and roads kept safe: markets would flourish in every town.',
+      opts:[{label:'Grant the charter and fund the roads',cost:500,act:()=>{W.settlements.forEach(x=>x.prosperity=clamp(x.prosperity+6,1,100));emit('trade',4,W.capital.pos,'The crown grants the guilds their charter; new fairs are proclaimed in every market town.');}},
+            {label:'Refuse — the guilds grow too proud',act:()=>{}}]}),
+    ()=>({key:'shrine',title:'The High Priest asks for a shrine',pos:W.capital.pos,
+      text:`A relic has been found near ${S.name}. The High Priest would raise a shrine over it, and pilgrims would bless the crown that built it.`,
+      opts:[{label:'Raise the shrine',cost:800,act:()=>{W.legitimacy=clamp(W.legitimacy+6,0,100);W.settlements.forEach(x=>x.unrest=clamp(x.unrest-5,0,100));emit('crown',4,S.pos,`A shrine is raised over the relic near ${S.name}; pilgrims come from every corner of the realm.`);}},
+            {label:'The treasury has better uses',act:()=>{W.legitimacy=clamp(W.legitimacy-1,0,100);}}]}),
+    ()=>{if(!live.length)return null;const hi=pick('sim',live),H=W.houses[hi];
+      return {key:'tourney',title:`${H.name} begs a royal tourney`,pos:W.settlements[H.seat]?.pos,
+      text:`${H.name} would have the crown proclaim a tourney in its honour, that its young knights might win renown before the court.`,
+      opts:[{label:'Proclaim the tourney',cost:700,act:()=>{H.loyalty=clamp(H.loyalty+10,0,100);W.legitimacy=clamp(W.legitimacy+2,0,100);W.capital.festivalUntil=day()+3;
+              emit('crown',5,W.capital.pos,`A great tourney is held in honour of ${H.name}; lances splinter and ladies' favours fly.`,{festival:true});}},
+            {label:'Decline with courtesy',act:()=>{H.loyalty=clamp(H.loyalty-4,0,100);}}]};},
+    ()=>({key:'preacher',title:`A wild preacher in ${S.name}`,pos:S.pos,
+      text:`A barefoot friar in ${S.name} preaches that lords and kings are thieves before God. The crowds grow larger every market day.`,
+      opts:[{label:'Have him seized',act:()=>{S.unrest=clamp(S.unrest+8,0,100);W.legitimacy=clamp(W.legitimacy+2,0,100);emit('fates',4,S.pos,`The crown's men drag the preacher of ${S.name} from his cart; the crowd jeers the soldiers.`);}},
+            {label:'Let him preach',act:()=>{S.unrest=clamp(S.unrest-6,0,100);W.legitimacy=clamp(W.legitimacy-2,0,100);}}]})
+  ];
+  const d=pick('sim',all)();
+  if(d){d.ai=d.ai??(d.opts.length-1);d.sovOnly=true;petition(d);}
+}
+
+/* ---- decrees ---- */
+const DECREES=[
+  {k:'feast',label:'Proclaim a royal feast',cost:700,cd:180,desc:'unrest −10 everywhere · houses +4 · legitimacy +3',
+    run(){W.settlements.forEach(s=>s.unrest=clamp(s.unrest-10,0,100));
+      W.houses.forEach((h,i)=>{if(i&&!h.exiled&&!inRevolt(i))h.loyalty=clamp(h.loyalty+4,0,100);});
+      W.legitimacy=clamp(W.legitimacy+3,0,100);W.capital.festivalUntil=day()+4;
+      emit('crown',5,W.capital.pos,`By royal proclamation a great feast is held in ${W.capital.name}; the lords of the realm drink the monarch's health.`,{festival:true});}},
+  {k:'dole',label:'Open the royal granaries',cost:500,cd:90,desc:'grain to the three hungriest towns · their unrest −8',
+    run(){const t=W.settlements.filter(s=>!inRevolt(s.owner)).sort((a,b)=>((b.hunger||0)-(a.hunger||0))||(b.unrest-a.unrest)).slice(0,3);
+      for(const s of t){s.stores.grain+=s.pop*0.5;s.unrest=clamp(s.unrest-8,0,100);}
+      emit('trade',4,W.capital.pos,`The royal granaries are opened; grain wagons roll for ${t.map(s=>s.name).join(', ')}.`);}},
+  {k:'levy',label:'Levy an extraordinary tax',cost:()=>-Math.round(realmPop()*0.12),cd:360,desc:'gold now · unrest +8 · houses −6 · legitimacy −4',
+    run(){W.settlements.forEach(s=>s.unrest=clamp(s.unrest+8,0,100));
+      W.houses.forEach((h,i)=>{if(i&&!h.exiled)h.loyalty=clamp(h.loyalty-6,0,100);});
+      W.legitimacy=clamp(W.legitimacy-4,0,100);
+      emit('crown',5,W.capital.pos,'The crown levies an extraordinary tax. The collectors are met with curses at every gate.');}},
+  {k:'bounty',label:'Send riders against all outlaws',cost:300,cd:120,ok:()=>W.banditCamps.some(c=>!c.patrol)||'no outlaws abroad',desc:'bounty patrols ride on every robber camp',
+    run(){W.banditCamps.forEach(sendRiders);}},
+  {k:'charter',label:'Charter a new village',cost:1200,cd:360,desc:'choose the ground on the map',place:true},
+  {k:'host',label:'Raise the royal host',cost:1000,cd:45,ok:()=>!!W.war||'only in war',desc:'a fresh crown army musters at the capital',
+    run(){const a=raiseArmy(0,0,W.capital.pop*0.08+200,'crown');
+      emit('war',6,W.capital.pos,`The crown's summons goes out; ${a.name} musters beneath the walls of ${W.capital.name}.`);}},
+  {k:'peace',label:'Sue for peace',cost:()=>W.war?1500+Math.max(0,-W.war.score)*30:1500,ok:()=>!!W.war||'only in war',desc:'buys a white peace · legitimacy −8',
+    run(){W.legitimacy=clamp(W.legitimacy-8,0,100);endWar(0);}},
+  {k:'tribute',label:'Pay the wyrm to sleep',cost:()=>Math.max(500,Math.round(W.treasury*0.15)),cd:360,
+    ok:()=>(W.dragon&&!W.dragon.dead&&W.dragon.state==='sleeping')||'no wyrm to pay',desc:'no dragon raids for five years',
+    run(c){const d=W.dragon;d.hoard+=c;d.peaceUntil=day()+1800;W.legitimacy=clamp(W.legitimacy-3,0,100);
+      emit('crown',5,{x:d.lair.x,z:d.lair.z},`Laden mules climb to ${d.name}'s peak with the crown's tribute. The wyrm, it is hoped, will sleep.`);}},
+  {k:'hunt',label:'Send champions against the wyrm',cost:1500,cd:720,
+    ok:()=>(W.dragon&&!W.dragon.dead&&W.dragon.state==='sleeping')||'no wyrm to hunt',desc:'about one chance in three',
+    run(){const d=W.dragon;
+      const champ=W.notables.find(n=>n.alive&&n.role==='cousin'&&ageOf(n)>=18&&ageOf(n)<50);
+      if(chance('sim',0.33)){
+        d.dead=true;d.state='dead';d.mood='slain';W.treasury+=d.hoard;W.legitimacy=clamp(W.legitimacy+15,0,100);
+        if(champ)champ.epithet='the Dragonslayer';
+        emit('crown',10,{x:d.lair.x,z:d.lair.z},`Wonder of the age! The crown's champions${champ?', led by '+champ.name+',':''} slay ${d.name} in its lair. The hoard — ${Math.round(d.hoard)} in old gold — is carried down by torchlight.`,{festival:true});
+        sovAmbition('wyrm');
+      }else{
+        if(champ)killNotable(champ,'in dragonfire upon the peak',true);
+        W.legitimacy=clamp(W.legitimacy-3,0,100);
+        emit('fates',8,{x:d.lair.x,z:d.lair.z},`The crown's champions climb to ${d.name}'s lair and do not come down${champ?'; '+champ.name+' is among the dead':''}. The wyrm stirs, angered.`);
+        if(chance('sim',0.5))d.forceWake=true;
+      }}}
+];
+function costOf(d){return typeof d.cost==='function'?d.cost():d.cost;}
+function decreeBlock(d){ // → [reason or '', cost]
+  const c=costOf(d);
+  const ok=d.ok?d.ok():true;
+  if(ok!==true)return [ok,c];
+  const cd=d.cd?cdLeft('d_'+d.k):0;
+  if(cd)return [`ready in ${cd} d`,c];
+  if(c>0&&W.treasury<c)return ['too costly',c];
+  return ['',c];
+}
+function runDecree(k){
+  const d=DECREES.find(x=>x.k===k);if(!d)return;
+  const [why,c]=decreeBlock(d);if(why)return;
+  if(d.place){setPlaceMode('charter',c,'Choose the ground for the new village — Esc to cancel');return;}
+  W.treasury-=c;if(d.cd)setCd('d_'+d.k,d.cd);
+  d.run(c);
+}
+
+/* ---- the great houses ---- */
+function royalSingle(){return W.notables.find(n=>n.alive&&!n.spouse&&n.house===0&&['monarch','heir','cousin'].includes(n.role)&&ageOf(n)>=16&&ageOf(n)<=45);}
+function houseSingle(hi,sex){return W.notables.find(n=>n.alive&&!n.spouse&&n.house===hi&&n.sex!==sex&&['head','scion','cousin'].includes(n.role)&&ageOf(n)>=16&&ageOf(n)<=45);}
+function attaintOdds(hi){const h=W.houses[hi];return clamp(0.35+(W.legitimacy-50)/100+(1-h.might)*0.4-(h.loyalty<30?0.1:0),0.08,0.88);}
+function houseCmd(cmd,hi){
+  const h=W.houses[hi];if(!h||h.exiled)return;
+  const seat=W.settlements[h.seat]?.pos||W.capital.pos;
+  if(cmd==='honour'){if(W.treasury<500||cdLeft('h_hon'+hi))return;W.treasury-=500;setCd('h_hon'+hi,120);
+    h.loyalty=clamp(h.loyalty+12,0,100);emit('crown',4,seat,`The crown heaps honours upon ${h.name}: a wardenship, a manor, and a seat at the high table.`);}
+  else if(cmd==='hostage'){if(h.hostageUntil>day())return;takeHostage(hi);}
+  else if(cmd==='match'){if(cdLeft('h_match'+hi))return;
+    const a=royalSingle();const b=a&&houseSingle(hi,a.sex);if(!a||!b)return;
+    a.spouse=b.id;b.spouse=a.id;setCd('h_match'+hi,360);
+    h.loyalty=clamp(h.loyalty+15,0,100);W.capital.festivalUntil=day()+3;
+    emit('crown',6,W.capital.pos,`A royal match: ${fullTitle(a)} weds ${fullTitle(b)} of ${h.name}. The match binds the houses in friendship.`,{festival:true});}
+  else if(cmd==='attaint'){
+    if(W.war)return;
+    if(W.player.confirm!=='att'+hi){W.player.confirm='att'+hi;W.player.confirmUntil=performance.now()+5000;return;}
+    W.player.confirm=null;
+    W.legitimacy=clamp(W.legitimacy-6,0,100);
+    if(chance('sim',attaintOdds(hi))){
+      h.exiled=true;h.exiledDay=day();
+      W.settlements.forEach(s=>{if(s.owner===hi)s.owner=0;});
+      const loot=Math.round(1200*h.wealth);W.treasury+=loot;
+      W.houses.forEach((o,i)=>{if(i&&i!==hi&&!o.exiled)o.loyalty=clamp(o.loyalty-6,0,100);});
+      emit('crown',9,seat,`${h.name} is attainted of treason! Its lands and ${loot.toLocaleString()} in coin are forfeit to the crown, and its lord flees beyond the mountains. The other houses look on in fear.`);
+      const head=notableById(h.head);if(head&&chance('sim',0.4))killNotable(head,'on the scaffold, protesting innocence',true);
+      refreshOverlay();
+    }else{
+      h.loyalty=10;W.truceUntil=0;
+      startWar(hi,'refuses the crown’s summons to answer for treason');
+    }
+  }
+}
+
+/* ---- settlements & hosts ---- */
+function settlementCmd(cmd,si){
+  const s=W.settlements[si];if(!s||inRevolt(s.owner))return;
+  const pay=c=>{if(W.treasury<c)return false;W.treasury-=c;return true;};
+  if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
+    s.stores.grain+=s.pop*0.4;s.unrest=clamp(s.unrest-6,0,100);emit('trade',3,s.pos,`Royal grain is distributed at the market cross of ${s.name}.`);}
+  else if(cmd==='garrison'){if(!pay(400))return;s.garrison+=40;emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
+  else if(cmd==='walls'){if(s.walls>=2||!pay(1500*(s.walls+1)))return;s.walls++;
+    emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
+  else if(cmd==='seal')sealGates(s,!(s.quarantineUntil>day()));
+  else if(cmd==='suppress'){if(!pay(150))return;
+    const hot=s.unrest>80;s.unrest=clamp(s.unrest-20,0,100);s.prosperity=clamp(s.prosperity-5,1,100);
+    emit('fates',4,s.pos,`Soldiers clear the streets of ${s.name}; the ringleaders are put in the stocks.`);
+    if(hot&&chance('sim',0.3)){igniteFire(s,1,'riot');emit('fates',5,s.pos,`The crowd in ${s.name} fights back, and a torch finds a thatched roof.`);}}
+}
+function settlementActsHTML(s){
+  const si=W.settlements.indexOf(s);
+  if(inRevolt(s.owner))return '<div class="note">Held by rebels — the crown’s writ does not run here.</div>';
+  const rel=cdLeft('s_rel'+si);
+  return cbtn('s-relief',si,'Send relief grain',250,rel?`ready in ${rel} d`:'')+
+    cbtn('s-garrison',si,'Reinforce the garrison (+40)',400,'')+
+    cbtn('s-walls',si,s.walls>=2?'Walls are stone':(s.walls?'Rebuild the walls in stone':'Raise a palisade'),1500*(s.walls+1),s.walls>=2?'complete':'')+
+    cbtn('s-seal',si,s.quarantineUntil>day()?'Open the gates':'Seal the gates (quarantine)',0,'')+
+    cbtn('s-suppress',si,'Suppress unrest (−20)',150,'');
+}
+function orderArmy(a,si){
+  if(!a||a.gone)return;
+  const s=W.settlements[si];
+  if(a.state==='battle'){emit('war',2,null,`${a.name} is locked in battle and cannot heed new orders.`);return;}
+  a.hold=true;
+  if(a.state==='march'||a.state==='rout')a.nextOrder=si; // takes effect when it next makes camp
+  else{liftSiege(a);a.state='idle';marchArmy(a,si);}
+  emit('war',3,s.pos,`By the crown's command, ${a.name} marches on ${s.name}.`);
+  refreshInspect();
+}
+function armyCmd(cmd,id){
+  const a=W.armies.find(x=>x.id===+id);if(!a||a.side!=='crown')return;
+  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a settlement to march ${a.name} there — Esc to cancel`);}
+  else if(cmd==='hold'){a.hold=true;if(a.state==='march'){a.nextOrder=null;}emit('war',2,null,`${a.name} is ordered to hold and await the crown's word.`);}
+  else if(cmd==='release'){a.hold=false;a.nextOrder=null;emit('war',2,null,`${a.name} is given leave to make war as its captains see fit.`);}
+  else if(cmd==='disband'){if(a.state==='battle')return;disbandArmy(a);hideInspect();
+    emit('war',3,W.capital.pos,`${a.name} is paid off and sent home to the plough.`);}
+}
+function armyActsHTML(a){
+  if(a.state==='battle')return '<div class="note">Locked in battle.</div>';
+  return cbtn('a-order',a.id,'Order a march… (click a town)',0,'')+
+    (a.hold?cbtn('a-release',a.id,'Release to its captains',0,''):cbtn('a-hold',a.id,'Hold position',0,''))+
+    cbtn('a-disband',a.id,'Pay off and disband (saves 14 g/day)',0,'');
+}
+function cbtn(cmd,arg,label,cost,why,desc){
+  const dis=!!why||(cost>0&&W.treasury<cost);
+  const tag=why?why:(cost>0?cost.toLocaleString()+' g':(cost<0?'+'+(-cost).toLocaleString()+' g':''));
+  return `<button class="cbtn" data-cmd="${cmd}" data-arg="${arg}"${dis?' disabled':''}><span>${label}${desc?`<small>${desc}</small>`:''}</span><span class="cost">${tag}</span></button>`;
+}
+
+/* ---- ambitions, legacy, the fall of a line ---- */
+const AMBITIONS=[
+  ['coffers','Fill the coffers — 10,000 gold in the treasury',10,()=>W.treasury>=10000],
+  ['multitude','A multitude — the realm’s people grow by half',15,()=>realmPop()>=W.player.startPop*1.5],
+  ['loyal','Concord — every great house at loyalty 65+',15,()=>W.houses.every((h,i)=>!i||h.exiled||h.loyalty>=65)],
+  ['beloved','Beloved — legitimacy of 90',15,()=>W.legitimacy>=90],
+  ['peace','Ten years of peace under your rule',20,()=>!W.war&&day()-W.player.peaceSince>=3600],
+  ['victor','Crush a rebellion in the field',20,null],
+  ['wyrm','Rid the realm of the dragon',25,null],
+  ['founder','Charter a new village',10,null]
+];
+function sovAmbition(key){
+  const P=W.player;if(!P||!P.on||P.amb[key])return;
+  const a=AMBITIONS.find(x=>x[0]===key);if(!a)return;
+  P.amb[key]=day();P.legacy+=a[2];saveBest(P.legacy);
+  emit('crown',5,W.capital.pos,`Ambition fulfilled — ${a[1].split(' — ')[0]}. The heralds add ${a[2]} to the legacy of ${W.houses[0].name}.`);
+}
+function dynastyChanged(oldName){
+  W.dynasty=(W.dynasty||1)+1;
+  const P=W.player;if(!P||!P.on)return;
+  const yrs=Math.floor((day()-P.since)/360),L=P.legacy;saveBest(L);
+  petition({key:'fall',title:'Your line is broken',pos:W.capital.pos,days:90,ai:0,
+    text:`The dynasty you guided${oldName?' ('+oldName+')':''} has lost the throne after ${yrs} year${yrs===1?'':'s'} of your rule, with a legacy of ${L}${bestLegacy()>L?' (best for this realm: '+bestLegacy()+')':''}. ${fullTitle(W.monarch)} now wears the crown.`,
+    opts:[{label:`Rule on as ${W.houses[0].name}`,act:()=>{P.legacy=0;P.amb={};P.since=day();P.startPop=realmPop();P.peaceSince=day();}},
+          {label:'Lay down the crown and return to the chronicle',act:()=>setSovereign(false)}]});
+}
+function tickSovereign(){
+  const P=W.player;if(!P)return;
+  if(W.petitions.length){
+    if(!sovOn()){ // left Sovereign mode or watching: the council clears the table
+      while(W.petitions.length){const p=W.petitions.shift();runPetition(p,aiPick(p));}
+      afterPetition();
+    }else if(day()>=W.petitions[0].due){
+      const p=W.petitions.shift(),i=aiPick(p);
+      emit('crown',3,null,`The crown is silent on “${p.title}”; the council decides: ${p.opts[i].label.replace(/^./,c=>c.toLowerCase())}.`);
+      runPetition(p,i);afterPetition();
+    }
+  }
+  if(!P.on)return;
+  if(day()%360===0&&day()>P.since){P.legacy+=2;saveBest(P.legacy);}
+  if(day()%10===0)for(const a of AMBITIONS)if(a[3]&&!P.amb[a[0]]&&a[3]())sovAmbition(a[0]);
+  if(sovOn()&&!W.petitions.length&&chance('sim',0.004))courtDilemma();
+}
+function setSovereign(on){
+  if(!W||!W.player||on===W.player.on)return;
+  const P=W.player;P.on=on;
+  document.body.classList.toggle('sov',on);
+  if(on){
+    if(document.body.classList.contains('watch'))toggleWatch();
+    if(!P.started){P.started=true;P.since=day();P.startPop=realmPop();P.peaceSince=day();}
+    markManual();
+    const dr=document.getElementById('drawer');
+    if(dr.classList.contains('closed'))toggleDrawer();
+    selectTab('crown');
+    emit('crown',4,W.capital.pos,`${fullTitle(W.monarch)} takes the reins of government in person. Decrees, petitions and the hosts of the crown now wait upon the royal word.`);
+  }else{
+    if(placeMode==='order'||placeMode==='charter')setPlaceMode(null);
+    while(W.petitions.length){const p=W.petitions.shift();runPetition(p,aiPick(p));}
+    afterPetition();
+    buildDrawer(drawerTab);
+  }
+  renderPetition();updateHUD();if(inspTarget)showInspect(inspTarget);
+}
+function crownPanelHTML(){
+  const P=W.player,m=W.monarch;
+  if(!P.on)return `<div class="note">You are the chronicler: the realm governs itself and you watch — or play Providence from the Acts tab.</div>
+    <div class="note">Take the crown to rule in person: issue decrees, answer the petitions of your court, honour or break the great houses, and command the royal host in war. Build a legacy before your line is broken.</div>
+    <button class="wbtn" data-cmd="sov-on">♛ Take the crown (R)</button>
+    ${bestLegacy()?`<div class="note">Best legacy in this realm: ${bestLegacy()}</div>`:''}`;
+  let h=`<div class="dhead">The Sovereign</div>`;
+  const st=(k,v)=>`<div class="cstat"><span>${k}</span><b>${v}</b></div>`;
+  h+=st('Monarch',m?esc(fullTitle(m))+(m.alive?', '+ageOf(m):''):'—');
+  h+=st('Dynasty',esc(W.houses[0].name));
+  h+=st('Your rule',Math.floor((day()-P.since)/360)+' years');
+  h+=st('Legacy',P.legacy+(bestLegacy()>P.legacy?` <span class="tag">best ${bestLegacy()}</span>`:''));
+  h+=`<label class="cstat" style="cursor:pointer"><span>Pause when a petition arrives</span><input type="checkbox" data-cmd="pause-toggle"${P.pause?' checked':''}></label>`;
+  h+=`<div class="slrow" style="margin-top:6px"><label><span>Tax rate</span><b>${Math.round(MOD.tax)}%</b></label><input type="range" id="sovtax" min="5" max="30" step="1" value="${Math.round(MOD.tax)}"></div>`;
+  h+=`<div class="note" style="margin-top:-4px">Higher taxes fill the treasury but breed unrest and sour the houses.</div>`;
+  if(W.war){
+    const pos=(W.war.score+120)/240*100;
+    h+=`<div class="dhead">War Council — ${esc(W.war.name)}</div>`;
+    h+=`<div class="cstat"><span>Rebels</span><span>Crown</span></div><div class="warbar"><i style="left:${pos.toFixed(1)}%"></i></div>`;
+    for(const a of W.armies){
+      h+=`<div class="succline pk" data-cmd="army" data-arg="${a.id}"><img src="${sigURL(a.house)}" style="width:14px;height:14px;vertical-align:-2px;border-radius:2px"> ${esc(a.name)} · ${Math.round(a.strength)} men · ${a.side==='crown'?(a.hold?'holding':'free to act'):'rebel'}${a.state==='siege'?' · besieging':''}${a.state==='battle'?' · in battle':''}</div>`;
+    }
+    h+=`<div class="note">Click a crown host to give it orders.</div>`;
+  }
+  h+=`<div class="dhead">Decrees</div>`;
+  for(const d of DECREES){
+    if(d.ok&&d.ok()!==true&&(d.k==='host'||d.k==='peace'))continue; // war decrees only in war
+    const [why,c]=decreeBlock(d);
+    h+=cbtn('decree',d.k,d.label,c,why,d.desc);
+  }
+  h+=`<div class="dhead">The Great Houses</div>`;
+  const rs=royalSingle();
+  W.houses.forEach((house,hi)=>{
+    if(hi===0)return;
+    const head=notableById(house.head);
+    h+=`<div class="chouse"><div class="houserow${house.exiled?' exiled':''} pk" data-cmd="notable" data-arg="${head?head.id:''}"><img src="${sigURL(hi)}">
+      <span class="hname" style="flex:0 0 96px;overflow:hidden;white-space:nowrap;">${esc(house.name.replace('House ',''))}</span>
+      <div class="hbar"><div style="width:${house.exiled?0:Math.round(house.loyalty)}%"></div></div><b style="font-size:11px;width:22px;text-align:right">${house.exiled?'—':Math.round(house.loyalty)}</b></div>`;
+    if(house.exiled){h+=`<div class="note" style="margin:0">In exile.</div></div>`;return;}
+    const tags=[];if(inRevolt(hi))tags.push('in revolt');if(house.hostageUntil>day())tags.push('hostage at court');tags.push('might '+house.might.toFixed(1));
+    h+=`<div class="note" style="margin:0 0 3px">${tags.join(' · ')}</div><div class="hb">`;
+    const hon=cdLeft('h_hon'+hi),mt=cdLeft('h_match'+hi),rev=inRevolt(hi);
+    const b=(cmd,label,dis,tip)=>`<button data-cmd="${cmd}" data-arg="${hi}"${dis?' disabled':''} title="${esc(tip)}">${label}</button>`;
+    h+=b('h-honour','Honour · 500 g',rev||hon||W.treasury<500,hon?`ready in ${hon} days`:'+12 loyalty');
+    h+=b('h-hostage','Take a hostage',rev||house.hostageUntil>day(),'−6 loyalty, but they will not rise for two years');
+    const match=rs&&houseSingle(hi,rs.sex);
+    h+=b('h-match','Royal match',rev||mt||!match,match?`${rs.name} to wed ${match.name} · +15 loyalty`:'no suitable pair unwed');
+    const conf=W.player.confirm==='att'+hi&&performance.now()<W.player.confirmUntil;
+    h+=b('h-attaint',conf?'Confirm attainder!':'Attaint · '+Math.round(attaintOdds(hi)*100)+'%',!!W.war,
+      'Seize their lands. Legitimacy −6; on failure they rise in arms');
+    h+=`</div></div>`;
+  });
+  h+=`<div class="dhead">Ambitions</div>`;
+  for(const a of AMBITIONS)h+=`<div class="amb${P.amb[a[0]]?' done':''}">${a[1]} <span class="tag">+${a[2]}</span></div>`;
+  h+=`<button class="wbtn" data-cmd="sov-off" style="margin-top:10px">Lay down the crown</button>`;
+  return h;
+}
+function refreshCrownPanel(){
+  if(drawerTab!=='crown'||uiBusy())return;
+  setHTML(document.getElementById('dbody'),crownPanelHTML());
+}
+function runCmd(cmd,arg){
+  switch(cmd){
+    case 'sov-on':setSovereign(true);break;
+    case 'sov-off':setSovereign(false);break;
+    case 'pause-toggle':W.player.pause=!W.player.pause;break;
+    case 'decree':runDecree(arg);break;
+    case 'h-honour':case 'h-hostage':case 'h-match':case 'h-attaint':houseCmd(cmd.slice(2),+arg);break;
+    case 'notable':{const n=notableById(+arg);if(n)showInspect({type:'notable',n});break;}
+    case 'army':{const a=W.armies.find(x=>x.id===+arg);if(a){showInspect({type:'army',a});flyTo(a._rpos.x,a._rpos.z,420);markManual();}break;}
+    case 's-relief':case 's-garrison':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
+    case 'a-order':case 'a-hold':case 'a-release':case 'a-disband':armyCmd(cmd.slice(2),arg);break;
+  }
+  uiDownAt=0;
+  refreshCrownPanel();refreshInspect();updateHUD();renderPetition();
+}
 /* =========================================================================
    CONTROL PANEL & HUD
    ========================================================================= */
 function setSpeed(i){
+  if(i>0)sovPausedFrom=0; // the player chose a speed: don't override it when petitions clear
   if(speedIdx!==0)lastSpeed=speedIdx;
   speedIdx=i;
   document.querySelectorAll('#timec button').forEach(b=>b.classList.toggle('on',+b.dataset.s===i));
@@ -2885,15 +3530,29 @@ const ACTS=[
   ['gold','Grant 5,000 gold',0],['raze','Raze building',1]
 ];
 const OVERLAYS=[['territory','Territories'],['trade','Trade'],['prosperity','Prosperity'],['plague','Plague'],['unrest','Unrest']];
+let drawerTab='rates';
+function selectTab(t){
+  document.querySelectorAll('#dtabs .t').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  buildDrawer(t);
+}
+function toggleDrawer(){
+  const d=document.getElementById('drawer');d.classList.toggle('closed');
+  const closed=d.classList.contains('closed');
+  document.body.classList.toggle('drawerclosed',closed);
+  document.getElementById('drawertoggle').textContent=closed?'▸':'◂';
+}
 function buildDrawer(tab){
   const body=document.getElementById('dbody');
-  body.innerHTML='';
+  body.innerHTML='';body._h='';drawerTab=tab;
+  const sealed=sovOn();
+  if(tab==='crown'){setHTML(body,crownPanelHTML());return;}
   if(tab==='rates'){
+    if(sealed)body.insertAdjacentHTML('beforeend','<div class="note">Providence’s dials are sealed while you rule. The tax rate is set from the Crown tab.</div>');
     for(const[key,label,min,max,def]of RATES){
       const row=document.createElement('div');row.className='slrow';
       row.innerHTML=`<label><span>${label}</span><b id="rv_${key}">${MOD[key]}</b></label>`;
       const inp=document.createElement('input');inp.type='range';
-      inp.min=min;inp.max=max;inp.step=(max-min)/100;inp.value=MOD[key];
+      inp.min=min;inp.max=max;inp.step=key==='tax'?1:(max-min)/100;inp.value=MOD[key];inp.disabled=sealed;
       inp.addEventListener('input',()=>{MOD[key]=+inp.value;
         document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(MOD[key])+'%':('×'+(+inp.value).toFixed(2));});
       row.appendChild(inp);body.appendChild(row);
@@ -2901,15 +3560,17 @@ function buildDrawer(tab){
     }
     const mr=document.createElement('div');mr.className='slrow';
     mr.innerHTML=`<label><span>Myth</span><b id="rv_myth">${['Off','Low','High'][MOD.myth]}</b></label>`;
-    const mi=document.createElement('input');mi.type='range';mi.min=0;mi.max=2;mi.step=1;mi.value=MOD.myth;
+    const mi=document.createElement('input');mi.type='range';mi.min=0;mi.max=2;mi.step=1;mi.value=MOD.myth;mi.disabled=sealed;
     mi.addEventListener('input',()=>{MOD.myth=+mi.value;document.getElementById('rv_myth').textContent=['Off','Low','High'][MOD.myth];});
     mr.appendChild(mi);body.appendChild(mr);
   }else if(tab==='acts'){
+    if(sealed)body.insertAdjacentHTML('beforeend','<div class="note">Acts of Providence are withheld while you rule — lay down the crown to wield them again.</div>');
     for(const[key,label,place]of ACTS){
-      const b=document.createElement('button');b.className='actbtn';
+      const b=document.createElement('button');b.className='actbtn';b.disabled=sealed;if(sealed)b.style.opacity=.45;
       b.innerHTML=label+(place?'<span class="tg">⌖</span>':'');
       b.addEventListener('click',()=>{
-        if(place)setPlaceMode(key);
+        if(sovOn())return;
+        if(place)setPlaceMode(key,null,label+': click the map — Esc to cancel');
         else doAct(key,{x:W.capital.pos.x,z:W.capital.pos.z});
       });
       body.appendChild(b);
@@ -2951,20 +3612,21 @@ function refreshHousePanel(){
   let h='';
   W.houses.forEach((house,hi)=>{
     if(hi===0)return;
-    h+=`<div class="houserow${house.exiled?' exiled':''}"><img src="${sigURL(hi)}">
-      <span class="hname" style="flex:0 0 92px;overflow:hidden;white-space:nowrap;">${house.name.replace('House ','')}</span>
+    h+=`<div class="houserow pk${house.exiled?' exiled':''}" data-cmd="notable" data-arg="${house.head||''}" title="Inspect the head of the house"><img src="${sigURL(hi)}">
+      <span class="hname" style="flex:0 0 92px;overflow:hidden;white-space:nowrap;">${esc(house.name.replace('House ',''))}</span>
       <div class="hbar"><div style="width:${house.exiled?0:Math.round(house.loyalty)}%"></div></div></div>`;
   });
-  hp.innerHTML=h;
+  setHTML(hp,h);
   const sp=document.getElementById('succpanel');
   if(sp){
     const m=W.monarch;let s='';
     if(m){
       const heirs=m.heirs.map(notableById).filter(n=>n&&n.alive).sort((a,b)=>b.age-a.age);
-      if(heirs.length)heirs.slice(0,4).forEach((n,i)=>{s+=`<div class="succline">${i+1}. ${fullTitle(n)}, age ${n.age??ageOf(n)}</div>`;});
-      else s='<div class="succline" style="color:var(--red)">No heir of the body — the succession is uncertain.</div>';
+      s+=`<div class="succline pk" data-cmd="notable" data-arg="${m.id}">♛ ${esc(fullTitle(m))}, age ${ageOf(m)}</div>`;
+      if(heirs.length)heirs.slice(0,4).forEach((n,i)=>{s+=`<div class="succline pk" data-cmd="notable" data-arg="${n.id}">${i+1}. ${esc(fullTitle(n))}, age ${ageOf(n)}</div>`;});
+      else s+='<div class="succline" style="color:var(--red)">No heir of the body — the succession is uncertain.</div>';
     }
-    sp.innerHTML=s;
+    setHTML(sp,s);
   }
 }
 function initUI(){
@@ -2974,15 +3636,28 @@ function initUI(){
   document.getElementById('crownsig').src=sigURL(0);
   document.getElementById('crownname').textContent=fullTitle(W.monarch);
   document.querySelectorAll('#timec button').forEach(b=>b.addEventListener('click',()=>setSpeed(+b.dataset.s)));
-  document.querySelectorAll('#dtabs .t').forEach(t=>t.addEventListener('click',()=>{
-    document.querySelectorAll('#dtabs .t').forEach(x=>x.classList.toggle('on',x===t));
-    buildDrawer(t.dataset.t);
-  }));
+  document.querySelectorAll('#dtabs .t').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.t)));
   buildDrawer('rates');
-  document.getElementById('drawertoggle').addEventListener('click',()=>{
-    const d=document.getElementById('drawer');d.classList.toggle('closed');
-    document.getElementById('drawertoggle').textContent=d.classList.contains('closed')?'▸':'◂';
+  document.getElementById('drawertoggle').addEventListener('click',toggleDrawer);
+  // one delegated handler for every data-cmd control (crown panel, inspector, house & succession rows)
+  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;runCmd(t.dataset.cmd,t.dataset.arg);};
+  document.getElementById('dbody').addEventListener('click',cmdClick);
+  document.getElementById('inspacts').addEventListener('click',cmdClick);
+  document.getElementById('dbody').addEventListener('input',e=>{
+    if(e.target.id!=='sovtax')return;
+    MOD.tax=+e.target.value;const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=Math.round(MOD.tax)+'%';
   });
+  document.addEventListener('pointerdown',e=>{if(!e.target.closest('#gl'))uiDownAt=performance.now();},true);
+  document.addEventListener('pointerup',()=>{setTimeout(()=>{uiDownAt=0;},0);},true);
+  document.getElementById('petition').addEventListener('click',e=>{
+    const b=e.target.closest('[data-pi]');if(b&&!b.disabled){answerPetition(+b.dataset.pi);return;}
+    if(e.target.closest('[data-pv]')){const p=W.petitions[0];if(p&&p.pos){markManual();flyTo(p.pos.x,p.pos.z,480);}}
+  });
+  document.getElementById('rulebtn').addEventListener('click',()=>setSovereign(!sovOn()));
+  const chron=document.getElementById('chron');
+  const setChronMin=on=>{chron.classList.toggle('min',on);document.getElementById('chronmin').textContent=on?'▸':'▾';};
+  document.getElementById('chronhead').addEventListener('click',()=>setChronMin(!chron.classList.contains('min')));
+  if(innerWidth<760){setChronMin(true);toggleDrawer();} // small screens start with the map clear
   document.querySelectorAll('#chronfilters .f').forEach(f=>f.addEventListener('click',()=>{
     document.querySelectorAll('#chronfilters .f').forEach(x=>x.classList.toggle('on',x===f));
     chronFilter=f.dataset.f;
@@ -2996,14 +3671,15 @@ function initUI(){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   });
   document.getElementById('btnshare').addEventListener('click',()=>{
-    const url=location.origin+location.pathname+'#s='+SEED;
+    const url=location.href.split('#')[0]+'#s='+SEED; // (origin is "null" on file://)
     (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
       ()=>{document.getElementById('btnshare').textContent='Copied!';setTimeout(()=>document.getElementById('btnshare').textContent='Copy share link',1400);},
       ()=>prompt('Share this realm:',url));
   });
   document.getElementById('inspx').addEventListener('click',hideInspect);
   G.labelsOn=true;
-  setInterval(()=>{if(document.getElementById('housepanel'))refreshHousePanel();},4000);
+  setInterval(()=>{if(document.getElementById('housepanel')&&!uiBusy())refreshHousePanel();},4000);
+  window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/);if(m&&(parseInt(m[1],10)>>>0)!==SEED)location.reload();});
 }
 /* =========================================================================
    PARCHMENT MAP — the realm drawn as the chroniclers would draw it
@@ -3094,6 +3770,12 @@ function updateHUD(){
   document.getElementById('realmpop').textContent=Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString();
   document.getElementById('legit').textContent=Math.round(W.legitimacy);
   if(W.monarch)document.getElementById('crownname').textContent=fullTitle(W.monarch);
+  const P=W.player;
+  if(P){
+    document.getElementById('legacy').textContent=P.legacy;
+    const n=sovOn()?W.petitions.length:0;
+    setHTML(document.getElementById('rulebtn'),(P.on?'♛ Sovereign':'♛ Rule')+(n?`<span class="pc">${n}</span>`:''));
+  }
 }
 
 /* =========================================================================
@@ -3203,13 +3885,16 @@ function animateWorld(dt,now){
   if(raining||snowing){
     const P=(raining?G.rain:G.snow).geometry.attributes.position;
     const speed=raining?300:40;
+    // the column is stored relative to a base just under the eye — at world y 0..500 it used
+    // to fall below the highlands and far beneath the camera at map altitude
+    const base=Math.max(hAt(camera.position.x,camera.position.z),camera.position.y-450);
+    const pd=(raining?G.rain:G.snow)._rel||((raining?G.rain:G.snow)._rel=new Float32Array(P.count).map(()=>Math.random()*500));
     for(let i=0;i<P.count;i++){
-      let y=P.getY(i)-speed*dt*(0.7+((i*13)%10)/18);
+      let y=pd[i]-speed*dt*(0.7+((i*13)%10)/18);
       if(y<0)y=420+Math.random()*80;
-      P.setXYZ(i,camera.position.x+((i*127)%900)-450+(snowing?Math.sin(now+i)*14:0),
-        Math.min(y,camera.position.y+300),
+      pd[i]=y;
+      P.setXYZ(i,camera.position.x+((i*127)%900)-450+(snowing?Math.sin(now+i)*14:0),base+y,
         camera.position.z+((i*311)%900)-450);
-      P.setY(i,y);
     }
     P.needsUpdate=true;
   }
@@ -3289,6 +3974,9 @@ function animateWorld(dt,now){
     if(a.state==='march'||a.state==='rout'){
       const f=(simDay-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay);
       p=polyPos(a.poly,f);
+    }else if(a.state==='battle'&&a.battlePos){ // fight where the hosts met, not back at their muster town
+      const off=a.side==='crown'?-14:14;
+      p={x:a.battlePos.x+off,z:a.battlePos.z+off*0.5,dir:a.side==='crown'?0.46:Math.PI+0.46};
     }
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
     const y=hAt(p.x,p.z);
@@ -3296,7 +3984,7 @@ function animateWorld(dt,now){
     if(a.flag){
       const fs=clamp(cam.cur.dist*0.0011,1,4.5);
       a.flag.position.set(p.x,y+14+fs*3+Math.sin(now*2+a.id)*0.6,p.z);
-      a.flag.rotation.y=camera.rotation.y;
+      a.flag.quaternion.copy(camera.quaternion); // true billboard; Euler .y alone skews at most angles
       a.flag.scale.setScalar(fs);
     }
     // soldiers when near
@@ -3399,7 +4087,7 @@ function animateWorld(dt,now){
 /* =========================================================================
    MAIN LOOP & BOOT
    ========================================================================= */
-let simAccum=0,lastT=0,hudT=0,overlayT=0;
+let simAccum=0,lastT=0,hudT=0,overlayT=0,uiT=0;
 function animate(t){
   requestAnimationFrame(animate);
   const now=t/1000;
@@ -3421,7 +4109,8 @@ function animate(t){
   animateWorld(dt,now);
   W.clock.day=saveDay;
   hudT-=dt;
-  if(hudT<=0){hudT=0.5;updateHUD();}
+  if(hudT<=0){hudT=0.5;updateHUD();refreshInspect();renderPetition();
+    if((uiT=(uiT+1)%2)===0)refreshCrownPanel();}
   overlayT-=dt;
   if(overlayT<=0){overlayT=6;if(overlayMode)refreshOverlay();}
   renderer.render(scene,camera);
@@ -3435,6 +4124,8 @@ async function boot(){
     return new Promise(r=>setTimeout(r,30));};
   await progress('Forging the realm…',0.02);
   await generateWorld(seed,progress);
+  // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
+  try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
   initGraphics();
   buildTerrain();buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildDynamic();
   simInit();

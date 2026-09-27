@@ -29,13 +29,45 @@ Pages). That's it.
 | drag | orbit · **right-drag** pan · **scroll** zoom (5 m – 4 km) |
 | click | inspect settlements, buildings, armies, caravans, the dragon |
 | `Space` | pause · `1–4` speeds (up to 30 sim-days/sec) |
+| `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
+| `M` | parchment map (click to fly) · `Esc` closes it |
 | `H` | hide UI · `Esc` deselect / cancel placement |
 
-The left drawer has four tabs: **Rates** (harvest, plague virulence, house
-aggression, myth dial…), **Acts** (Unleash plague · Wake the dragon ·
-Assassinate the monarch · Contest the succession…), **Overlays** (territories,
-trade, prosperity, plague, unrest), and **Realm** (seed, houses, succession).
+Touch: one finger orbits, two fingers pinch-zoom.
+
+The left drawer has five tabs: **Crown** (Sovereign mode), **Rates** (harvest,
+plague virulence, house aggression, myth dial…), **Acts** (Unleash plague ·
+Wake the dragon · Assassinate the monarch · Contest the succession…),
+**Overlays** (territories, trade, prosperity, plague, unrest), and **Realm**
+(seed, houses, succession — click a name to inspect them).
+
+## Sovereign mode — rule it yourself
+
+Press **♛ Rule** (or `R`) to stop watching and govern. Providence's dials and
+Acts are sealed while you rule; the crown's own levers take their place:
+
+- **Petitions.** The court brings decisions to you — restive houses demanding
+  lands, famine relief, sealing a plague town's gates, answering the dragon,
+  bounties on outlaws, debasing the coin, border disputes, tourneys. The game
+  pauses when one arrives (toggleable); if you stay silent, the council
+  decides on the due date. Out of Sovereign mode the council answers every
+  petition at once, exactly as the automatic court always did.
+- **Decrees** (gold + cooldown): royal feast, open the granaries,
+  extraordinary levy, bounty riders, charter a village on the map, raise the
+  royal host, sue for peace, pay the wyrm, send champions against it.
+- **The great houses**: honour them, take a hostage (they cannot rise for two
+  years), arrange a royal match, or attaint them for treason — seize their
+  lands on success, civil war on failure.
+- **Settlements** (inspector): relief grain, garrison, walls, quarantine,
+  suppress unrest.
+- **War**: click a crown host → *Order a march* → click a town. Hosts hold
+  where you send them until released to their captains.
+- **Ambitions & legacy**: eight ambitions (coffers, multitude, concord,
+  beloved, ten years' peace, crush a rebellion, slay the dragon, found a
+  village) plus two points per year build your dynasty's **legacy** (✦). If
+  your line loses the throne, the reign is scored and you may rule on as the
+  new dynasty. Best legacy per seed is kept in the browser.
 
 ## How it works
 
