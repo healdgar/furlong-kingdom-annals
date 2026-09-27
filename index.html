@@ -350,7 +350,8 @@ const NAMEB={
 function placeName(){ return pick('gen',NAMEB.pfx)+pick('gen',NAMEB.sfx); }
 function personName(sex){ return pick('gen',sex==='f'?NAMEB.femN:NAMEB.maleN); }
 const CHARGES=['stag','tower','wave','oak','wolf','comet','key','sun','crescent','crown','swords','fish','raven','rose','anchor','flame'];
-const HOUSEHUES=[[0x7a1f1f,0xe8d9a0],[0x1f3f6e,0xd8dee8],[0x24512a,0xe0d6b0],[0x5a3b6e,0xd9cfe0],[0x8a5a19,0xe8e0c8],[0x2b2320,0xc9a227]];
+const HOUSEHUES=[[0x7a1f1f,0xe8d9a0],[0x1f3f6e,0xd8dee8],[0x24512a,0xe0d6b0],[0x5a3b6e,0xd9cfe0],[0x8a5a19,0xe8e0c8],[0x2b2320,0xc9a227],
+  [0x1d6a6a,0xe6e0cc],[0x9a3d1c,0xefe3c4],[0x5c6a1e,0xe4dcc0],[0x6a1d4f,0xe8dbe0],[0x3a4a5a,0xe0c070]]; // the last five for cadet branches
 
 /* ---------------- heraldry: procedural sigils to canvas ----------------- */
 function makeSigil(hue,charge){
@@ -2111,6 +2112,8 @@ function buildTrees(){
   spots.dec.forEach((t,i)=>{setInst(G.decid,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(0.9+t.v*0.3),t.s);G.decid.setColorAt(i,C1.setRGB(0.82+t.v*0.3,0.86+t.v*0.26,0.8+t.v*0.2));});
   spots.pine.forEach((t,i)=>{setInst(G.pine,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(1+t.v*0.4),t.s);G.pine.setColorAt(i,C1.setRGB(0.85+t.v*0.2,0.88+t.v*0.2,0.86+t.v*0.2));});
   G.decid.instanceMatrix.needsUpdate=true;G.pine.instanceMatrix.needsUpdate=true;
+  G.regrow=new THREE.InstancedMesh(decidG,new THREE.MeshLambertMaterial({color:0x557f40}),5000);G.regrow.castShadow=true;G.regrowFree=[];
+  for(let i=4999;i>=0;i--){setInst(G.regrow,i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(i);}scene.add(G.regrow);
   G.treeHash=makeHash(40);G.treeSpots=spots;
   for(const k of['dec','pine'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
   linkTrees();
@@ -2595,7 +2598,7 @@ function furlongKind(f,s,colonists){
   return LK.FIELD;
 }
 function claimFurlong(f,si,colonists){
-  const s=W.settlements[si];f.dom=si;shapeFurlong(f,s,furlongKind(f,s,colonists));
+  const s=W.settlements[si];f.dom=si;f.lord=s.owner??0;f.held=false;if(G.land&&G.land.lordTex)writeLord(f);shapeFurlong(f,s,furlongKind(f,s,colonists));
   f.state=f.kind===LK.NONE?LS.WILD:f.fo>f.ar*0.5?LS.WOOD:(ARABLE.has(f.kind)?LS.WILD:LS.TILLED);
   (s.furl||(s.furl=[])).push(f);
 }
@@ -2609,7 +2612,7 @@ function genLand(){
   for(let j=0;j<FN;j++)for(let i=0;i<FN;i++){
     const jx=Math.round(rr()*255)/255,jz=Math.round(rr()*255)/255;
     F.push({k:F.length,i,j,jx,jz,x:(i+0.15+0.7*jx)*FG-SIZE/2,z:(j+0.15+0.7*jz)*FG-SIZE/2,
-      dom:-1,kind:0,state:0,gf:0,th:0,w:14,n:0,ar:0,fo:0,fl:0,vi:0,fa:0,area:0,trees:[],since:0,until:0,hash:rr()});
+      dom:-1,lord:-1,held:false,kind:0,state:0,gf:0,th:0,w:14,n:0,ar:0,fo:0,fl:0,vi:0,fa:0,area:0,trees:[],since:0,until:0,hash:rr()});
   }
   G.land={F};
   computeDomains();computeMask();
@@ -2637,10 +2640,11 @@ function genLand(){
   // textures the terrain shader reads
   const sd=new Uint8Array(FN*FN*4),dd=new Uint8Array(FN*FN*4);
   G.land.seedTex=new THREE.DataTexture(sd,FN,FN,THREE.RGBAFormat);G.land.dataTex=new THREE.DataTexture(dd,FN,FN,THREE.RGBAFormat);
+  G.land.lordTex=new THREE.DataTexture(new Uint8Array(FN*FN*4),FN,FN,THREE.RGBAFormat);
   G.land.maskTex=new THREE.DataTexture(m,GRID,GRID,THREE.RGBAFormat);
-  for(const t of[G.land.seedTex,G.land.dataTex]){t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;}
+  for(const t of[G.land.seedTex,G.land.dataTex,G.land.lordTex]){t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;}
   G.land.maskTex.magFilter=G.land.maskTex.minFilter=THREE.LinearFilter;G.land.maskTex.generateMipmaps=false;G.land.maskTex.needsUpdate=true;
-  for(const f of F)writeFurlong(f);
+  for(const f of F){writeFurlong(f);writeLord(f);}
 }
 function writeFurlong(f){
   const sd=G.land.seedTex.image.data,dd=G.land.dataTex.image.data,o=f.k*4;
@@ -2652,6 +2656,7 @@ const treeGone=(f,t)=>(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.B
   &&G.land.mask[cIdx(toCell(t.x),toCell(t.z))*4]>0; // steep or wet corners keep their trees
 function setFurlong(f,state){
   const was=f.state;f.state=state;f.since=day();writeFurlong(f);
+  if((state===LS.TILLED||state===LS.PASTURE&&was!==LS.TILLED)&&f.sap)sapling(f,false);if(state===LS.TILLED)f.wild0=null;
   if(was!==state)for(const t of f.trees)showTree(t,!treeGone(f,t));
 }
 function showTree(t,on){
@@ -2695,12 +2700,12 @@ function recolorFields(si,blend,snowT){
 function hookTerrainShader(mat){ // strips, headlands and hedges, drawn per pixel from the furlong textures
   const L=G.land;
   L.uni={uSeed:{value:L.seedTex},uData:{value:L.dataTex},uMask:{value:L.maskTex},uFG:{value:FG},uFN:{value:FN},uSize:{value:SIZE},uGrid:{value:GRID},
-    uYear:{value:0},uCol:{value:LANDCOL.map(t=>new THREE.Color(t[0]))},uFeat1:{value:G.feat.tex1},uFeat2:{value:G.feat.tex2},uSea:{value:SEA}};
+    uYear:{value:0},uCol:{value:LANDCOL.map(t=>new THREE.Color(t[0]))},uFeat1:{value:G.feat.tex1},uFeat2:{value:G.feat.tex2},uSea:{value:SEA},uLord:{value:L.lordTex},uHouse:{value:Array.from({length:12},()=>new THREE.Color(0x888888))},uTerr:{value:0}};
   mat.onBeforeCompile=sh=>{
     Object.assign(sh.uniforms,L.uni);
     sh.vertexShader='varying vec3 vWP;varying vec3 vWN;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vWP=(modelMatrix*vec4(transformed,1.0)).xyz;vWN=normalize(objectNormal);');
     sh.fragmentShader=`varying vec3 vWP;
-uniform sampler2D uSeed,uData,uMask,uFeat1,uFeat2;uniform float uFG,uFN,uSize,uGrid,uYear,uSea;uniform vec3 uCol[11];varying vec3 vWN;
+uniform sampler2D uSeed,uData,uMask,uFeat1,uFeat2,uLord;uniform vec3 uHouse[12];uniform float uTerr;uniform float uFG,uFN,uSize,uGrid,uYear,uSea;uniform vec3 uCol[11];varying vec3 vWN;
 float lh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float lnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(lh(i),lh(i+vec2(1.,0.)),f.x),mix(lh(i+vec2(0.,1.)),lh(i+vec2(1.,1.)),f.x),f.y);}
 vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
@@ -2808,6 +2813,17 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
     }
     diffuseColor.rgb=c;
   }
+  { // lordship: each lord's land edged in his colours where it meets another's; land held by the sword hatched
+    vec4 L1=texture2D(uLord,(c1+0.5)/uFN),L2=texture2D(uLord,(c2+0.5)/uFN);
+    float l1=floor(L1.r*255.+0.5),l2=floor(L2.r*255.+0.5);vec3 hc=vec3(0.5);
+    for(int i=0;i<12;i++)if(abs(float(i)-l1)<0.5)hc=uHouse[i];
+    if(l1>0.5){
+      if(uTerr>0.5)diffuseColor.rgb=mix(diffuseColor.rgb,hc,0.38);
+      if(L1.g>0.5)diffuseColor.rgb=mix(diffuseColor.rgb,hc,0.45*step(fract((wp.x+wp.y)/11.),0.2));
+      if(abs(l1-l2)>0.5){float eb2=abs(dot(fp-(s1+s2)*0.5,normalize(s2-s1)))*uFG;
+        diffuseColor.rgb=mix(diffuseColor.rgb,hc*0.9,(1.-smoothstep(1.2,4.5,eb2))*(0.75+0.25*uTerr));}
+    }
+  }
 }`);
   };
   mat.needsUpdate=true;
@@ -2890,6 +2906,233 @@ function featFlush(now){ // apply pending changes (at most every second or so)
   featCompute(fI(d[0]),fI(d[1]),fI(d[2]),fI(d[3]));F.tex1.needsUpdate=F.tex2.needsUpdate=true;
 }
 
+/* ---------------- lordship, hosts and the moving border ------------------------
+   Every furlong has a lord: the house that holds it. Normally it is the lord of
+   the settlement that works it, but war moves it. A host standing on enemy land
+   takes the furlongs about it, lives off them (and burns what it cannot hold).
+   Land it takes within reach of its own lord's villages becomes theirs to plough,
+   clear and build on; land held only by the sword slips back to the locals when
+   the host moves on, unless the lord plants a fort there, and then the fort's
+   people take it up. Every house keeps a standing host at its seat, and
+   neighbours with grudges and land-hunger fight private wars over the border. */
+const FEUD_NAMES=['Feud','Border War','War of the Marches','Quarrel'];
+function atWar(h1,h2){
+  if(h1==null||h2==null||h1<0||h2<0||h1===h2)return false;
+  if(W.war&&((h1===0&&inRevolt(h2))||(h2===0&&inRevolt(h1))))return true;
+  return (W.feuds||[]).some(f=>(f.a===h1&&f.b===h2)||(f.a===h2&&f.b===h1));
+}
+function houseAtWar(hi){return (W.war&&(hi===0||inRevolt(hi)))||(W.feuds||[]).some(f=>f.a===hi||f.b===hi);}
+function inRebellion(a,b){return !!W.war&&(a.house===0||inRevolt(a.house))&&(b==null||b.house===0||inRevolt(b.house));}
+function lordColor(hi){const h=W.houses[hi];return h?h.sigilHue[0]:0x888888;}
+function writeLord(f){
+  if(!G.land||!G.land.lordTex)return;const d=G.land.lordTex.image.data,o=f.k*4;
+  d[o]=f.lord+1;d[o+1]=f.held?255:0;G.land.lordTex.needsUpdate=true;
+}
+function setLord(f,hi,held){
+  const was=f.lord;f.lord=hi;f.held=!!held;writeLord(f);
+  if(was!==hi&&f.dom>=0){ // within reach of one of the new lord's own places, it becomes theirs to work
+    const own=f.dom>=0?W.settlements[f.dom]:null;
+    if(!own||own.owner!==hi){
+      let best=-1,bd=1e9;W.settlements.forEach((s,si)=>{if(s.owner!==hi||!s.furl)return;const d=dist2d(f.x,f.z,s.pos.x,s.pos.z);if(d<fieldReach(s)*1.25&&d<bd){bd=d;best=si;}});
+      if(best>=0){if(own)own.furl=own.furl.filter(g=>g!==f);f.dom=best;W.settlements[best].furl.push(f);f.held=false;writeLord(f);
+        if(f.state===LS.WILD&&ARABLE.has(f.kind))shapeFurlong(f,W.settlements[best],f.kind);writeFurlong(f);}
+    }else{f.held=false;writeLord(f);}
+  }
+}
+function syncOwner(s){ // the town changed hands: its fields go with it
+  if(s._lord===undefined){s._lord=s.owner;return;}
+  if(s._lord===s.owner)return;
+  const old=s._lord;s._lord=s.owner;
+  for(const f of s.furl||[])if(f.lord===old||f.lord<0)setLord(f,s.owner,false);
+}
+function hostTarget(hi){const pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(W.houses[hi].might||1));}
+function ensureHosts(){ // every house keeps a household host at its seat, topped up from its people
+  W.houses.forEach((h,hi)=>{
+    let seat=h.seat;if(!W.settlements[seat]||W.settlements[seat].owner!==hi)seat=W.settlements.findIndex(s=>s.owner===hi);
+    if(h.exiled||seat<0){for(const x of[...W.armies])if(x.house===hi&&x.standing&&x.state!=='battle')disbandArmy(x);return;} // a landless house keeps no household
+    for(const x of W.armies)if(x.house===hi&&x.standing&&W.settlements[x.home].owner!==hi)x.home=seat;
+    let a=W.armies.find(x=>x.standing&&x.house===hi&&!x.gone);
+    const tgt=hostTarget(hi);
+    if(!a){
+      a=raiseArmy(hi,seat,tgt*0.6,hi===0?'crown':'host');a.standing=true;a.home=seat;
+      a.name=(hi===0?'The Royal Household':'Household of '+h.name.replace('House ',''));a.hold=hi===0&&!!(W.player&&W.player.on);
+    }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt){ // recruits come in at home, a few each month
+      const s=W.settlements[a.home],add=Math.min(tgt-a.strength,tgt*0.08,s.pop*0.01);
+      if(add>0){a.strength+=add;s.pop-=add*0.7;}
+    }
+  });
+}
+function nearOwnPlace(hi,x,z,r){return W.settlements.some(s=>s.owner===hi&&dist2d(x,z,s.pos.x,s.pos.z)<r);}
+function armyLand(a){ // occupation, foraging and supply, once a day
+  if(a.state==='battle'||a.state==='rout'||a.gone)return;
+  const p=a._spos,winter=seasonIdx()===3;
+  let use=0.45+(a.state==='march'?0.35:0)+(winter?0.35:0);
+  if(!nearOwnPlace(a.house,p.x,p.z,1700))use+=0.5; // far from home: every sack of grain comes a long way
+  const here=G.land?furlongAt(p.x,p.z):null,s=W.settlements[a.at];
+  if(a.state!=='march'&&s&&s.owner===a.house&&dist2d(p.x,p.z,s.pos.x,s.pos.z)<60){ // in its own town: fed from the granary
+    const take=Math.min(100-a.supply,s.stores.grain/Math.max(1,a.strength*0.02));a.supply=Math.min(100,a.supply+Math.max(3,take));s.stores.grain=Math.max(0,s.stores.grain-a.strength*0.01);}
+  else if(here&&here.lord===a.house&&here.state===LS.TILLED)a.supply=Math.min(100,a.supply+1.2);
+  a.supply-=use;
+  if(!G.land||!houseAtWar(a.house))return;
+  // take the land about it, if no enemy host is near enough to dispute it
+  if(W.armies.some(b=>!b.gone&&b!==a&&atWar(a.house,b.house)&&dist2d(b._spos.x,b._spos.z,p.x,p.z)<350))return;
+  const F=G.land.F,fx=Math.floor((p.x+SIZE/2)/FG),fz=Math.floor((p.z+SIZE/2)/FG);
+  const cmd=notableById(a.commander),cruel=cmd&&cmd.traits&&cmd.traits.includes('cruel');
+  for(let j=fz-2;j<=fz+2;j++)for(let i=fx-2;i<=fx+2;i++){
+    if(i<0||j<0||i>=FN||j>=FN)continue;const f=F[j*FN+i];
+    if(f.lord<0||!atWar(a.house,f.lord)||dist2d(f.x,f.z,p.x,p.z)>(a.state==='siege'?420:260))continue;
+    if(!chance('sim',a.state==='siege'?0.12:0.2))continue;
+    if(f.state===LS.TILLED){a.supply=Math.min(100,a.supply+2.5); // they live off the enemy's corn, and burn what they can't carry
+      if(chance('sim',cruel?0.6:0.3)){f.until=Math.ceil((day()+1)/360)*360+20;setFurlong(f,LS.BURNT);}}
+    const was=f.lord;setLord(f,a.house,true);a.taken=(a.taken||0)+1;
+    if(!a._landNote&&a.taken>=6){a._landNote=true;emit('war',5,{x:f.x,z:f.z},`${a.name} overruns the fields of ${W.houses[was]?W.houses[was].name:'the enemy'} about ${nearestPlaceName(f.x,f.z)}; the villagers flee before it.`);}
+  }
+}
+/* land nobody works goes back to nature, step by step: grass, then thorn and scrub by the fifth year,
+   young wood by the twentieth; the wood also creeps out into abandoned ground beside it. Commons that a
+   village still grazes stay open. */
+const grazed=f=>W.settlements.some(o=>dist2d(o.pos.x,o.pos.z,f.x,f.z)<(o.kind==='village'?800:1000));
+function sapling(f,on){
+  if(!G.regrow)return;
+  if(!on){for(const t of f.sap||[]){setInst(G.regrow,t.i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(t.i);if(t.feat)featTree(t,-1);}f.sap=null;G.regrow.instanceMatrix.needsUpdate=true;return;}
+  if(f.sap)return;f.sap=[];
+  for(let k=0;k<40&&f.sap.length<14&&G.regrowFree.length;k++){
+    const x=f.x+(rand('sim')-0.5)*FG*0.9,z=f.z+(rand('sim')-0.5)*FG*0.9,c=cIdx(toCell(x),toCell(z));
+    if(furlongAt(x,z)!==f||W.water[c]||G.land.mask[c*4+2]||slopeAt(toCell(x),toCell(z))>0.5)continue;
+    f.sap.push({i:G.regrowFree.pop(),x,z,s:0.75+rand('sim')*0.5,k:'dec'});
+  }
+  growSaplings(f);
+}
+function growSaplings(f){
+  if(!f.sap)return;const age=(day()-(f.wild0??day()))/360,g=clamp(0.18+age/20*0.82,0.18,1); // twenty years from thorn to wood
+  for(const t of f.sap){setInst(G.regrow,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s*g,t.s*g*(0.8+0.3*g),t.s*g);
+    if(g>0.7&&!t.feat&&G.feat){t.feat=true;featTree(t,1);}}
+  G.regrow.instanceMatrix.needsUpdate=true;
+}
+function landSuccession(){
+  const now=day(),yr=(now%360)===20;
+  for(const f of G.land.F){
+    if(f.kind===LK.NONE&&f.dom>=0)continue;
+    const worked=f.lord>=0&&f.dom>=0&&W.settlements[f.dom]&&W.settlements[f.dom].owner===f.lord&&!f.held;
+    if(f.state===LS.TILLED&&!worked)setFurlong(f,LS.PASTURE); // occupied, or its village gone: nobody ploughs it
+    if(f.state===LS.TILLED||f.state===LS.BURNT){f.worked=true;f.wild0=null;if(f.sap)sapling(f,false);continue;}
+    if(f.state===LS.PASTURE){
+      if(grazed(f)&&worked)continue;
+      if(f.wild0==null)f.wild0=now;
+      if(now-f.wild0>360*5){setFurlong(f,LS.SCRUB);sapling(f,true);}
+    }else if(f.state===LS.WILD){
+      if(grazed(f))continue;
+      const nb=[f.k+1,f.k-1,f.k+FN,f.k-FN].map(k=>G.land.F[k]).filter(Boolean);
+      if(f.worked||yr&&nb.some(g=>g.state===LS.WOOD)&&chance('sim',0.03)){ // abandoned, or the wood creeping out beside it
+        if(f.wild0==null)f.wild0=now-(f.worked?0:360*5);setFurlong(f,LS.SCRUB);sapling(f,true);}
+    }else if(f.state===LS.SCRUB){
+      if(f.wild0==null)f.wild0=now-360*5;
+      if(!f.sap)sapling(f,true);
+      if(now-f.wild0>360*20){setFurlong(f,LS.WOOD);}
+    }
+    if(yr&&f.sap)growSaplings(f);
+  }
+}
+function tickDomains(){ // monthly: owners, hosts, the frontier, and private wars
+  if(!G.land||day()%30!==20)return;
+  for(const s of W.settlements)syncOwner(s);
+  ensureHosts();
+  // land held only by the sword goes back to its people once no host guards it and no place of its lord is near
+  for(const f of G.land.F){
+    if(!f.held||f.lord<0)continue;
+    if(W.armies.some(b=>!b.gone&&b.house===f.lord&&dist2d(b._spos?b._spos.x:0,b._spos?b._spos.z:0,f.x,f.z)<800))continue;
+    const home=f.dom>=0?W.settlements[f.dom]:null;
+    if(nearOwnPlace(f.lord,f.x,f.z,1500)){setLord(f,f.lord,false);continue;} // their own villages now reach it
+    if(home&&home.owner!==f.lord&&chance('sim',0.12))setLord(f,home.owner,false);
+  }
+  landSuccession();
+  // the frontier: a lord holding a march far from his own places plants a fort to keep it
+  W.houses.forEach((h,hi)=>{
+    if(h.exiled||(h._fortT||0)>day())return;
+    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(held.length<6)return;
+    const cx=held.reduce((t,f)=>t+f.x,0)/held.length,cz=held.reduce((t,f)=>t+f.z,0)/held.length;
+    if(nearOwnPlace(hi,cx,cz,1100)||!chance('sim',0.5))return;
+    const seat=W.settlements.find(s=>s.owner===hi);if(!seat)return;
+    const n=W.settlements.length;
+    for(let k=0;k<12&&W.settlements.length===n;k++){const a=k*2.4,r=k*40;
+      doAct('village',{x:cx+Math.cos(a)*r,z:cz+Math.sin(a)*r},{from:seat,fort:true,owner:hi});}
+    h._fortT=day()+360*3;
+  });
+  // the purse: rents and tolls in, hosts and castellans out; a house in debt sells its outlying lands
+  W.houses.forEach((h,hi)=>{
+    if(hi===0||h.exiled)return;
+    if(h.gold===undefined)h.gold=800*(h.wealth||1);
+    const own=W.settlements.filter(s=>s.owner===hi);if(!own.length)return;
+    const seatS=W.settlements[h.seat]||own[0];
+    const income=own.reduce((t,s)=>t+s.pop*0.045*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1),0); // far fiefs: the castellans skim
+    const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
+    const upkeep=hosts+Math.pow(own.length,1.5)*3.5; // every castle wants a castellan, every hall a feast
+    h.gold+=income-upkeep;h.lastNet=income-upkeep;
+    if(h.gold<-600&&own.length>1){
+      const seat=W.settlements[h.seat]||own[0];
+      const sell=own.filter(s=>s!==seat).sort((a,b)=>dist2d(b.pos.x,b.pos.z,seat.pos.x,seat.pos.z)-dist2d(a.pos.x,a.pos.z,seat.pos.x,seat.pos.z))[0];
+      const price=Math.round(sell.pop*1.6+300);
+      const crownShare=W.settlements.filter(x=>x.owner===0).length/W.settlements.length;
+      const buyers=W.houses.map((o,i)=>i).filter(i=>i!==hi&&!W.houses[i].exiled&&!atWar(i,hi)&&(i===0?W.treasury>price*3&&crownShare<0.4:W.houses[i].gold>price));
+      const near=i=>{let d=1e9;for(const s of W.settlements)if(s.owner===i)d=Math.min(d,dist2d(s.pos.x,s.pos.z,sell.pos.x,sell.pos.z));return d;};
+      const to=buyers.length?wpick(buyers,i=>-near(i)/600+((i===0?W.treasury:W.houses[i].gold)/Math.max(1,price))*0.2,0.7):-1;
+      if(to>=0){if(to===0)W.treasury-=price;else W.houses[to].gold-=price;h.gold+=price;
+        sell.owner=to;syncOwner(sell);if(to>0)W.houses[to].loyalty=clamp(W.houses[to].loyalty+2,0,100);refreshOverlay();
+        emit('house',6,sell.pos,`${h.name}, deep in debt, sells ${sell.name} and its lands to ${W.houses[to].name} for ${price.toLocaleString()} gold.`);}
+      else if(h.gold<-1500){h.loyalty=clamp(h.loyalty-3,0,100);} // no buyer: the creditors press, and the lord grows desperate
+    }
+  });
+  // enfeoffment: a crown that holds too much grants its outlying towns to vassals (or recalls an exiled house to hold them)
+  if(!W.war&&day()%360===(200%360)){
+    const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
+    if(crownTowns.length>(W.settlements.length-1)*0.4){
+      const far=crownTowns.sort((a,b)=>dist2d(b.pos.x,b.pos.z,W.capital.pos.x,W.capital.pos.z)-dist2d(a.pos.x,a.pos.z,W.capital.pos.x,W.capital.pos.z))[0];
+      const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>=0&&day()-(W.houses[i]._grantT||-1e9)>360*5);
+      const exiled=W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].exiled&&day()-(W.houses[i].exiledDay||0)>360*8);
+      const landless=loyal.filter(i=>!W.settlements.some(s=>s.owner===i));
+      const to=landless.length?landless[0]:exiled.length&&chance('sim',0.6)?exiled[0]:loyal.length?wpick(loyal,i=>W.houses[i].loyalty/20,1):-1;
+      if(to>0&&far){const h=W.houses[to],back=h.exiled;
+        if(back){h.exiled=false;h.loyalty=70;const hd=W.notables.find(n=>n.alive&&n.house===to&&ageOf(n)>=16);if(hd){hd.role='head';h.head=hd.id;}}
+        far.owner=to;h._grantT=day();if(back||!W.settlements.some(x=>x.owner===to&&x!==far))h.seat=W.settlements.indexOf(far);h.loyalty=clamp(h.loyalty+10,0,100);syncOwner(far);refreshOverlay();
+        emit('crown',7,far.pos,back?`The crown recalls ${h.name} from exile and grants it ${far.name} to hold as a fief.`:`${far.name} is granted as a fief to ${h.name}, in reward for its loyalty.`);}
+    }
+  }
+  // private wars: neighbours with grudges or land-hunger, when the crown is too weak to keep the peace
+  W.feuds=W.feuds||[];
+  for(let i=W.feuds.length-1;i>=0;i--){const fd=W.feuds[i],A=W.houses[fd.a],B=W.houses[fd.b];
+    const hostA=W.armies.find(x=>x.house===fd.a&&!x.gone),hostB=W.armies.find(x=>x.house===fd.b&&!x.gone);
+    if(day()>fd.until||!hostA||!hostB||A.exiled||B.exiled){
+      const la=G.land.F.filter(f=>f.lord===fd.a).length-fd.la,lb=G.land.F.filter(f=>f.lord===fd.b).length-fd.lb;
+      W.feuds.splice(i,1);
+      for(const x of W.armies)if((x.house===fd.a||x.house===fd.b)&&!houseAtWar(x.house)&&!x.gone){liftSiege(x);if(x.standing)routHome(x);else disbandArmy(x);}
+      const win=la>lb+2?A:lb>la+2?B:null;
+      emit('war',8,W.capital.pos,`${fd.name} ends${win?`; ${win.name} keeps the lands it took, and new border stones are set`:', each side keeping what it holds'}.`);
+    }
+  }
+  if(W.feuds.length<3&&chance('sim',0.5*MOD.aggr)){ // lords fight lords: the usual weather of a fiefdom
+    const borders=[];
+    for(const f of G.land.F){if(f.lord<1)continue;const nb=[f.k+1,f.k-1,f.k+FN,f.k-FN].map(k=>G.land.F[k]).filter(Boolean);
+      for(const g of nb)if(g.lord>=1&&g.lord!==f.lord){const a=Math.min(f.lord,g.lord),b=Math.max(f.lord,g.lord);borders.push(a*16+b);}}
+    const pairs=[...new Set(borders)];
+    const landed=hi=>!W.houses[hi].exiled&&W.settlements.some(s=>s.owner===hi);
+    const cand=pairs.map(k=>({a:k>>4,b:k&15})).filter(p=>landed(p.a)&&landed(p.b)&&!atWar(p.a,p.b));
+    const tension=p=>{const A=W.houses[p.a],B=W.houses[p.b];let t=0.2;
+      if((A.grudges||{})[p.b]||(B.grudges||{})[p.a])t+=0.8;
+      for(const s of W.settlements)if((s.owner===p.a||s.owner===p.b)&&s.landShort)t+=0.4;
+      t+=(100-W.legitimacy)/80;return t;};
+    const p=cand.length?wpick(cand,tension,0.6):null;
+    if(p&&chance('sim',0.08*tension(p))){
+      const A=W.houses[p.a],B=W.houses[p.b];
+      const fd={a:p.a,b:p.b,start:day(),until:day()+360*(1+randi('sim',3)),name:`the ${pick('sim',FEUD_NAMES)} of ${A.name.replace('House ','')} and ${B.name.replace('House ','')}`,
+        la:G.land.F.filter(f=>f.lord===p.a).length,lb:G.land.F.filter(f=>f.lord===p.b).length};
+      W.feuds.push(fd);
+      for(const hi of[p.a,p.b]){const seat=W.settlements.findIndex(s=>s.owner===hi);if(seat>=0)raiseArmy(hi,seat,hostTarget(hi)*1.6,'host');} // the lords call out their tenants
+      for(const x of W.armies)if(x.house===p.a||x.house===p.b)x.hold=false;
+      emit('war',8,W.settlements[A.seat]?W.settlements[A.seat].pos:W.capital.pos,`${A.name} and ${B.name} fall to open war over the land between them — ${fd.name}. The crown ${W.legitimacy>60?'frowns, but':'is'} too weak to part them.`);
+    }
+  }
+}
+
 function buildFields(){
   if(W.villages0===undefined)W.villages0=W.settlements.filter(o=>o.kind==='village').length;
   genLand();
@@ -2899,16 +3142,16 @@ function tickLand(){ // monthly: the countryside follows the people
   const now=day(),spring=Math.ceil((now+1)/360)*360+20,F=G.land.F,ph=G.land.perHead;
   W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]);
     let tilled=0,bearing=0;
-    for(const f of own)if(ARABLE.has(f.kind)){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
+    for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
     const need=s.pop*landWt(s)*ph;
     s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;
     const d=f=>dist2d(f.x,f.z,s.pos.x,s.pos.z);
     if(tilled<need&&!s.siegeBy){ // take in more land: old pasture, open waste, scrub, then the wood; beyond the bounds if need be
       const bonus={[LS.PASTURE]:0.8,[LS.WILD]:0.5,[LS.SCRUB]:-0.2,[LS.WOOD]:-0.9};
-      let c=own.filter(f=>ARABLE.has(f.kind)&&f.area>0&&bonus[f.state]!==undefined);
+      let c=own.filter(f=>ARABLE.has(f.kind)&&f.area>0&&bonus[f.state]!==undefined&&f.lord===s.owner);
       const reach=domReach(s)*1.5;
       const nearest=f=>!W.settlements.some(o=>o!==s&&dist2d(f.x,f.z,o.pos.x,o.pos.z)<d(f));
-      c=c.concat(F.filter(f=>f.ar>=f.n*0.3&&d(f)<reach&&(f.dom<0||f.dom!==si&&(f.state===LS.WILD||f.state===LS.WOOD)&&ARABLE.has(f.kind))&&nearest(f)));
+      c=c.concat(F.filter(f=>f.ar>=f.n*0.3&&d(f)<reach&&(f.lord<0||f.lord===s.owner)&&(f.dom<0||f.dom!==si&&(f.state===LS.WILD||f.state===LS.WOOD)&&ARABLE.has(f.kind))&&nearest(f)));
       const score=f=>-d(f)/350+(f.dom!==si?(f.fo>f.ar*0.5?-0.9:0.5)-(f.dom<0?0.7:1):bonus[f.state])+0.6*f.fa/Math.max(1,f.n); // the lord grants his waste to the nearer village
       c.sort((a,b)=>score(b)-score(a));
       const f=wpick(c.slice(0,12),score,0.35);
@@ -2924,15 +3167,11 @@ function tickLand(){ // monthly: the countryside follows the people
       }else if(!s.landShort){s.landShort=now;
         if(s.kind!=='village'||s.pop>120)emit('trade',3,s.pos,`There is no more land to plough about ${s.name}; its younger sons look elsewhere.`);}
     }else if(tilled>need*1.25+9000){ // too few hands: the farthest and poorest fields go back to grass
-      const c=own.filter(f=>ARABLE.has(f.kind)&&f.state===LS.TILLED).sort((a,b)=>d(b)-d(a)).slice(0,10);
+      const c=own.filter(f=>ARABLE.has(f.kind)&&f.state===LS.TILLED&&f.lord===s.owner).sort((a,b)=>d(b)-d(a)).slice(0,10);
       const f=wpick(c,f=>d(f)/350-0.6*f.fa/Math.max(1,f.n),0.35);
       if(f)setFurlong(f,LS.PASTURE);
     }
-    for(const f of own){
-      if(f.state===LS.BURNT&&now>f.until)setFurlong(f,LS.TILLED);
-      else if(f.state===LS.PASTURE&&now-f.since>360*12&&(f.fo>0||f.hash<0.35))setFurlong(f,LS.SCRUB);
-      else if(f.state===LS.SCRUB&&now-f.since>360*15)setFurlong(f,f.fo>f.ar*0.2?LS.WOOD:LS.WILD);
-    }
+    for(const f of own)if(f.state===LS.BURNT&&now>f.until)setFurlong(f,f.lord===s.owner?LS.TILLED:LS.PASTURE);
     if(s.siegeBy){ // the besiegers forage and burn the standing crops
       const t=own.filter(f=>f.state===LS.TILLED&&ARABLE.has(f.kind)&&d(f)<(s.wallR||s.radius)+600);
       for(let k=0;k<2&&t.length;k++){const f=t.splice(randi('sim',t.length),1)[0];f.until=spring;setFurlong(f,LS.BURNT);}
@@ -2965,7 +3204,7 @@ function settleLand(s){ // a new village takes up the waste nearest it, laid out
   for(const f of G.land.F){
     if(f.dom===si)continue;
     const c=cIdx(toCell(f.x),toCell(f.z));
-    if(W.dom[c]===si&&(f.dom<0||f.state===LS.WILD||f.state===LS.WOOD)){
+    if(W.dom[c]===si&&(f.dom<0||f.state===LS.WILD||f.state===LS.WOOD||f.lord===s.owner&&f.held)){
       if(f.dom>=0){const o=W.settlements[f.dom];o.furl=o.furl.filter(g=>g!==f);}
       claimFurlong(f,si,true);writeFurlong(f);
     }
@@ -3347,6 +3586,7 @@ function fxState(s,dt){ // lasting conditions show while they last
   if((s.hunger||0)>0.3&&R()<dt*4)fxParticle(0,x+(R()-0.5)*rad*2,y+3,z+(R()-0.5)*rad*2,1.5,0.4,1,6,0xbfae80);
 }
 function updateFx(dt,now){
+  if(G.land&&G.land.uni)W.houses.forEach((h,i)=>{if(i<11)G.land.uni.uHouse.value[i+1].setHex(h.sigilHue[0]);});
   if(!G.fxList)return;
   const live=speedIdx>0?1:0.25; // a paused world still breathes, slowly
   for(let i=G.fxList.length-1;i>=0;i--){const e=G.fxList[i];e.t+=dt*live;if(e.t>=e.dur){G.fxList.splice(i,1);continue;}if(fxNear(e.x,e.z))fxScene(e,dt,now);}
@@ -3391,6 +3631,7 @@ function setOverlay(mode){
   overlayMode=(overlayMode===mode)?null:mode;
   if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);G.overlay=null;}
   document.querySelectorAll('.ovbtn').forEach(b=>b.classList.toggle('on',b.dataset.o===overlayMode));
+  if(G.land&&G.land.uni)G.land.uni.uTerr.value=0;
   if(!overlayMode)return;
   refreshOverlay();
 }
@@ -3404,12 +3645,9 @@ function refreshOverlay(){
     m.rotation.x=-Math.PI/2;m.position.set(s.pos.x,s.pos.y+4+(s.radius*0.01),s.pos.z);
     grp.add(m);
   };
-  if(overlayMode==='territory'){
-    for(const s of W.settlements){
-      const h=W.houses[s.owner];
-      disc(s,h?h.sigilHue[0]:0x888888,0.32,s.kind==='capital'?800:s.kind==='town'?600:380);
-    }
-  }else if(overlayMode==='trade'){
+  if(G.land&&G.land.uni)G.land.uni.uTerr.value=overlayMode==='territory'?1:0; // the land itself is coloured by its lord
+  if(overlayMode==='territory'){}
+  else if(overlayMode==='trade'){
     for(const r of W.roads){
       const pts=r.path.map(p=>new THREE.Vector3(p.x,hAt(p.x,p.z)+4,p.z));
       const g=new THREE.BufferGeometry().setFromPoints(pts);
@@ -3949,7 +4187,7 @@ function tickEconomy(){
   }
   for(const r of W.roads)r.vol=(r.vol||0)*0.995;
   // treasury upkeep drains — the predator on hoarding
-  W.treasury-=W.armies.length*14;
+  W.treasury-=W.armies.filter(a=>a.house===0).reduce((t,a)=>t+(a.standing?4:14),0); // the crown pays its own hosts; the household costs less than a levy
   W.treasury-=W.settlements.reduce((t,s)=>t+s.garrison,0)*0.012;
   if(W.treasury>15000)W.treasury-=(W.treasury-15000)*0.0012; // the court's splendor grows to meet the coin
   W.treasury=Math.max(-500,W.treasury);
@@ -3958,7 +4196,7 @@ function tickEconomy(){
 /* ============================ POPULATION ================================= */
 function carryingCap(s){ // souls the place can keep: the land it actually ploughs, its fisheries, and (for towns) its market
   if(G.land&&s.furl&&s.furl.length&&G.land.perHead>0){
-    let bearing=0;for(const f of s.furl)if(ARABLE.has(f.kind)&&f.state===LS.TILLED)bearing+=f.area;
+    let bearing=0;for(const f of s.furl)if(ARABLE.has(f.kind)&&f.state===LS.TILLED&&f.lord===s.owner)bearing+=f.area;
     const yieldF=(1+Math.max(0,year()-1)*0.002)*MOD.harvest*(W.drought?0.7:1); // better ploughs and rotations, slowly, over the centuries
     const fed=bearing*yieldF/(landWt(s)*G.land.perHead)+s.res.fish*12;
     let hinter=0; // the seat lives off the realm's rents and tolls; a market town off the surplus of its villages
@@ -4176,6 +4414,22 @@ function tickPolitics(){
     W.legitimacy=clamp(W.legitimacy+1,0,100);
   }
 }
+function partition(hi,son){ // the lands are divided between the sons: the outlying fiefs go to a cadet branch
+  const h=W.houses[hi],own=W.settlements.filter(s=>s.owner===hi);if(hi===0||own.length<3)return;
+  const seat=W.settlements[h.seat]||own[0];
+  let ci=W.houses.findIndex((o,i)=>i>0&&(o.exiled&&day()-(o.exiledDay||0)>360*8||!o.exiled&&!W.settlements.some(s=>s.owner===i)&&!houseAtWar(i)));
+  const used=new Set(W.houses.map(o=>o.sigilHue));
+  const hue=HOUSEHUES.find(x=>!used.has(x))||HOUSEHUES[6+(W.houses.length%5)];
+  const give=own.filter(s=>s!==seat).sort((a,b)=>dist2d(b.pos.x,b.pos.z,seat.pos.x,seat.pos.z)-dist2d(a.pos.x,a.pos.z,seat.pos.x,seat.pos.z)).slice(0,Math.floor(own.length/3));
+  if(!give.length)return;
+  const name='House '+give[0].name.replace(/(mere|holt|ford|caster|wyck|march|fell|combe|worth|bridge|haven|moor|dale|garth|stead|port|field|burn|cester|ham|by)$/,'')+pick('sim',['ing','mont','ric','wald','hurst']);
+  const nh={name,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
+  if(ci<0){if(W.houses.length>=11)return;W.houses.push(nh);ci=W.houses.length-1;}else{Object.assign(W.houses[ci],nh);delete W.houses[ci]._url;}
+  son.house=ci;son.role='head';W.houses[ci].head=son.id;
+  for(const s of give){s.owner=ci;syncOwner(s);}
+  (h.grudges=h.grudges||{})[ci]=true;refreshOverlay();
+  emit('house',7,give[0].pos,`The lands of ${h.name} are divided between the sons: ${son.name} takes ${give.map(s=>s.name).join(' and ')} and founds ${name}, a cadet branch with its own arms — and its own quarrels.`);
+}
 function killNotable(n,cause,silent){
   if(!n.alive)return;
   n.alive=false;n.deathDay=day();
@@ -4191,7 +4445,9 @@ function killNotable(n,cause,silent){
   if(wasMonarch)succession();
   else if(n.role==='head'&&h){
     const heir=n.heirs.map(notableById).find(k=>k&&k.alive&&ageOf(k)>=16);
-    if(heir){heir.role='head';h.head=heir.id;heir.agenda=n.agenda;}
+    if(heir){heir.role='head';h.head=heir.id;heir.agenda=n.agenda;
+      const younger=n.heirs.map(notableById).find(k=>k&&k.alive&&k!==heir&&ageOf(k)>=16&&k.sex==='m');
+      if(younger)partition(n.house,younger);}
     else{const any=W.notables.find(m=>m.alive&&m.house===n.house&&ageOf(m)>=16);if(any){any.role='head';h.head=any.id;}}
   }
 }
@@ -4258,7 +4514,7 @@ let armyN=0;
 function raiseArmy(hi,fromS,strength,side){
   const s=W.settlements[fromS];
   const commanders=W.notables.filter(n=>n.alive&&n.house===hi&&ageOf(n)>=16&&(n.role==='head'||n.role==='scion'||n.role==='monarch'||n.role==='cousin'));
-  const cmd=commanders[0]||W.notables.find(n=>n.alive&&ageOf(n)>=16);
+  const cmd=(hi===0&&commanders.find(n=>n.role!=='monarch'))||commanders[0]||W.notables.find(n=>n.alive&&ageOf(n)>=16); // a marshal leads the royal host; the king rides out only if there is no one else
   strength=Math.min(strength,s.pop*0.25);
   s.pop-=strength*0.7;
   const a={id:++armyN,house:hi,side,name:'Host of '+W.houses[hi].name.replace('House ',''),
@@ -4327,13 +4583,16 @@ function tickMilitary(){
   for(const a of W.armies)a._spos=armySimPos(a);
   for(const a of W.armies){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
-    a.supply-=a.state==='march'?0.8:0.4;
-    if(a.supply<=0){a.strength*=0.995;a.morale=Math.max(20,a.morale-0.3);}
-    if(a.state==='idle'&&W.war&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
+    armyLand(a);
+    if(a.supply<=0){a.supply=0;a.strength*=0.995;a.morale=Math.max(20,a.morale-0.3);}
+    if(a.supply<18&&a.state==='idle'&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house)){ // hungry: fall back on its own granaries
+      let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
+      if(best>=0){marchArmy(a,best);if(chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);continue;}}
+    if(a.state==='idle'&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
       a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;
     }
-    if(a.state==='idle'&&W.war&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
-    if(a.state==='idle'&&W.war&&!a.hold){
+    if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
+    if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35){
       // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
       let tgt=-1,bd=1e18;
       W.settlements.forEach((s,si)=>{
@@ -4343,7 +4602,7 @@ function tickMilitary(){
       });
       if(tgt<0){ // nothing to besiege: ride for the nearest enemy host instead
         let foe=null,fd=1e18;
-        for(const b of W.armies){if(b.side===a.side||b.gone)continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}}
+        for(const b of W.armies){if(!atWar(a.house,b.house)||b.gone)continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}}
         if(foe){const t=nearestSettlementIdx(foe._spos.x,foe._spos.z);if(t!==a.at)tgt=t;}
       }
       if(tgt>=0)marchArmy(a,tgt);
@@ -4351,7 +4610,7 @@ function tickMilitary(){
     if(a.state==='march'&&now>=a.arriveDay){
       a.at=a.target;a.state='arrived';
       const s=W.settlements[a.at];
-      if(W.war&&hostileTo(a,s)){
+      if(hostileTo(a,s)){
         if(s.walls>0&&s.garrison>20){
           a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40)+(s.bastions?35:0)+(s.citadel?25:0); // river-girt, bastioned or citadel towns hold out longer
           s.siegeBy={houseName:W.houses[a.house].name,army:a};
@@ -4370,7 +4629,7 @@ function tickMilitary(){
         }else{
           liftSiege(a);routHome(a);
           emit('war',8,s.pos,`The defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`);
-          warScore(a.side==='crown'?-14:14);
+          if(inRebellion(a))warScore(a.side==='crown'?-14:14);
         }
       }
     }
@@ -4379,7 +4638,7 @@ function tickMilitary(){
   // field battles: hostile armies in contact
   for(let i=0;i<W.armies.length;i++)for(let j=i+1;j<W.armies.length;j++){
     const a=W.armies[i],b=W.armies[j];
-    if(a.side===b.side||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
+    if(!atWar(a.house,b.house)||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
     if(dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z)<130){
       for(const x of[a,b]){ // remember the road each host was on, and abandon any siege
         x._resume=x.state==='march'?{f:clamp((now-x.departDay)/Math.max(0.01,x.arriveDay-x.departDay),0,1)}:null;
@@ -4407,19 +4666,19 @@ function tickMilitary(){
       else if(cw&&!cw.epithet&&chance('sim',0.3)){cw.epithet='the '+pick('sim',['Ironhand','Unbroken','Lionhearted','Grim','Victorious']);line+=` Men now name the victor ${fullTitle(cw)}.`;}
       emit('war',8,pos,line);
       addCairn(pos.x,pos.z,a.battleName+', Year '+year()+' — here '+w.name+' prevailed.');
-      warScore(w.side==='crown'?20:-20);
+      if(inRebellion(w,l))warScore(w.house===0?20:-20);
       a.foe=b.foe=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
       routFromField(l);
-      if(l.strength<60)disbandArmy(l);
-      if(w.strength<60)disbandArmy(w);
+      if(l.strength<40)disbandArmy(l);
+      if(w.strength<40)disbandArmy(w);
     }
   }
   // war score over time & exhaustion
   if(W.war){
     if(day()%30===0)warScore(W.settlements.filter(s=>s.owner===W.war.rebel).length>0?0:2);
-    const rebelAlive=W.armies.some(a=>a.side==='rebel');
-    const crownAlive=W.armies.some(a=>a.side==='crown');
+    const rebelAlive=W.armies.some(a=>!a.gone&&inRevolt(a.house));
+    const crownAlive=W.armies.some(a=>!a.gone&&a.house===0);
     if(!rebelAlive&&!crownAlive)endWar(0);
     else if(!rebelAlive&&day()-W.war.start>40)endWar(1);
     else if(!crownAlive&&day()-W.war.start>40)endWar(-1);
@@ -4436,10 +4695,8 @@ function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
 function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
-function hostileTo(a,s){ // is settlement s an enemy of army a in the current war?
-  if(!W.war)return false;
-  if(a.side==='crown')return s.owner===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===s.owner);
-  return s.owner===0;
+function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the rebellion, or a private war)?
+  return atWar(a.house,s.owner);
 }
 function liftSiege(a){
   W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
@@ -4487,12 +4744,12 @@ function takeSettlement(a,s){
   }else{
     emit('war',8,s.pos,`${s.name} opens its gates to ${a.name}; the banner of ${W.houses[a.house].name} flies from its walls.`);
   }
-  s.owner=a.house;s.garrison=Math.round(a.strength*0.1);
-  warScore(a.side==='crown'?30:-30);
+  s.owner=a.house;s.garrison=Math.round(a.strength*0.1);syncOwner(s);
+  if(inRebellion(a))warScore(a.house===0?30:-30);
   a.state='idle';
   refreshOverlay();
-  if(si===0&&a.side==='rebel')endWar(-1);
-  else if(W.war&&si===W.houses[W.war.rebel].seat&&a.side==='crown')endWar(1);
+  if(W.war&&si===0&&inRevolt(a.house))endWar(-1);
+  else if(W.war&&si===W.houses[W.war.rebel].seat&&a.house===0)endWar(1);
 }
 function disbandArmy(a){
   if(a.gone)return;
@@ -4513,9 +4770,13 @@ function endWar(result){ // 1 crown wins, -1 rebels win, 0 white peace
   if(!W.war)return;
   const h=W.houses[W.war.rebel],warName=W.war.name;
   const dur=Math.max(1,Math.round((day()-W.war.start)/30));
-  [...W.armies].forEach(disbandArmy);
+  [...W.armies].forEach(a=>{if(a.standing&&!(W.feuds||[]).some(f=>f.a===a.house||f.b===a.house)){liftSiege(a);if(a.state!=='battle'){a.foe=null;routHome(a);}}else if(!a.standing)disbandArmy(a);}); // household hosts go home; levies are paid off
   W.settlements.forEach(s=>{s.siegeBy=null;s.revolted=false;});
-  if(result===1){
+  const keeps=W.settlements.some(s=>s.owner===W.war.rebel);
+  if(result===1&&keeps){ // a beaten vassal submits: it keeps what was not taken from it, and remembers
+    h.loyalty=55;(h.grudges=h.grudges||{})[0]=true;W.legitimacy=clamp(W.legitimacy+8,0,100);sovAmbition('victor');
+    emit('war',10,W.capital.pos,`${warName} is ended after ${dur} months. ${h.name} kneels and renews its oaths; the crown keeps the towns and lands it took.`);
+  }else if(result===1){
     h.exiled=true;h.exiledDay=day();
     W.settlements.forEach(s=>{if(s.owner===W.war.rebel)s.owner=0;});
     W.legitimacy=clamp(W.legitimacy+15,0,100);
@@ -4989,7 +5250,9 @@ function doAct(act,p,opt){
       W.roads.push({a:si,b:bj,path,len:polyLen(path)});W.routes={};
       W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});
       // lay the village out like any other: square, lanes, frontages
-      s.pop=60;s.role='farm';layoutSettlement(s);stitchRoads();
+      s.pop=60;s.role=opt&&opt.fort?'fort':'farm';if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
+      if(opt&&opt.fort){s.walls=1;s.garrison=30;}
+      layoutSettlement(s);stitchRoads();
       for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
       G.bodies.count=G.roofs.count=G.bldList.length;
       for(const b of s.buildings)clearLandUnder(b);
@@ -5000,7 +5263,9 @@ function doAct(act,p,opt){
       const sp=makeTextSprite(s.name,1.6);sp.position.set(p.x,s.pos.y+90,p.z);scene.add(sp);G.labels.push(sp);
       const m=new THREE.Mesh(new THREE.SphereGeometry(60,8,6),new THREE.MeshBasicMaterial({visible:false}));
       m.position.set(p.x,s.pos.y+18,p.z);m.userData.pick={type:'settlement',s};scene.add(m);G.pickS.push(m);
-      if(opt&&opt.from){s.mother=opt.from.name;s.history=[{ago:0,t:`Settled from ${opt.from.name} when its fields could feed no more.`}];
+      if(opt&&opt.fort){s.mother=opt.from.name;s.history=[{yr:year(),t:`Founded as a fort by ${W.houses[s.owner].name} to hold the conquered march.`}];
+        emit('war',7,p,`${W.houses[s.owner].name} raises a fort at ${s.name} to hold the lands it has taken; settlers follow the garrison.`);}
+      else if(opt&&opt.from){s.mother=opt.from.name;s.history=[{ago:0,t:`Settled from ${opt.from.name} when its fields could feed no more.`}];
         emit('trade',5,p,`Younger sons of ${opt.from.name}, landless at home, clear ground at ${s.name} and build a new village.`);}
       else emit('trade',6,p,`By charter of the crown a village is founded at ${s.name}; ${['the first furrows are cut before the spring is out','the settlers raise their houses in the long days','the first furrows are cut before the frost','they winter in turf huts and plough at the thaw'][seasonIdx()]}.`);break;}
     case 'gold':{W.treasury+=5000;
@@ -5020,7 +5285,7 @@ function simTick(){
   tickEconomy();
   tickPopulation();
   tickPolitics();
-  tickMilitary();
+  tickMilitary();tickDomains();
   tickThreats();
   tickGrowth();tickLand();tickHistory();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
@@ -5678,7 +5943,7 @@ function refreshHousePanel(){
     if(hi===0)return;
     h+=`<div class="houserow pk${house.exiled?' exiled':''}" data-cmd="notable" data-arg="${house.head||''}" title="Inspect the head of the house"><img src="${sigURL(hi)}">
       <span class="hname" style="flex:0 0 92px;overflow:hidden;white-space:nowrap;">${esc(house.name.replace('House ',''))}</span>
-      <div class="hbar"><div style="width:${house.exiled?0:Math.round(house.loyalty)}%"></div></div></div>`;
+      <div class="hbar"><div style="width:${house.exiled?0:Math.round(house.loyalty)}%"></div></div>${hi>0&&!house.exiled&&house.gold!==undefined?`<span style="font-size:11px;margin-left:6px;color:${house.gold<0?'#c0392b':'inherit'}" title="The house's purse">${Math.round(house.gold).toLocaleString()}g</span>`:''}</div>`;
   });
   setHTML(hp,h);
   const sp=document.getElementById('succpanel');
@@ -5759,6 +6024,8 @@ function drawLandMap(g,S){ // the estate surveyor's hand: furlongs hatched along
     return[a,b,Math.abs((fx-(pa[0]+pb[0])/2)*nx/L+(fz-(pa[1]+pb[1])/2)*nz/L)*FG];};
   for(let yy=0;yy<S;yy++)for(let xx=0;xx<S;xx++){
     const x=(xx+0.5)*px-SIZE/2,z=(yy+0.5)*px-SIZE/2,[f,f2,eb]=near2(x,z),o=(yy*S+xx)*4,c=cIdx(toCell(x),toCell(z));
+    if(f.lord!==f2.lord&&f.lord>=0&&eb<px*1.6){const hc=lordColor(f.lord);ink(o,hc>>16&255,hc>>8&255,hc&255,0.85);continue;} // the lord's bound, in his colours
+    if(f.held&&((xx+yy)%7)<2){const hc=lordColor(f.lord);ink(o,hc>>16&255,hc>>8&255,hc&255,0.5);} // held by the sword
     if(f.dom!==f2.dom&&eb<px*0.8&&(f.dom>=0||f2.dom>=0)&&((xx+yy)>>1)%3!==0){ink(o,122,52,38,0.55);continue;} // the parish bound, dotted
     if(f.kind===LK.NONE||f.state<LS.TILLED||(f.kind===LK.VINE?!m[c*4+1]:!m[c*4])||m[c*4+2])continue;
     if(eb<px*0.7&&f2!==f){ink(o,90,96,60,0.5);continue;} // hedge or headland

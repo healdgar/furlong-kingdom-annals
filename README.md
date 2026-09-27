@@ -183,6 +183,29 @@ Acts are sealed while you rule; the crown's own levers take their place:
   the sea can feed them.
 - Beyond the map the unknown lands fade into the haze and the sea runs on.
 - Speed ⏩ (key 5) reels through about a year a second to watch growth.
+- A realm of fiefs. Every furlong has a lord, and fighting moves it:
+  - every house keeps a standing household host at its seat, recruited
+    from its people; neighbouring lords with grudges or land-hunger fight
+    private wars and call out their tenants, and rebellion against the
+    crown is only one kind of war among many;
+  - a host on enemy land takes the furlongs about it, lives off the corn
+    and burns what it cannot hold; land taken within reach of the new
+    lord's own villages becomes theirs to plough, clear and build on; land
+    held only by the sword slips back to its people when the host leaves,
+    unless the lord plants a fort there, and the fort's settlers take it up;
+  - armies need supply: they are fed at their own towns and on their own
+    land, suffer attrition far from home, and fall back when their wagons
+    are empty;
+  - houses keep purses: rents in, hosts and castellans out (a large domain
+    costs more than its size, and far fiefs yield less), and a lord in debt
+    sells his outlying towns to a richer neighbour; the crown grants fiefs
+    to loyal vassals and recalls exiles; partible inheritance founds cadet
+    branches with their own arms and quarrels;
+  - lords' borders are drawn on the ground in their colours, land held by
+    force is hatched, and the Territories overlay colours the realm by lord.
+- Land nobody works goes back to nature: grass, then scrub by the fifth
+  year, young wood by the twentieth, saplings visibly growing; the wood also
+  creeps into abandoned ground beside it, while grazed commons stay open.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →
   Threats → Growth → Chronicle. Every positive feedback loop ships with a
   predator (big treasuries attract dragons and courtly waste; strong houses
