@@ -4688,7 +4688,7 @@ function doAct(act,p,opt){
       m.position.set(p.x,s.pos.y+18,p.z);m.userData.pick={type:'settlement',s};scene.add(m);G.pickS.push(m);
       if(opt&&opt.from){s.mother=opt.from.name;s.history=[{ago:0,t:`Settled from ${opt.from.name} when its fields could feed no more.`}];
         emit('trade',5,p,`Younger sons of ${opt.from.name}, landless at home, clear ground at ${s.name} and build a new village.`);}
-      else emit('trade',6,p,`By charter of the crown a village is founded at ${s.name}; the first furrows are cut before the frost.`);break;}
+      else emit('trade',6,p,`By charter of the crown a village is founded at ${s.name}; ${['the first furrows are cut before the spring is out','the settlers raise their houses in the long days','the first furrows are cut before the frost','they winter in turf huts and plough at the thaw'][seasonIdx()]}.`);break;}
     case 'gold':{W.treasury+=5000;
       emit('crown',3,W.capital.pos,`A forgotten vault beneath the keep yields 5,000 in old coin. The Master of Coin is beside himself.`);break;}
     case 'raze':{let bb=null,bd=1e18;
@@ -5258,6 +5258,7 @@ function runCmd(cmd,arg){
    CONTROL PANEL & HUD
    ========================================================================= */
 function setSpeed(i){
+  i=Math.round(+i);if(!(i>=0&&i<SPEEDS.length))return;
   if(i>0)sovPausedFrom=0; // the player chose a speed: don't override it when petitions clear
   if(speedIdx!==0)lastSpeed=speedIdx;
   speedIdx=i;
@@ -5383,7 +5384,7 @@ function initUI(){
   document.title='The Annals of '+W.name;
   document.getElementById('crownsig').src=sigURL(0);
   document.getElementById('crownname').textContent=fullTitle(W.monarch);
-  document.querySelectorAll('#timec button').forEach(b=>b.addEventListener('click',()=>setSpeed(+b.dataset.s)));
+  document.querySelectorAll('#timec button[data-s]').forEach(b=>b.addEventListener('click',()=>setSpeed(+b.dataset.s))); // not the Rule button: +undefined set the speed to NaN and the calendar with it
   document.querySelectorAll('#dtabs .t').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.t)));
   buildDrawer('rates');
   document.getElementById('drawertoggle').addEventListener('click',toggleDrawer);
@@ -5973,7 +5974,8 @@ function animate(t){
   const now=t/1000;
   let dt=Math.min(0.1,now-lastT||0.016);lastT=now;
   // advance simulation
-  simAccum+=dt*SPEEDS[speedIdx];
+  if(!Number.isFinite(simAccum))simAccum=0;
+  simAccum+=dt*(SPEEDS[speedIdx]||0);
   let ticks=0;
   while(simAccum>=1&&ticks<40){simAccum-=1;simTick();ticks++;}
   if(simAccum>45)simAccum=45; // don't spiral if a frame stalls
@@ -5983,11 +5985,9 @@ function animate(t){
   // decoupled from sim speed so high speeds don't strobe the lighting
   if(SPEEDS[speedIdx]>0)W.visT=(W.visT||0.38)+dt/150;
   const displayDay=W.clock.day+clamp(W.clock.frac,0,0.999);
-  const saveDay=W.clock.day;W.clock.day=displayDay;
-  director.update(perfNow(),dt);
-  updateCamera(dt,now);
-  animateWorld(dt,now);
-  W.clock.day=saveDay;
+  const saveDay=W.clock.day;W.clock.day=Number.isFinite(displayDay)?displayDay:saveDay;
+  try{director.update(perfNow(),dt);updateCamera(dt,now);animateWorld(dt,now);}
+  finally{W.clock.day=saveDay;} // an error mid-frame must not leave the calendar on a fractional (or worse) day
   if(G.detDirty&&now-(G.detT||0)>0.5){G.detT=now;rebuildDetails();}
   featFlush(now);
   if(G.roadsDirty&&now-(G.roadT||0)>2){G.roadT=now;G.roadsDirty=false;rebuildRoadMesh();} // chimneys & spires follow fire and rebuilding
