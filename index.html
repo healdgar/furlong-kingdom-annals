@@ -460,6 +460,8 @@ async function generateWorld(seed,progress){
     const rim=Math.max(Math.abs(u),Math.abs(v))*2;
     e*=1-Math.pow(Math.max(0,rim-0.82)/0.18,2)*0.85;
     let hgt=e*760-20;
+    // rolling lowland hills (the lowlands were near-flat, so no town ever had rising ground to hold)
+    hgt+=(fbm(n2,u*7+31,v*7+17,3,2,.5)-0.5)*44*clamp(1-e*1.8,0,1);
     if(coastal){
       const t=[v+0.5,0.5-u,0.5-v,u+0.5][coastEdge]; // distance from coast edge 0..1
       hgt-=Math.pow(Math.max(0,0.30-t)/0.30,1.6)*240;
@@ -579,6 +581,9 @@ async function generateWorld(seed,progress){
     }
     s+=riv?30:0;s+=sea?26:0;s+=farm*1.2;s+=Math.min(forest,8)*0.5;
     s-=slopeAt(cx,cz)*90;s-=W.h[i]*0.05;
+    // defensible ground: stand a little above the country around (a hill-top town, a river bluff)
+    let ring=0;for(let k=0;k<8;k++){const a=k*Math.PI/4,x2=clamp(Math.round(cx+Math.cos(a)*7),0,GRID-1),z2=clamp(Math.round(cz+Math.sin(a)*7),0,GRID-1);ring+=W.h[cIdx(x2,z2)];}
+    s+=clamp(W.h[i]-ring/8,0,40)*0.6;
     // flat buildable area
     let flat=0;for(let dz=-2;dz<=2;dz++)for(let dx=-2;dx<=2;dx++)if(inB(cx+dx,cz+dz)&&slopeAt(cx+dx,cz+dz)<0.15&&!W.water[cIdx(cx+dx,cz+dz)])flat++;
     s+=flat*0.9;
@@ -808,6 +813,46 @@ function frontFoot(c,arch,tier,rnd){ // a footprint set back from the street edg
   const px=-c.uz*c.side,pz=c.ux*c.side;
   return{x:c.mx+px*set,z:c.mz+pz*set,w,d,rot:-Math.atan2(c.uz,c.ux)};
 }
+/* the wall line: not a circle but a trace of the ground — on the crest where the land falls away,
+   along the bank where a river or the sea runs close (the water is the moat), and left out where
+   a cliff does the work of a wall. A river through the heart of town is simply crossed. */
+const WALLN=144;
+function planWall(s,R){
+  const c=s.pos,wr0=R+14,rad=new Float32Array(WALLN),kind=new Uint8Array(WALLN),hug=new Float32Array(WALLN).fill(1e9);
+  const wetRay=(x,z)=>W.water[cIdx(toCell(x),toCell(z))]===1||!!riverAt(x,z,2)||W.water[cIdx(toCell(x),toCell(z))]===2;
+  for(let k=0;k<WALLN;k++){
+    const a=k/WALLN*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a),H=r=>hAt(c.x+ca*r,c.z+sa*r);
+    let dw=1e9;
+    for(let r=R*0.3;r<wr0*1.3;r+=4)if(wetRay(c.x+ca*r,c.z+sa*r)){dw=r;break;}
+    const bankHug=dw>=R*0.55&&dw<1e8; // water beyond the heart of town: follow its bank
+    let best=wr0,bs=-1e9;
+    const rmax=bankHug?Math.min(wr0*1.22,dw-8):wr0*1.22;
+    for(let r=wr0*0.85;r<=rmax;r+=3){const sc=(H(r)-H(r+22))+(H(r)-H(r+60))*0.5-Math.abs(r-wr0)*0.07;if(sc>bs){bs=sc;best=r;}}
+    if(bankHug&&dw-8<wr0*0.85)best=Math.max(R*0.5,dw-8);
+    if(bankHug&&dw<best+34){kind[k]=2;hug[k]=dw-8;}
+    rad[k]=best;
+  }
+  for(let pass=0;pass<4;pass++){ // smooth the trace, but never past a bank it hugs
+    const o=rad.slice();
+    for(let k=0;k<WALLN;k++)rad[k]=Math.min((o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4,hug[k]);
+  }
+  let nat=0;
+  for(let k=0;k<WALLN;k++){
+    const a=k/WALLN*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a),r=rad[k];
+    const h0=hAt(c.x+ca*r,c.z+sa*r),drop=h0-hAt(c.x+ca*(r+22),c.z+sa*(r+22)),fall=h0-hAt(c.x+ca*(r+60),c.z+sa*(r+60));
+    if(drop>=11)kind[k]=1;                 // a cliff: the ground itself is the wall
+    else if(!kind[k]&&fall>=6)kind[k]=3;   // a hillside falling away: the wall rides its crest
+    nat+=kind[k]===3?0.5:kind[k]?1:0;
+  }
+  s.wallRad=rad;s.wallKind=kind;s.natDef=nat/WALLN;
+  s.wallR=Math.max(...rad);
+}
+function wallRadAt(s,a){
+  if(!s.wallRad)return s.wallR||((s.coreR||70)+14);
+  const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN,t=f-Math.floor(f);
+  return lerp(s.wallRad[i],s.wallRad[(i+1)%WALLN],t);
+}
+function wallKindAt(s,a){if(!s.wallKind)return 0;const f=((a/(Math.PI*2))%1+1)%1*WALLN;return s.wallKind[Math.round(f)%WALLN];}
 function layoutSettlement(s){
   const idx=W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
   const isCap=s.kind==='capital',isTown=s.kind==='town';
@@ -830,27 +875,79 @@ function layoutSettlement(s){
     if(spokes.every(o=>Math.abs(Math.atan2(Math.sin(a-o.a),Math.cos(a-o.a)))>0.75))spokes.push({a,road:null});
   }
   const HW=isCap?3.4:isTown?3:2.4; // street half-width
+  riverStrips(); // rivers are known before any street is laid
+  const C=s.pos,wetAt=(x,z)=>{const i=cIdx(toCell(x),toCell(z));return W.water[i]===1?'sea':(riverAt(x,z,1.5)||W.water[i]===2)?'river':null;};
+  planWall(s,R);
   s.streets=[];s.roadSpoke={};s.spokeDirs=[];
-  for(const sp of spokes){
-    const pts=[];let a=sp.a;
-    const reach=sp.road!=null?R:R*(s.kind==='village'?1.9:1.45); // lanes run on past the walls into the fields
-    for(let r=s.plazaR;r<=reach+0.1;r+=10){
-      a+=(rr()-0.5)*0.07;
-      const x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;
-      if(!buildable(x,z))break;
-      pts.push({x,z});
+  /* spokes walk outward and pick their way: they bend around steep ground, cross rivers on
+     bridges (up to ~70 m of water), and stop at the sea */
+  const walkSpoke=(a0,reach)=>{
+    let x=C.x+Math.cos(a0)*s.plazaR,z=C.z+Math.sin(a0)*s.plazaR,hd=a0,wetRun=0;
+    const pts=[{x,z}];
+    for(let g=0;g<80&&dist2d(x,z,C.x,C.z)<reach;g++){
+      let best=null,bc=1e9;
+      for(const d of[-0.32,-0.16,0,0.16,0.32]){
+        const h2=hd+d,nx=x+Math.cos(h2)*10,nz=z+Math.sin(h2)*10,wet=wetAt(nx,nz);
+        if(wet==='sea')continue;
+        const out=Math.atan2(nz-C.z,nx-C.x),dev=Math.abs(Math.atan2(Math.sin(out-a0),Math.cos(out-a0)));
+        if(dist2d(nx,nz,C.x,C.z)<=dist2d(x,z,C.x,C.z)+2)continue; // always make headway outward
+        const cost=Math.abs(d)*0.5+dev*1.6+Math.abs(hAt(nx,nz)-hAt(x,z))*0.45+(wet?0.8:0)+(!wet&&!buildable(nx,nz)?6:0)+(rr()*0.05);
+        if(cost<bc){bc=cost;best={x:nx,z:nz,h:h2,wet};}
+      }
+      if(!best||(!best.wet&&!buildable(best.x,best.z)))break;
+      wetRun=best.wet?wetRun+10:0;
+      if(wetRun>70)break;
+      x=best.x;z=best.z;hd=best.h;pts.push({x,z,wet:!!best.wet});
     }
+    while(pts.length&&pts[pts.length-1].wet)pts.pop(); // never end in the river
+    return pts;
+  };
+  for(const sp of spokes){
+    const reach=sp.road!=null?R:R*(s.kind==='village'?1.9:1.45); // lanes run on past the walls into the fields
+    const pts=walkSpoke(sp.a,reach);
     if(pts.length>=2){s.streets.push({pts,hw:HW,kind:'spoke'});s.spokeDirs.push(sp.a);if(sp.road!=null)s.roadSpoke[sp.road]=pts;}
   }
+  /* ring lanes keep inside the walls — so where the wall hugs a river bank, the lane bends along the
+     river too — step in from steep ground, and bridge short stretches of water */
   for(const rf of isCap?[0.34,0.58,0.83]:isTown?[0.42,0.77]:[]){
-    const rr2=R*rf;let pts=[];
-    const n=Math.max(12,Math.round(rr2*2*Math.PI/10));
-    for(let i=0;i<=n;i++){
-      const a=i/n*Math.PI*2,x=s.pos.x+Math.cos(a)*rr2,z=s.pos.z+Math.sin(a)*rr2;
-      if(!buildable(x,z)){if(pts.length>=3)s.streets.push({pts,hw:HW*0.8,kind:'ring'});pts=[];continue;}
-      pts.push({x,z});
+    const n=Math.max(16,Math.round(R*rf*2*Math.PI/9)),ring=[];
+    for(let i=0;i<n;i++){
+      const a=i/n*Math.PI*2;let r=Math.min(R*rf,wallRadAt(s,a)-16),pt=null;
+      for(let t=0;t<4&&!pt;t++,r-=7){const x=C.x+Math.cos(a)*r,z=C.z+Math.sin(a)*r;if(buildable(x,z))pt={x,z,wet:false};}
+      if(!pt){const x=C.x+Math.cos(a)*(r+28),z=C.z+Math.sin(a)*(r+28),w=wetAt(x,z);pt=w==='river'?{x,z,wet:true}:null;}
+      if(pt&&dist2d(pt.x,pt.z,C.x,C.z)<s.plazaR+20)pt=null;
+      ring.push(pt);
     }
-    if(pts.length>=3)s.streets.push({pts,hw:HW*0.8,kind:'ring'});
+    // relax radii so the lane curves smoothly, then cut it where it fails or where water runs long
+    for(let pass=0;pass<2;pass++)for(let i=0;i<n;i++){const a=ring[(i+n-1)%n],b=ring[i],c=ring[(i+1)%n];
+      if(a&&b&&c&&!b.wet){const x=(a.x+2*b.x+c.x)/4,z=(a.z+2*b.z+c.z)/4;if(buildable(x,z)){b.x=x;b.z=z;}}}
+    let st=ring.findIndex(q=>!q);const closed=st<0;if(closed)st=0;
+    let pts=[],wetN=0;
+    const flush=()=>{while(pts.length&&pts[pts.length-1].wet)pts.pop();while(pts.length&&pts[0].wet)pts.shift();
+      if(pts.length>=3)s.streets.push({pts,hw:HW*0.8,kind:'ring'});pts=[];};
+    for(let k=0;k<=n;k++){
+      const q=ring[(st+k)%n];
+      if(!q){flush();wetN=0;continue;}
+      wetN=q.wet?wetN+1:0;
+      if(wetN*9>70){flush();wetN=0;continue;}
+      pts.push({x:q.x,z:q.z,wet:q.wet});
+    }
+    flush();
+  }
+  /* quays: a street along each bank wherever a river passes through the core */
+  for(const rs of G.rivStrips){
+    for(const side of[-1,1]){
+      let run=[];
+      const take=()=>{if(run.length>=4)s.streets.push({pts:smoothPath(run,2),hw:HW*0.9,kind:'quay'});run=[];};
+      for(let k=0;k<rs.pts.length;k++){
+        const a=rs.pts[Math.max(0,k-1)],b=rs.pts[Math.min(rs.pts.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1;
+        const off=rs.hw[k]+HW+3,x=rs.pts[k].x-(b.z-a.z)/L*off*side,z=rs.pts[k].z+(b.x-a.x)/L*off*side;
+        const d=dist2d(x,z,C.x,C.z);
+        if(d<R*0.95&&d>s.plazaR+14&&buildable(x,z)&&!riverAt(x,z,1)&&d<wallRadAt(s,Math.atan2(z-C.z,x-C.x))-10){if(k%2===0)run.push({x,z});}
+        else take();
+      }
+      take();
+    }
   }
   /* obstacles: streets, and king's roads outside the core */
   const segH=makeHash(24),roadHW=5;
@@ -890,8 +987,10 @@ function layoutSettlement(s){
       if(!noBuild&&!buildable(c.x,c.z))return false;
       const dc=dist2d(c.x,c.z,s.pos.x,s.pos.z);
       if(dc<s.plazaR+1.5)return false;
-      if(Math.abs(dc-s.wallR)<5)return false; // keep the wall line clear (walls may be raised later)
-      if(dc<s.wallR)inside++;else outside++;
+      if(riverAt(c.x,c.z,2.5))return false;
+      const wd=dc-wallRadAt(s,Math.atan2(c.z-s.pos.z,c.x-s.pos.x));
+      if(Math.abs(wd)<5)return false; // keep the wall line clear (walls may be raised later)
+      if(wd<0)inside++;else outside++;
       for(const g of segH.near(c.x,c.z,1))if(segDist(c.x,c.z,g.a,g.b)<g.hw+0.8)return false;
     }
     if(inside&&outside)return false; // straddling the wall line
@@ -1230,24 +1329,22 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   const acc=newAcc(),spans=[];
   const FR=[-1,-0.78,-0.45,0,0.45,0.78,1];
   const roadCol=(pal)=>(k,j)=>j===0||j===6?pal.verge:j===2||j===4?pal.rut:j===3?pal.crown:pal.dirt;
-  for(const r of W.roads){
-    const pts=resample(smoothPath(resample(r.drawn||r.path,6),2),5);
-    // split into dry runs; each wet run becomes a bridge between the dry banks
+  // lay a road or street, splitting it into dry runs; every wet run becomes a bridge bank to bank
+  const lay=(pts,hw,lift,col)=>{
     let run=[],wet=null;
-    const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>4.2,lift:0.3,col:roadCol(ROADCOL)});run=[];};
+    const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>hw,lift,col});run=[];};
     for(let k=0;k<pts.length;k++){
-      const w=riverAt(pts[k].x,pts[k].z,2.5);
+      const w=riverAt(pts[k].x,pts[k].z,hw*0.5+1);
       if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y};flush();}wet.y=Math.max(wet.y,w.y);}
-      else{if(wet){spans.push({a:wet.from,b:pts[k],y:wet.y});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
+      else{if(wet){spans.push({a:wet.from,b:pts[k],y:wet.y,hw});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
     }
     flush();
-  }
+  };
+  for(const r of W.roads)lay(resample(smoothPath(resample(r.drawn||r.path,6),2),5),4.2,0.3,roadCol(ROADCOL));
   for(const s of W.settlements){
     const paved=s.kind!=='village';
-    for(const st of s.streets||[]){
-      const pts=resample(st.pts,5);
-      strip(pts,acc,{fr:FR,hw:()=>st.hw,lift:0.28,col:(k,j,x,z)=>roadCol(paved&&dist2d(x,z,s.pos.x,s.pos.z)<s.coreR?PAVECOL:ROADCOL)(k,j)});
-    }
+    for(const st of s.streets||[])
+      lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(paved&&dist2d(x,z,s.pos.x,s.pos.z)<s.coreR?PAVECOL:ROADCOL)(k,j));
     if(s.plazaR)disc(acc,s.pos.x,s.pos.z,s.plazaR+1.5,0.32,(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
   }
   G.roads=accMesh(acc,G.roadMat||(G.roadMat=new THREE.MeshLambertMaterial({vertexColors:true,
@@ -1262,10 +1359,10 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L=Math.hypot(dx,dz)+6,ry=-Math.atan2(dz,dx);
     const mx=(sp.a.x+sp.b.x)/2,mz=(sp.a.z+sp.b.z)/2;
     const deck=Math.max(hAt(sp.a.x,sp.a.z),hAt(sp.b.x,sp.b.z),sp.y+2.2)+0.4;
-    const px=-dz/(L-6||1),pz=dx/(L-6||1);
-    setInst(G.bridges,bi,mx,deck-0.6,mz,ry,L,1.2,8.6);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
-    for(const sd of[-1,1]){setInst(G.bridges,bi,mx+px*sd*4.1,deck+0.5,mz+pz*sd*4.1,ry,L,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
-    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,deck-sp.y+2.4,7);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
+    const px=-dz/(L-6||1),pz=dx/(L-6||1),bw=sp.hw*2+0.4;
+    setInst(G.bridges,bi,mx,deck-0.6,mz,ry,L,1.2,bw);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
+    for(const sd of[-1,1]){setInst(G.bridges,bi,mx+px*sd*(bw/2-0.3),deck+0.5,mz+pz*sd*(bw/2-0.3),ry,L,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
+    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,deck-sp.y+2.4,bw-1.6);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
   }
   G.bridges.count=bi;G.bridges.castShadow=true;G.bridges.receiveShadow=true;
   G.bridges.instanceMatrix.needsUpdate=true;if(G.bridges.instanceColor)G.bridges.instanceColor.needsUpdate=true;
@@ -1549,9 +1646,9 @@ function rebuildDetails(){
    by gates where streets and roads pass out; towers stand at every gate and
    at intervals, a gatehouse spans each gate, merlons crown stone walls. */
 function wallGates(s){
-  const g=[],wr=s.wallR,c=s.pos;
+  const g=[],c=s.pos,off=q=>dist2d(q.x,q.z,c.x,c.z)-wallRadAt(s,Math.atan2(q.z-c.z,q.x-c.x));
   const scan=p=>{for(let i=1;i<p.length;i++){
-    const d0=dist2d(p[i-1].x,p[i-1].z,c.x,c.z)-wr,d1=dist2d(p[i].x,p[i].z,c.x,c.z)-wr;
+    const d0=off(p[i-1]),d1=off(p[i]);
     if(d0*d1<=0&&d0!==d1){const f=d0/(d0-d1);const x=lerp(p[i-1].x,p[i].x,f),z=lerp(p[i-1].z,p[i].z,f);
       const a=Math.atan2(z-c.z,x-c.x);if(g.every(o=>Math.abs(Math.atan2(Math.sin(a-o),Math.cos(a-o)))>0.04))g.push(a);}}};
   for(const st of s.streets||[])scan(st.pts);
@@ -1570,12 +1667,15 @@ function rebuildWalls(){
     if(!(s.walls>0))continue;
     const stone=s.walls>=2,wr=s.wallR||((s.coreR||70)+14),c=s.pos;
     const H=stone?7.5:5,T=stone?2.6:1.3,col=stone?0xa59c8d:0x6e5334;
-    const gates=wallGates(s),gh=7.5/wr;
+    const gates=wallGates(s);
     const N=Math.max(24,Math.round(wr*2*Math.PI/4));
+    const at=a=>{const r=wallRadAt(s,a);return{x:c.x+Math.cos(a)*r,z:c.z+Math.sin(a)*r,r};};
     const ok=[];
+    riverStrips();
     for(let i=0;i<N;i++){
-      const a=i/N*Math.PI*2,x=c.x+Math.cos(a)*wr,z=c.z+Math.sin(a)*wr,ci=toCell(x),cj=toCell(z);
-      ok.push(!W.water[cIdx(ci,cj)]&&slopeAt(ci,cj)<0.6&&gates.every(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))>gh));
+      const a=i/N*Math.PI*2,q=at(a),ci=toCell(q.x),cj=toCell(q.z),gh=7.5/q.r;
+      ok.push(!W.water[cIdx(ci,cj)]&&!riverAt(q.x,q.z,1)&&wallKindAt(s,a)!==1 // cliffs need no curtain
+        &&gates.every(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))>gh));
     }
     let st=ok.indexOf(false);const loop=st<0;if(loop)st=0;
     const runs=[];let run=[];
@@ -1586,8 +1686,12 @@ function rebuildWalls(){
     }
     if(loop&&runs.length)runs[0].push(runs[0][0]); // unbroken ring: close it
     for(const rn of runs){
-      const P=rn.map(i=>{const a=i/N*Math.PI*2;return{a,x:c.x+Math.cos(a)*wr,z:c.z+Math.sin(a)*wr};});
-      P.forEach(p=>{p.g=hAt(p.x,p.z);p.top=p.g+H;p.ox=Math.cos(p.a);p.oz=Math.sin(p.a);});
+      const P=rn.map(i=>{const a=i/N*Math.PI*2;return{a,...at(a)};});
+      P.forEach((p,k)=>{ // outward normal of the traced line (not the radial: the trace bends)
+        p.g=hAt(p.x,p.z);p.top=p.g+H;
+        const A=P[Math.max(0,k-1)],Bq=P[Math.min(P.length-1,k+1)];let nx=Bq.z-A.z,nz=-(Bq.x-A.x);const L=Math.hypot(nx,nz)||1;nx/=L;nz/=L;
+        if(nx*Math.cos(p.a)+nz*Math.sin(p.a)<0){nx=-nx;nz=-nz;}
+        p.ox=nx;p.oz=nz;});
       for(let k=0;k<P.length-1;k++){
         const p=P[k],q=P[k+1],h2=T/2,sh=0.93+hash01(k+s.name.length)*0.07;
         const cc=new THREE.Color(col).multiplyScalar(sh).getHex();
@@ -1610,13 +1714,15 @@ function rebuildWalls(){
       }
       // towers: at both ends of every run, and every ~45 m along it
       const every=Math.max(1,Math.round((stone?45:60)/(2*Math.PI*wr/N)));
+      if(P.length<2)continue;
       P.forEach((p,k)=>{if(k===0||k===P.length-1||k%every===0)inst.tower.push([p.x,p.g,p.z,stone,H]);});
     }
     // gatehouses spanning each gate
     for(const g of gates){
-      const x=c.x+Math.cos(g)*wr,z=c.z+Math.sin(g)*wr,ci=toCell(x),cj=toCell(z);
-      if(W.water[cIdx(ci,cj)])continue;
-      inst.gate.push([x,hAt(x,z),z,g,stone,H,wr*gh*2]);
+      const q=at(g),ci=toCell(q.x),cj=toCell(q.z);
+      if(W.water[cIdx(ci,cj)]||riverAt(q.x,q.z,1)||wallKindAt(s,g)===1)continue;
+      const q0=at(g-0.02),q1=at(g+0.02);
+      inst.gate.push([q.x,hAt(q.x,q.z),q.z,-Math.atan2(q1.z-q0.z,q1.x-q0.x),stone,H,15]);
     }
   }
   const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true}));
@@ -1635,7 +1741,7 @@ function rebuildWalls(){
   });
   const gt=mk(bx,inst.gate.length*2);let gi=0;
   inst.gate.forEach(v=>{
-    const[x,g,z,a,stone,H,span]=v,ry=-Math.atan2(Math.cos(a),-Math.sin(a));
+    const[x,g,z,ry,stone,H,span]=v;
     setInst(gt,gi,x,g+H-1,z,ry,span+4,3.6,(stone?2.6:1.3)+1.2);gt.setColorAt(gi++,C1.setHex(stone?0x958c7e:0x5f472d));
     setInst(gt,gi,x,g+H+2.6,z,ry,span+2,1.2,(stone?2.6:1.3)+0.6);gt.setColorAt(gi++,C1.setHex(stone?0x4f5866:0x7d6441));
   });
@@ -2135,6 +2241,8 @@ function showInspect(pk){
     h+=row('Unrest',Math.round(s.unrest));
     h+=row('Food stores',Math.round(s.stores.grain+s.stores.fish));
     h+=row('Walls',['none','palisade','stone'][s.walls]||'stone');
+    if(s.natDef>0.08){const k=s.wallKind,pc=v=>Math.round(k.filter(x=>x===v).length/k.length*100);
+      h+=row('Natural defences',[pc(2)?pc(2)+'% water':'',pc(1)?pc(1)+'% cliff':'',pc(3)?pc(3)+'% hillside':''].filter(Boolean).join(', '));}
     h+=row('Garrison',s.garrison);
     if(s.infected>0.5)h+=row('Plague',Math.round(s.infected)+' sick, '+Math.round(s.plagueDead)+' dead');
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
@@ -2797,7 +2905,7 @@ function tickMilitary(){
       const s=W.settlements[a.at];
       if(W.war&&hostileTo(a,s)){
         if(s.walls>0&&s.garrison>20){
-          a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6);
+          a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40); // river-girt or cliff-top towns hold out longer
           s.siegeBy={houseName:W.houses[a.house].name,army:a};
           emit('war',8,s.pos,`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`);
         }else takeSettlement(a,s);
@@ -4229,7 +4337,11 @@ function buildMapCanvas(){
   g.textAlign='center';
   for(const s of W.settlements){
     const x=mx(s.pos.x),y=mz(s.pos.z),rW=(s.wallR||s.radius)/SIZE*S;
-    if(s.walls>0){g.strokeStyle='#3b3029';g.lineWidth=s.walls>=2?2.4:1.4;g.setLineDash(s.walls>=2?[]:[2,2]);g.beginPath();g.arc(x,y,rW,0,7);g.stroke();g.setLineDash([]);}
+    if(s.walls>0){ // the traced wall line; cliffs left open, as on the ground
+      g.strokeStyle='#3b3029';g.lineWidth=s.walls>=2?2.4:1.4;g.setLineDash(s.walls>=2?[]:[2,2]);g.beginPath();let pen=false;
+      for(let k=0;k<=96;k++){const a=k/96*Math.PI*2,r=wallRadAt(s,a),px2=mx(s.pos.x+Math.cos(a)*r),pz2=mz(s.pos.z+Math.sin(a)*r);
+        if(wallKindAt(s,a)===1){pen=false;continue;}if(pen)g.lineTo(px2,pz2);else g.moveTo(px2,pz2);pen=true;}
+      g.stroke();g.setLineDash([]);}
     const n=s.kind==='capital'?9:s.kind==='town'?6:3,rr2=s.kind==='village'?3:rW*0.55;
     for(let k=0;k<n;k++){ // little roofs
       const a=k/n*Math.PI*2+0.4,hx=x+Math.cos(a)*rr2*(k%2?0.55:1),hy=y+Math.sin(a)*rr2*(k%2?0.55:1);

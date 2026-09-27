@@ -80,9 +80,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - Towns: streets radiate from a paved market square (each king's road enters
   along its own street) and ring lanes cross them; buildings are packed along
   the frontages facing the street, densest at the square. Leftover frontage is
-  the growth queue, so towns grow outward along lanes and roads. Walls are one
-  continuous curtain with towers, merlons and gatehouses wherever a street
-  leaves town; strip fields with hedgerows ring each settlement.
+  the growth queue, so towns grow outward along lanes and roads. Streets pick
+  their way around steep ground and cross rivers on bridges; quays line the
+  banks where a river runs through town.
+- Walls trace the ground rather than a circle: along the crest where the land
+  falls away, along the bank where a river or the sea runs close (the water is
+  the moat), and left open where a cliff does the work. Gatehouses stand
+  wherever a street leaves town. Towns are sited on defensible rises, and
+  natural defences (water, hillside, cliff) lengthen sieges.
+- Strip fields with hedgerows ring each settlement.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →
