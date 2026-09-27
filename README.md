@@ -108,7 +108,19 @@ Acts are sealed while you rule; the crown's own levers take their place:
   **market town** may be laid out by a duke: one broad market street with
   runnels (Bächle), back streets, a minster square and a castle on the hill
   above (Freiburg). Mill dams upstream of river towns back up a pond.
-- Strip fields with hedgerows ring each settlement.
+- Towns keep growing while you play. Empty houses are re-let first, then
+  open frontage is built on, nearest the heart first; when there is none the
+  town reaches further out along its highways and lays new lanes, and when it
+  can spread no further its houses rise a storey and take lodgers. A town
+  that loses its people leaves its outermost houses empty to fall in.
+- The countryside follows the people. Parcels of strip-field with hedgerows
+  ring every settlement over plough-land and woodland alike; as mouths grow,
+  old pasture is ploughed again, then open meadow, then the wood is cleared
+  (assarts). After plague or war the far fields go to grass, the grass to
+  scrub, and at last the wood returns. Besiegers burn the standing crops;
+  land under the plough bounds the harvest, and a place with no land left
+  sends its younger sons to found daughter villages. Suburbs and new roads
+  build over the fields.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →

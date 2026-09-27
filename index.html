@@ -665,8 +665,7 @@ async function generateWorld(seed,progress){
 }
 
 /* ---------------- roads: A* over slope/water cost field ------------------ */
-function buildRoads(){
-  const cost=(a,b)=>{ // between neighboring cells
+function roadCost(a,b){ // between neighboring cells
     const dh=Math.abs(W.h[a]-W.h[b])/CELL;
     let c=1+dh*dh*46;
     if(W.water[b]===1)return 1e9;
@@ -675,8 +674,8 @@ function buildRoads(){
     if(bi===B.FOREST||bi===B.PINE)c+=2.2;
     if(bi===B.MARSH)c+=6;if(bi===B.ROCK)c+=7;if(bi===B.SNOW)c+=14;
     return c;
-  };
-  function astar(s,t){
+  }
+function roadAstar(s,t){
     // binary-heap A* — cheap enough to search the whole grid, so mountain
     // crossings get real switchback roads instead of falling back
     const g=new Float64Array(GRID*GRID).fill(Infinity);
@@ -706,7 +705,7 @@ function buildRoads(){
         if(!dx&&!dz)continue;const nx=cx+dx,nz=cz+dz;if(!inB(nx,nz))continue;
         const ni=cIdx(nx,nz);
         if(closed[ni])continue;
-        const step=cost(cur,ni)*(dx&&dz?1.414:1);
+        const step=roadCost(cur,ni)*(dx&&dz?1.414:1);
         if(step>1e8)continue;
         const ng=gc+step;
         if(ng<g[ni]){g[ni]=ng;from[ni]=cur;hpush(ng+hx(ni),ni);}
@@ -716,13 +715,14 @@ function buildRoads(){
     const path=[];let c=t;while(c>=0&&c!==s){path.push(c);c=from[c];}path.push(s);path.reverse();
     return path;
   }
+function buildRoads(){
   const connected=[0];
   for(let i=1;i<W.settlements.length;i++){
     // connect to nearest connected settlement
     let bj=-1,bd=1e18;
     for(const j of connected){const d=dist2d(W.settlements[i].pos.x,W.settlements[i].pos.z,W.settlements[j].pos.x,W.settlements[j].pos.z);if(d<bd){bd=d;bj=j;}}
     const a=W.settlements[i],b=W.settlements[bj];
-    const cells=astar(cIdx(a.cx,a.cz),cIdx(b.cx,b.cz));
+    const cells=roadAstar(cIdx(a.cx,a.cz),cIdx(b.cx,b.cz));
     if(cells){
       // an 8-connected A* path is a staircase; resample and relax it into a surveyor's curve
       const raw=cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)}));
@@ -942,7 +942,7 @@ function layoutSettlement(s){
   const idx=W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
   const isCap=s.kind==='capital',isTown=s.kind==='town',isVil=s.kind==='village';
   const role=s.role||(isCap?'seat':isTown?'market':'farm');s.role=role;
-  const C=s.pos,Rmax=isCap?440:isTown?310:170;
+  const C=s.pos,R0=isCap?440:isTown?310:170;let Rmax=R0; // the reach of the built-up town; it widens as the town outgrows it
   const count=Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:isTown?280:48);
   const HW=isCap?3.4:isTown?3:2.4,RHW=isVil?3.2:4;
   riverStrips();
@@ -1317,8 +1317,8 @@ function layoutSettlement(s){
     }
     return{pts,joined:false};
   };
-  const branch=(n,hidden)=>{
-    const ext=extent(0.85);
+  const branch=(n,hidden,reach)=>{
+    const ext=reach||extent(0.85);
     const starts=[];
     for(const st of s.streets){
       if(st.hidden||st.kind==='edge'||st.kind==='quay')continue;
@@ -1497,11 +1497,29 @@ function layoutSettlement(s){
   // what the future may build: gaps in today's frontage first, then lanes not yet laid (hidden until someone builds on them)
   curE=E;
   branch(isCap?10:isTown?6:3,true);
-  const grow=[];
-  for(const st of s.streets)if(st.kind!=='edge'||true)for(const c of candsOf(st))if(!c.done)grow.push(c);
-  grow.sort((p,q)=>keyOf(p)-keyOf(q));
-  s.growSlots=grow;
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet};
+  const queue=()=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first
+    const q=[];
+    for(const st of s.streets)candsOf(st).forEach((c,i)=>{
+      if(c.done)return;
+      if((i>>1)&1||!fits(frontFoot(c,'house',0,rr),gapFor(c))){c.done=true;return;}
+      q.push(c);});
+    return q.sort((p,q2)=>keyOf(p)-keyOf(q2));
+  };
+  const extend=()=>{ // the town outgrows its reach: the highways are built up further out and new lanes are laid off them
+    if(Rmax>=R0*2)return false;
+    Rmax=Math.min(R0*2,Rmax*1.12);
+    W.roads.forEach((r,ri)=>{const sp=s.roadSpoke[ri];if(!sp||r.a!==idx&&r.b!==idx)return;
+      const path=r.a===idx?r.open||r.path:[...(r.open||r.path)].reverse(),last=sp[sp.length-1];
+      let k0=0,bd=1e9;path.forEach((p,k)=>{const d=dist2d(p.x,p.z,last.x,last.z);if(d<bd){bd=d;k0=k;}});
+      const ext=[{x:last.x,z:last.z}];
+      for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;ext.push({x:p.x,z:p.z});}
+      if(ext.length>=3&&addStreet(ext,RHW,'road')){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
+    });
+    branch(isCap?8:isTown?5:2,true,Rmax*0.8);
+    return true;
+  };
+  s.growSlots=queue();
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   W.roads.forEach((r,ri)=>{
@@ -1882,20 +1900,23 @@ function buildTerrain(){
   // sea
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*2.4,SIZE*2.4,48,48);sg.rotateX(-Math.PI/2);
-    G.sea=new THREE.Mesh(sg,new THREE.MeshPhongMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:90,specular:0x88aabb}));
+    G.sea=new THREE.Mesh(sg,new THREE.MeshPhongMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10})); // a faint sheen: any stronger and the sun blows the open sea out to white
     G.sea.position.y=SEA+0.5;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
   const riv=newAcc();
   for(const st of riverStrips())
-    strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>st.ys[k],
+    strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k]; // drowned under a mill-pond, the old channel stays below its surface
+        for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))y=Math.min(y,s.lake.y-0.8);return y;},
       col:(k,j)=>j===2?0x2b5a7e:(j===1||j===3)?0x356a8f:0x5b8ea8});
-  for(const s of W.settlements)if(s.lake){ // mill-ponds: a flat sheet at the dam's level (the shore is where the ground rises through it)
-    const P=s.lake.poly,base=riv.p.length/3,y=s.lake.y;
-    for(const q of P){riv.p.push(q.x,y,q.z);riv.n.push(0,1,0);C1.setHex(0x356a8f);riv.c.push(C1.r,C1.g,C1.b);}
-    for(let i=1;i<P.length-1;i++)riv.i.push(base,base+i+1,base+i);
+  const lk=newAcc(); // mill-ponds: a flat, opaque sheet at the dam's level (the shore is where the ground rises through it; the drowned channel stays hidden)
+  for(const s of W.settlements)if(s.lake){
+    const P=s.lake.poly,base=lk.p.length/3,y=s.lake.y;
+    for(const q of P){lk.p.push(q.x,y,q.z);lk.n.push(0,1,0);C1.setHex(0x356a8f);lk.c.push(C1.r,C1.g,C1.b);}
+    for(let i=1;i<P.length-1;i++)lk.i.push(base,base+i+1,base+i);
   }
-  G.rivers=accMesh(riv,new THREE.MeshPhongMaterial({vertexColors:true,transparent:true,opacity:0.94,shininess:90,specular:0x10181e,side:THREE.DoubleSide,
+  if(lk.i.length){G.lakes=accMesh(lk,new THREE.MeshPhongMaterial({vertexColors:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide}));scene.add(G.lakes);}
+  G.rivers=accMesh(riv,new THREE.MeshPhongMaterial({vertexColors:true,transparent:true,opacity:0.94,shininess:30,specular:0x06090b,side:THREE.DoubleSide,
     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));
   scene.add(G.rivers);
   rebuildRoadMesh();
@@ -1973,6 +1994,9 @@ function buildTrees(){
   spots.dec.forEach((t,i)=>{setInst(G.decid,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(0.9+t.v*0.3),t.s);G.decid.setColorAt(i,C1.setRGB(0.82+t.v*0.3,0.86+t.v*0.26,0.8+t.v*0.2));});
   spots.pine.forEach((t,i)=>{setInst(G.pine,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(1+t.v*0.4),t.s);G.pine.setColorAt(i,C1.setRGB(0.85+t.v*0.2,0.88+t.v*0.2,0.86+t.v*0.2));});
   G.decid.instanceMatrix.needsUpdate=true;G.pine.instanceMatrix.needsUpdate=true;
+  G.treeHash=makeHash(40);
+  for(const k of['dec','pine'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
+  if(G.parcels)linkTrees(G.parcels);
   G.decid.castShadow=G.pine.castShadow=true;
   scene.add(G.decid);scene.add(G.pine);
 }
@@ -2018,17 +2042,18 @@ function buildBuildings(){
   for(const s of W.settlements)for(const b of s.buildings)G.bldList.push(b);
   const N=G.bldList.length;
   const body=new THREE.BoxGeometry(1,1,1);body.translate(0,0.5,0);
-  G.bodies=new THREE.InstancedMesh(body,new THREE.MeshLambertMaterial({map:wallTexture()}),Math.max(1,N+400));
+  const SP=Math.max(1400,N); // room for the towns to double
+  G.bodies=new THREE.InstancedMesh(body,new THREE.MeshLambertMaterial({map:wallTexture()}),N+SP);
   const roofG=gableGeom();
-  G.roofs=new THREE.InstancedMesh(roofG,new THREE.MeshLambertMaterial({map:roofTexture()}),Math.max(1,N+400));
+  G.roofs=new THREE.InstancedMesh(roofG,new THREE.MeshLambertMaterial({map:roofTexture()}),N+SP);
   G.bodies.castShadow=G.roofs.castShadow=true;G.bodies.receiveShadow=G.roofs.receiveShadow=true;
   for(let i=0;i<G.bldList.length;i++){G.bldList[i].idx=i;updateBuildingInstance(G.bldList[i]);}
-  for(let i=N;i<N+400;i++){setInst(G.bodies,i,0,-500,0,0,0.01,0.01,0.01);setInst(G.roofs,i,0,-500,0,0,0.01,0.01,0.01);}
+  for(let i=N;i<N+SP;i++){setInst(G.bodies,i,0,-500,0,0,0.01,0.01,0.01);setInst(G.roofs,i,0,-500,0,0,0.01,0.01,0.01);}
   G.bodies.count=G.roofs.count=N; // draw only real buildings; the spare slots are for growth
   G.bodies.instanceMatrix.needsUpdate=true;G.roofs.instanceMatrix.needsUpdate=true;
   scene.add(G.bodies);scene.add(G.roofs);
   // detail props: chimneys, bell towers & spires, keep turrets, wells, market stalls
-  const cap=(N+400)*2+600;
+  const cap=(N+SP)*2+600;
   const box=new THREE.BoxGeometry(1,1,1);box.translate(0,0.5,0);
   const cyl=new THREE.CylinderGeometry(0.5,0.5,1,10);cyl.translate(0,0.5,0);
   const cone=new THREE.ConeGeometry(0.5,1,10);cone.translate(0,0.5,0);
@@ -2318,81 +2343,201 @@ function rebuildWalls(){
   G.wallGrp=grp;scene.add(grp);
 }
 /* ---------------- fields: strip-farmed parcels between the lanes ---------- */
+/* ---------------- the countryside -------------------------------------------
+   Parcels of strip-field ring every settlement, over plough-land and woodland
+   alike. How many are tilled follows the mouths to feed: as a place grows its
+   people take back old pasture, then open meadow, then clear the wood
+   (assarts). When plague or war empties it the far fields go back to grass,
+   the grass to scrub, and at last the wood returns. Armies burn the crops
+   about a besieged town. A place with no more land to plough sends its younger
+   sons out to found daughter villages. */
 const FIELDCOL={ // spring, summer, autumn, winter
   wheat:[0x7ea24c,0xcdb05a,0x9c7c47,0xd4d8db],green:[0x6c9a45,0x7c9c46,0x86804a,0xced2d5],
-  plough:[0x7b6245,0x8f8c4e,0x6d5337,0xcbced0],fallow:[0x8a9a55,0x9f9c5c,0x8d7d50,0xd1d4d7]};
-function buildFields(){
-  const acc=newAcc(),meta=[],taken=makeHash(80);
-  for(const s of W.settlements){
-    if(!s._lay)continue;
-    const rng=layoutRng(1000+W.settlements.indexOf(s)),rr=()=>rng();
-    const inner=(s.wallR||s.coreR+14)+28,outer=inner+(s.kind==='capital'?330:s.kind==='town'?240:160);
-    for(let rad=inner+45;rad<outer;rad+=90){
-      const nA=Math.floor(2*Math.PI*rad/50);
-      for(let k=0;k<nA;k++){
-        const a=(k+rr()*0.3)/nA*Math.PI*2,rd=rad+(rr()-0.5)*14;
-        const x=s.pos.x+Math.cos(a)*rd,z=s.pos.z+Math.sin(a)*rd;
-        const W2=42+rr()*6,L=80+rr()*10,rot=-Math.atan2(Math.cos(a),-Math.sin(a))+(rr()<0.3?Math.PI/2:0);
-        const cs=obbCorners(x,z,W2,L,rot);
-        let good=true;
-        for(const q of[...cs,{x,z}]){
-          const ci=toCell(q.x),cj=toCell(q.z),i=cIdx(ci,cj),bio=W.biome[i];
-          if(W.water[i]||slopeAt(ci,cj)>0.22||(bio!==B.FARM&&bio!==B.MEADOW)||anyLake(q.x,q.z)){good=false;break;}
-          for(const g of s._lay.segH.near(q.x,q.z,34))if(segDist(q.x,q.z,g.a,g.b)<g.hw+30){good=false;break;}
-          if(!good)break;
-          if(W.settlements.some(o=>o!==s&&dist2d(q.x,q.z,o.pos.x,o.pos.z)<(o.wallR||o.radius)+30))good=false;
-          for(const r of W.roads)for(let j=0;j<r.path.length&&good;j+=2)if(dist2d(q.x,q.z,r.path[j].x,r.path[j].z)<24)good=false;
-          if(!good)break;
-        }
-        if(!good)continue;
-        const F={x,z,w:W2+2,d:L+2,rot};
-        if([...taken.near(x,z,70)].some(o=>obbOverlap(F,o)))continue;
-        taken.add(F,70);
-        // five furrow strips along the parcel, draped on the ground
-        const type=['wheat','wheat','green','plough','fallow'][Math.floor(rr()*5)],strips=5,segs=6;
-        const c=Math.cos(rot),sn=Math.sin(rot),base=acc.p.length/3;
-        for(let u=0;u<=segs;u++)for(let v=0;v<=strips;v++){
-          const lx=(v/strips-0.5)*W2,lz=(u/segs-0.5)*L;
-          const px=x+lx*c+lz*sn,pz=z-lx*sn+lz*c;
-          acc.p.push(px,hAt(px,pz)+0.35,pz);const nn=terrNormal(px,pz);acc.n.push(nn[0],nn[1],nn[2]);acc.c.push(0,0,0);
-          meta.push(type,(v===0||v===strips||u===0||u===segs)?2:v%2); // 2 = hedgerow edge
-        }
-        for(let u=0;u<segs;u++)for(let v=0;v<strips;v++){
-          const i0=base+u*(strips+1)+v,i1=i0+1,i2=i0+strips+1,i3=i2+1;
-          acc.i.push(i0,i2,i1,i1,i2,i3);
-        }
+  plough:[0x7b6245,0x8f8c4e,0x6d5337,0xcbced0],fallow:[0x8a9a55,0x9f9c5c,0x8d7d50,0xd1d4d7],
+  pasture:[0x7fa552,0x8aab58,0x8c9853,0xd0d4d6],scrub:[0x5f7e40,0x5d7a3e,0x746f40,0xc6cacc],burnt:[0x3b3127,0x3d3328,0x3b3127,0xbfc2c4]};
+const PSTRIPS=5,PSEGS=6,PV=(PSTRIPS+1)*(PSEGS+1); // furrow lines × rows: vertices per parcel
+const SHOWN={tilled:1,pasture:1,scrub:1,burnt:1}; // wood, wild (open meadow) and built-over parcels are not drawn
+function genParcels(s){ // candidate parcels in rings about a settlement; the nearer open ones are tilled today
+  const rng=layoutRng(1000+W.settlements.indexOf(s)),rr=()=>rng();
+  if(!G.parcels){G.parcels=[];G.parcelHash=makeHash(80);}
+  const inner=(s.wallR||s.coreR+14)+28,span=s.kind==='capital'?330:s.kind==='town'?240:160,base=inner+span,outer=inner+span*1.9,out=[];
+  for(let rad=inner+45;rad<outer;rad+=90){
+    const nA=Math.floor(2*Math.PI*rad/50);
+    for(let k=0;k<nA;k++){
+      const a=(k+rr()*0.3)/nA*Math.PI*2,rd=rad+(rr()-0.5)*14;
+      const x=s.pos.x+Math.cos(a)*rd,z=s.pos.z+Math.sin(a)*rd;
+      const W2=42+rr()*6,L=80+rr()*10,rot=-Math.atan2(Math.cos(a),-Math.sin(a))+(rr()<0.3?Math.PI/2:0),type=['wheat','wheat','green','plough','fallow'][Math.floor(rr()*5)];
+      let good=true,wood=false;
+      for(const q of[...obbCorners(x,z,W2,L,rot),{x,z}]){
+        const ci=toCell(q.x),cj=toCell(q.z),i=cIdx(ci,cj),bio=W.biome[i];
+        if(W.water[i]||slopeAt(ci,cj)>0.22||(bio!==B.FARM&&bio!==B.MEADOW&&bio!==B.FOREST&&bio!==B.PINE)||anyLake(q.x,q.z)){good=false;break;}
+        if(bio===B.FOREST||bio===B.PINE)wood=true;
+        if(s._lay)for(const g of s._lay.segH.near(q.x,q.z,34))if(segDist(q.x,q.z,g.a,g.b)<g.hw+30){good=false;break;}
+        if(!good)break;
+        if(W.settlements.some(o=>o!==s&&dist2d(q.x,q.z,o.pos.x,o.pos.z)<(o.wallR||o.radius)+30))good=false;
+        for(const r of W.roads)for(let j=0;j<r.path.length&&good;j+=2)if(dist2d(q.x,q.z,r.path[j].x,r.path[j].z)<24)good=false;
+        if(!good)break;
       }
+      if(!good)continue;
+      const F={x,z,w:W2+2,d:L+2,rot};
+      if([...G.parcelHash.near(x,z,70)].some(o=>obbOverlap(F,o.F)))continue;
+      const p={s,x,z,w:W2,d:L,rot,F,type,wood,ring:rad,state:'wild',since:0,trees:[],hash:rr()};
+      G.parcelHash.add(p,70);out.push(p);
     }
   }
+  // today's tillage: the nearer open land, and if there is too little of it, the nearest woods were cleared long ago
+  const open=out.filter(p=>!p.wood&&p.ring<base).length,need=Math.max(open,Math.min(out.length,s.kind==='village'?4:s.kind==='town'?8:12));
+  const order=[...out].sort((p,q)=>(p.wood?400:0)+p.ring-((q.wood?400:0)+q.ring));
+  order.forEach((p,k)=>p.state=k<need?'tilled':p.wood?'wood':'wild');
+  s.landK=need/Math.max(40,s.pop);s.parcels=out;
+  for(const p of out){p.i=G.parcels.length;G.parcels.push(p);}
+  return out;
+}
+function parcelVerts(p,acc,meta){ // five furrow strips along the parcel, draped on the ground (sunk out of sight when not drawn)
+  const c=Math.cos(p.rot),sn=Math.sin(p.rot),base=acc.p.length/3,sink=SHOWN[p.state]?0.35:-9;p.v0=base;
+  for(let u=0;u<=PSEGS;u++)for(let v=0;v<=PSTRIPS;v++){
+    const lx=(v/PSTRIPS-0.5)*p.w,lz=(u/PSEGS-0.5)*p.d,px=p.x+lx*c+lz*sn,pz=p.z-lx*sn+lz*c;
+    acc.p.push(px,hAt(px,pz)+sink,pz);const nn=terrNormal(px,pz);acc.n.push(nn[0],nn[1],nn[2]);acc.c.push(0,0,0);
+    meta.push((v===0||v===PSTRIPS||u===0||u===PSEGS)?2:v%2); // 2 = hedgerow edge
+  }
+  for(let u=0;u<PSEGS;u++)for(let v=0;v<PSTRIPS;v++){
+    const i0=base+u*(PSTRIPS+1)+v,i1=i0+1,i2=i0+PSTRIPS+1,i3=i2+1;
+    acc.i.push(i0,i2,i1,i1,i2,i3);
+  }
+}
+function buildFields(){
+  if(W.villages0===undefined)W.villages0=W.settlements.filter(o=>o.kind==='village').length;
+  for(const s of W.settlements)if(s._lay&&!s.parcels)genParcels(s);
+  rebuildFieldMesh();
+}
+function rebuildFieldMesh(){
+  if(G.fields){scene.remove(G.fields);G.fields.geometry.dispose();}
+  const acc=newAcc(),meta=[];
+  for(const p of G.parcels||[])parcelVerts(p,acc,meta);
   if(!acc.i.length)return;
-  G.fields=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,
-    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  if(!G.fieldMat)G.fieldMat=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2});
+  G.fields=accMesh(acc,G.fieldMat);
   G.fields.receiveShadow=true;G.fieldMeta=meta;
   scene.add(G.fields);
+  if(G.fieldSeason)recolorFields(...G.fieldSeason);
+}
+const _fc0=new THREE.Color(),_fc1=new THREE.Color(),_fdr=new THREE.Color(0xb3a35c);
+function colorParcel(p,si,blend){
+  const col=G.fields.geometry.attributes.color,m=G.fieldMeta,key=p.state==='tilled'?p.type:p.state,t=FIELDCOL[key]||FIELDCOL.pasture;
+  _fc0.setHex(t[si]).lerp(_fc1.setHex(t[(si+1)%4]),blend*blend);
+  if(W.drought&&p.state!=='burnt'&&key!=='plough')_fc0.lerp(_fdr,0.5);
+  for(let v=0;v<PV;v++){
+    const i=p.v0+v,e=m[i];let k;
+    if(p.state==='tilled')k=e===2?0.62:e?0.84:0.92; // hedged edges, alternate furrows
+    else if(p.state==='scrub')k=e===2?0.78:0.82+((i*7919)%13)/13*0.3; // brambles and thorn in blotches
+    else k=e===2?0.7:0.96;
+    col.setXYZ(i,_fc0.r*k,_fc0.g*k,_fc0.b*k);
+  }
 }
 function recolorFields(si,blend,snowT){
+  G.fieldSeason=[si,blend,snowT];
   if(!G.fields)return;
-  const col=G.fields.geometry.attributes.color,m=G.fieldMeta,c0=new THREE.Color(),c1=new THREE.Color(),dr=new THREE.Color(0xb3a35c);
-  for(let i=0;i<col.count;i++){
-    const t=FIELDCOL[m[i*2]];c0.setHex(t[si]).lerp(c1.setHex(t[(si+1)%4]),blend*blend);
-    if(W.drought&&m[i*2]!=='plough')c0.lerp(dr,0.5);
-    c0.multiplyScalar(m[i*2+1]===2?0.62:m[i*2+1]?0.84:0.92); // hedged edges, alternate furrows
-    col.setXYZ(i,c0.r,c0.g,c0.b);
-  }
-  col.needsUpdate=true;
+  for(const p of G.parcels)colorParcel(p,si,blend);
+  G.fields.geometry.attributes.color.needsUpdate=true;
 }
-function addBuildingLive(s){ // growth: take the next frontage lot in the queue (street gaps, then outward)
+function showTree(t,on){
+  const m=t.k==='dec'?G.decid:G.pine;
+  if(on&&!t.cut)setInst(m,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(t.k==='dec'?0.9+t.v*0.3:1+t.v*0.4),t.s);
+  else setInst(m,t.i,t.x,-500,t.z,0,0.001,0.001,0.001);
+  m.instanceMatrix.needsUpdate=true;
+}
+function setParcel(p,state){
+  const was=p.state;p.state=state;p.since=day();
+  if(!G.fields)return;
+  if(!!SHOWN[was]!==!!SHOWN[state]){ // raise it into sight or sink it away
+    const pos=G.fields.geometry.attributes.position,lift=SHOWN[state]?0.35:-9;
+    for(let v=0;v<PV;v++){const i=p.v0+v,x=pos.getX(i),z=pos.getZ(i);pos.setY(i,hAt(x,z)+lift);}
+    pos.needsUpdate=true;
+  }
+  if(G.fieldSeason){colorParcel(p,G.fieldSeason[0],G.fieldSeason[1]);G.fields.geometry.attributes.color.needsUpdate=true;}
+  if((was==='wood')!==(state==='wood'))for(const t of p.trees)showTree(t,state==='wood');
+}
+function clearLandAt(x,z,r){ // a house or a road now stands here: the field under it is built over, the trees felled
+  if(G.parcelHash){const F={x,z,w:r*2,d:r*2,rot:0};
+    for(const p of G.parcelHash.near(x,z,r+60))if(p.state!=='built'&&obbOverlap(F,p.F))setParcel(p,'built');}
+  if(G.treeHash)for(const t of G.treeHash.near(x,z,r+2))if(!t.cut&&dist2d(x,z,t.x,t.z)<r+2){t.cut=true;showTree(t,false);}
+}
+function clearLandUnder(b){clearLandAt(b.x,b.z,Math.hypot(b.w,b.d)/2+1);}
+function linkTrees(parcels){ // which trees stand in which parcel; trees in tilled land were felled long ago
+  for(const p of parcels){
+    for(const t of G.treeHash.near(p.x,p.z,Math.hypot(p.w,p.d)/2+2))
+      if(obbOverlap({x:t.x,z:t.z,w:1,d:1,rot:0},p.F)){p.trees.push(t);if(p.state!=='wood')showTree(t,false);}
+  }
+}
+function tickLand(){ // monthly: the countryside follows the people
+  if(!G.parcels||day()%30!==15)return;
+  const now=day(),spring=Math.ceil((now+1)/360)*360+20;
+  for(const s of W.settlements){const P=s.parcels;if(!P||!P.length)continue;
+    let tilled=0,bearing=0;for(const p of P){if(p.state==='tilled'||p.state==='burnt')tilled++;if(p.state==='tilled')bearing++;}
+    const need=Math.round(s.pop*s.landK);
+    s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;
+    if(tilled<need&&!s.siegeBy){ // take in more land: old pasture first, then open meadow, then scrub, then the wood
+      const rank={pasture:0,wild:1,scrub:2,wood:3};let best=null,bk=1e9;
+      for(const p of P){const r=rank[p.state];if(r===undefined)continue;const k=r*300+p.ring;if(k<bk){bk=k;best=p;}}
+      if(best){const was=best.state;setParcel(best,'tilled');s.landShort=0;
+        if(was==='wood'){s.assarts=(s.assarts||0)+1;
+          if(s.assarts===1||s.assarts%15===0)emit('trade',3,{x:best.x,z:best.z},`The folk of ${s.name} are clearing the wood for new fields; the assarts ${pick('sim',['smoke with burning stumps','are ploughed between the stumps','are let at a penny the acre'])}.`);}}
+      else if(!s.landShort){s.landShort=now;
+        if(s.kind!=='village'||s.pop>120)emit('trade',3,s.pos,`There is no more land to plough about ${s.name}; its younger sons look elsewhere.`);}
+    }else if(tilled>need*1.25+1){ // too few hands: the farthest fields go back to grass
+      let far=null;for(const p of P)if(p.state==='tilled'&&(!far||p.ring>far.ring))far=p;
+      if(far)setParcel(far,'pasture');
+    }
+    for(const p of P){
+      if(p.state==='burnt'&&now>p.until)setParcel(p,'tilled');
+      else if(p.state==='pasture'&&now-p.since>360*12&&(p.wood||p.hash<0.35))setParcel(p,'scrub');
+      else if(p.state==='scrub'&&now-p.since>360*15)setParcel(p,p.wood?'wood':'wild');
+    }
+    if(s.siegeBy){ // the besiegers forage and burn the standing crops
+      const t=P.filter(p=>p.state==='tilled'&&p.ring<(s.wallR||s.radius)+420);
+      for(let k=0;k<3&&t.length;k++){const p=t.splice(randi('sim',t.length),1)[0];p.until=spring;setParcel(p,'burnt');}
+    }
+    // a place long out of land and doing well sends out a daughter village
+    if(s.landShort&&now-s.landShort>360&&now%360===195&&s.prosperity>45&&s.pop>90&&chance('sim',0.25))foundDaughter(s);
+  }
+}
+function foundDaughter(s){
+  const vill=W.settlements.filter(o=>o.kind==='village').length;
+  if(vill>=(W.villages0||0)+6||G.bldList.length+60>=G.bodies.instanceMatrix.count)return;
+  let best=null,bs=-1;
+  for(let k=0;k<70;k++){
+    const a=rand('sim')*Math.PI*2,r=520+rand('sim')*1000,x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;
+    if(Math.abs(x)>SIZE/2-300||Math.abs(z)>SIZE/2-300)continue;
+    const ci=toCell(x),cj=toCell(z);if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.2)continue;
+    if(W.settlements.some(o=>dist2d(x,z,o.pos.x,o.pos.z)<(o.radius||90)+(o.parcels?520:260)))continue;
+    let sc=0;for(let j=0;j<16;j++){const b=j/16*Math.PI*2,px=x+Math.cos(b)*160,pz=z+Math.sin(b)*160,i=cIdx(toCell(px),toCell(pz)),bio=W.biome[i];
+      if(!W.water[i]&&slopeAt(toCell(px),toCell(pz))<0.22)sc+=bio===B.FARM?3:bio===B.MEADOW?2:bio===B.FOREST||bio===B.PINE?1:0;}
+    if(sc>bs){bs=sc;best={x,z};}
+  }
+  if(!best||bs<14)return;
+  const n=W.settlements.length;
+  if(doAct('village',best,{from:s})&&W.settlements.length>n)s.pop=Math.max(40,s.pop-45);
+}
+
+function addBuildingLive(s){ // growth: empty houses fill first, then the next open frontage; when there is none the town reaches further out
   const L=s._lay;if(!L||!s.growSlots)return null;
-  for(let t=0;t<14&&s.growSlots.length;t++){
+  if(G.bldList.length>=G.bodies.instanceMatrix.count)return null;
+  const empty=s.buildings.find(b=>b.state==='ruin'&&b.deserted);
+  if(empty){empty.state='sound';empty.deserted=false;s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(empty);return empty;}
+  for(let t=0;t<30;t++){
+    if(!s.growSlots.length){
+      if(day()<(s._extT||0)||!L.extend())return null;
+      s._extT=day()+360*2;s.growSlots=L.queue();stitchRoads();G.roadsDirty=true;
+      if(!s.growSlots.length)return null;
+    }
     const c=s.growSlots.shift();
     const arch=L.archFor(c),tier=Math.min(1,L.tierFor(c,99));
     const f=frontFoot(c,arch,tier,()=>rand('sim'));
     if(!L.fits(f,L.gapFor(c)))continue;
-    if(G.bldList.length>=G.bodies.instanceMatrix.count)return null;
-    const b=L.place(arch,tier,f,'residential');
+    const b=L.place(arch,tier,f,'residential');b.grown=day();
     if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;} // the first house on a new lane: the lane appears
     b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;
-    updateBuildingInstance(b);
+    updateBuildingInstance(b);clearLandUnder(b);
     return b;
   }
   return null;
@@ -2916,6 +3061,9 @@ function showInspect(pk){
     h+=row('Unrest',Math.round(s.unrest));
     h+=row('Food stores',Math.round(s.stores.grain+s.stores.fish));
     h+=row('Walls',['none','palisade','stone'][s.walls]||'stone');
+    if(s.parcels&&s.parcels.length){const n=st=>s.parcels.filter(p=>p.state===st).length;
+      h+=row('Land',`${n('tilled')+n('burnt')} fields ploughed${n('burnt')?` (${n('burnt')} burned)`:''}${n('pasture')?`, ${n('pasture')} gone to grass`:''}${n('scrub')?`, ${n('scrub')} to scrub`:''}${s.assarts?`; ${s.assarts} assarted from the wood`:''}${s.landShort?'; no land left':''}`);}
+    if(s.mother)h+=row('Daughter of',s.mother);
     if(s.bastions)h+=row('Fortifications','bastioned trace'+(s.citadel?' and citadel':''));
     if(s.natDef>0.08&&s.wallKind){const k=s.wallKind,pc=v=>Math.round(k.filter(x=>x===v).length/k.length*100);
       h+=row('Natural defences',[pc(2)?pc(2)+'% water':'',pc(1)?pc(1)+'% cliff':'',pc(3)?pc(3)+'% hillside':''].filter(Boolean).join(', '));}
@@ -3080,7 +3228,7 @@ function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
     const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1);
-    s.stores.grain+=s.res.farm*0.92*seasonF*MOD.harvest*(W.drought?0.35:1)*workF;
+    s.stores.grain+=s.res.farm*0.92*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.landF??1); // too little land under the plough, or crops burned
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF;
     s.stores.ore+=s.res.ore*0.05*workF;
@@ -4087,17 +4235,26 @@ function tickOmens(myth,dis){
    (outside the walls once the core is full), decline lets them fall to ruin,
    and sustained prosperity upgrades buildings through the tiers
    (hovel-built → timber-framed → stone-built). */
+const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
+const RESID=new Set(['house','longhouse','burgher','shop','tavern','smithy']);
+function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function tickGrowth(){
   if(day()%6!==0)return;
   for(const s of W.settlements){
-    const cap=s.buildings.filter(b=>b.state==='sound').length*6+30;
-    if(s.pop>cap&&s.prosperity>42&&!s.siegeBy){
-      const b=addBuildingLive(s);
-      if(b&&chance('sim',0.06))
-        emit('trade',3,s.pos,`${s.name} grows: new roofs rise in the ${b.district} quarter.`);
-    }else if(s.pop<cap*0.35&&chance('sim',0.1)){
-      const b=s.buildings.filter(b=>b.state==='sound'&&b.district==='residential').pop();
-      if(b){b.state='ruin';b.rebuildT=day()+400;s.ruinCount++;updateBuildingInstance(b);}
+    const room=housing(s);
+    if(s.pop>room*1.1&&s.prosperity>35&&!s.siegeBy){
+      const n=s.pop>room*1.5?3:1;let got=0; // far behind: the town fills quickly
+      for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b)got++;
+        if(b&&chance('sim',0.03))emit('trade',3,s.pos,`${s.name} grows: new roofs rise in the ${b.district} quarter.`);}
+      if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
+        let b=null,bd=1e9;for(const o of s.buildings)if(o.state==='sound'&&RESID.has(o.arch)&&o.tier<2){const d=dist2d(o.x,o.z,s.pos.x,s.pos.z)+rand('sim')*80;if(d<bd){bd=d;b=o;}}
+        if(b){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);
+          if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}
+      }
+    }else if(s.pop<room*0.5&&chance('sim',0.15)){ // too few to fill the houses: the outermost stand empty and fall in
+      let b=null,bd=-1;
+      for(const o of s.buildings)if(o.state==='sound'&&RESID.has(o.arch)){const d=dist2d(o.x,o.z,s.pos.x,s.pos.z);if(d>bd){bd=d;b=o;}}
+      if(b){b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}
     }
     // prosperity slowly rebuilds in better material
     if(s.prosperity>62&&!s.siegeBy&&chance('sim',0.25)){
@@ -4116,7 +4273,7 @@ function tickGrowth(){
 }
 
 /* ============================ ACTS (triggers) ============================ */
-function doAct(act,p){
+function doAct(act,p,opt){
   const nearS=()=>{let b=W.settlements[0],bd=1e18;for(const s of W.settlements){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;b=s;}}return b;};
   switch(act){
     case 'plague':{const s=nearS();s.infected=Math.max(s.infected,6);
@@ -4179,24 +4336,27 @@ function doAct(act,p){
       const si=W.settlements.length-1;W.adj[si]=[];
       let bj=0,bd=1e18;W.settlements.forEach((o,oi)=>{if(oi!==si){const d=dist2d(p.x,p.z,o.pos.x,o.pos.z);if(d<bd){bd=d;bj=oi;}}});
       const tgt=W.settlements[bj].pos;
-      const path=[];const nseg=Math.max(2,Math.round(bd/25));
-      for(let k=0;k<=nseg;k++){
-        const x=lerp(p.x,tgt.x,k/nseg),z=lerp(p.z,tgt.z,k/nseg);
-        path.push({x,z});
-        const rc=cIdx(toCell(x),toCell(z));
-        if(!W.water[rc])W.roadCells[rc]=1;
-      }
-      W.roads.push({a:si,b:bj,path:resample(path,8),len:bd});W.routes={};
+      let path=[];const cells=roadAstar(cIdx(ci,cj),cIdx(W.settlements[bj].cx,W.settlements[bj].cz)); // the track finds the easy ground, like the king's roads
+      if(cells){path=resample(smoothPath(resample(cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)})),9),14),8);path[0]={x:p.x,z:p.z};path[path.length-1]={x:tgt.x,z:tgt.z};}
+      else{const nseg=Math.max(2,Math.round(bd/25));for(let k=0;k<=nseg;k++)path.push({x:lerp(p.x,tgt.x,k/nseg),z:lerp(p.z,tgt.z,k/nseg)});path=resample(path,8);}
+      for(const q of path){const rc=cIdx(toCell(q.x),toCell(q.z));if(!W.water[rc])W.roadCells[rc]=1;}
+      W.roads.push({a:si,b:bj,path,len:polyLen(path)});W.routes={};
       W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});
       // lay the village out like any other: square, lanes, frontages
       s.pop=60;s.role='farm';layoutSettlement(s);stitchRoads();
       for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
       G.bodies.count=G.roofs.count=G.bldList.length;
+      if(G.parcels){genParcels(s);if(G.treeHash)linkTrees(s.parcels);rebuildFieldMesh();}
+      for(const b of s.buildings)clearLandUnder(b);
+      if(G.treeHash)for(const t of G.treeHash.near(p.x,p.z,s.radius))if(!t.cut&&dist2d(p.x,p.z,t.x,t.z)<s.radius*0.9){t.cut=true;showTree(t,false);} // the settlers clear a green
+      for(const r of W.roads)if(r.a===si||r.b===si)for(let k=0;k<r.path.length;k+=2)clearLandAt(r.path[k].x,r.path[k].z,6);
       rebuildRoadMesh();
       const sp=makeTextSprite(s.name,1.6);sp.position.set(p.x,s.pos.y+90,p.z);scene.add(sp);G.labels.push(sp);
       const m=new THREE.Mesh(new THREE.SphereGeometry(60,8,6),new THREE.MeshBasicMaterial({visible:false}));
       m.position.set(p.x,s.pos.y+18,p.z);m.userData.pick={type:'settlement',s};scene.add(m);G.pickS.push(m);
-      emit('trade',6,p,`By charter of the crown a village is founded at ${s.name}; the first furrows are cut before the frost.`);break;}
+      if(opt&&opt.from){s.mother=opt.from.name;s.history=[{ago:0,t:`Settled from ${opt.from.name} when its fields could feed no more.`}];
+        emit('trade',5,p,`Younger sons of ${opt.from.name}, landless at home, clear ground at ${s.name} and build a new village.`);}
+      else emit('trade',6,p,`By charter of the crown a village is founded at ${s.name}; the first furrows are cut before the frost.`);break;}
     case 'gold':{W.treasury+=5000;
       emit('crown',3,W.capital.pos,`A forgotten vault beneath the keep yields 5,000 in old coin. The Master of Coin is beside himself.`);break;}
     case 'raze':{let bb=null,bd=1e18;
@@ -4216,7 +4376,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();
   tickThreats();
-  tickGrowth();
+  tickGrowth();tickLand();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
