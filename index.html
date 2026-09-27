@@ -226,7 +226,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
   <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
-    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button>
+    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
 <div id="watchdate">—</div>
@@ -322,7 +322,7 @@ const GOODS=['grain','fish','timber','ore','tools','cloth','wine'];
 const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8};
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
-const SPEEDS=[0,0.5,2,8,30];
+const SPEEDS=[0,0.5,2,8,30,360]; // days per second; the last reels a year a second, to watch growth
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
 
 /* archetype: [w,d,h, roofKind(0 gable,1 flat,2 spire), name] */
@@ -849,22 +849,50 @@ const WALLN=144;
 function traceWall(s,margin){
   const C=s.pos,raw=new Float32Array(WALLN);
   const across=b=>{const L=dist2d(C.x,C.z,b.x,b.z);for(let t=8;t<L;t+=6){const f=t/L;if(riverAt(lerp(C.x,b.x,f),lerp(C.z,b.z,f),0))return true;}return false;};
-  // enclose the dense core, not every last house: ribbons along the roads stay outside as suburbs
-  const sect=Array.from({length:WALLN},()=>[]),all=[];
+  /* Where the wall runs is a bargain, not a shape. Every house left outside is a loss to the town (a church, a hall
+     or a keep a great one), every metre of wall is labour and stone, and ground that defends itself (a falling
+     slope) is cheaper to wall; water can't be walled at all. The cheapest closed line is found by dynamic
+     programming round the town, so a dense quarter is taken in and a ribbon of houses along a road is not worth
+     its two long flanks of wall: it stays outside the gate. */
+  const dA=Math.PI*2/WALLN,RS=6,rMin=40,items=Array.from({length:WALLN},()=>[]);let maxD=0;
+  const worth=b=>(['temple','keep','hall','castle','granary','warehouse'].includes(b.arch)?10:1)*(1+0.3*(b.tier||0));
   for(const b of s.buildings){
+    if(b.inst||b.removed)continue;
     if(across(b))continue; // the far bank is a bridge-foot suburb: the wall keeps to the near bank
     if(s.villageOut&&b.q==='village')continue; // the old village stays outside the first wall
     if(b.hill)continue; // the castle on the hill has walls of its own
     const a=Math.atan2(b.z-C.z,b.x-C.x),d=dist2d(b.x,b.z,C.x,C.z)+Math.max(b.w,b.d)*0.6;
-    const k0=Math.round(a/(Math.PI*2)*WALLN);all.push(d);
-    for(let dk=-6;dk<=6;dk++)sect[((k0+dk)%WALLN+WALLN)%WALLN].push(d);
+    items[((Math.round(a/dA))%WALLN+WALLN)%WALLN].push({d,v:worth(b)});maxD=Math.max(maxD,d);
   }
-  all.sort((x,y)=>x-y);
-  const core=all.length?all[Math.floor(all.length*0.7)]:40;
-  for(let k=0;k<WALLN;k++){const v=sect[k].sort((x,y)=>x-y);
-    raw[k]=v.length>=4?Math.min(v[Math.floor(v.length*0.8)],core*1.5):v.length?Math.min(v[v.length-1],core):core*0.6;}
-  for(const p of s.places||[])if(!(s.villageOut&&p.vil))for(let k=0;k<WALLN;k++)raw[k]=Math.max(raw[k],placeReach(p,C,k/WALLN*Math.PI*2)+4);
-  for(let k=0;k<WALLN;k++)raw[k]=Math.max(raw[k]+margin,40);
+  const nR=Math.max(2,Math.ceil((maxD+margin+12-rMin)/RS)+1),val=new Float32Array(WALLN*nR),mul=new Float32Array(WALLN*nR),minJ=new Int16Array(WALLN);
+  for(let k=0;k<WALLN;k++){
+    for(const it of items[k]){const j0=clamp(Math.ceil((it.d+margin-rMin)/RS),0,nR-1);val[k*nR+j0]+=it.v;}
+    for(let j=1;j<nR;j++)val[k*nR+j]+=val[k*nR+j-1];
+    for(const p of s.places||[])if(!(s.villageOut&&p.vil))minJ[k]=Math.max(minJ[k],clamp(Math.ceil((placeReach(p,C,k*dA)+4+margin-rMin)/RS),0,nR-1)); // the market stays inside
+    const ca=Math.cos(k*dA),sa=Math.sin(k*dA);
+    for(let j=0;j<nR;j++){const r=rMin+j*RS,x=C.x+ca*r,z=C.z+sa*r;
+      if(W.water[cIdx(toCell(x),toCell(z))]===1||riverAt(x,z,2)||lakeAt(s,x,z,0)){mul[k*nR+j]=Infinity;continue;}
+      const drop=hAt(x,z)-hAt(x+ca*22,z+sa*22);mul[k*nR+j]=1-clamp(drop/20,0,0.6);}
+  }
+  const lam=0.35,MAXJ=10; // value of a house in metres of wall; how far the line may step out between sectors
+  const solve=fix=>{ // forward pass round the circle; with fix set, it must close where it began
+    let cost=new Float64Array(nR).fill(Infinity);const from=[];
+    for(let j=minJ[0];j<nR;j++)if(fix==null||j===fix)if(mul[j]<Infinity)cost[j]=-val[j];
+    for(let k=1;k<=WALLN;k++){const kk=k%WALLN,nc=new Float64Array(nR).fill(Infinity),fr=new Int16Array(nR).fill(-1);
+      for(let j=minJ[kk];j<nR;j++){const m=mul[kk*nR+j];if(m===Infinity)continue;if(k===WALLN&&fix!=null&&j!==fix)continue;
+        const r=rMin+j*RS;
+        for(let i=Math.max(0,j-MAXJ);i<=Math.min(nR-1,j+MAXJ);i++){if(cost[i]===Infinity)continue;const r0=rMin+i*RS,m0=mul[(k-1)*nR+i];
+          const c=cost[i]+lam*Math.hypot(dA*(r+r0)/2,r-r0)*(m+m0)/2-(k<WALLN?val[kk*nR+j]:0);
+          if(c<nc[j]){nc[j]=c;fr[j]=i;}}}
+      cost=nc;from.push(fr);}
+    let bj=-1,bc=Infinity;for(let j=0;j<nR;j++)if(cost[j]<bc){bc=cost[j];bj=j;}
+    if(bj<0)return null;
+    const path=new Int16Array(WALLN);let j=bj;for(let k=WALLN;k>=1;k--){if(k<WALLN)path[k]=j;j=from[k-1][j];}path[0]=j;
+    return{path,cost:bc};
+  };
+  const open=solve(null),closed=open&&solve(open.path[0]);
+  const best=closed||open;
+  for(let k=0;k<WALLN;k++)raw[k]=best?rMin+best.path[k]*RS:Math.max(maxD+margin,rMin);
   let rad=raw.slice();
   for(let pass=0;pass<6;pass++){const o=rad.slice();for(let k=0;k<WALLN;k++)rad[k]=Math.max(raw[k],(o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4);}
   const kind=new Uint8Array(WALLN),lo=new Float32Array(WALLN),hi=new Float32Array(WALLN).fill(1e9);
@@ -1863,7 +1891,7 @@ function colorForVertex(i,sp,snowT,seed){
     case B.FOREST:c=C1.setHex(sp.forest);break;
     case B.PINE:c=C1.setHex(sp.pine);break;
     case B.ROCK:c=C1.setHex(sp.rock);break;
-    default:c=C1.setHex(0xe8ecef);
+    default:c=C1.setHex(0xd4d9df);
   }
   c.multiplyScalar(0.92+n*0.16);
   if(bio===B.MEADOW||bio===B.FARM||bio===B.FOREST||bio===B.MARSH){ // broad, soft variation: dry swales and lush hollows
@@ -1872,16 +1900,71 @@ function colorForVertex(i,sp,snowT,seed){
   }
   if(bio===B.ROCK||bio===B.SNOW){ // coherent snowcaps: whiten smoothly with height
     const t=clamp((h-470)/130,0,1);
-    c.lerp(new THREE.Color(0xe9edf2),t*t);
+    c.lerp(new THREE.Color(0xd4d9df),t*t);
   }
   // note: road/river overlays are stamped after the blend pass so they stay crisp
   if(W.drought&&(bio===B.MEADOW||bio===B.FARM))c.lerp(new THREE.Color(0xb3a35c),0.55);
   // winter snow accumulation on flat/high ground
   if(snowT>0&&bio!==B.WATER){
     const t=clamp(snowT*(h>380?1:h>120?0.75:0.55),0,1);
-    c.lerp(new THREE.Color(0xe9edf2),t);
+    c.lerp(new THREE.Color(0xd4d9df),t);
   }
   return c;
+}
+
+/* the land beyond the map: an apron carrying each edge outward into the haze (the world used to stop in a
+   straight cliff, with open sea or sky beyond it); where the edge is sea it slides under the sea plane */
+const APRON=[0,120,400,1000,2200,4200];
+function edgeVerts(){const E=[];for(let k=0;k<GRID;k++)E.push([cIdx(k,0),0,-1],[cIdx(GRID-1,k),1,0],[cIdx(GRID-1-k,GRID-1),0,1],[cIdx(0,GRID-1-k),-1,0]);return E;}
+function buildApron(){
+  const sides=[[],[],[],[]];
+  for(let k=0;k<GRID;k++){sides[0].push(cIdx(k,0));sides[1].push(cIdx(GRID-1,k));sides[2].push(cIdx(k,GRID-1));sides[3].push(cIdx(0,k));}
+  const dirs=[[0,-1],[1,0],[0,1],[-1,0]],pos=[],idx=[],src=[];
+  sides.forEach((E,si)=>{
+    const [dx,dz]=dirs[si],base=pos.length/3,n=E.length;
+    const smooth=E.map((_,k)=>{let t=0,c=0;for(let d=-25;d<=25;d++){const j=E[clamp(k+d,0,n-1)];t+=W.h[j];c++;}return t/c;});
+    E.forEach((vi,k)=>{const cx=vi%GRID,cz=(vi/GRID)|0,x=cellX(cx),z=cellZ(cz);
+      const raw=W.h[vi],tgt=Math.min(smooth[k],SEA+30)-25,hs=[raw,raw,(raw+smooth[k])/2,smooth[k],(smooth[k]+tgt)/2,tgt]; // level at first, then easing away
+      APRON.forEach((o,r)=>{const f=r/(APRON.length-1),h=hs[r];
+        // spread the corners so the sides meet
+        const ex=(k===0&&dirs[si][0]===0?-o:k===n-1&&dirs[si][0]===0?o:0),ez=(k===0&&dirs[si][1]===0?-o:k===n-1&&dirs[si][1]===0?o:0);
+        pos.push(x+dx*o+ex,h,z+dz*o+ez);src.push(vi,f);});});
+    const R=APRON.length;
+    for(let k=0;k<n-1;k++)for(let r=0;r<R-1;r++){const a=base+k*R+r,b=a+1,c=a+R,d=c+1;idx.push(a,c,b,b,c,d);}
+  });
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
+  {const nn=new Float32Array(pos.length);for(let i=1;i<nn.length;i+=3)nn[i]=1;g.setAttribute('normal',new THREE.BufferAttribute(nn,3));} // lit flat: per-vertex normals streaked along the long quads
+  g.setAttribute('color',new THREE.Float32BufferAttribute(new Float32Array(pos.length),3));
+  const am=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide});
+  am.onBeforeCompile=sh=>{ // woods and open country mottle the land beyond the map by world position (vertex colours would streak along the long quads)
+    sh.vertexShader='varying vec3 vAP;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vAP=(modelMatrix*vec4(transformed,1.0)).xyz;');
+    sh.fragmentShader=`varying vec3 vAP;
+float ah(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i),ah(i+vec2(1.,0.)),f.x),mix(ah(i+vec2(0.,1.)),ah(i+vec2(1.,1.)),f.x),f.y);}
+`+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+  { float out_=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.;float t=smoothstep(0.,50.,out_);
+    float v=an(vAP.xz/420.)*0.6+an(vAP.xz/130.)*0.4;
+    vec3 land=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.5,0.62,v))*(0.9+0.2*an(vAP.xz/40.));
+    if(vAP.y>${SEA}.+0.5)diffuseColor.rgb=mix(diffuseColor.rgb,mix(land,diffuseColor.rgb,0.35),t); }`)
+      .replace('#include <fog_fragment>',`#include <fog_fragment>
+  { float out2=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.; // unknown lands: gone into the haze within a few hundred paces of the map's edge
+    #ifdef USE_FOG
+    gl_FragColor.rgb=mix(gl_FragColor.rgb,fogColor,smoothstep(0.,240.,out2));
+    #endif
+  }`);
+  };
+  G.apron=new THREE.Mesh(g,am);G.apron.userData.src=src;G.apron.userData.sides=sides;
+  G.apron.receiveShadow=false;scene.add(G.apron);recolorApron(); // beyond the shadow camera: receiving smeared its edge texels into streaks
+}
+function recolorApron(){
+  if(!G.apron)return;const nzf=G.apronNoise||(G.apronNoise=makeNoise(SEED^0xA9E)),nz2=(x,z)=>fbm(nzf,x,z,3,2,0.5),woodC=new THREE.Color(0x587a45),fieldC=new THREE.Color(0x9bab6c);
+  const col=G.apron.geometry.attributes.color,src=G.apron.userData.src,tc=G.terrain.geometry.attributes.color,haze=new THREE.Color(0x98a684),c=new THREE.Color();
+  const sm=new Map();for(const E of G.apron.userData.sides)E.forEach((vi,k)=>{let r=0,g=0,b=0,n=0;for(let d=-12;d<=12;d++){const j=E[clamp(k+d,0,E.length-1)];r+=tc.getX(j);g+=tc.getY(j);b+=tc.getZ(j);n++;}sm.set(vi,[r/n,g/n,b/n]);});
+  for(let i=0;i<col.count;i++){const vi=src[i*2],f=src[i*2+1],m=sm.get(vi);
+    if(f===0)c.setRGB(tc.getX(vi),tc.getY(vi),tc.getZ(vi));else{c.setRGB(m[0],m[1],m[2]);
+      if(W.h[vi]>SEA)c.lerp(fieldC,Math.min(0.85,f*2)).lerp(haze,f*0.4);}
+    col.setXYZ(i,c.r,c.g,c.b);}
+  col.needsUpdate=true;
 }
 function buildTerrain(){
   // vertex (cx,cz) must sit exactly at (cellX(cx),cellZ(cz)): a SIZE-wide plane spaces vertices SIZE/(GRID-1)
@@ -1896,19 +1979,28 @@ function buildTerrain(){
   G.terrain=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));
   G.terrain.receiveShadow=true;
   scene.add(G.terrain);
-  updateTerrainColors(0,0);
+  updateTerrainColors(0,0);buildApron();
   // sea
   if(W.coastal){
-    const sg=new THREE.PlaneGeometry(SIZE*2.4,SIZE*2.4,48,48);sg.rotateX(-Math.PI/2);
+    const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
     G.sea=new THREE.Mesh(sg,new THREE.MeshPhongMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10})); // a faint sheen: any stronger and the sun blows the open sea out to white
     G.sea.position.y=SEA+0.5;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
   const riv=newAcc();
-  for(const st of riverStrips())
+  const drawnPart=st=>{ // for drawing only (layouts still see the whole channel): no overlapping tongues
+    const me=G.rivStrips.indexOf(st),inOther=(q,w)=>G.rivStrips.some((o,oi)=>o!==st&&!o.canal&&o.pts.some((p2,k)=>k<o.pts.length-1&&segDist(q.x,q.z,p2,o.pts[k+1])<o.hw[k]*0.6&&(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me)));
+    const sea=q=>W.water[cIdx(toCell(q.x),toCell(q.z))]===1||hAt(q.x,q.z)<SEA+1; // under the sea plane anyway
+    let a=0,b=st.pts.length;
+    if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;}
+    else{let k=b-1;while(k>1&&(sea(st.pts[k-1])||inOther(st.pts[k-1],st.hw[k-1])))k--;b=Math.min(b,k+1);} // keep one point in, to meet the water
+    if(b-a<2)return null;
+    return{pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:st.ys.slice(a,b)};
+  };
+  for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;
     strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k]; // drowned under a mill-pond, the old channel stays below its surface
         for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))y=Math.min(y,s.lake.y-0.8);return y;},
-      col:(k,j)=>j===2?0x2b5a7e:(j===1||j===3)?0x356a8f:0x5b8ea8});
+      col:(k,j)=>j===2?0x2b5a7e:(j===1||j===3)?0x356a8f:0x5b8ea8});}
   const lk=newAcc(); // mill-ponds: a flat, opaque sheet at the dam's level (the shore is where the ground rises through it; the drowned channel stays hidden)
   for(const s of W.settlements)if(s.lake){
     const P=s.lake.poly,base=lk.p.length/3,y=s.lake.y;
@@ -1956,6 +2048,7 @@ function updateTerrainColors(si,blend){
   for(let i=0;i<N;i++)if(W.water[i]===2){
     C1.setRGB(col.getX(i),col.getY(i),col.getZ(i)).lerp(bankC,0.55);col.setXYZ(i,C1.r,C1.g,C1.b);
   }
+  recolorApron();
   col.needsUpdate=true;
   recolorFields(si,blend,snowT);
   // trees seasonal tint
@@ -2285,8 +2378,16 @@ function rebuildWalls(){
             p.g+H+0.5,0x9c9282,0x6d8a47);
         }
         const low=Math.min(...P.map(p=>p.g));
-        const dp=P.map(p=>({x:p.x+p.ox*44,z:p.z+p.oz*44}));
-        strip(dp,ditch,{fr:[-1,-0.6,0,0.6,1],hw:()=>9,lift:0.25,col:(k,j,x,z)=>j===0||j===4?0x4f5a3a:(hAt(x,z)<low+4?0x3f6272:0x5a5236)});
+        // the ditch keeps 44 m out along each ray from the centre, as the wall does, so it can never fold back on itself
+        const dp=P.map(p=>({x:c.x+Math.cos(p.a)*(p.r+44),z:c.z+Math.sin(p.a)*(p.r+44)}));
+        if(dp.length>=8){
+          // wet only if it can be fed: a culvert from a river, the mill-pond or the sea at a level that fills it; otherwise dry
+          let feed=-Infinity;
+          for(const q of dp){const o=riverAt(q.x,q.z,40);if(o)feed=Math.max(feed,o.y-0.5);
+            if(W.water[cIdx(toCell(q.x),toCell(q.z))]===1||hAt(q.x,q.z)<SEA+1)feed=Math.max(feed,SEA+0.5);
+            if(s.lake&&dist2d(q.x,q.z,s.lake.dam.x,s.lake.dam.z)<260)feed=Math.max(feed,s.lake.y-0.5);}
+          const wetD=feed>-Infinity&&dp.filter(q=>hAt(q.x,q.z)<feed+1.5).length>dp.length*0.7;
+          strip(dp,ditch,{fr:[-1,-0.6,0,0.6,1],hw:()=>9,lift:0.25,col:(k,j)=>j===0||j===4?0x4f5a3a:(wetD?0x3f6272:0x5a5236)});}
         inst.tower.push([P[0].x,P[0].g,P[0].z,true,H,8]);inst.tower.push([P[P.length-1].x,P[P.length-1].g,P[P.length-1].z,true,H,8]);
       }else{
         // towers: at both ends of every run, and every ~45 m along it
@@ -2294,8 +2395,12 @@ function rebuildWalls(){
         P.forEach((p,k)=>{if(k===0||k===P.length-1||k%every===0)inst.tower.push([p.x,p.g,p.z,stone,H]);});
       }
     }
-    // gatehouses spanning each gate
+    // gatehouses spanning each gate — only where there is wall beside them (a gate standing alone in a field is nonsense)
+    const walled=new Set();for(const rn of runs)for(const i of rn)walled.add(i);
     gates.forEach((g,gi2)=>{
+      const gi=Math.round((((g/(Math.PI*2))%1+1)%1)*N),span=Math.ceil((7.5/Math.max(20,wr))/(Math.PI*2/N))+3;
+      let near=false;for(let d=-span;d<=span&&!near;d++)if(walled.has(((gi+d)%N+N)%N))near=true;
+      if(!near)return;
       const q=at(g),ci=toCell(q.x),cj=toCell(q.z);
       if(W.water[cIdx(ci,cj)]===1||riverAt(q.x,q.z,1)||wallKindAt(s,g)===1)return;
       if(s.citadel&&dist2d(q.x,q.z,s.citadel.x,s.citadel.z)<s.citadel.S*0.62)return;
@@ -3016,12 +3121,26 @@ function wingGeom(){ // a bat wing from the shoulder along +x: arm bones, finger
 function agentMat(){ // small figures get a touch of self-light so they read against the grass from any side
   return new THREE.MeshLambertMaterial({vertexColors:true,emissive:0x1a1816});
 }
+/* Trade runs on the sim clock (a consignment is days on the road, and can be robbed or carry plague);
+   what you see on the roads is its traffic: each consignment sends out a little convoy of carts (or a
+   barge, or a cog), one to a unit of goods, which then travel at a pace of their own — a steady real-time
+   walk, a little quicker at the faster speeds — instead of flashing from town to town. */
+const TRAFFIC_CAP=140,CART_UNIT=18;
+function spawnCarts(c){
+  const T=G.traffic||(G.traffic=[]);
+  const boat=c.sea||c.river,n=boat?1:clamp(Math.round(c.qty/CART_UNIT),1,4);
+  if(T.length+n>TRAFFIC_CAP)return;
+  if(boat&&T.filter(t=>t.info.sea===c.sea&&t.info.river===c.river&&(t.info.sea||t.info.river)).length>=8)return;
+  const len=polyLen(c.poly);if(!(len>1))return;
+  for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,d:-k*15-Math.random()*6,spd:(c.sea?11:c.river?7:5.5)*(0.9+Math.random()*0.2),
+    info:{origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
+}
 function buildAgents(){
   // caravans: ox-drawn covered wagons, the cover coloured by the cargo
   const cg=cartGeom();
-  G.caravans=new THREE.InstancedMesh(cg.fixed,new THREE.MeshLambertMaterial({vertexColors:true}),48);
-  G.cartCovers=new THREE.InstancedMesh(cg.cover,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide}),48);
-  for(const m of[G.caravans,G.cartCovers]){m.count=48;for(let i=0;i<48;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.castShadow=true;scene.add(m);}
+  G.caravans=new THREE.InstancedMesh(cg.fixed,new THREE.MeshLambertMaterial({vertexColors:true}),TRAFFIC_CAP);
+  G.cartCovers=new THREE.InstancedMesh(cg.cover,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide}),TRAFFIC_CAP);
+  for(const m of[G.caravans,G.cartCovers]){m.count=TRAFFIC_CAP;for(let i=0;i<TRAFFIC_CAP;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.castShadow=true;scene.add(m);}
   // gold "moving dot" sprites so trade traffic reads at map altitude
   {
     const c=document.createElement('canvas');c.width=c.height=32;const g=c.getContext('2d');
@@ -3029,7 +3148,7 @@ function buildAgents(){
     g.beginPath();g.arc(16,16,10,0,7);g.fill();g.stroke();
     const tex=new THREE.CanvasTexture(c);
     G.caravanDots=[];
-    for(let i=0;i<48;i++){
+    for(let i=0;i<TRAFFIC_CAP;i++){
       const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false,fog:false}));
       sp.visible=false;scene.add(sp);G.caravanDots.push(sp);
     }
@@ -3105,6 +3224,124 @@ function makePoints(n,size,color,opacity,additive){
   const p=new THREE.Points(g,m);p.frustumCulled=false;
   return p;
 }
+/* ---------------- event vignettes -------------------------------------------
+   Every event with a place is marked there: a ring spreads over the ground in
+   the colour of its kind, and a short scene plays — bells rolling out from the
+   church for a wedding or a birth, a slow toll for a death, confetti and a
+   bonfire for a feast, dust and smoke for a battle, smoke over a robbed road,
+   stump-fires in a new assart, spray for a flood, a sickly haze for plague.
+   Lasting states show while they last: festivals, plague, sieges (campfires
+   ringing the walls), riots (torches in the streets), famine (dust). */
+const FXCOL={crown:0xe0b83a,war:0xc0392b,trade:0x5fa86a,fates:0x8e5bb5,house:0x4f7fb8};
+const FXRULES=[ // text of the annal → the scene to play
+  [/pestilence|plague|white crosses/i,'plague'],[/famine|granaries (stand|are) (empty|bare)/i,'famine'],
+  [/feast|festival|weds|royal match|tourney|crowned|coronat|is born|an heir|jubilee|harvest is brought in/i,'feast'],
+  [/ dies|slain|is dead|buried|perish|murder|assassin|funeral|laid to rest/i,'mourning'],
+  [/hosts meet|battle|arrows|put to the sword|storm the walls|stormed/i,'battle'],
+  [/riot|rises in|revolt|rebel|mob/i,'riot'],[/bandit|outlaw|robbers|ambush/i,'raid'],
+  [/clearing the wood|assart/i,'clearing'],[/village is founded|build a new village|clear ground at/i,'founding'],
+  [/river rises|flood|spate/i,'flood'],[/earth heaves/i,'quake'],[/fire!|flames leap|lightning strikes/i,'fire'],
+  [/besiege|siege/i,'siege'],[/drives? (their|his) bounds|waste/i,'survey']];
+function buildFx(){
+  const n=900,g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(n*3),3));
+  g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(n*3),3));
+  G.fxPuff=new THREE.Points(g,new THREE.PointsMaterial({size:14,vertexColors:true,transparent:true,opacity:0.55,depthWrite:false,map:puffTexture()}));
+  const g2=g.clone();g2.setAttribute('position',new THREE.BufferAttribute(new Float32Array(n*3),3));g2.setAttribute('color',new THREE.BufferAttribute(new Float32Array(n*3),3));
+  G.fxSpark=new THREE.Points(g2,new THREE.PointsMaterial({size:3.2,vertexColors:true,transparent:true,opacity:0.95,depthWrite:false,map:puffTexture()})); // normal blending: confetti must show on bright ground too
+  for(const p of[G.fxPuff,G.fxSpark]){p.frustumCulled=false;scene.add(p);}
+  G.fxP=[[],[]];for(let i=0;i<n;i++){G.fxP[0].push({life:0});G.fxP[1].push({life:0});}
+  G.fxI=[0,0];G.fxList=[];
+  G.rings=[];const rg=new THREE.RingGeometry(0.86,1,64);rg.rotateX(-Math.PI/2);
+  for(let i=0;i<24;i++){const m=new THREE.Mesh(rg,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));
+    m.visible=false;m.renderOrder=3;scene.add(m);G.rings.push({m,t:1,dur:1});}
+}
+function fxParticle(kind,x,y,z,vx,vy,vz,life,col,grav){ // kind 0 = soft puff, 1 = spark
+  const P=G.fxP[kind],p=P[G.fxI[kind]];G.fxI[kind]=(G.fxI[kind]+1)%P.length;
+  Object.assign(p,{x,y,z,vx,vy,vz,life,max:life,grav:grav||0});C1.setHex(col);p.r=C1.r;p.g=C1.g;p.b=C1.b;
+}
+function fxRing(x,z,col,R,dur,y){
+  const r=G.rings.find(q=>q.t>=q.dur)||G.rings[0];
+  r.x=x;r.z=z;r.y=y??hAt(x,z)+3;r.R=R;r.t=0;r.dur=dur;r.m.material.color.setHex(col);r.m.visible=true;
+}
+function fxEvent(ev){ // called by emit(): mark the place and start the scene
+  if(!ev.pos||!G.fxList)return;
+  let kind=ev.opts&&ev.opts.fx;if(!kind)for(const[re,k]of FXRULES)if(re.test(ev.text)){kind=k;break;}
+  const x=ev.pos.x,z=ev.pos.z,col=FXCOL[ev.cat]||0xe8dcc0;
+  fxRing(x,z,col,70+ev.pri*18,3.2);if(ev.pri>=6)setTimeout(()=>fxRing(x,z,col,50+ev.pri*14,2.6),500);
+  if(kind&&G.fxList.length<40)G.fxList.push({kind,x,z,t:0,dur:{feast:14,mourning:12,battle:10,raid:9,clearing:16,founding:8,flood:9,quake:4,plague:10,famine:10,riot:10,fire:4,siege:6,survey:5}[kind]||6});
+}
+function fxNear(x,z){return dist2d(camera.position.x,camera.position.z,x,z)<4200;}
+function fxScene(e,dt,now){ // one running vignette
+  const x=e.x,z=e.z,y=hAt(x,z),R=Math.random,k=e.t/e.dur;
+  const s=W.settlements.reduce((b,o)=>dist2d(o.pos.x,o.pos.z,x,z)<dist2d(b.pos.x,b.pos.z,x,z)?o:b);
+  const tower=s.buildings.find(b=>b.arch==='temple')||s.buildings[0]||{x,z,y,h:10};
+  switch(e.kind){
+    case 'feast':case 'founding':
+      if(R()<dt*40)fxParticle(1,x+(R()-0.5)*50,y+18+R()*10,z+(R()-0.5)*50,(R()-0.5)*6,4+R()*6,(R()-0.5)*6,2.5,[0xe8c247,0xc0392b,0x3a78c0,0xf2efe6,0x4f9a4a][R()*5|0],-4); // pennants and petals tossed up
+      if(e.kind==='feast'){if(R()<dt*14)fxParticle(1,x+(R()-0.5)*4,y+2,z+(R()-0.5)*4,0,6+R()*4,0,0.9,0xff9a30); if(R()<dt*4)fxParticle(0,x,y+8,z,0,5,0,4,0x9a9a9a);} // the bonfire
+      if(R()<dt*0.9)fxRing(tower.x,tower.z,0xe8c247,60,2.2,(tower.y||y)+tower.h*1.4); // the bells
+      break;
+    case 'mourning':
+      if(R()<dt*0.45)fxRing(tower.x,tower.z,0x2a2630,80,3.4,(tower.y||y)+tower.h*1.4); // the passing bell, slow
+      if(R()<dt*3)fxParticle(0,x+(R()-0.5)*20,y+6,z+(R()-0.5)*20,0,2,0,6,0x3a3440);
+      break;
+    case 'battle':
+      if(R()<dt*30)fxParticle(0,x+(R()-0.5)*140,y+3,z+(R()-0.5)*90,(R()-0.5)*4,2+R()*3,(R()-0.5)*4,5,0xd8ccae); // dust of the charge
+      if(R()<dt*12)fxParticle(1,x+(R()-0.5)*120,y+4,z-60,(R()-0.5)*6,28,55,2.1,0x2a2520,-26);           // arrow volleys
+      if(R()<dt*4)fxParticle(0,x+(R()-0.5)*100,y+8,z+(R()-0.5)*80,0,4,0,7,0x8a847a);
+      break;
+    case 'raid':
+      if(R()<dt*10)fxParticle(0,x+(R()-0.5)*16,y+4,z+(R()-0.5)*16,0,5+R()*3,0,6,0x3c3834);
+      if(R()<dt*8)fxParticle(1,x+(R()-0.5)*8,y+1,z+(R()-0.5)*8,0,5,0,0.7,0xff8a30);
+      break;
+    case 'clearing': // stumps burning in the new assart
+      for(let j=0;j<3;j++)if(R()<dt*3){const a=R()*6.28,r=R()*60,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r,py=hAt(px,pz);
+        fxParticle(0,px,py+2,pz,0,3+R()*2,0,7,0x8a8a8a);fxParticle(1,px,py+1,pz,0,3,0,0.6,0xff7a20);}
+      break;
+    case 'flood':
+      if(R()<dt*40){const a=R()*6.28,r=40+R()*140;fxParticle(1,x+Math.cos(a)*r,y+1,z+Math.sin(a)*r,0,5+R()*4,0,1.1,0xcfe3ef,-14);}
+      if(R()<dt*1.2)fxRing(x,z,0x5b8ea8,120+R()*100,2.5);
+      break;
+    case 'quake':
+      if(R()<dt*60){const b=s.buildings[R()*s.buildings.length|0];if(b)fxParticle(0,b.x,b.y+2,b.z,(R()-0.5)*4,3,(R()-0.5)*4,3.5,0xb0a58e);}
+      break;
+    case 'plague': if(R()<dt*10)fxParticle(0,x+(R()-0.5)*120,y+5,z+(R()-0.5)*120,0.5,0.8,0.3,7,0x7d8a5a);break;
+    case 'famine': if(R()<dt*8)fxParticle(0,x+(R()-0.5)*140,y+3,z+(R()-0.5)*140,2,0.5,1,6,0xbfae80);break;
+    case 'riot': if(R()<dt*14){const a=R()*6.28,r=R()*70;fxParticle(1,x+Math.cos(a)*r,y+3,z+Math.sin(a)*r,(R()-0.5)*3,1.5,(R()-0.5)*3,1.4,0xff8a30);} if(R()<dt*3)fxParticle(0,x+(R()-0.5)*60,y+8,z+(R()-0.5)*60,0,4,0,5,0x5a3a30);break;
+    case 'siege': case 'survey': case 'fire': break;
+  }
+}
+function fxState(s,dt){ // lasting conditions show while they last
+  const x=s.pos.x,z=s.pos.z,y=s.pos.y,R=Math.random,N=Math.max(1,s.pop),rad=(s.extentR||s.radius||80);
+  if(s.festivalUntil>day()&&R()<dt*16)fxParticle(1,x+(R()-0.5)*rad,y+16+R()*8,z+(R()-0.5)*rad,(R()-0.5)*4,5,(R()-0.5)*4,2.2,[0xe8c247,0xc0392b,0x3a78c0,0xf2efe6][R()*4|0],-4);
+  if(s.infected>0&&R()<dt*30*clamp(s.infected/N*8,0.1,1)){const b=s.buildings[R()*s.buildings.length|0];if(b)fxParticle(0,b.x,b.y+b.h+2,b.z,0.6,0.6,0.4,8,0x7a8558);}
+  if(s.siegeBy&&R()<dt*10){const a=R()*6.28,r=(s.wallR||rad)+90+R()*60,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r,py=hAt(px,pz); // the besiegers' campfires
+    fxParticle(1,px,py+1,pz,0,3,0,0.8,0xff8a30);if(R()<0.4)fxParticle(0,px,py+4,pz,0,3,0,6,0x6a6660);}
+  if(s.unrest>65&&R()<dt*10*(s.unrest-60)/40){const b=s.buildings[R()*s.buildings.length|0];if(b)fxParticle(1,b.x+(R()-0.5)*14,b.y+2.5,b.z+(R()-0.5)*14,(R()-0.5)*4,0.5,(R()-0.5)*4,1.6,0xff8a30);} // torches in the streets
+  if((s.hunger||0)>0.3&&R()<dt*4)fxParticle(0,x+(R()-0.5)*rad*2,y+3,z+(R()-0.5)*rad*2,1.5,0.4,1,6,0xbfae80);
+}
+function updateFx(dt,now){
+  if(!G.fxList)return;
+  const live=speedIdx>0?1:0.25; // a paused world still breathes, slowly
+  for(let i=G.fxList.length-1;i>=0;i--){const e=G.fxList[i];e.t+=dt*live;if(e.t>=e.dur){G.fxList.splice(i,1);continue;}if(fxNear(e.x,e.z))fxScene(e,dt,now);}
+  for(const s of W.settlements)if(fxNear(s.pos.x,s.pos.z))fxState(s,dt*live);
+  for(let k=0;k<2;k++){
+    const pts=k?G.fxSpark:G.fxPuff,pos=pts.geometry.attributes.position,col=pts.geometry.attributes.color;
+    G.fxP[k].forEach((p,i)=>{
+      if(p.life>0){p.life-=dt;p.vy+=p.grav*dt;p.x+=p.vx*dt+(k?0:Math.cos(W.weather.wind)*dt*2);p.y+=p.vy*dt;p.z+=p.vz*dt+(k?0:Math.sin(W.weather.wind)*dt*2);
+        const f=clamp(p.life/p.max*2,0,1);pos.setXYZ(i,p.x,p.y,p.z);col.setXYZ(i,p.r*f,p.g*f,p.b*f);}
+      else pos.setXYZ(i,0,-999,0);
+    });
+    pos.needsUpdate=col.needsUpdate=true;
+  }
+  const zs=clamp(cam.cur.dist/320,1,4.5);G.fxPuff.material.size=16*zs;G.fxSpark.material.size=4.5*zs; // legible from altitude
+  const sc=clamp(cam.cur.dist/900,0.6,3);
+  for(const r of G.rings){if(r.t>=r.dur){r.m.visible=false;continue;}
+    r.t+=dt;const f=clamp(r.t/r.dur,0,1),e=1-(1-f)*(1-f);
+    r.m.position.set(r.x,r.y,r.z);r.m.scale.setScalar(Math.max(1,r.R*e*sc));r.m.material.opacity=0.75*(1-f);}
+}
+
 function buildParticles(){
   G.smoke=makePoints(400,11,0x9aa0a8,0.45);scene.add(G.smoke);G.smokeData=[];
   for(let i=0;i<400;i++)G.smokeData.push({life:0,x:0,y:-999,z:0,vy:0});
@@ -3303,7 +3540,7 @@ function initInput(){
     if(e.ctrlKey||e.metaKey||e.altKey)return; // Ctrl+C copies text; it must not toggle watch mode
     switch(e.key){
       case ' ':e.preventDefault();sovPausedFrom=0;setSpeed(speedIdx===0?lastSpeed||2:0);break;
-      case '1':setSpeed(1);break;case '2':setSpeed(2);break;case '3':setSpeed(3);break;case '4':setSpeed(4);break;
+      case '1':setSpeed(1);break;case '2':setSpeed(2);break;case '3':setSpeed(3);break;case '4':setSpeed(4);break;case '5':setSpeed(5);break;
       case 'h':case 'H':document.body.classList.toggle('hideui');break;
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
@@ -3339,7 +3576,7 @@ function onClick(e){
   // raycasting ignores .visible, so hidden things (a dragon that flew off) must be filtered out here
   const targets=[...G.pickS,...G.cairns,...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),G.bodies];
   if(G.dragonMesh.visible)targets.push(G.dragonMesh);
-  for(const c of W.caravans)if(c.proxy)targets.push(c.proxy);
+  for(const t of G.traffic||[])if(t.proxy)targets.push(t.proxy);
   const hits=raycaster.intersectObjects(targets,true);
   // the invisible settlement pick-spheres enclose the town, so they'd swallow every click on a
   // building, host or caravan inside it: prefer the specific thing, fall back to the settlement
@@ -3660,6 +3897,7 @@ function tickEconomy(){
       }
     }
   }
+  for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);}
   // arrivals
   for(let i=W.caravans.length-1;i>=0;i--){
     const c=W.caravans[i];
@@ -4725,6 +4963,7 @@ function emit(cat,pri,pos,text,opts){
   const ev={day:day(),cat,pri,pos:pos?{x:pos.x,z:pos.z}:null,text,opts:opts||{}};
   chronicleAdd(ev);
   director.push(ev);
+  fxEvent(ev);
   return ev;
 }
 function chronicleAdd(ev){
@@ -5796,6 +6035,7 @@ function animateWorld(dt,now){
     });
     fp.needsUpdate=true;
   }
+  updateFx(dt,now);
   /* --- comet --- */
   if(W.comet&&simDay<W.comet.start+12){
     const f=(simDay-W.comet.start)/12;
@@ -5804,27 +6044,30 @@ function animateWorld(dt,now){
     G.comet.position.set(camera.position.x-Math.cos(a)*9000,3000+Math.sin(a)*4000,camera.position.z-7000+f*3000);
     G.comet.lookAt(G.comet.position.x+1000,G.comet.position.y+400,G.comet.position.z);
   }else G.comet.visible=false;
-  /* --- caravans & cogs --- */
+  /* --- traffic: carts, barges and cogs on their own clock --- */
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
-  const showDots=cam.cur.dist>900;
-  for(const c of W.caravans){
-    const f=(simDay-c.departDay)/Math.max(0.01,c.arriveDay-c.departDay);
-    const p=polyPos(c.poly,f);
+  const showDots=cam.cur.dist>900,vm=[0,1,1.5,2.5,4,8][speedIdx]||0,T=G.traffic||[];
+  for(let i=T.length-1;i>=0;i--){const t=T[i];t.d+=t.spd*vm*dt;
+    if(t.d>=t.len||t.cons.robbed){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
+  for(const t of T){
+    if(t.d<0)continue; // still loading at the gate
+    const c=t.info,p=polyPos(t.poly,t.d/t.len);
     if(!p)continue;
     const y=c.sea?SEA+1:(c.river?hAt(p.x,p.z)+1.2:hAt(p.x,p.z)+1.0); // road surface or water line
     c._rpos={x:p.x,y:y+8,z:p.z};
-    if(!c.proxy){
-      c.proxy=new THREE.Mesh(new THREE.SphereGeometry(16,6,5),new THREE.MeshBasicMaterial({visible:false}));
-      c.proxy.userData.pick={type:'caravan',c};scene.add(c.proxy);
+    if(!t.proxy){
+      t.proxy=new THREE.Mesh(new THREE.SphereGeometry(12,6,5),new THREE.MeshBasicMaterial({visible:false}));
+      t.proxy.userData.pick={type:'caravan',c};scene.add(t.proxy);
     }
-    c.proxy.position.set(p.x,y+6,p.z);
+    t.proxy.position.set(p.x,y+6,p.z);
     if(c.sea||c.river){
       const pool=c.sea?G.cogs:G.barges,k=c.sea?cogI++:bargeI++;
       if(k<pool.length){const g=pool[k];g.visible=true;g.position.set(p.x,y-0.3+Math.sin(now*1.3+k)*0.15,p.z);g.rotation.set(Math.sin(now*0.9+k)*0.03,-(p.dir||0),0);g.scale.setScalar(Math.min(unitScale,c.river?2:3));}
-    }else if(ci<48){
-      setInst(G.caravans,ci,p.x,y-0.9,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
-      setInst(G.cartCovers,ci,p.x,y-0.9,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
+    }else if(ci<TRAFFIC_CAP){
+      const bob=Math.abs(Math.sin(now*6+t.len+t.d*0.4))*0.12; // wheels on ruts
+      setInst(G.caravans,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
+      setInst(G.cartCovers,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
       G.cartCovers.setColorAt(ci,C1.setHex(CARGOCOL[c.good]||0xe6d8a8));ci++;
     }
     if(showDots&&dotI<G.caravanDots.length){
@@ -5976,9 +6219,9 @@ function animate(t){
   // advance simulation
   if(!Number.isFinite(simAccum))simAccum=0;
   simAccum+=dt*(SPEEDS[speedIdx]||0);
-  let ticks=0;
-  while(simAccum>=1&&ticks<40){simAccum-=1;simTick();ticks++;}
-  if(simAccum>45)simAccum=45; // don't spiral if a frame stalls
+  let ticks=0;const tb=performance.now();
+  while(simAccum>=1&&(ticks<40||performance.now()-tb<28)){simAccum-=1;simTick();ticks++;} // time-budgeted, so the fastest speed runs as fast as the machine allows
+  const cap=Math.max(45,(SPEEDS[speedIdx]||0)*0.25);if(simAccum>cap)simAccum=cap; // don't spiral if a frame stalls
   W.clock.frac=W.clock.frac||0;
   if(SPEEDS[speedIdx]>0)W.clock.frac=simAccum; // 0..1 within the current day
   // cinematic sun: a full day/night cycle every ~150 real seconds while running,
@@ -6010,7 +6253,7 @@ async function boot(){
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
   initGraphics();
-  buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildDynamic();
+  buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   simInit();
   initUI();initInput();
   // opening entries

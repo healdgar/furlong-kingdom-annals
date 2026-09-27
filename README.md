@@ -155,6 +155,22 @@ Acts are sealed while you rule; the crown's own levers take their place:
   likely usually happens but not always.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
+- Trade consignments run on the sim clock, but what you see is their traffic:
+  each sends out a small convoy of carts (one per unit of goods), barges or
+  cogs that travel at a walking pace in real time.
+- Events are marked where they happen: a ring in the colour of their kind and
+  a short scene (bells and confetti for a feast, a slow toll for a death,
+  dust and arrows for a battle, smoke over a robbed road, stump fires in an
+  assart, spray for a flood). Lasting states show while they last:
+  festivals, plague haze, besiegers' campfires, riot torches, famine dust.
+- Town walls are placed by a trade-off rather than a set shape: each house
+  left outside is a loss, each metre of wall a cost, a falling slope is
+  cheaper to wall and water cannot be walled. The cheapest closed line is
+  found by dynamic programming, so ribbons of houses along roads stay
+  outside the gates. Bastion ditches are wet only where a river, pond or
+  the sea can feed them.
+- Beyond the map the unknown lands fade into the haze and the sea runs on.
+- Speed ⏩ (key 5) reels through about a year a second to watch growth.
 - Sim tick = 1 day: Weather → Economy → Population → Politics → Military →
   Threats → Growth → Chronicle. Every positive feedback loop ships with a
   predator (big treasuries attract dragons and courtly waste; strong houses
