@@ -336,6 +336,13 @@ const ARCH={
 const TIERNAME=['hovel-built','timber-framed','stone-built'];
 
 let W=null;               // the world
+/* the age the annals open in: the Dark Ages (motte-and-bailey, timber and thatch, no town walls) or the High
+   Middle Ages; technology then arrives with the years: charters, framed houses, stone keeps, stone walls,
+   stone houses, bastions */
+let ERA_START=850;
+const AD=()=>((W&&W.startAD)||1250)+Math.max(0,year()-1);
+const tierCap=()=>AD()<1000?0:AD()<1200?1:2;
+const MOTTEH=9;
 let MOD=null;             // rate sliders (multipliers)
 
 /* ---------------- names & phonology ------------------------------------- */
@@ -435,7 +442,7 @@ function slopeAt(cx,cz){
 async function generateWorld(seed,progress){
   SEED=seed>>>0; RS=seedStreams(SEED);
   const n1=makeNoise(SEED^0xA53), n2=makeNoise(SEED^0x5EED), n3=makeNoise(SEED^0xF00D), nMoist=makeNoise(SEED^0xB0A);
-  W={seed:SEED,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
+  W={startAD:ERA_START,seed:SEED,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
      biome:new Uint8Array(GRID*GRID),moist:new Float32Array(GRID*GRID),
      settlements:[],roads:[],routes:{},houses:[],notables:[],armies:[],caravans:[],banditCamps:[],
      riverPaths:[],bridges:[],roadCells:new Uint8Array(GRID*GRID),treasury:2200,legitimacy:70,
@@ -609,9 +616,10 @@ async function generateWorld(seed,progress){
   while(townRoles.length<nTowns)townRoles.push(chance('gen',0.35)?'fort':'market');
   townRoles.length=nTowns;
   const vilRoles=['farm',coastal?'fishing':'timber','farm','mining','timber','farm'];
-  const wanted=[{kind:'capital',role:'seat',pop:2200+randi('gen',700),minD:0},
-    ...Array.from({length:nTowns},(_,k)=>({kind:'town',role:townRoles[k],pop:420+randi('gen',760),minD:850})),
-    ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k],pop:70+randi('gen',220),minD:520}))];
+  const PS=ERA_START<1000?0.35:1; // a thinly peopled land in the Dark Ages
+  const wanted=[{kind:'capital',role:'seat',pop:Math.round((2200+randi('gen',700))*PS),minD:0},
+    ...Array.from({length:nTowns},(_,k)=>({kind:'town',role:townRoles[k],pop:Math.round((420+randi('gen',760))*PS),minD:850})),
+    ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k],pop:Math.max(40,Math.round((70+randi('gen',220))*(PS*1.3))),minD:520}))];
   const roleScore=(role,c)=>{const f=c.f;switch(role){
     case 'seat':return c.s+Math.max(0,f.prom)*0.8+(f.riv?12:0)+f.farm*0.4;
     case 'port':case 'fishing':return f.sea?c.s+40:-1e9;
@@ -633,7 +641,7 @@ async function generateWorld(seed,progress){
         for(let dz=-3;dz<=3;dz++)for(let dx=-3;dx<=3;dx++)if(inB(c.cx+dx,c.cz+dz)){if(W.water[cIdx(c.cx+dx,c.cz+dz)]===1)sea=true;if(W.water[cIdx(c.cx+dx,c.cz+dz)]===2)riv=true;}
         W.settlements.push({
           name:placeName(),kind:w.kind,role:w.role,pos:{x,z,y:W.h[i]},cx:c.cx,cz:c.cz,pop:w.pop,
-          prosperity:50,unrest:8,walls:w.kind==='capital'?2:w.role==='fort'||w.role==='border'?2:(w.kind==='town'&&chance('gen',0.5)?1:0),
+          prosperity:50,unrest:8,walls:ERA_START<1000?0:w.kind==='capital'?2:w.role==='fort'||w.role==='border'?2:(w.kind==='town'&&chance('gen',0.5)?1:0),
           stores:{grain:w.pop*0.5,fish:sea?w.pop*0.3:8,timber:40,ore:10,tools:15,cloth:10,wine:8},
           harbor:sea,river:riv,owner:0,buildings:[],garrison:Math.round(w.pop*0.04),
           infected:0,recovered:0,plagueDead:0,fires:[],ruinCount:0,pyres:false,
@@ -981,8 +989,9 @@ function layoutSettlement(s){
   s.wallRad=null;s.wallKind=null;s.natDef=0;s.plazaR=0;s.coreR=Rmax;s.radius=80;s.wallR=80;
   const segH=makeHash(24),placed=makeHash(16);
   let curE=0;
-  const E=isCap?6:isTown?5:3;
-  const FRAC=isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
+  const era=AD(),early=era<1000,motteAge=era<1070; // what the builders of this age know how to build
+  const E=early?(isVil?2:3):isCap?6:isTown?5:3;
+  const FRAC=early?(E===2?[0.5,1]:[0.3,0.65,1]):isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
   const agoYears=e=>Math.round((E-e)*(isVil?70:55)/10)*10;
   let live=false;const hist=(e,t)=>s.history.push(live?{yr:year(),t}:{ago:agoYears(e),t}); // live entries are dated in the annals' own years
   const addSeg=(a,b,hw,st)=>{const o={a,b,hw,st,x:(a.x+b.x)/2,z:(a.z+b.z)/2};segH.add(o,dist2d(a.x,a.z,b.x,b.z)/2+hw+2);};
@@ -1006,6 +1015,7 @@ function layoutSettlement(s){
       if(nearStreet(c.x,c.z,0.8))return false;
       if(s.wallRad){const wd=wallSide(c.x,c.z);if(Math.abs(wd)<7)return false;if(s.bastions&&wd>0&&wd<70)return false;if(wd<0)inside++;else outside++;}
       if(s.citadel&&dist2d(c.x,c.z,s.citadel.x,s.citadel.z)<s.citadel.S*0.85)return false;
+      if(!soft&&s.bailey&&(dist2d(c.x,c.z,s.bailey.x,s.bailey.z)<s.bailey.r+4||dist2d(c.x,c.z,s.motte.x,s.motte.z)<s.motte.r+3))return false;
       for(const t of s.remnants)if(dist2d(c.x,c.z,t.x,t.z)<t.r+1)return false;
     }
     if(inside&&outside)return false;
@@ -1034,7 +1044,7 @@ function layoutSettlement(s){
   const roads=s.streets.filter(t=>t.kind==='road');
   /* a mill dam above the town: the river is held back to drive the mills, and the pond spreads into a lake
      (Hamburg's Alster was dammed so, c.1190) */
-  if(s.river&&!isVil&&rr()<(role==='crossing'?0.6:0.35)){
+  if(s.river&&!isVil&&rr()<(role==='crossing'?0.6:0.35)*(early?0.35:1)){
     let bst=null,bk=-1,bd=1e9;
     for(const rs of G.rivStrips)if(!rs.canal)rs.pts.forEach((q,k)=>{const d=dist2d(q.x,q.z,C.x,C.z);if(d<bd){bd=d;bst=rs;bk=k;}});
     if(bst&&bd<Rmax*0.6)for(let k=bk;k>8&&!s.lake;k--){
@@ -1072,7 +1082,7 @@ function layoutSettlement(s){
      the trading town was founded beside it, and the village stayed outside the first wall */
   // how the town began: grown about an older village (Göttingen), a Roman grid (Metz), founded in one
   // stroke as a planned market (Freiburg), or twin cores — a cathedral-burg and a merchants' waterfront (Hamburg)
-  const mode=isVil?'village':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown';
+  const mode=isVil?'village':early?'grown':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown';
   s.mode=mode;
   let oldVil=null;
   if(mode==='grown'&&(role==='market'||role==='crossing'||role==='seat')&&roads.length){
@@ -1146,7 +1156,7 @@ function layoutSettlement(s){
     s.baechle=true;
     foundLine='Founded in one stroke by the duke as a free market town: a broad market street where the market is held, crossed by a second road; back streets run parallel, the lots are all of a size, and clear runnels — Bächle — carry water along every street.';
   }
-  if(!isVil&&(role==='seat'||role==='fort')&&rr()<0.65){ // Freiburg's Schlossberg: the castle on the hill above the town
+  if(!isVil&&!motteAge&&(role==='seat'||role==='fort')&&rr()<0.65){ // Freiburg's Schlossberg: the castle on the hill above the town
     let best=null,bh=hAt(C.x,C.z)+16;
     for(let r=160;r<=460;r+=30)for(let a=0;a<32;a++){
       const ang=a/32*Math.PI*2,x=C.x+Math.cos(ang)*r,z=C.z+Math.sin(ang)*r,ci=toCell(x),cj=toCell(z);
@@ -1156,7 +1166,8 @@ function layoutSettlement(s){
       const f={x:best.x,z:best.z,w:13,d:13,rot:rr()*Math.PI};
       if(probe(f).every(q=>cellOK(q.x,q.z))){
         s.hillCastle={x:best.x,z:best.z,r:34};
-        s._hillKeep=place('keep',2,f,'keep',0.85,{inst:true,hill:true});
+        if(motteAge){f.w=f.d=8;s.hillCastle.timber=true;}
+        s._hillKeep=place('keep',motteAge?0:2,f,'keep',0.85,{inst:true,hill:true,motte:motteAge});
         const path=resample(smoothPath([{x:C.x,z:C.z},{x:lerp(C.x,best.x,0.5)+(rr()-0.5)*60,z:lerp(C.z,best.z,0.5)+(rr()-0.5)*60},{x:best.x,z:best.z}],3),8)
           .filter(q=>dist2d(q.x,q.z,best.x,best.z)>40&&dist2d(q.x,q.z,C.x,C.z)>30);
         if(path.length>3)addStreet(path,2.2,'lane',{straight:true,castlePath:true});
@@ -1170,7 +1181,17 @@ function layoutSettlement(s){
       const ang=a/24*Math.PI*2,x=C.x+Math.cos(ang)*rf,z=C.z+Math.sin(ang)*rf,f={x,z,w:13,d:13,rot:rr()*Math.PI};
       if(fits(f,3)&&hAt(x,z)>bh){bh=hAt(x,z);best=f;}
     }
-    if(best)keep=place('keep',2,best,'keep',0.85,{inst:true});
+    if(best&&motteAge){ // a motte: a heaped mound with a timber tower, and a palisaded bailey below it for the lord's hall
+      const dC=Math.max(1,dist2d(best.x,best.z,C.x,C.z)),bx=best.x+(C.x-best.x)/dC*46,bz=best.z+(C.z-best.z)/dC*46; // the bailey abuts the motte's ditch, on the side towards the village
+      s.motte={x:best.x,z:best.z,r:21};s.bailey={x:bx,z:bz,r:30};
+      keep=place('keep',0,{x:best.x,z:best.z,w:8,d:8,rot:best.rot},'keep',0.85,{inst:true,motte:true});
+      const ux=Math.cos(best.rot),uz=Math.sin(best.rot);
+      place('hall',0,{x:bx-uz*6,z:bz+ux*6,w:16,d:8,rot:-Math.atan2(uz,ux)},'keep',0.9,{inst:true,bailey:true});
+      place('longhouse',0,{x:bx+uz*10,z:bz-ux*10,w:12,d:6,rot:-Math.atan2(uz,ux)},'keep',1,{inst:true,bailey:true});
+      const track=resample([{x:bx+(C.x-bx)/dC*31,z:bz+(C.z-bz)/dC*31},{x:C.x,z:C.z}],8).filter(q=>dist2d(q.x,q.z,C.x,C.z)>12);
+      if(track.length>2)addStreet(track,2.2,'lane',{straight:true,castlePath:true});
+      if(!foundLine)foundLine=`Raised as a motte and bailey on the rise above ${roads.length>1?'the meeting of the roads':'the road'}: an earthen mound crowned by a timber tower, and a palisaded yard for the lord's hall. A hamlet gathered beneath it.`;
+    }else if(best)keep=place('keep',2,best,'keep',0.85,{inst:true});
     if(!foundLine)foundLine=keep?`Raised as a tower keep on the rise above ${roads.length>1?'the meeting of the roads':'the road'}; a hamlet gathered beneath its walls.`:'Founded as a crown hall where the roads meet.';
   }
   if(s.hillCastle)hist(0,'The lords built their castle on the hill above the town, where it could watch the roads for leagues.');
@@ -1250,7 +1271,7 @@ function layoutSettlement(s){
     if(oldVil)hist(1,foundLine.replace(/^Farms and an alehouse about a green where the roads meet/,'The market town was founded beside the old village, where the roads meet')+
       (oldVil?` The old village kept its own church, outside the town’s bounds.`:''));
     if(!church)church=aroundPlace('temple',isVil?1:2,isVil?0.7:0.85,isVil?0.65:0.8,'temple');
-    if(!isVil){aroundPlace('tavern',1,1,1,'market');aroundPlace('hall',2,1,1,'market');}
+    if(!isVil){aroundPlace('tavern',1,1,1,'market');if(era>=1150)aroundPlace('hall',2,1,1,'market');} // no guildhall before there are guilds
   };
   if(!oldVil)foundTown();
   if(s.lake){ // the mill at the dam
@@ -1289,10 +1310,11 @@ function layoutSettlement(s){
     return d<0.3?rpick(['house','shop','house','smithy']):rpick(['house','house','house','longhouse','granary']);
   };
   const tierFor=(c,e)=>{
-    if(burnAt(c.mx,c.mz))return isVil?1:2; // rebuilt in stone after the fire
+    const cap=era<1000?0:era<1200?1:2;
+    if(burnAt(c.mx,c.mz))return Math.min(cap,isVil?1:2); // rebuilt in stone after the fire
     let t=e<=1?1:0;if(!isVil&&c.d<Rmax*0.22)t=2;
     if(rr()<0.2)t=Math.max(0,t-1);
-    return isVil?Math.min(1,t):t;
+    return Math.min(cap,isVil?Math.min(1,t):t);
   };
   const gapFor=c=>isVil?4.5:(burnAt(c.mx,c.mz)?0.3:c.d<Rmax*0.25?0.35:c.d<Rmax*0.5?1:2.2);
   const keyOf=c=>(focus?dist2d(c.mx,c.mz,focus.x,focus.z):c.d)+c.j+(c.st.neu?-120:0)+(c.st.kind==='road'?-22:c.st.market?-30:c.st.kind==='quay'?-12:0)
@@ -1306,7 +1328,7 @@ function layoutSettlement(s){
       if(built>=target)break;
       let arch=archFor(c);const tier=tierFor(c,curE);
       // in a town, houses and shops on the main streets are burgher houses: gable to the street on a narrow, deep plot
-      const burg=!isVil&&!focus&&(arch==='house'||arch==='shop')&&(c.d<Rmax*0.55||c.st.kind==='road'||c.st.market||c.st.neu);
+      const burg=!isVil&&!focus&&era>=1100&&(arch==='house'||arch==='shop')&&(c.d<Rmax*0.55||c.st.kind==='road'||c.st.market||c.st.neu);
       let f,gap=gapFor(c),extra={st:c.st},hm=1;
       if(burg){
         arch='burgher';const depth=11+rr()*4,front=5.4+rr()*2.2+(tier===2?0.9:0),set=c.hw+0.7+depth/2,px=-c.uz*c.side,pz=c.ux*c.side;
@@ -1401,7 +1423,7 @@ function layoutSettlement(s){
       if(line.every(q=>buildable(q.x,q.z)&&!inPlace(q.x,q.z,2)&&(!s.wallRad||wallSide(q.x,q.z)<-8)))best=line;
     }
     if(best)addStreet(best,HW*0.95,'lane',{straight:true});
-    hist(e,`A great fire burned ${gone.length} houses${best?'; the district was rebuilt in stone along a new, straight street':'; it was rebuilt in stone'}.`);
+    const mat=AD()>=1150?'stone':'timber, as before';hist(e,`A great fire burned ${gone.length} houses${best?`; the district was rebuilt in ${mat} along a new, straight street`:`; it was rebuilt in ${mat}`}.`);
   };
   const siege=e=>{
     const out=liveB().filter(b=>!b.inst&&wallSide(b.x,b.z)>0&&wallSide(b.x,b.z)<70);
@@ -1485,12 +1507,12 @@ function layoutSettlement(s){
   for(let e=0;e<E;e++){
     curE=e;
     if(e===1&&oldVil){focus=null;foundTown();}
-    if(!isVil&&!neuDone&&e===Math.max(2,E-3)&&(role==='crossing'||isCap&&s.river))neustadt(e);
+    if(!isVil&&!neuDone&&era>=1150&&e===Math.max(2,E-3)&&(role==='crossing'||isCap&&s.river))neustadt(e);
     const target=Math.round(count*FRAC[e]),maxD=Rmax*(0.2+0.8*Math.pow((e+1)/E,0.8));
     fill(target,maxD);
     for(let t=0;t<8&&built<target;t++){if(!branch(isCap?6:isTown?4:2,false))break;fill(target,maxD);}
     if(!isVil&&e>=2){parish(e);backyards(e);}
-    if(!isVil&&!friaryDone&&s.wallRad&&e>wallAges[0])friary(e);
+    if(!isVil&&!friaryDone&&era>=1220&&s.wallRad&&e>wallAges[0])friary(e);
     if(e===1&&!isVil&&role==='crossing')hist(e,'The ford was bridged in stone.');
     if(e===1&&!isVil&&role==='market')hist(e,'Granted a charter for a weekly market; the green was paved as a market place.');
     if(wallAges.includes(e)){
@@ -1511,15 +1533,16 @@ function layoutSettlement(s){
     }
     if(e>=2&&!isVil&&rr()<(isCap?0.55:0.4))fire(e);
     if(s.wallRad&&e>wallAges[0]&&!isVil&&rr()<0.3)siege(e);
-    if(e===E-2&&keep)enlarge(keep,isCap?24:20,isCap?28:24,isCap?1.25:1.05,isCap?'The old tower keep was rebuilt as a great castle on the same ground.':'The keep was enlarged into a castle of stone.');
-    if(e===E-2&&isCap&&church)enlarge(church,church.w*1.45,church.d*1.5,1.35,'The parish church was pulled down and rebuilt on its own ground as a great minster.');
+    if(e===E-2&&keep&&!keep.motte)enlarge(keep,isCap?24:20,isCap?28:24,isCap?1.25:1.05,isCap?'The old tower keep was rebuilt as a great castle on the same ground.':'The keep was enlarged into a castle of stone.');
+    if(e===E-2&&isCap&&church&&!early)enlarge(church,church.w*1.45,church.d*1.5,1.35,'The parish church was pulled down and rebuilt on its own ground as a great minster.');
   }
   // lanes that nobody built on are not yet lanes: they wait for future growth
   for(const st of s.streets)if(st.kind==='lane'&&!st.straight&&liveB().filter(b=>b.st===st).length<2)st.hidden=true;
   // the town as it stands: older buildings in the heart have been rebuilt finer
-  for(const b of liveB())if(!isVil&&!b.inst&&b.epoch<=E-3&&dist2d(b.x,b.z,C.x,C.z)<Rmax*0.35&&b.tier<2){
+  for(const b of liveB())if(!isVil&&!early&&!b.inst&&b.epoch<=E-3&&dist2d(b.x,b.z,C.x,C.z)<Rmax*0.35&&b.tier<2){
     b.tier++;const a=ARCH[b.arch];b.h=a[2]*(0.8+b.tier*0.25);}
   for(const b of s.buildings)groundBuilding(b);
+  for(const b of s.buildings)if(b.motte||b.hill&&s.hillCastle&&s.hillCastle.timber){b.y+=MOTTEH;b.y0=b.y-0.3;b.onMound=true;}
   if(keep)s.keepPos={x:keep.x,z:keep.z,y:hAt(keep.x,keep.z)};
   s.extentR=extent(0.92);s.radius=s.extentR+30;
   if(!s.wallRad)s.wallR=s.extentR+20;
@@ -1555,17 +1578,21 @@ function layoutSettlement(s){
       live=true;curE=E;const first=!s.wallRad;
       if(s.wallRad){oldWallToStreet();hist(0,'The town had outgrown its walls; the old wall was pulled down and its line became a street, a few towers left standing.');
         if(s.villageOut){s.villageOut=false;hist(0,'The old village was at last taken within the walls.');}}
-      const bast=bastioned&&!first&&year()>40;
-      traceWall(s,bast?20:14);s.bastions=bast;s.walls=Math.max(s.walls+1,first?1:2);
+      const stone=AD()>=1150,bast=bastioned&&!first&&AD()>=1500;
+      traceWall(s,bast?20:14);s.bastions=bast;s.walls=stone?Math.max(2,s.walls+1):1;
       const cleared=clearWallLine(s);cleared.forEach(unplace);
       let gl=[];if(bast){gl=liveB().filter(b=>!b.inst&&wallSide(b.x,b.z)>0&&wallSide(b.x,b.z)<70);gl.forEach(unplace);}
-      hist(0,(first?'Walled':(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':'A new, wider wall was raised around the suburbs'))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for it`:'')+'.');
+      hist(0,(first?(s.walls===1?'A palisade and ditch were raised about the town':'Walled in stone'):(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':'A new, wider wall was raised around the suburbs'))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for it`:'')+'.');
       live=false;return true;},
     fire(at){live=true;curE=E;fire(at);live=false;},
     siege(){live=true;curE=E;siege(0);live=false;},
-    rebuildKeep(){if(!keep||keep.removed||s._keepRebuilt)return false;live=true;curE=E;s._keepRebuilt=true;
+    stoneWall(){if(s.walls!==1||!s.wallRad)return false;live=true;s.walls=2;hist(0,'The palisade was taken down and the town walled in stone on the same line.');live=false;return true;},
+    stoneBailey(){if(!s.bailey||s.baileyStone)return false;live=true;s.baileyStone=true;hist(0,'The bailey palisade was rebuilt as a curtain wall of stone, with towers.');live=false;return true;},
+    rebuildKeep(){if(keep&&keep.motte&&!keep.removed){if(AD()<1070)return false;live=true;keep.motte=false;keep.shell=true;keep.tier=2;keep.w=keep.d=11;updateBuildingInstance(keep);
+        hist(0,'The timber tower on the motte was replaced by a keep of stone.');live=false;return true;}
+      if(!keep||keep.removed||s._keepRebuilt||AD()<1150||s.motte)return false; // on a motte, the stone bailey is the castle's second stagelive=true;curE=E;s._keepRebuilt=true;
       enlarge(keep,isCap?24:20,isCap?28:24,isCap?1.25:1.05,'The old tower keep was rebuilt as a castle of stone on the same ground.');live=false;return true;},
-    rebuildChurch(){if(!church||church.removed||s._churchRebuilt)return false;live=true;curE=E;s._churchRebuilt=true;
+    rebuildChurch(){if(!church||church.removed||s._churchRebuilt||AD()<1000)return false;live=true;curE=E;s._churchRebuilt=true;
       enlarge(church,church.w*1.35,church.d*1.4,1.3,'The parish church was pulled down and rebuilt larger on its own ground.');live=false;return true;},
     promote(){ // a village granted a market becomes a town: it may now reach further, and build as townsfolk do
       live=true;curE=E;isVil=false;isTown=true;R0=Math.max(R0,310);Rmax=Math.max(Rmax,200);s.kind='town';
@@ -2182,6 +2209,7 @@ function buildBuildings(){
   G.det={};
   for(const[k,g,n]of[['box',box,cap],['cyl',cyl,800],['cone',cone,800],['pyr',pyr,600]]){
     const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),n);
+    for(let i=0;i<n;i++)m.setColorAt(i,C1.setHex(0xffffff)); // allocate colours at full size now: created lazily at count 0 (no cones yet in a Dark Ages realm) they render black
     m.castShadow=true;m.receiveShadow=true;m.frustumCulled=false;scene.add(m);G.det[k]=m;
   }
   rebuildDetails();
@@ -2209,6 +2237,7 @@ function updateBuildingInstance(b){
   else{col=PAL.tierWall[b.tier];roofCol=ROOFS[b.tier][Math.floor(hue*3)%3];
     if(b.arch==='temple'){col=0xd6ceba;roofCol=0x4f5866;}
     if(b.arch==='keep'||b.arch==='tower'){col=0x9a948a;roofCol=0x4f5866;}
+    if(b.motte){col=0x6e5334;roofCol=0x5a4630;}
     if(b.arch==='smithy')roofCol=0x5a5048;}
   const y0=b.y0??b.y-0.5;
   setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
@@ -2236,7 +2265,7 @@ function rebuildDetails(){
   for(const b of G.bldList){
     if(b.state!=='sound')continue;
     const h=b.h,hu=b.hue??0.5;
-    if(b.arch==='hall'){ // a ridge turret with a bell
+    if(b.arch==='hall'&&!b.bailey){ // a ridge turret with a bell
       const[x,z]=at(b,0,0);put('box',x,b.y+h+h*0.62*0.4,z,b.rot,2.6,h*0.62*0.6+3.5,2.6,0xd8cdb4);put('pyr',x,b.y+h+h*0.62+3.5,z,b.rot,3.6,4,3.6,0x4f5866);
     }else if(['house','longhouse','shop','tavern','smithy','burgher'].includes(b.arch)){
       const[x,z]=at(b,b.w*(hu>0.5?0.3:-0.3),b.d*0.16);
@@ -2246,11 +2275,13 @@ function rebuildDetails(){
       const tw=b.w*0.44,[x,z]=at(b,0,-b.d/2-tw*0.15),top=b.y+h*1.85;
       put('box',x,b.y0,z,b.rot,tw,top-b.y0,tw,0xd2cab6);
       put('pyr',x,top,z,b.rot,tw*1.35,h*1.25,tw*1.35,0x4f5866);
+    }else if(b.arch==='keep'&&b.motte){ // a timber tower: a steep shingled roof and a fighting gallery
+      const[x,z]=at(b,0,0);put('box',x,b.y+h*0.78,z,b.rot,b.w*1.25,1.2,b.d*1.25,0x5f4630);put('pyr',x,b.y+h,z,b.rot,b.w*1.3,h*0.55,b.d*1.3,0x4a3a2a);
     }else if(b.arch==='keep'){ // corner turrets with conical caps
       for(const[sx,sz]of[[1,1],[-1,1],[-1,-1],[1,-1]]){
-        const[x,z]=at(b,sx*b.w/2,sz*b.d/2),top=b.y+h*1.22;
-        put('cyl',x,b.y0,z,0,6.4,top-b.y0,6.4,0x958f85);
-        put('cone',x,top,z,0,7.6,6.5,7.6,0x4f5866);
+        const[x,z]=at(b,sx*b.w/2,sz*b.d/2),top=b.y+h*1.22,tw=Math.min(6.4,b.w*0.3); // turrets in proportion to the keep
+        put('cyl',x,b.y0,z,0,tw,top-b.y0,tw,0x958f85);
+        put('cone',x,top,z,0,tw*1.19,tw,tw*1.19,0x5a6474);
       }
       const[x,z]=at(b,0,0);put('box',x,b.y+h,z,b.rot,b.w*0.5,6,b.d*0.4,0x8f897f); // the donjon's upper stage
     }else if(b.arch==='granary'){
@@ -2323,7 +2354,15 @@ function rebuildWalls(){
     if(s.lake){const dm=s.lake.dam,px=-Math.sin(dm.a)*dm.w/2,pz=Math.cos(dm.a)*dm.w/2; // the mill dam
       prism([{x:dm.x+px-Math.cos(dm.a)*2.5,z:dm.z+pz-Math.sin(dm.a)*2.5},{x:dm.x+px+Math.cos(dm.a)*2.5,z:dm.z+pz+Math.sin(dm.a)*2.5},
         {x:dm.x-px+Math.cos(dm.a)*2.5,z:dm.z-pz+Math.sin(dm.a)*2.5},{x:dm.x-px-Math.cos(dm.a)*2.5,z:dm.z-pz-Math.sin(dm.a)*2.5}],s.lake.y+1,0x8f877a,0x9a917f);}
-    if(s.hillCastle)ring(s.hillCastle.x,s.hillCastle.z,s.hillCastle.r,14,7.5,true);
+    if(s.hillCastle)ring(s.hillCastle.x,s.hillCastle.z,s.hillCastle.r,14,s.hillCastle.timber&&!s.motteStone?4.5:7.5,!(s.hillCastle.timber&&!s.motteStone));
+    if(s.motte){ // the mound, its ditch, a palisade (or shell wall) round its top, and the bailey below
+      const m=s.motte,g=hAt(m.x,m.z),mg=new THREE.CylinderGeometry(9.5,m.r,MOTTEH+1.2,20,1);mg.translate(0,(MOTTEH+1.2)/2-1.2,0);
+      const mm=new THREE.Mesh(mg,new THREE.MeshLambertMaterial({color:0x6d7d44}));mm.position.set(m.x,g,m.z);mm.castShadow=mm.receiveShadow=true;grp.add(mm);
+      const dg=new THREE.RingGeometry(m.r,m.r+5,28);dg.rotateX(-Math.PI/2);const dm=new THREE.Mesh(dg,new THREE.MeshLambertMaterial({color:0x4d4a33,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));dm.position.set(m.x,g+0.3,m.z);grp.add(dm);
+      const tg=new THREE.CylinderGeometry(8.6,8.6,s.motteStone?4:2.6,20,1,true);tg.translate(0,(s.motteStone?4:2.6)/2,0); // a palisade, later a shell wall, round the top
+      const tm=new THREE.Mesh(tg,new THREE.MeshLambertMaterial({color:s.motteStone?0xa59c8d:0x6e5334,side:THREE.DoubleSide}));tm.position.set(m.x,g+MOTTEH,m.z);tm.castShadow=true;grp.add(tm);
+      if(s.bailey)ring(s.bailey.x,s.bailey.z,s.bailey.r,16,s.baileyStone?6:3.8,!!s.baileyStone);
+    }
     if(s.burgRing)ring(s.burgRing.x,s.burgRing.z,s.burgRing.r,14,4.5,false);
     if(s.citadel){ // a star citadel: a square of ramparts with a bastion at each corner
       const ct=s.citadel,ux=Math.cos(ct.rot),uz=Math.sin(ct.rot),vx=-uz,vz=ux,h=ct.S/2,cor=[];
@@ -3230,7 +3269,7 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
     const pool=s.growSlots.slice(0,24),k0=pool[0].key;
     const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0),1);
     s.growSlots.splice(s.growSlots.indexOf(c),1);
-    const arch=L.archFor(c),tier=Math.min(1,L.tierFor(c,99));
+    const arch=L.archFor(c),tier=Math.min(1,tierCap(),L.tierFor(c,99));
     const f=frontFoot(c,arch,tier,()=>rand('sim'));
     if(!L.fits(f,L.gapFor(c)))continue;
     const b=L.place(arch,tier,f,'residential');b.grown=day();
@@ -4204,7 +4243,7 @@ function carryingCap(s){ // souls the place can keep: the land it actually ploug
     else if(s.kind==='town')for(const o of W.settlements)if(o.kind==='village'&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1600)hinter+=o.pop*0.3;
     const market=((s.kind==='capital'?1200:s.kind==='town'?450:0)+hinter)*clamp(s.prosperity/60,0.4,1.4);
     // while there is still land to take in, the land is no limit: people clear more as they need it; once it is gone, it is
-    return Math.max(40,s.landShort?fed+market:Math.max(fed+market,s.pop*1.18));
+    return Math.max(40,s.landShort?fed+market:Math.max(fed+market,s.pop*1.35));
   }
   const base=s.kind==='capital'?3600:s.kind==='town'?1500:320;
   const land=clamp(0.55+(s.res.farm*MOD.harvest)/160+s.res.fish/45,0.5,1.45);
@@ -4221,7 +4260,8 @@ function tickPopulation(){
        a place fills up and settle it near 85% of capacity; towns bury more than villages (crowding,
        foul water); crowded villages send their young to the towns. Plague and famine still bite, but
        the realm now recovers from them instead of either dwindling or swelling without end. */
-    const K=Math.min(carryingCap(s),housing(s)*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
+    const room=housing(s)+(s.growSlots?s.growSlots.length:0)*HOUSEHOLD*0.6+s.buildings.filter(b=>b.state==='ruin'&&!b.deserted).length*HOUSEHOLD; // free lots and burned houses can be built again
+    const K=Math.min(carryingCap(s),room*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
     const pf=clamp(s.prosperity/60,0.6,1.25),x=s.pop/K;
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
     const dbase=s.kind==='capital'?0.032:s.kind==='town'?0.030:0.026;
@@ -4737,7 +4777,8 @@ function takeSettlement(a,s){
   const si=W.settlements.indexOf(s);
   const cmd=notableById(a.commander);
   const cruel=cmd&&cmd.traits.includes('cruel');
-  if(cruel||chance('sim',0.25)){
+  const feud=!inRebellion(a); // a lord taking a neighbour's town in a private war wants it whole; rebels and royal hosts are less careful
+  if(chance('sim',cruel?(feud?0.4:1):(feud?0.06:0.25))){
     s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;
     igniteFire(s,2,'sack');
     emit('war',9,s.pos,`${s.name} is taken and given over to sack! Smoke rises from the ${pick('sim',['market','temple quarter','granaries'])} and the chronicler weeps to record it.`);
@@ -5129,13 +5170,15 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     const L=s._lay;if(!L||!L.live||day()%360!==(si*47+90)%360)return;
     if(s.pop0===undefined)s.pop0=s.pop;
     const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
-    if(s.kind==='village'&&s.pop>420&&s.prosperity>50&&(roadsN>=2||s.river||s.harbor)&&chance('sim',0.4)){
+    if(s.kind==='village'&&AD()>=950&&s.pop>420&&s.prosperity>50&&(roadsN>=2||s.river||s.harbor)&&chance('sim',0.4)){
       L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}
     else if(s.kind!=='village'&&!s.wallRad&&s.pop>850&&s.prosperity>48&&chance('sim',0.3)){
       L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
     else if(s.wallRad&&s.kind!=='village'&&outsideFrac(s)>0.45&&s.pop>(s._wallPop||s.pop0)*1.4&&year()-(s._wallYr||-99)>=45&&s.prosperity>52&&!s.siegeBy&&chance('sim',0.3)){ // walls are dear: a generation or two between circuits
       L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`${s.name} has outgrown its walls: a new circuit is raised about the suburbs, and the old wall becomes a street.`;}
-    else if(s.prosperity>68&&s.pop>s.pop0*1.4&&chance('sim',0.25)&&L.live.rebuildKeep())did=`The keep of ${s.name} is rebuilt as a castle of stone.`;
+    else if(s.walls===1&&AD()>=1150&&s.prosperity>55&&s.pop>600&&chance('sim',0.25)&&L.live.stoneWall())did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
+    else if(s.bailey&&!s.baileyStone&&AD()>=1150&&s.prosperity>55&&chance('sim',0.2)&&L.live.stoneBailey())did=`The bailey at ${s.name} is walled in stone.`;
+    else if(s.prosperity>(s.motte&&!s.motteStone?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=`The keep of ${s.name} is rebuilt in stone.`;}
     else if(s.kind!=='village'&&s.prosperity>65&&s.pop>s.pop0*1.6&&chance('sim',0.2)&&L.live.rebuildChurch())did=`The church of ${s.name} is pulled down and rebuilt larger, its new tower visible for leagues.`;
     if(did){syncLive(s);emit('trade',6,s.pos,did);}
     else if(s.growSlots&&s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}
@@ -5153,7 +5196,7 @@ function tickGrowth(){
       for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b)got++;
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,`${s.name} grows: new roofs rise in the ${b.district} quarter.`);}
       if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
-        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.tier<2).map(o=>[o,dist2d(o.x,o.z,s.pos.x,s.pos.z)]).sort((x,y)=>x[1]-y[1]).slice(0,30);
+        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.tier<Math.max(1,tierCap())).map(o=>[o,dist2d(o.x,o.z,s.pos.x,s.pos.z)]).sort((x,y)=>x[1]-y[1]).slice(0,30);
         const pk=wpick(low,x=>-x[1]/120+(x[0].arch==='burgher'||x[0].arch==='shop'?0.5:0),1),b=pk&&pk[0];
         if(b){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);
           if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}
@@ -5165,7 +5208,8 @@ function tickGrowth(){
     }
     // prosperity slowly rebuilds in better material
     if(s.prosperity>62&&!s.siegeBy&&chance('sim',0.25)){
-      const ups=s.buildings.filter(b=>b.state==='sound'&&b.tier<2&&b.arch!=='wall');
+      const core=(s.extentR||s.radius||100)*0.4;
+      const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)); // stone for the rich heart of a town; the rest stays timber
       if(ups.length){
         const b=pick('sim',ups);
         b.tier++;
@@ -5914,6 +5958,7 @@ function buildDrawer(tab){
   }else if(tab==='world'){
     body.innerHTML=`
       <div class="wrow">Seed<br><input type="text" id="seedin" value="${SEED}"></div>
+      <div class="wrow">The annals open in<br><select id="erain"><option value="dark"${W.startAD<1000?' selected':''}>the Dark Ages (c. AD 850): motte and bailey, timber and thatch</option><option value="high"${W.startAD>=1000?' selected':''}>the High Middle Ages (c. AD 1250): walled towns and stone castles</option></select></div>
       <button class="wbtn" id="btnreforge">Reforge the realm</button>
       <button class="wbtn" id="btnmap">Parchment map (M)</button>
       <button class="wbtn" id="btndaycycle">Day/night cycle: ${dayCycleOn?'On':'Off'}</button>
@@ -5923,7 +5968,7 @@ function buildDrawer(tab){
       <div class="dhead">Line of Succession</div><div id="succpanel"></div>`;
     document.getElementById('btnreforge').addEventListener('click',()=>{
       const v=parseInt(document.getElementById('seedin').value,10);
-      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0);
+      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&e='+document.getElementById('erain').value;
       location.reload();
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
@@ -6000,7 +6045,7 @@ function initUI(){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   });
   document.getElementById('btnshare').addEventListener('click',()=>{
-    const url=location.href.split('#')[0]+'#s='+SEED; // (origin is "null" on file://)
+    const url=location.href.split('#')[0]+'#s='+SEED+'&e='+(W.startAD<1000?'dark':'high'); // (origin is "null" on file://)
     (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
       ()=>{document.getElementById('btnshare').textContent='Copied!';setTimeout(()=>document.getElementById('btnshare').textContent='Copy share link',1400);},
       ()=>prompt('Share this realm:',url));
@@ -6212,7 +6257,7 @@ function toggleMap(){
   document.body.appendChild(el);
 }
 function updateHUD(){
-  document.getElementById('datechip').textContent=SEASONGLYPH[seasonIdx()]+' '+dateStr();
+  document.getElementById('datechip').textContent=SEASONGLYPH[seasonIdx()]+' '+dateStr()+' · AD '+AD();
   document.getElementById('watchdate').textContent=dateStr();
   const wx={clear:'☀',overcast:'☁',rain:'🌧',storm:'⛈',snow:'❄'};
   document.getElementById('wxchip').textContent=(wx[W.weather.state]||'☀')+(W.drought?' drought':'')+(W.plagueActive?' ☠':'');
@@ -6585,6 +6630,7 @@ function animate(t){
   renderer.render(scene,camera);
 }
 async function boot(){
+  const em=location.hash.match(/e=(dark|high)/);ERA_START=em&&em[1]==='high'?1250:850;
   const m=location.hash.match(/s=(\d+)/);
   const seed=m?parseInt(m[1],10)>>>0:Math.floor(Math.random()*1e9);
   if(!m)history.replaceState(null,'','#s='+seed);
