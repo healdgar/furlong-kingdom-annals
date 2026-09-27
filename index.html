@@ -271,7 +271,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 <div id="beat"><div class="bt" id="beattext"></div><div class="bd" id="beatdate"></div></div>
 <div id="placehint">Click the map to place — Esc to cancel</div>
 <div id="petition"></div>
-<div id="hint">drag orbit · right-drag pan · scroll zoom · click to inspect · Space pause · 1–4 speed · R rule · M map · C watch · H hide UI</div>
+<div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · 1–4 speed · R rule · M map · C watch · H hide UI</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -675,6 +675,32 @@ async function generateWorld(seed,progress){
 }
 
 /* ---------------- roads: A* over slope/water cost field ------------------ */
+function seaRoute(ai,bi){ // cogs keep to the water: a search over sea cells from harbour to harbour (they used to sail straight over the land)
+  W.seaRoutes=W.seaRoutes||{};const key=Math.min(ai,bi)+'_'+Math.max(ai,bi);
+  if(key in W.seaRoutes){const r=W.seaRoutes[key];return r&&ai>bi?{poly:[...r.poly].reverse(),len:r.len}:r;}
+  const seaCell=s=>{if(s.seaCell!==undefined)return s.seaCell;let best=-1,bd=1e9;
+    for(let dz=-30;dz<=30;dz++)for(let dx=-30;dx<=30;dx++){const cx=s.cx+dx,cz=s.cz+dz;if(!inB(cx,cz))continue;const c=cIdx(cx,cz);
+      if(W.water[c]!==1)continue;let open=0;for(const[ex,ez]of[[1,0],[-1,0],[0,1],[0,-1]])if(inB(cx+ex,cz+ez)&&W.water[cIdx(cx+ex,cz+ez)]===1)open++;
+      const d=dx*dx+dz*dz;if(open===4&&d<bd){bd=d;best=c;}}
+    return s.seaCell=best;};
+  const A=W.settlements[Math.min(ai,bi)],Bs=W.settlements[Math.max(ai,bi)],sa=seaCell(A),sb=seaCell(Bs);
+  if(sa<0||sb<0){W.seaRoutes[key]=null;return null;}
+  const N=GRID*GRID,g=new Float32Array(N).fill(Infinity),from=new Int32Array(N).fill(-1),heap=[];
+  const push=(f,i)=>{heap.push([f,i]);let k=heap.length-1;while(k>0){const q=(k-1)>>1;if(heap[q][0]<=heap[k][0])break;[heap[q],heap[k]]=[heap[k],heap[q]];k=q;}};
+  const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let k=0;for(;;){const l=k*2+1,r=l+1;let m=k;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===k)break;[heap[m],heap[k]]=[heap[k],heap[m]];k=m;}}return top;};
+  const tx=sb%GRID,tz=(sb/GRID)|0,hx=i=>Math.hypot(i%GRID-tx,((i/GRID)|0)-tz);
+  g[sa]=0;push(hx(sa),sa);
+  while(heap.length){const[,c]=pop();if(c===sb)break;const cx=c%GRID,cz=(c/GRID)|0;
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz)continue;const nx=cx+dx,nz=cz+dz;if(!inB(nx,nz))continue;const n=cIdx(nx,nz);
+      if(W.water[n]!==1)continue;const shore=W.h[n]>SEA-4?1.5:1; // keep off the shallows
+      const ng=g[c]+(dx&&dz?1.414:1)*shore;if(ng<g[n]){g[n]=ng;from[n]=c;push(ng+hx(n),n);}}}
+  if(from[sb]<0){W.seaRoutes[key]=null;return null;}
+  const cells=[];for(let c=sb;c>=0;c=from[c]){cells.push(c);if(c===sa)break;}cells.reverse();
+  const pts=smoothPath(resample(cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)})),30),3);
+  const poly=[{x:A.pos.x,z:A.pos.z},...pts,{x:Bs.pos.x,z:Bs.pos.z}];
+  const r=W.seaRoutes[key]={poly,len:polyLen(poly)};
+  return ai>bi?{poly:[...poly].reverse(),len:r.len}:r;
+}
 function roadCost(a,b){ // between neighboring cells
     const dh=Math.abs(W.h[a]-W.h[b])/CELL;
     let c=1+dh*dh*46;
@@ -3649,9 +3675,9 @@ function fxState(s,dt){ // lasting conditions show while they last
 function updateFx(dt,now){
   if(G.land&&G.land.uni)W.houses.forEach((h,i)=>{if(i<11)G.land.uni.uHouse.value[i+1].setHex(h.sigilHue[0]);});
   if(!G.fxList)return;
-  const live=speedIdx>0?1:0.25; // a paused world still breathes, slowly
+  const pace=SPEEDS[speedIdx]||0,live=speedIdx>0?Math.max(1,pace/2):0.25; // scenes last in game time: full length at ▶▶, a moment at ⏩ (a yearly feast used to run into the next one)
   for(let i=G.fxList.length-1;i>=0;i--){const e=G.fxList[i];e.t+=dt*live;if(e.t>=e.dur){G.fxList.splice(i,1);continue;}if(fxNear(e.x,e.z))fxScene(e,dt,now);}
-  for(const s of W.settlements)if(fxNear(s.pos.x,s.pos.z))fxState(s,dt*live);
+  for(const s of W.settlements)if(fxNear(s.pos.x,s.pos.z))fxState(s,dt*(speedIdx>0?1:0.25)); // lasting states spawn at a steady real-time rate whatever the pace
   for(let k=0;k<2;k++){
     const pts=k?G.fxSpark:G.fxPuff,pos=pts.geometry.attributes.position,col=pts.geometry.attributes.color;
     G.fxP[k].forEach((p,i)=>{
@@ -3664,7 +3690,7 @@ function updateFx(dt,now){
   const zs=clamp(cam.cur.dist/320,1,4.5);G.fxPuff.material.size=16*zs;G.fxSpark.material.size=4.5*zs; // legible from altitude
   const sc=clamp(cam.cur.dist/900,0.6,3);
   for(const r of G.rings){if(r.t>=r.dur){r.m.visible=false;continue;}
-    r.t+=dt;const f=clamp(r.t/r.dur,0,1),e=1-(1-f)*(1-f);
+    r.t+=dt*(speedIdx>0?Math.max(1,(SPEEDS[speedIdx]||0)/2):1);const f=clamp(r.t/r.dur,0,1),e=1-(1-f)*(1-f);
     r.m.position.set(r.x,r.y,r.z);r.m.scale.setScalar(Math.max(1,r.R*e*sc));r.m.material.opacity=0.75*(1-f);}
 }
 
@@ -3809,17 +3835,37 @@ function markManual(){cam.manualUntil=perfNow()+30;if(cam.mode==='director')cam.
 function perfNow(){return performance.now()/1000;}
 function initInput(){
   const el=renderer.domElement;
+  /* map controls: left-drag grabs the ground (the point under the cursor stays under it), right-drag or
+     shift-drag rotates and tilts, the wheel zooms toward the cursor, a trackpad's two-finger swipe pans and its
+     pinch zooms; one finger pans and two pinch on a touch screen. (Left-drag used to orbit, and the pan eased
+     after the cursor through the camera smoothing, so the map slid instead of following the hand.) */
   let drag=null;
-  const touches=new Map();let pinch=null; // two-finger pinch zooms
+  const touches=new Map();let pinch=null;
+  const clampFocus=()=>{cam.focus.x=clamp(cam.focus.x,-SIZE*0.7,SIZE*0.7);cam.focus.z=clamp(cam.focus.z,-SIZE*0.7,SIZE*0.7);cam.focus.y=hAt(cam.focus.x,cam.focus.z);};
+  const rayAt=(cx,cy,planeY)=>{ // where the view ray through a screen point meets a level plane
+    const m=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);raycaster.setFromCamera(m,camera);
+    const o=raycaster.ray.origin,d=raycaster.ray.direction;if(d.y>-0.02)return null;
+    const t=(planeY-o.y)/d.y;return t>0?{x:o.x+d.x*t,z:o.z+d.z*t}:null;};
+  const syncCam=()=>{cam.cur.focus.copy(cam.focus);updateCamera(0,perfNow());camera.updateMatrixWorld();}; // direct manipulation: no easing while the hand is on the map
+  const grabStart=(cx,cy)=>{const hit=(()=>{const m=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);raycaster.setFromCamera(m,camera);return raycaster.intersectObject(G.terrain)[0];})();
+    return {y:hit?hit.point.y:cam.cur.focus.y};};
+  const grabMove=(g,x0,y0,x1,y1)=>{const a=rayAt(x0,y0,g.y),b=rayAt(x1,y1,g.y);if(!a||!b)return;
+    cam.focus.x+=a.x-b.x;cam.focus.z+=a.z-b.z;clampFocus();cam.follow=null;syncCam();};
+  const zoomAt=(cx,cy,f)=>{ // zoom toward the point under the cursor
+    const g=grabStart(cx,cy),a=rayAt(cx,cy,g.y);
+    cam.dist=clamp(cam.dist*f,6,4200);
+    if(a){const k=1-f;cam.focus.x+=(a.x-cam.focus.x)*clamp(k,-1,0.9)*0.9;cam.focus.z+=(a.z-cam.focus.z)*clamp(k,-1,0.9)*0.9;clampFocus();}
+  };
   el.addEventListener('contextmenu',e=>e.preventDefault());
   el.addEventListener('pointerdown',e=>{
     touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    el.setPointerCapture(e.pointerId);
     if(touches.size===2){
       const[a,b]=[...touches.values()];
-      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist};drag=null;return;
+      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist,ang:Math.atan2(b.y-a.y,b.x-a.x),yaw:cam.yaw};drag=null;return;
     }
-    drag={x:e.clientX,y:e.clientY,b:e.button,moved:false,shift:e.shiftKey};
-    el.setPointerCapture(e.pointerId);
+    const rotate=e.button===2||e.button===1||e.shiftKey||e.altKey;
+    drag={x:e.clientX,y:e.clientY,b:e.button,moved:false,rotate,g:rotate?null:grabStart(e.clientX,e.clientY)};
   });
   el.addEventListener('pointermove',e=>{
     if(touches.has(e.pointerId))touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -3827,26 +3873,18 @@ function initInput(){
       const[a,b]=[...touches.values()];
       markManual();
       cam.dist=clamp(pinch.dist*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),6,4200);
+      cam.yaw=pinch.yaw-(Math.atan2(b.y-a.y,b.x-a.x)-pinch.ang); // twist to turn
       return;
     }
     if(!drag)return;
     const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
-    if(Math.abs(dx)+Math.abs(dy)>4)drag.moved=true;
-    if(!drag.moved)return;
-    markManual();
-    if(drag.b===0&&!drag.shift){ // orbit
+    if(!drag.moved&&Math.abs(dx)+Math.abs(dy)<=4)return;
+    if(!drag.moved){drag.moved=true;markManual();cam.follow=null;}
+    else markManual();
+    if(drag.rotate){ // turn and tilt
       cam.yaw+=dx*0.006;
       cam.pitchBias=clamp(cam.pitchBias-dy*0.003,-0.6,0.5);
-    }else{ // pan
-      const sc=cam.cur.dist*0.0016;
-      const cy=Math.cos(cam.cur.yaw),sy=Math.sin(cam.cur.yaw);
-      cam.focus.x+=(dx*sy-dy*cy)*sc*-1;
-      cam.focus.z+=(-dx*cy-dy*sy)*sc*-1;
-      cam.focus.x=clamp(cam.focus.x,-SIZE*0.7,SIZE*0.7);
-      cam.focus.z=clamp(cam.focus.z,-SIZE*0.7,SIZE*0.7);
-      cam.focus.y=hAt(cam.focus.x,cam.focus.z);
-      cam.follow=null;
-    }
+    }else grabMove(drag.g,drag.x,drag.y,e.clientX,e.clientY);
     drag.x=e.clientX;drag.y=e.clientY;
   });
   const endPtr=e=>{touches.delete(e.pointerId);if(touches.size<2)pinch=null;drag=null;};
@@ -3857,7 +3895,12 @@ function initInput(){
   el.addEventListener('pointercancel',endPtr); // a cancelled touch must not leave a drag stuck on
   el.addEventListener('wheel',e=>{
     e.preventDefault();markManual();
-    cam.dist=clamp(cam.dist*Math.exp(e.deltaY*0.0011),6,4200);
+    const px=e.deltaMode===1?16:e.deltaMode===2?innerHeight:1,dx=e.deltaX*px,dy=e.deltaY*px;
+    if(e.ctrlKey){zoomAt(e.clientX,e.clientY,Math.exp(dy*0.01));return;} // trackpad pinch (and ctrl+wheel)
+    const trackpad=e.deltaMode===0&&(Math.abs(dx)>0.5||Math.abs(dy)<50&&dy%1!==0);
+    if(trackpad){ // two-finger swipe: pan, as if dragging the map with both fingers
+      const g={y:cam.cur.focus.y},cx=innerWidth/2,cy=innerHeight/2;grabMove(g,cx,cy,cx+dx,cy+dy);return;}
+    zoomAt(e.clientX,e.clientY,Math.exp(dy*0.0011));
   },{passive:false});
   window.addEventListener('keydown',e=>{
     if(e.target.tagName==='INPUT'&&e.target.type==='text')return;
@@ -4215,9 +4258,8 @@ function tickEconomy(){
       const g=pick('sim',['fish','grain','cloth','wine']);
       if(a.stores[g]>50&&!closedToTrade(a)&&!closedToTrade(b)){ // cogs used to sail into plague ports and sieges
         const qty=Math.min(a.stores[g]*0.4,90);a.stores[g]-=qty;
-        const poly=[{x:a.pos.x,z:a.pos.z},{x:(a.pos.x+b.pos.x)/2+(rand('sim')-0.5)*600,z:(a.pos.z+b.pos.z)/2+(rand('sim')-0.5)*600},{x:b.pos.x,z:b.pos.z}];
-        const len=dist2d(a.pos.x,a.pos.z,b.pos.x,b.pos.z)*1.2;
-        W.caravans.push({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/1600,robbed:false,sea:true});
+        const sr=seaRoute(ai,bi);if(!sr){a.stores[g]+=qty;}else{const poly=sr.poly,len=sr.len;
+        W.caravans.push({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/1600,robbed:false,sea:true});}
       }
     }
   }

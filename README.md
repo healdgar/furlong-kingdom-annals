@@ -31,7 +31,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
 | Input | Action |
 |---|---|
-| drag | orbit · **right-drag** pan · **scroll** zoom (5 m – 4 km) |
+| drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
 | click | inspect settlements, buildings, armies, caravans, the dragon |
 | `Space` | pause · `1–4` speeds (up to 30 sim-days/sec) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
