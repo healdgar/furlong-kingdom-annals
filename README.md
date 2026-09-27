@@ -183,16 +183,17 @@ Acts are sealed while you rule; the crown's own levers take their place:
   the sea can feed them.
 - Beyond the map the unknown lands fade into the haze and the sea runs on.
 - Speed ⏩ (key 5) reels through about a year a second to watch growth.
-- Two starting ages (World tab, or `#s=SEED&e=dark` / `&e=high`). The
-  default opens in the Dark Ages, c. AD 850: a thinly peopled land of
-  timber-and-thatch villages with no town walls, and the lord's seat a
-  motte and bailey (an earthen mound with a timber tower and palisade, and
-  a palisaded bailey for the hall). Technology then arrives with the
-  years: market charters (c. 950), timber-framed houses and rebuilt
-  churches (c. 1000), stone keeps on the mottes (c. 1070), stone town
-  walls and baileys (c. 1150), stone houses in the town cores (c. 1200),
-  bastions (c. 1500). The date chip shows the year of grace. The High
-  Middle Ages start (c. 1250) opens on walled towns and stone castles.
+- One history. Every realm is founded the same way in AD 850: thinly
+  peopled hamlets, fords and landings in timber and thatch, the lord's
+  seat a motte and bailey. Everything after that (walls, stone, charters,
+  new towns, parishes and friaries, bastions, the lords' wars and
+  bargains) is the live simulation. Choosing a later start (World tab, or
+  `#s=SEED&y=1250`) runs that same history forward unseen to the chosen
+  year, then hands you the realm as it has become. The one date-dependent
+  rule is what builders of a year know how to make: charters c. 950,
+  framed houses and rebuilt churches c. 1000, stone keeps c. 1070, planned
+  towns c. 1120, stone walls and baileys c. 1150, stone houses in town
+  cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.
 - A realm of fiefs. Every furlong has a lord, and fighting moves it:
   - every house keeps a standing household host at its seat, recruited
     from its people; neighbouring lords with grudges or land-hunger fight

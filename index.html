@@ -339,7 +339,8 @@ let W=null;               // the world
 /* the age the annals open in: the Dark Ages (motte-and-bailey, timber and thatch, no town walls) or the High
    Middle Ages; technology then arrives with the years: charters, framed houses, stone keeps, stone walls,
    stone houses, bastions */
-let ERA_START=850;
+const FOUNDING_AD=850; // every realm is founded the same way, as hamlets, fords and a lord's motte
+let START_AD=850;      // the year play begins; anything later is the same history, run forward unseen
 const AD=()=>((W&&W.startAD)||1250)+Math.max(0,year()-1);
 const tierCap=()=>AD()<1000?0:AD()<1200?1:2;
 const MOTTEH=9;
@@ -442,7 +443,7 @@ function slopeAt(cx,cz){
 async function generateWorld(seed,progress){
   SEED=seed>>>0; RS=seedStreams(SEED);
   const n1=makeNoise(SEED^0xA53), n2=makeNoise(SEED^0x5EED), n3=makeNoise(SEED^0xF00D), nMoist=makeNoise(SEED^0xB0A);
-  W={startAD:ERA_START,seed:SEED,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
+  W={startAD:FOUNDING_AD,seed:SEED,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
      biome:new Uint8Array(GRID*GRID),moist:new Float32Array(GRID*GRID),
      settlements:[],roads:[],routes:{},houses:[],notables:[],armies:[],caravans:[],banditCamps:[],
      riverPaths:[],bridges:[],roadCells:new Uint8Array(GRID*GRID),treasury:2200,legitimacy:70,
@@ -616,7 +617,7 @@ async function generateWorld(seed,progress){
   while(townRoles.length<nTowns)townRoles.push(chance('gen',0.35)?'fort':'market');
   townRoles.length=nTowns;
   const vilRoles=['farm',coastal?'fishing':'timber','farm','mining','timber','farm'];
-  const PS=ERA_START<1000?0.35:1; // a thinly peopled land in the Dark Ages
+  const PS=0.35; // a thinly peopled land at the founding
   const wanted=[{kind:'capital',role:'seat',pop:Math.round((2200+randi('gen',700))*PS),minD:0},
     ...Array.from({length:nTowns},(_,k)=>({kind:'town',role:townRoles[k],pop:Math.round((420+randi('gen',760))*PS),minD:850})),
     ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k],pop:Math.max(40,Math.round((70+randi('gen',220))*(PS*1.3))),minD:520}))];
@@ -641,7 +642,7 @@ async function generateWorld(seed,progress){
         for(let dz=-3;dz<=3;dz++)for(let dx=-3;dx<=3;dx++)if(inB(c.cx+dx,c.cz+dz)){if(W.water[cIdx(c.cx+dx,c.cz+dz)]===1)sea=true;if(W.water[cIdx(c.cx+dx,c.cz+dz)]===2)riv=true;}
         W.settlements.push({
           name:placeName(),kind:w.kind,role:w.role,pos:{x,z,y:W.h[i]},cx:c.cx,cz:c.cz,pop:w.pop,
-          prosperity:50,unrest:8,walls:ERA_START<1000?0:w.kind==='capital'?2:w.role==='fort'||w.role==='border'?2:(w.kind==='town'&&chance('gen',0.5)?1:0),
+          prosperity:50,unrest:8,walls:0,
           stores:{grain:w.pop*0.5,fish:sea?w.pop*0.3:8,timber:40,ore:10,tools:15,cloth:10,wine:8},
           harbor:sea,river:riv,owner:0,buildings:[],garrison:Math.round(w.pop*0.04),
           infected:0,recovered:0,plagueDead:0,fires:[],ruinCount:0,pyres:false,
@@ -1082,7 +1083,7 @@ function layoutSettlement(s){
      the trading town was founded beside it, and the village stayed outside the first wall */
   // how the town began: grown about an older village (Göttingen), a Roman grid (Metz), founded in one
   // stroke as a planned market (Freiburg), or twin cores — a cathedral-burg and a merchants' waterfront (Hamburg)
-  const mode=isVil?'village':early?'grown':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown';
+  const mode=s.forceMode||(isVil?'village':early?'grown':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown');
   s.mode=mode;
   let oldVil=null;
   if(mode==='grown'&&(role==='market'||role==='crossing'||role==='seat')&&roads.length){
@@ -1326,9 +1327,13 @@ function layoutSettlement(s){
     all.sort((p,q)=>keyOf(p)-keyOf(q));
     for(const c of all){
       if(built>=target)break;
-      let arch=archFor(c);const tier=tierFor(c,curE);
+      if(!buildLot(c,tierFor(c,curE))){c.fail=(c.fail||0)+1;if(c.fail>2)c.done=true;}
+    }
+  };
+  const buildLot=(c,tier)=>{ // one house on one lot, as the builders of this year would put it there
+      let arch=archFor(c);
       // in a town, houses and shops on the main streets are burgher houses: gable to the street on a narrow, deep plot
-      const burg=!isVil&&!focus&&era>=1100&&(arch==='house'||arch==='shop')&&(c.d<Rmax*0.55||c.st.kind==='road'||c.st.market||c.st.neu);
+      const burg=!isVil&&!focus&&AD()>=1100&&(arch==='house'||arch==='shop')&&(c.d<Rmax*0.55||c.st.kind==='road'||c.st.market||c.st.neu);
       let f,gap=gapFor(c),extra={st:c.st},hm=1;
       if(burg){
         arch='burgher';const depth=11+rr()*4,front=5.4+rr()*2.2+(tier===2?0.9:0),set=c.hw+0.7+depth/2,px=-c.uz*c.side,pz=c.ux*c.side;
@@ -1338,10 +1343,10 @@ function layoutSettlement(s){
         f=frontFoot(c,arch,tier,rr);
         if(isVil){const k=1.5+rr()*3;f.x+=(-c.uz*c.side)*k;f.z+=(c.ux*c.side)*k;} // farmsteads stand back in their yards
       }
-      if(!fits(f,gap)){c.fail=(c.fail||0)+1;if(c.fail>2)c.done=true;continue;}
+      if(!fits(f,gap))return null;
       const b=place(arch,tier,f,c.d<Rmax*0.25?'market':c.d<Rmax*0.5?'artisan':'residential',hm,extra);c.done=true;built++;
       if(focus===oldVil&&oldVil)b.q='village';
-    }
+      return b;
   };
   /* ---- back lanes: branch where there is room, bend with the land, stop at water and walls, join old streets ---- */
   const walk=(x,z,hd,maxLen,skip)=>{
@@ -1597,9 +1602,14 @@ function layoutSettlement(s){
     promote(){ // a village granted a market becomes a town: it may now reach further, and build as townsfolk do
       live=true;curE=E;isVil=false;isTown=true;R0=Math.max(R0,310);Rmax=Math.max(Rmax,200);s.kind='town';
       hist(0,'Granted a charter for a weekly market; the village became a town.');branch(4,true);live=false;},
-    lanes(n){curE=E;return branch(n,true,Rmax*0.8);}
+    lanes(n){curE=E;return branch(n,true,Rmax*0.8);},
+    parish(){const n=parishes;live=true;curE=E;parish(E);live=false;return parishes>n;},
+    friary(){if(friaryDone||!s.wallRad)return false;live=true;curE=E;friary(E);live=false;return friaryDone;},
+    neustadt(){if(neuDone)return false;live=true;curE=E;neustadt(E);live=false;return neuDone;},
+    backyards(){curE=E+1;backyards(E+1);curE=E;},
+    citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,live:liveOps};
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,live:liveOps};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   W.roads.forEach((r,ri)=>{
@@ -3121,6 +3131,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       else if(h.gold<-1500){h.loyalty=clamp(h.loyalty-3,0,100);} // no buyer: the creditors press, and the lord grows desperate
     }
   });
+  if(day()%360===260&&chance('sim',0.12))foundTown();
   // enfeoffment: a crown that holds too much grants its outlying towns to vassals (or recalls an exiled house to hold them)
   if(!W.war&&day()%360===(200%360)){
     const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
@@ -3219,6 +3230,19 @@ function tickLand(){ // monthly: the countryside follows the people
     if(s.landShort&&now-s.landShort>360&&now%360===195&&s.prosperity>45&&s.pop>90&&chance('sim',0.25))foundDaughter(s);
   });
 }
+function foundTown(){ // a lord founds a new market town, laid out in one stroke (Freiburg): only in an age that plans towns
+  if(AD()<1120||W.settlements.filter(o=>o.planned).length>=2||G.bldList.length+200>=G.bodies.instanceMatrix.count)return;
+  const lords=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&(W.houses[i].gold||0)>1500);
+  if(!lords.length)return;const hi=wpick(lords,i=>W.houses[i].gold/1500,1),seat=W.settlements.find(o=>o.owner===hi);if(!seat)return;
+  const sites=[];
+  for(const r of W.roads){if(r.a===r.b)continue;const q=r.path[Math.floor(r.path.length/2)];if(!q)continue;
+    if(W.settlements.some(o=>dist2d(q.x,q.z,o.pos.x,o.pos.z)<(o.radius||90)+520))continue;
+    const f=G.land&&furlongAt(q.x,q.z);if(f&&f.lord>=0&&f.lord!==hi)continue;
+    sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z)});}
+  const site=wpick(sites,q=>-q.d/1500,1);if(!site)return;
+  const n=W.settlements.length;
+  if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;}
+}
 function foundDaughter(s){
   const vill=W.settlements.filter(o=>o.kind==='village').length;
   if(vill>=(W.villages0||0)+6||G.bldList.length+60>=G.bodies.instanceMatrix.count)return;
@@ -3238,6 +3262,7 @@ function foundDaughter(s){
   const n=W.settlements.length;
   if(doAct('village',best,{from:s})&&W.settlements.length>n)s.pop=Math.max(40,s.pop-45);
 }
+
 function settleLand(s){ // a new village takes up the waste nearest it, laid out in Hufen
   const si=W.settlements.indexOf(s);s.furl=s.furl||[];computeDomains();
   for(const f of G.land.F){
@@ -3269,10 +3294,7 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
     const pool=s.growSlots.slice(0,24),k0=pool[0].key;
     const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0),1);
     s.growSlots.splice(s.growSlots.indexOf(c),1);
-    const arch=L.archFor(c),tier=Math.min(1,tierCap(),L.tierFor(c,99));
-    const f=frontFoot(c,arch,tier,()=>rand('sim'));
-    if(!L.fits(f,L.gapFor(c)))continue;
-    const b=L.place(arch,tier,f,'residential');b.grown=day();
+    const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));if(!b)continue;b.grown=day();
     if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);} // the first house on a new lane: the lane appears
     b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;
     updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);
@@ -3942,7 +3964,7 @@ function showInspect(pk){
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
     if(s.ruinCount)h+=row('Ruins',s.ruinCount);
     if(s.quarantineUntil>day())h+=row('Gates','sealed until '+dateStr(s.quarantineUntil));
-    if(s.history&&s.history.length)h+=`<div class="agline" style="font-size:11.5px">${s.history.map(x=>(x.yr?`<i>Year ${x.yr}:</i> `:x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div>`;
+    if(s.history&&s.history.length)h+=`<div class="agline" style="font-size:11.5px">${s.history.map(x=>(x.yr?`<i>AD ${W.startAD+x.yr-1}:</i> `:x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div>`;
     flyToBtn(fb,'Visit',()=>flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340));
     if(sovOn())actsH=settlementActsHTML(s);
   }else if(pk.type==='building'){
@@ -4032,7 +4054,7 @@ const seasonIdx=()=>Math.floor((W.clock.day%360)/90);
 const seasonDay=()=>Math.floor(W.clock.day%90)+1;
 function dateStr(d){
   d=d??W.clock.day;
-  return SEASONS[Math.floor((d%360)/90)]+' '+(Math.floor(d%90)+1)+', Year '+(Math.floor(d/360)+1);
+  return SEASONS[Math.floor((d%360)/90)]+' '+(Math.floor(d%90)+1)+', AD '+(((W&&W.startAD)||850)+Math.floor(d/360));
 }
 function ordinal(n){return n+(['th','st','nd','rd'][((n%100/10|0)!==1&&n%10<4)?n%10:0]||'th');}
 function mythMult(){return W.comet&&W.comet.teeth&&day()<W.comet.until?2:1;}
@@ -4260,7 +4282,8 @@ function tickPopulation(){
        a place fills up and settle it near 85% of capacity; towns bury more than villages (crowding,
        foul water); crowded villages send their young to the towns. Plague and famine still bite, but
        the realm now recovers from them instead of either dwindling or swelling without end. */
-    const room=housing(s)+(s.growSlots?s.growSlots.length:0)*HOUSEHOLD*0.6+s.buildings.filter(b=>b.state==='ruin'&&!b.deserted).length*HOUSEHOLD; // free lots and burned houses can be built again
+    if(s._room===undefined||day()%10===0)s._room=housing(s)+(s.growSlots?s.growSlots.length:0)*HOUSEHOLD*0.6+s.buildings.filter(b=>b.state==='ruin'&&!b.deserted).length*HOUSEHOLD; // free lots and burned houses can be built again (counted every ten days)
+    const room=s._room;
     const K=Math.min(carryingCap(s),room*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
     const pf=clamp(s.prosperity/60,0.6,1.25),x=s.pop/K;
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
@@ -4642,7 +4665,7 @@ function tickMilitary(){
       });
       if(tgt<0){ // nothing to besiege: ride for the nearest enemy host instead
         let foe=null,fd=1e18;
-        for(const b of W.armies){if(!atWar(a.house,b.house)||b.gone)continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}}
+        for(const b of W.armies){if(!atWar(a.house,b.house)||b.gone||b.state==='march'||b.state==='rout'||(b.state==='idle'&&b.id<a.id))continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}} // ride only at a host that stands still, and of two idle hosts only one rides (they used to swap towns forever)
         if(foe){const t=nearestSettlementIdx(foe._spos.x,foe._spos.z);if(t!==a.at)tgt=t;}
       }
       if(tgt>=0)marchArmy(a,tgt);
@@ -4705,7 +4728,7 @@ function tickMilitary(){
       if(cl&&chance('sim',0.22)){killNotable(cl,`at ${a.battleName}, sword in hand`,true);line+=` ${fullTitle(cl)} is slain in the rout.`;}
       else if(cw&&!cw.epithet&&chance('sim',0.3)){cw.epithet='the '+pick('sim',['Ironhand','Unbroken','Lionhearted','Grim','Victorious']);line+=` Men now name the victor ${fullTitle(cw)}.`;}
       emit('war',8,pos,line);
-      addCairn(pos.x,pos.z,a.battleName+', Year '+year()+' — here '+w.name+' prevailed.');
+      addCairn(pos.x,pos.z,a.battleName+', AD '+AD()+' — here '+w.name+' prevailed.');
       if(inRebellion(w,l))warScore(w.house===0?20:-20);
       a.foe=b.foe=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
@@ -5180,6 +5203,11 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     else if(s.bailey&&!s.baileyStone&&AD()>=1150&&s.prosperity>55&&chance('sim',0.2)&&L.live.stoneBailey())did=`The bailey at ${s.name} is walled in stone.`;
     else if(s.prosperity>(s.motte&&!s.motteStone?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=`The keep of ${s.name} is rebuilt in stone.`;}
     else if(s.kind!=='village'&&s.prosperity>65&&s.pop>s.pop0*1.6&&chance('sim',0.2)&&L.live.rebuildChurch())did=`The church of ${s.name} is pulled down and rebuilt larger, its new tower visible for leagues.`;
+    else if(s.kind!=='village'&&AD()>=1000&&s.pop>900&&chance('sim',0.15)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
+    else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
+    else if(s.kind!=='village'&&AD()>=1150&&(s.role==='crossing'||s.kind==='capital'&&s.river)&&s.pop>900&&chance('sim',0.1)&&L.live.neustadt())did=`The lord plants a “New Town” across the river from ${s.name}: one straight street of equal plots.`;
+    else if(s.bastions&&(s.role==='border'||s.kind==='capital')&&!s.citadel&&chance('sim',0.3)&&L.live.citadel())did=`A star citadel is raised astride the walls of ${s.name}, a quarter razed for it.`;
+    if(!did&&s.kind!=='village'&&AD()>=1150)L.live.backyards();
     if(did){syncLive(s);emit('trade',6,s.pos,did);}
     else if(s.growSlots&&s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}
     // aftermath of a siege: the suburbs burned to deny the enemy cover
@@ -5294,7 +5322,7 @@ function doAct(act,p,opt){
       W.roads.push({a:si,b:bj,path,len:polyLen(path)});W.routes={};
       W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});
       // lay the village out like any other: square, lanes, frontages
-      s.pop=60;s.role=opt&&opt.fort?'fort':'farm';if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
+      s.pop=opt&&opt.planned?220:60;s.role=opt&&opt.fort?'fort':opt&&opt.planned?'market':'farm';if(opt&&opt.planned){s.kind='town';s.planned=true;s.forceMode='planned';}if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
       if(opt&&opt.fort){s.walls=1;s.garrison=30;}
       layoutSettlement(s);stitchRoads();
       for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
@@ -5307,7 +5335,9 @@ function doAct(act,p,opt){
       const sp=makeTextSprite(s.name,1.6);sp.position.set(p.x,s.pos.y+90,p.z);scene.add(sp);G.labels.push(sp);
       const m=new THREE.Mesh(new THREE.SphereGeometry(60,8,6),new THREE.MeshBasicMaterial({visible:false}));
       m.position.set(p.x,s.pos.y+18,p.z);m.userData.pick={type:'settlement',s};scene.add(m);G.pickS.push(m);
-      if(opt&&opt.fort){s.mother=opt.from.name;s.history=[{yr:year(),t:`Founded as a fort by ${W.houses[s.owner].name} to hold the conquered march.`}];
+      if(opt&&opt.planned){s.history=[{yr:year(),t:`Founded in one stroke by ${W.houses[s.owner].name} as a free market town: a broad market street, equal plots, a charter of liberties to draw settlers.`}];
+        emit('trade',7,p,`${W.houses[s.owner].name} founds a new market town at ${s.name}, laid out in a single stroke, and proclaims its liberties to draw settlers.`);}
+      else if(opt&&opt.fort){s.mother=opt.from.name;s.history=[{yr:year(),t:`Founded as a fort by ${W.houses[s.owner].name} to hold the conquered march.`}];
         emit('war',7,p,`${W.houses[s.owner].name} raises a fort at ${s.name} to hold the lands it has taken; settlers follow the garrison.`);}
       else if(opt&&opt.from){s.mother=opt.from.name;s.history=[{ago:0,t:`Settled from ${opt.from.name} when its fields could feed no more.`}];
         emit('trade',5,p,`Younger sons of ${opt.from.name}, landless at home, clear ground at ${s.name} and build a new village.`);}
@@ -5346,6 +5376,7 @@ let chronFilter='all', allLines=[], entryCount=0;
 const CATMAP={crown:'crown',war:'war',trade:'trade',fates:'fates'};
 function emit(cat,pri,pos,text,opts){
   const ev={day:day(),cat,pri,pos:pos?{x:pos.x,z:pos.z}:null,text,opts:opts||{}};
+  if(W.prehistory)return ev; // the centuries before play begins leave their marks on the land and in each town's history, not in the annals
   chronicleAdd(ev);
   director.push(ev);
   fxEvent(ev);
@@ -5366,6 +5397,7 @@ function chronicleAdd(ev){
   if(stick)list.scrollTop=list.scrollHeight;
 }
 function reignHeader(n){
+  if(W.prehistory)return;
   const num=W.reignNum[n.name]||1;
   const ORD=['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth'];
   const t=`Here begin the years of ${n.sex==='f'?'Queen':'King'} ${n.name}${num>1?', '+(ORD[num-1]||num+'th')+' of that name':''}.`;
@@ -5958,7 +5990,7 @@ function buildDrawer(tab){
   }else if(tab==='world'){
     body.innerHTML=`
       <div class="wrow">Seed<br><input type="text" id="seedin" value="${SEED}"></div>
-      <div class="wrow">The annals open in<br><select id="erain"><option value="dark"${W.startAD<1000?' selected':''}>the Dark Ages (c. AD 850): motte and bailey, timber and thatch</option><option value="high"${W.startAD>=1000?' selected':''}>the High Middle Ages (c. AD 1250): walled towns and stone castles</option></select></div>
+      <div class="wrow">Begin play in<br><select id="erain">${[[850,'AD 850 — the founding: hamlets, motte and bailey'],[1066,'AD 1066 — the realm run forward 216 years'],[1250,'AD 1250 — run forward 400 years'],[1400,'AD 1400 — run forward 550 years']].map(([y,t])=>`<option value="${y}"${START_AD===y?' selected':''}>${t}</option>`).join('')}</select></div>
       <button class="wbtn" id="btnreforge">Reforge the realm</button>
       <button class="wbtn" id="btnmap">Parchment map (M)</button>
       <button class="wbtn" id="btndaycycle">Day/night cycle: ${dayCycleOn?'On':'Off'}</button>
@@ -5968,7 +6000,7 @@ function buildDrawer(tab){
       <div class="dhead">Line of Succession</div><div id="succpanel"></div>`;
     document.getElementById('btnreforge').addEventListener('click',()=>{
       const v=parseInt(document.getElementById('seedin').value,10);
-      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&e='+document.getElementById('erain').value;
+      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&y='+document.getElementById('erain').value;
       location.reload();
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
@@ -6045,7 +6077,7 @@ function initUI(){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   });
   document.getElementById('btnshare').addEventListener('click',()=>{
-    const url=location.href.split('#')[0]+'#s='+SEED+'&e='+(W.startAD<1000?'dark':'high'); // (origin is "null" on file://)
+    const url=location.href.split('#')[0]+'#s='+SEED+'&y='+START_AD; // (origin is "null" on file://)
     (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
       ()=>{document.getElementById('btnshare').textContent='Copied!';setTimeout(()=>document.getElementById('btnshare').textContent='Copy share link',1400);},
       ()=>prompt('Share this realm:',url));
@@ -6257,7 +6289,7 @@ function toggleMap(){
   document.body.appendChild(el);
 }
 function updateHUD(){
-  document.getElementById('datechip').textContent=SEASONGLYPH[seasonIdx()]+' '+dateStr()+' · AD '+AD();
+  document.getElementById('datechip').textContent=SEASONGLYPH[seasonIdx()]+' '+dateStr();
   document.getElementById('watchdate').textContent=dateStr();
   const wx={clear:'☀',overcast:'☁',rain:'🌧',storm:'⛈',snow:'❄'};
   document.getElementById('wxchip').textContent=(wx[W.weather.state]||'☀')+(W.drought?' drought':'')+(W.plagueActive?' ☠':'');
@@ -6630,7 +6662,8 @@ function animate(t){
   renderer.render(scene,camera);
 }
 async function boot(){
-  const em=location.hash.match(/e=(dark|high)/);ERA_START=em&&em[1]==='high'?1250:850;
+  const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
+  START_AD=clamp(ym?+ym[1]:em&&em[1]==='high'?1250:850,850,1500);
   const m=location.hash.match(/s=(\d+)/);
   const seed=m?parseInt(m[1],10)>>>0:Math.floor(Math.random()*1e9);
   if(!m)history.replaceState(null,'','#s='+seed);
@@ -6644,6 +6677,13 @@ async function boot(){
   initGraphics();
   buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   simInit();
+  if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
+    W.prehistory=true;const yrs=START_AD-W.startAD;
+    for(let y=0;y<yrs;y++){for(let i=0;i<360;i++)simTick();
+      if(y%3===0)await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*(y/yrs));}
+    W.prehistory=false;rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
+    for(const s of W.settlements)s.pop0=s.pop;
+  }
   initUI();initInput();
   // opening entries
   allLines.push('THE ANNALS OF '+W.name.toUpperCase());
