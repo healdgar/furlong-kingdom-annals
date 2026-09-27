@@ -16,7 +16,12 @@ no assets — everything is procedural (terrain, buildings, heraldry, names).
 ## Run it
 
 Open `index.html` in a browser, or drop it on any static host (Netlify, GitHub
-Pages). That's it.
+Pages). That's it. In a small container:
+
+```sh
+docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
+# then open http://localhost:8080  (the browser fetches three.js from cdnjs)
+```
 
 - **Persistence is the seed**: the URL hash (`#s=1234567`) fully determines the
   generated world. *Copy share link* reproduces your realm exactly.
