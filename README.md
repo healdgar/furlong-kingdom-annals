@@ -77,17 +77,23 @@ Acts are sealed while you rule; the crown's own levers take their place:
   flow-accumulation rivers carved as soft valleys → biomes → settlement siting →
   A* king's roads relaxed into smooth curves → town layout → houses, heraldry,
   and a cast of ~140 named notables.
-- Towns: streets radiate from a paved market square (each king's road enters
-  along its own street) and ring lanes cross them; buildings are packed along
-  the frontages facing the street, densest at the square. Leftover frontage is
-  the growth queue, so towns grow outward along lanes and roads. Streets pick
-  their way around steep ground and cross rivers on bridges; quays line the
-  banks where a river runs through town.
-- Walls trace the ground rather than a circle: along the crest where the land
-  falls away, along the bank where a river or the sea runs close (the water is
-  the moat), and left open where a cliff does the work. Gatehouses stand
-  wherever a street leaves town. Towns are sited on defensible rises, and
-  natural defences (water, hillside, cliff) lengthen sieges.
+- Settlements exist for a reason, and the reason picks the site: a seat of
+  power or fortress on a defensible rise, a port on the shore, a bridge town
+  where a road meets a river, a market town amid plough-land, farming,
+  fishing, woodcutting and mining villages.
+- Towns are grown, not planned. The founders' nucleus (a tower keep, a
+  landing, a hamlet at the ford, farms about a green) is followed by ages of
+  growth: houses ribbon out along the roads, back lanes branch where there is
+  room, bend with the ground, stop at water and walls and join older streets.
+  Each wall is traced around the dense core of its age (keeping to the near
+  bank of a river, riding hill crests, left open at cliffs, pulling down the
+  houses in its way); later suburbs spill past the gates and across bridges.
+  When a city outgrows its wall the old line becomes a street with a few
+  towers left standing. Institutions stay put and are rebuilt larger on
+  their own ground (keep → castle, church → minster); fires clear districts
+  that are rebuilt in stone on straighter streets; sieges raze suburbs that
+  grow back. Each town's history is in its inspector card, and natural
+  defences lengthen sieges.
 - Strip fields with hedgerows ring each settlement.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
   shallows and deep water); bridges span wherever a road meets a river.
