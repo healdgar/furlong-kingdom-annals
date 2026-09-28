@@ -2059,9 +2059,10 @@ function stitchRoads(){ // a road now runs centre → its spoke street → the o
     if(sb&&sb.length)k1=Math.min(k1,near(sb[sb.length-1],Math.floor(n/2),n)-1);
     const pts=k1>=k0?O.slice(k0,k1+1):[];
     const head=[{x:A.pos.x,z:A.pos.z},...(sa||[])],tail=[...(sb?[...sb].reverse():[]),{x:B.pos.x,z:B.pos.z}];
-    r.path=[...head,...pts,...tail];r.len=polyLen(r.path);
+    const kp=keepToBank(pts); // carts go where the road is drawn
+    r.path=[...head,...kp,...tail];r.len=polyLen(r.path);
     // the stretch drawn as a king's road (spoke ends included so it joins the street)
-    r.drawn=keepToBank([...(sa?[sa[sa.length-1]]:[]),...pts,...(sb?[sb[sb.length-1]]:[])]);
+    r.drawn=[...(sa?[sa[sa.length-1]]:[]),...kp,...(sb?[sb[sb.length-1]]:[])];
   });
   W.routes={};
 }
@@ -2330,24 +2331,36 @@ function riverStrips(){
   }
   return G.rivStrips;
 }
-function keepToBank(P0){ // a road that meets a river keeps to its bank, and crosses square to the stream
+function keepToBank(P0){ // a road never meets a river at too shallow an angle: it bends gently to a steeper crossing, and keeps to the bank where it only runs alongside
   if(!G.rivHash||P0.length<2)return P0;
   const wet=q=>riverAt(q.x,q.z,1);
   if(!P0.some(wet)&&!P0.some((q,k)=>k&&wet({x:(q.x+P0[k-1].x)/2,z:(q.z+P0[k-1].z)/2})))return P0;
-  const P=resample(P0,5),out=[];
+  const P=resample(P0,5),out=[],hubs=[],MAXC=Math.cos(50*Math.PI/180); // the shallowest crossing a bridge can take: 50° to the stream
   for(let k=0;k<P.length;){
     if(!wet(P[k])||k===0){out.push(P[k]);k++;continue;}
     let j=k;while(j<P.length-1&&wet(P[j+1]))j++;
     if(j>=P.length-1){for(let m=k;m<P.length;m++)out.push(P[m]);break;}
-    const a=P[k-1],b=P[j+1],w=wet(P[(k+j)>>1])||wet(P[k]),dx=w.b.x-w.a.x,dz=w.b.z-w.a.z,L=Math.hypot(dx,dz)||1,tx=dx/L,tz=dz/L,nx=-tz,nz=tx;
-    const side=q=>Math.sign((q.x-w.a.x)*nx+(q.z-w.a.z)*nz)||1,bank=(q,sd)=>{const u=(q.x-w.a.x)*tx+(q.z-w.a.z)*tz;return{x:w.a.x+tx*u+nx*sd*(w.hw+5),z:w.a.z+tz*u+nz*sd*(w.hw+5)};};
-    const sa=side(a),sb=side(b),cx=b.x-a.x,cz=b.z-a.z,cl=Math.hypot(cx,cz)||1;
-    if(sa===sb)for(let m=k;m<=j;m++)out.push(bank(P[m],sa)); // dipped into the stream and out again: along the bank
-    else if(Math.abs(cx*tx+cz*tz)/cl>0.55){const m={x:(a.x+b.x)/2,z:(a.z+b.z)/2};out.push(bank(m,sa),bank(m,sb));} // slanting across: along the bank, then straight over
-    else for(let m=k;m<=j;m++)out.push(P[m]);
-    k=j+1;
+    const a=P[k-1],b=P[j+1],w=wet(P[(k+j)>>1])||wet(P[k]),dx=w.b.x-w.a.x,dz=w.b.z-w.a.z,L=Math.hypot(dx,dz)||1,tx=dx/L,tz=dz/L;
+    let nx=-tz,nz=tx;const side=q=>Math.sign((q.x-w.a.x)*nx+(q.z-w.a.z)*nz)||1,sa=side(a),sb=side(b);
+    if(sa===sb){ // dipped into the stream and out again: along the bank
+      for(let m=k;m<=j;m++){const q=P[m],u=(q.x-w.a.x)*tx+(q.z-w.a.z)*tz;out.push({x:w.a.x+tx*u+nx*sa*(w.hw+5),z:w.a.z+tz*u+nz*sa*(w.hw+5)});}
+      k=j+1;continue;}
+    if(sa<0){nx=-nx;nz=-nz;} // n now points from a's bank to b's
+    const mq={x:(a.x+b.x)/2,z:(a.z+b.z)/2},u=(mq.x-w.a.x)*tx+(mq.z-w.a.z)*tz,m={x:w.a.x+tx*u,z:w.a.z+tz*u};
+    let ex=b.x-a.x,ez=b.z-a.z;const el=Math.hypot(ex,ez)||1;ex/=el;ez/=el;
+    const along=ex*tx+ez*tz;
+    if(Math.abs(along)<=MAXC){for(let m=k;m<=j;m++)out.push(P[m]);k=j+1;continue;} // steep enough already: as it runs
+    const cs=Math.sign(along)*MAXC; // too shallow: steepened to the least angle, still leaning the road's way
+    let cx=nx*Math.sqrt(1-cs*cs)+tx*cs,cz=nz*Math.sqrt(1-cs*cs)+tz*cs;
+    const Lap=w.hw+22,far=Lap+30;
+    while(out.length>1&&dist2d(out[out.length-1].x,out[out.length-1].z,m.x,m.z)<Lap+4)out.pop(); // give up the old line near the water
+    for(const d of[-Lap,-(w.hw+4),w.hw+4,Lap])out.push({x:m.x+cx*d,z:m.z+cz*d,fix:1});
+    hubs.push({m,far});
+    k=j+1;while(k<P.length-1&&dist2d(P[k].x,P[k].z,m.x,m.z)<Lap+4)k++;
   }
-  return out;
+  if(hubs.length)for(let it=0;it<10;it++)for(let k=1;k<out.length-1;k++){const q=out[k];if(q.fix)continue; // ease the road into its crossing
+    if(!hubs.some(h=>dist2d(q.x,q.z,h.m.x,h.m.z)<h.far))continue;const a=out[k-1],b=out[k+1];out[k]={x:q.x*0.5+(a.x+b.x)*0.25,z:q.z*0.5+(a.z+b.z)*0.25};}
+  return out.map(q=>q.fix?{x:q.x,z:q.z}:q);
 }
 function riverAt(x,z,pad){ // the river segment under (x,z), if any
   for(const o of G.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;

@@ -185,8 +185,9 @@ Acts are sealed while you rule; the crown's own levers take their place:
   choices: candidates are scored and one is drawn at a temperature, so the
   likely usually happens but not always.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
-  shallows and deep water); bridges span wherever a road crosses a river,
-  and a road that follows a river keeps to its bank. A river's width goes
+  shallows and deep water); bridges span wherever a road crosses a river.
+  A road never meets a river at less than 50°: a shallower approach bends
+  gently to that angle, and a road that only runs alongside keeps to the bank. A river's width goes
   with the square root of what drains into it, so where two like streams
   meet it swells; a tributary's mouth flares into the other's channel.
 - Lots: wilderness belongs to no one until it is taken in; farmland is held
