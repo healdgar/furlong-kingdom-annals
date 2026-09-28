@@ -1712,7 +1712,43 @@ function layoutSettlement(s){
     backyards(){curE=E+1;backyards(E+1);curE=E;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,live:liveOps};
+  /* the town's own streets as a network: the way a cart goes from the market to any street end */
+  const townPath=(a,b)=>{
+    const N=[],h=makeHash(8);
+    for(const t of s.streets){if(t.hidden||t.gone||t.kind==='edge'||t.pts.length<2)continue;
+      const q=resample(t.pts,7),o=N.length;q.forEach(p=>{const n={x:p.x,z:p.z,i:N.length,nb:[]};N.push(n);h.add(n,0);});
+      for(let k=o+1;k<N.length;k++){N[k-1].nb.push(k);N[k].nb.push(k-1);}}
+    if(N.length<2)return null;
+    for(const n of N)for(const m of h.near(n.x,n.z,7))if(m!==n&&dist2d(n.x,n.z,m.x,m.z)<7)n.nb.push(m.i); // streets meet where they touch
+    const at=p=>{let bi=0,bd=1e18;for(const n of N){const d=dist2d(p.x,p.z,n.x,n.z);if(d<bd){bd=d;bi=n.i;}}return bi;};
+    const sI=at(a),tI=at(b),g=new Float64Array(N.length).fill(Infinity),from=new Int32Array(N.length).fill(-1),heap=[[0,sI]];g[sI]=0;
+    while(heap.length){let mi=0;for(let k=1;k<heap.length;k++)if(heap[k][0]<heap[mi][0])mi=k;const[d,c]=heap.splice(mi,1)[0];
+      if(c===tI)break;if(d>g[c])continue;
+      for(const j of N[c].nb){const nd=d+dist2d(N[c].x,N[c].z,N[j].x,N[j].z);if(nd<g[j]){g[j]=nd;from[j]=c;heap.push([nd,j]);}}}
+    if(tI!==sI&&from[tI]<0)return null;
+    const out=[];for(let c=tI;c>=0;c=c===sI?-1:from[c])out.push({x:N[c].x,z:N[c].z});
+    return out.reverse();
+  };
+  /* a road laid after the town (a new village's track to it): it comes in as a street as far as the first street
+     it meets, clearing what stands in its line, and carts then keep to the town's streets to the market */
+  const joinRoad=ri=>{
+    const r=W.roads[ri];if(!r||s.roadSpoke[ri]||(r.a!==idx&&r.b!==idx))return false;
+    const src=r.open||r.path,seq=r.b===idx?src:[...src].reverse(); // from the far end towards this town
+    const R=Math.max(s.coreR||0,extent(0.97))+25,inPts=[];let joined=false;
+    for(const p of resample(seq,4)){
+      if(dist2d(p.x,p.z,C.x,C.z)>R)continue;
+      inPts.push({x:p.x,z:p.z});
+      const g=nearStreet(p.x,p.z,1.5);if(g&&!g.st.hidden&&g.st.kind!=='edge'&&inPts.length>1){joined=true;break;}
+    }
+    if(inPts.length<2)return false;
+    for(const b of [...liveB()])if(!b.inst&&b.arch!=='temple'&&b.arch!=='keep'){ // the road is cut through: houses in its line come down
+      for(let k=1;k<inPts.length;k++)if(segDist(b.x,b.z,inPts[k-1],inPts[k])<RHW+Math.max(b.w,b.d)*0.45){unplace(b);break;}}
+    const outward=inPts.reverse(),via=townPath(C,outward[0])||[{x:C.x,z:C.z}];
+    live=true;addStreet(outward,RHW,'road',{ri});live=false;
+    s.roadSpoke[ri]=[...via,...outward];
+    return {joined};
+  };
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,live:liveOps};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   W.roads.forEach((r,ri)=>{
@@ -5581,7 +5617,9 @@ function doAct(act,p,opt){
       // lay the village out like any other: square, lanes, frontages
       s.pop=opt&&opt.planned?220:60;s.role=opt&&opt.fort?'fort':opt&&opt.planned?'market':'farm';if(opt&&opt.planned){s.kind='town';s.planned=true;s.forceMode='planned';}if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
       if(opt&&opt.fort){s.walls=1;s.garrison=30;}
-      layoutSettlement(s);stitchRoads();
+      layoutSettlement(s);
+      const jl=W.settlements[bj]._lay;if(jl&&jl.joinRoad(W.roads.length-1))syncLive(W.settlements[bj]); // the track enters the old place as a street
+      stitchRoads();
       for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
       G.bodies.count=G.roofs.count=G.bldList.length;
       for(const b of s.buildings)clearLandUnder(b);
