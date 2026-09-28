@@ -8393,7 +8393,20 @@ function perfGpuEnd(){const e=PERF.ext,gl=PERF.gl;if(!e||!PERF.cur)return;gl.end
 function perfFrame(dt,ticks,sim,world,rebuild,render,total){
   PERF.f.push({dt:dt*1000,ticks,sim,world,rebuild,render,total});if(PERF.f.length>240)PERF.f.shift();
   const n=performance.now();if(n-PERF.t<500)return;PERF.t=n;
-  const el=document.getElementById('perfbox');if(el)el.innerHTML=perfReport(true);}
+  const el=document.getElementById('perfbox');if(el)el.innerHTML=perfReport(true);
+  if(n-(PERF.shareT||0)>10000){PERF.shareT=n;perfShare();}}
+async function perfShare(){ // while the monitor is on, its readings go to the artifact's own store, where Claude can read them
+  try{if(!window.claude||!claude.use)return;const db=PERF.db||(PERF.db=await claude.use('db'));if(!db){PERF.shared='off';return;}
+    const F=PERF.f,avg=k=>F.reduce((t,x)=>t+x[k],0)/Math.max(1,F.length),mx=k=>F.reduce((t,x)=>Math.max(t,x[k]),0),g=PERF.gpu,inf=renderer.info,mem=performance.memory;
+    if(!PERF.gpuName){try{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');PERF.gpuName=e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);}catch(e){PERF.gpuName='?';}}
+    const doc={t:Date.now(),fps:+(1000/Math.max(1,avg('dt'))).toFixed(1),frameMs:+avg('dt').toFixed(1),worstMs:+mx('dt').toFixed(0),
+      busyPct:+(avg('total')/Math.max(1,avg('dt'))*100).toFixed(0),simMs:+avg('sim').toFixed(1),daysPerFrame:+avg('ticks').toFixed(1),worldMs:+avg('world').toFixed(1),
+      rebuildMs:+avg('rebuild').toFixed(1),rebuildWorstMs:+mx('rebuild').toFixed(0),renderMs:+avg('render').toFixed(1),gpuMs:g.length?+(g.reduce((t,v)=>t+v,0)/g.length).toFixed(1):null,
+      calls:inf.render.calls,tris:inf.render.triangles,geoms:inf.memory.geometries,textures:inf.memory.textures,heapMB:mem?Math.round(mem.usedJSHeapSize/1048576):null,
+      year:AD(),speed:SPEEDS[speedIdx],places:W.settlements.length,buildings:G.bldList.length,overlay:overlayMode||'',camDist:Math.round(cam.dist||0),
+      screen:innerWidth+'x'+innerHeight+'@'+devicePixelRatio,cores:navigator.hardwareConcurrency||null,gpu:PERF.gpuName,ua:navigator.userAgent.slice(0,160)};
+    PERF.n=(PERF.n||0)+1;await db.doc('perf/latest').set(doc);await db.doc('perf/s'+String(PERF.n%60).padStart(2,'0')).set(doc);PERF.shared='on';
+  }catch(e){PERF.shared='off';}}
 function perfReport(html){
   const F=PERF.f,avg=k=>F.reduce((t,x)=>t+x[k],0)/Math.max(1,F.length),mx=k=>F.reduce((t,x)=>Math.max(t,x[k]),0),g=PERF.gpu;
   const fps=1000/Math.max(1,avg('dt')),inf=renderer.info,mem=performance.memory,gpu=g.length?g.reduce((t,v)=>t+v,0)/g.length:null;
@@ -8407,7 +8420,7 @@ function perfReport(html){
     mem?`JS heap ${(mem.usedJSHeapSize/1048576).toFixed(0)} / ${(mem.jsHeapSizeLimit/1048576).toFixed(0)} MB`:'',
     `${W.settlements.length} places · ${G.bldList.length} buildings · ${W.armies.length} hosts · ${(W.caravans||[]).length} caravans · speed ${SPEEDS[speedIdx]} d/s · ${innerWidth}×${innerHeight}@${devicePixelRatio}`].filter(Boolean);
   if(!html)return L.join('\n');
-  return L.map(l=>`<div>${l}</div>`).join('')+`<button id="perfcopy">Copy report</button>`;}
+  return L.map(l=>`<div>${l}</div>`).join('')+(PERF.shared==='on'?'<div style="opacity:.7">shared with Claude every 10 s</div>':'')+`<button id="perfcopy">Copy report</button>`;}
 async function boot(){
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
