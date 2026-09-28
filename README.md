@@ -197,6 +197,8 @@ Acts are sealed while you rule; the crown's own levers take their place:
   framed houses and rebuilt churches c. 1000, stone keeps c. 1070, planned
   towns c. 1120, stone walls and baileys c. 1150, stone houses in town
   cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.
+  About two seeds in five lie by the sea; the World tab (or `&c=sea` /
+  `&c=land`) can ask for a coast or keep the realm inland.
 - A realm of fiefs. Every furlong has a lord, and fighting moves it:
   - every house keeps a standing household host at its seat, recruited
     from its people; neighbouring lords with grudges or land-hunger fight

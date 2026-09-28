@@ -291,7 +291,7 @@ function seedStreams(seed){
     sim: sfc32(mix(s+0x1b87),mix(s+0x27d4),mix(s+0x1656),mix(s+0x9c83))
   };
 }
-let SEED=1234567, RS=null;
+let SEED=1234567, RS=null, COAST_PREF=null; // null: as the seed falls; 'sea' or 'land' from the hash
 const rand=(st)=>RS[st]();
 const randi=(st,n)=>Math.floor(RS[st]()*n);
 const pick=(st,arr)=>arr[Math.floor(RS[st]()*arr.length)];
@@ -455,7 +455,8 @@ async function generateWorld(seed,progress){
   await progress('Raising the bones of the earth…',0.05);
   /* --- terrain: fBm + domain warp + mountain spine + optional coast ----- */
   const spineA=rand('gen')*Math.PI, spineOff=(rand('gen')-0.5)*0.5;
-  const coastal=rand('gen')<0.42, coastEdge=randi('gen',4); // 0=N 1=E 2=S 3=W
+  const coastRoll=rand('gen')<0.42, coastEdge=randi('gen',4); // 0=N 1=E 2=S 3=W
+  const coastal=COAST_PREF==='sea'?true:COAST_PREF==='land'?false:coastRoll; // the draw is always taken, so the rest of the world is the same seed either way
   const ca=Math.cos(spineA),sa=Math.sin(spineA);
   for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
     const u=cx/GRID-0.5,v=cz/GRID-0.5;
@@ -6168,6 +6169,7 @@ function buildDrawer(tab){
     body.innerHTML=`
       <div class="wrow">Seed<br><input type="text" id="seedin" value="${SEED}"></div>
       <div class="wrow">Begin play in<br><select id="erain">${[[850,'AD 850 — the founding: hamlets, motte and bailey'],[1066,'AD 1066 — the realm run forward 216 years'],[1250,'AD 1250 — run forward 400 years'],[1400,'AD 1400 — run forward 550 years']].map(([y,t])=>`<option value="${y}"${START_AD===y?' selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="wrow">Coast<br><select id="ecoast">${[['','as the seed falls (about 2 in 5 by the sea)'],['sea','by the sea'],['land','inland']].map(([v,t])=>`<option value="${v}"${(COAST_PREF||'')===v?' selected':''}>${t}</option>`).join('')}</select></div>
       <button class="wbtn" id="btnreforge">Reforge the realm</button>
       <button class="wbtn" id="btnmap">Parchment map (M)</button>
       <button class="wbtn" id="btndaycycle">Day/night cycle: ${dayCycleOn?'On':'Off'}</button>
@@ -6177,7 +6179,8 @@ function buildDrawer(tab){
       <div class="dhead">Line of Succession</div><div id="succpanel"></div>`;
     document.getElementById('btnreforge').addEventListener('click',()=>{
       const v=parseInt(document.getElementById('seedin').value,10);
-      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&y='+document.getElementById('erain').value;
+      const cp=document.getElementById('ecoast').value;
+      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'');
       location.reload();
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
@@ -6254,7 +6257,7 @@ function initUI(){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   });
   document.getElementById('btnshare').addEventListener('click',()=>{
-    const url=location.href.split('#')[0]+'#s='+SEED+'&y='+START_AD; // (origin is "null" on file://)
+    const url=location.href.split('#')[0]+'#s='+SEED+'&y='+START_AD+(COAST_PREF?'&c='+COAST_PREF:''); // (origin is "null" on file://)
     (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
       ()=>{document.getElementById('btnshare').textContent='Copied!';setTimeout(()=>document.getElementById('btnshare').textContent='Copy share link',1400);},
       ()=>prompt('Share this realm:',url));
@@ -6262,7 +6265,7 @@ function initUI(){
   document.getElementById('inspx').addEventListener('click',hideInspect);
   G.labelsOn=true;
   setInterval(()=>{if(document.getElementById('housepanel')&&!uiBusy())refreshHousePanel();},4000);
-  window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/);if(m&&(parseInt(m[1],10)>>>0)!==SEED)location.reload();});
+  window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/),c=location.hash.match(/c=(sea|land)/);if(m&&(parseInt(m[1],10)>>>0)!==SEED||(c?c[1]:null)!==COAST_PREF)location.reload();});
 }
 /* =========================================================================
    PARCHMENT MAP — the realm drawn as the chroniclers would draw it
@@ -6859,6 +6862,7 @@ function animate(t){
   renderer.render(scene,camera);
 }
 async function boot(){
+  const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
   START_AD=clamp(ym?+ym[1]:em&&em[1]==='high'?1250:850,850,1500);
   const m=location.hash.match(/s=(\d+)/);
