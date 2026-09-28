@@ -331,7 +331,8 @@ const ARCH={
   smithy:[9,8,4,0,'smithy'], mill:[9,9,7,0,'mill'], granary:[8,8,6,0,'granary'],
   tavern:[11,10,6,0,'tavern'], temple:[12,18,9,2,'temple'], warehouse:[12,14,6,0,'warehouse'],
   tower:[7,7,14,1,'watchtower'], wall:[12,3,7,1,'wall'], keep:[20,24,18,1,'keep'],
-  burgher:[13,6.5,6.8,0,'burgher house'], shed:[5,4.5,3,0,'outbuilding'], hall:[18,11,8,0,'town hall']
+  burgher:[13,6.5,6.8,0,'burgher house'], shed:[5,4.5,3,0,'outbuilding'], hall:[18,11,8,0,'town hall'],
+  bakery:[8,9,5,0,'bakehouse'], inn:[15,11,7,0,'inn'], tannery:[15,8,4,0,'tannery']
 };
 const TIERNAME=['hovel-built','timber-framed','stone-built'];
 
@@ -783,6 +784,14 @@ function buildRoads(){
   W.adj={};W.settlements.forEach((s,i)=>W.adj[i]=[]);
   W.roads.forEach((r,ri)=>{W.adj[r.a].push({to:r.b,ri});W.adj[r.b].push({to:r.a,ri});});
 }
+function roadTraffic(){ // share of the realm's journeys (place to place, weighted by people) that pass along each road
+  const key=W.roads.length+'_'+Math.floor(day()/360);if(W._trafK===key)return W._traf;
+  const P=W.settlements.map(s=>Math.max(20,s.pop)),tot=P.reduce((t,v)=>t+v,0),T=[];
+  W.roads.forEach((r,ri)=>{const seen=new Set([r.a]),q=[r.a];let pa=0;
+    while(q.length){const c=q.pop();pa+=P[c]||0;for(const e of W.adj[c]||[])if(e.ri!==ri&&!seen.has(e.to)){seen.add(e.to);q.push(e.to);}}
+    T[ri]=seen.has(r.b)?0:pa*(tot-pa)/tot;});
+  const mx=Math.max(1,...T);W._traf=T.map(v=>v/mx);W._trafK=key;return W._traf;
+}
 function route(ai,bi){
   const key=ai+'_'+bi;
   if(W.routes[key])return W.routes[key];
@@ -1067,7 +1076,7 @@ function layoutSettlement(s){
     if(r.a!==idx&&r.b!==idx)return;
     const path=r.a===idx?r.path:[...r.path].reverse(),pts=[];
     for(const p of path){if(dist2d(p.x,p.z,C.x,C.z)>Rmax)break;pts.push({x:p.x,z:p.z});}
-    if(pts.length>=2){addStreet(pts,RHW,'road');s.roadSpoke[ri]=pts;}
+    if(pts.length>=2){addStreet(pts,RHW,'road',{ri});s.roadSpoke[ri]=pts;}
   });
   const roads=s.streets.filter(t=>t.kind==='road');
   /* a mill dam above the town: the river is held back to drive the mills, and the pond spreads into a lake
@@ -1329,13 +1338,71 @@ function layoutSettlement(s){
     return st.cands=out;
   };
   const burnAt=(x,z)=>s.burns.find(b=>dist2d(x,z,b.x,b.z)<b.r);
+  /* what a lot becomes: a trade opens only where enough custom reaches its door (households within a short
+     walk, the traffic of the realm passing along the road, travellers at the gate, boats at the quay), and it
+     shares that custom with the rivals already near; noisome trades keep away from homes and the market.
+     Everything else is a home. (Christaller's threshold and range, von Thünen's rents, at street scale.) */
+  const HOME=new Set(['house','longhouse','burgher']);
+  const nearN=(x,z,R,pred)=>{let n=0;for(const o of placed.near(x,z,R))if(!o.removed&&o.state!=='gone'&&pred(o)&&dist2d(x,z,o.x,o.z)<R)n++;return n;};
+  const passing=st=>{const k=st.kind;
+    if(k==='road')return st.ri!=null?0.2+0.8*(roadTraffic()[st.ri]||0):0.35;
+    return st.market?0.55:k==='quay'?(role==='port'?0.9:0.45):k==='wallst'?0.12:0.04;};
+  const TRADES={ // demand at the door, reach of a rival, how much a rival takes, custom needed to open, earliest year, towns only
+    shop:     {dem:e=>e.hh+e.pass*14+e.mk*12,       R:20, k:0.35,need:16,from:950, town:true},
+    tavern:   {dem:e=>e.hhw*0.3+e.pass*18+e.gate*12, R:70, k:1,   need:22,from:850, town:false},
+    inn:      {dem:e=>e.st.kind==='road'?e.pass*30+e.gate*22:0,R:130,k:1.5,need:28,from:1100,town:true},
+    smithy:   {dem:e=>e.pass*12+e.gate*8+e.d*6+e.hhw*0.12+(role==='mining'?14:0)-e.mk*8,R:90,k:1,need:13,from:850,town:false},
+    bakery:   {dem:e=>e.hh*1.1+e.mk*4,                R:60, k:1,   need:18,from:1000,town:true},
+    tannery:  {dem:e=>e.wet?16+e.pass*8-e.hh*0.35-e.mk*12:0,R:130,k:1.5,need:12,from:1000,town:true},
+    warehouse:{dem:e=>(e.st.kind==='quay'?20:0)+e.pass*10+e.mk*8,R:35,k:0.8,need:22,from:950,town:true},
+    granary:  {dem:e=>isVil?(role==='farm'?12:7)+e.d*5:e.d*8+e.pass*4,R:isVil?35:70,k:1,need:isVil?15:10,from:850,town:false},
+  };
+  const siteOf=c=>{
+    const x=c.mx,z=c.mz,d=c.d/Rmax,st=c.st;
+    const mk=s.places.some(p=>p.kind==='market'&&placeHit(p,x,z,30))?1:st.market?0.8:0;
+    const gate=s.wallRad&&st.kind==='road'&&Math.abs(wallSide(x,z))<30?1:!s.wallRad&&st.kind==='road'&&d>0.55?0.5:0;
+    return {st,d,mk,gate,pass:passing(st),hh:nearN(x,z,50,o=>HOME.has(o.arch)),hhw:nearN(x,z,110,o=>HOME.has(o.arch)),
+      wet:!!(riverAt(x,z,14)||lakeAt(s,x,z,10))};
+  };
+  const home=c=>{const d=c.d/Rmax;
+    if(isVil)return rr()<(role==='fishing'?0.3:0.45)?'longhouse':'house';
+    return d>0.6&&rr()<0.35?'longhouse':'house';};
+  const tradeScores=(c,self)=>{
+    const e=siteOf(c),yr=AD(),opts=[];
+    for(const[t,T]of Object.entries(TRADES)){
+      if(yr<T.from||(T.town&&isVil))continue;
+      const dem=T.dem(e);if(dem<=0)continue;
+      const riv=nearN(c.mx,c.mz,T.R,o=>o.arch===t&&o!==self),sc=dem/(1+T.k*riv)/T.need;
+      opts.push({t,sc,dem,riv});
+    }
+    return {e,opts};
+  };
   const archFor=c=>{
-    const d=c.d/Rmax,k=c.st.kind;
-    if(k==='quay')return rpick(role==='port'?['warehouse','warehouse','shop','tavern','house']:['warehouse','house','shop','house']);
-    if(c.st.market)return rpick(['shop','shop','tavern','shop','house','warehouse']);
-    if(isVil)return rpick(role==='fishing'?['house','house','longhouse']:role==='mining'?['house','smithy','longhouse']:['house','longhouse','longhouse','granary','house']);
-    if(k==='road'||k==='wallst')return d<0.3?rpick(['shop','shop','house','tavern','smithy']):rpick(['house','house','smithy','tavern','shop','longhouse']);
-    return d<0.3?rpick(['house','shop','house','smithy']):rpick(['house','house','house','longhouse','granary']);
+    const {e,opts:all}=tradeScores(c),opts=all.filter(o=>o.sc>=1);
+    let pickT=null;
+    if(opts.length){let tot=1;for(const o of opts)tot+=Math.exp((o.sc-1)*2);let r=rr()*tot; // a home stays likelier than a trade that only just pays
+      for(const o of opts){r-=Math.exp((o.sc-1)*2);if(r<=0){pickT=o;break;}}}
+    if(!pickT)return home(c);
+    c._why={hh:e.hh,pass:e.pass,gate:e.gate,mk:e.mk,riv:pickT.riv,wet:e.wet};
+    return pickT.t;
+  };
+  /* change of use, year by year: a home on a street where custom has grown opens a shop (or a bakehouse, an
+     inn…); a trade whose custom has gone to newer rivals, or whose road has fallen quiet, closes and is lived in */
+  const reuse=n=>{
+    const changed=[],pool=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&(HOME.has(b.arch)||TRADES[b.arch]));
+    for(let k=0;k<n&&pool.length;k++){
+      const b=pool[Math.floor(rr()*pool.length)],g=nearStreet(b.x,b.z,Math.max(b.w,b.d)/2+6);if(!g)continue;
+      const c={mx:b.x,mz:b.z,d:dist2d(b.x,b.z,C.x,C.z),st:g.st},{e,opts}=tradeScores(c,b);
+      if(HOME.has(b.arch)){
+        if(b.arch==='longhouse'&&!isVil)continue; // a farmstead in town keeps to its yard
+        const best=opts.filter(o=>o.sc>=1.3&&o.t!=='granary'&&o.t!=='tannery'&&o.t!=='warehouse').sort((x,y)=>y.sc-x.sc)[0]; // shops open in houses; works and stores are built for the purpose
+        if(best){b.home0=b.home0||b.arch;b.arch=best.t;b.why={hh:e.hh,pass:e.pass,gate:e.gate,mk:e.mk,riv:best.riv,wet:e.wet,since:AD()};changed.push(b);}
+      }else{
+        const mine=opts.find(o=>o.t===b.arch);
+        if(!mine||mine.sc<0.55){b.arch=b.home0||'house';b.why=null;changed.push(b);}
+      }
+    }
+    return changed;
   };
   const tierFor=(c,e)=>{
     const cap=era<1000?0:era<1200?1:2;
@@ -1371,6 +1438,7 @@ function layoutSettlement(s){
         if(isVil){const k=1.5+rr()*3;f.x+=(-c.uz*c.side)*k;f.z+=(c.ux*c.side)*k;} // farmsteads stand back in their yards
       }
       if(!fits(f,gap))return null;
+      if(c._why&&!HOME.has(arch))extra.why=c._why;c._why=null;
       const b=place(arch,tier,f,c.d<Rmax*0.25?'market':c.d<Rmax*0.5?'artisan':'residential',hm,extra);c.done=true;built++;
       if(focus===oldVil&&oldVil)b.q='village';
       return b;
@@ -1644,7 +1712,7 @@ function layoutSettlement(s){
     backyards(){curE=E+1;backyards(E+1);curE=E;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,live:liveOps};
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,live:liveOps};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   W.roads.forEach((r,ri)=>{
@@ -2283,7 +2351,9 @@ function updateBuildingInstance(b){
     if(b.arch==='temple'){col=0xd6ceba;roofCol=0x4f5866;}
     if(b.arch==='keep'||b.arch==='tower'){col=0x9a948a;roofCol=0x4f5866;}
     if(b.motte){col=0x6e5334;roofCol=0x5a4630;}
-    if(b.arch==='smithy')roofCol=0x5a5048;}
+    if(b.arch==='smithy')roofCol=0x5a5048;
+    if(b.arch==='tannery'){col=0x7a6a52;roofCol=0x4e4436;} // low open-sided sheds, stained walls
+    if(b.arch==='inn')roofCol=ROOFS[Math.min(2,b.tier+1)][Math.floor(hue*3)%3];}
   const y0=b.y0??b.y-0.5;
   setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
   C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
@@ -2312,9 +2382,9 @@ function rebuildDetails(){
     const h=b.h,hu=b.hue??0.5;
     if(b.arch==='hall'&&!b.bailey){ // a ridge turret with a bell
       const[x,z]=at(b,0,0);put('box',x,b.y+h+h*0.62*0.4,z,b.rot,2.6,h*0.62*0.6+3.5,2.6,0xd8cdb4);put('pyr',x,b.y+h+h*0.62+3.5,z,b.rot,3.6,4,3.6,0x4f5866);
-    }else if(['house','longhouse','shop','tavern','smithy','burgher'].includes(b.arch)){
+    }else if(['house','longhouse','shop','tavern','smithy','burgher','bakery','inn'].includes(b.arch)){
       const[x,z]=at(b,b.w*(hu>0.5?0.3:-0.3),b.d*0.16);
-      const base=b.y+h*0.6,top=b.y+h+h*0.62*0.72+1.1,sz=b.arch==='smithy'?1.8:1.1;
+      const base=b.y+h*0.6,top=b.y+h+h*0.62*0.72+1.1,sz=b.arch==='smithy'||b.arch==='bakery'?1.8:1.1; // forge and oven want a big stack
       put('box',x,base,z,b.rot,sz,top-base,sz,b.arch==='smithy'?0x4d4640:(b.tier===0?0x857a6c:0x7a5a48));
     }else if(b.arch==='temple'){ // bell tower at the west end, with a spire
       const tw=b.w*0.44,[x,z]=at(b,0,-b.d/2-tw*0.15),top=b.y+h*1.85;
@@ -4067,10 +4137,17 @@ function showInspect(pk){
     const b=pk.b;
     setHTML(title,esc((TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4]));
     sub.textContent=b.s.name+' · '+b.district+' district'+(b.state!=='sound'?' · '+b.state:'');
-    h+=row('Households',b.arch==='house'||b.arch==='longhouse'?1+b.tier:0);
+    h+=row('Households',RESID.has(b.arch)?1+b.tier:0);
+    if(b.home0&&b.why&&b.why.since)h+=row('Opened',`AD ${b.why.since}, in what was a ${ARCH[b.home0][4]}`);
     h+=row('State',b.state);
     if(b.arch==='granary')h+=row('Grain stored',Math.round(b.s.stores.grain));
     if(b.arch==='warehouse')h+=row('Goods stored',Math.round(GOODS.reduce((t,g)=>t+b.s.stores[g],0)));
+    if(b.why){const w=b.why,bits=[];
+      if(w.hh)bits.push(`${w.hh} households within a short walk`);
+      if(w.pass>=0.5)bits.push('a busy road of the realm at the door');else if(w.pass>=0.25)bits.push('a through road at the door');
+      if(w.gate)bits.push('travellers at the gate');if(w.mk)bits.push('the market close by');if(w.wet)bits.push('running water for the vats');
+      bits.push(w.riv?`${w.riv} rival${w.riv>1?'s':''} near`:'no rival near');
+      h+=`<div class="agline" style="font-size:11.5px"><i>Why here:</i> ${bits.join(' · ')}.</div>`;}
     flyToBtn(fb,'Visit',()=>flyTo(b.x,b.z,60));
   }else if(pk.type==='notable'){
     const n=pk.n;
@@ -5350,7 +5427,7 @@ function tickOmens(myth,dis){
    and sustained prosperity upgrades buildings through the tiers
    (hovel-built → timber-framed → stone-built). */
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
-const RESID=new Set(['house','longhouse','burgher','shop','tavern','smithy']);
+const RESID=new Set(['house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery']);
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
   for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
@@ -5370,6 +5447,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
   W.settlements.forEach((s,si)=>{
     const L=s._lay;if(!L||!L.live||day()%360!==(si*47+90)%360)return;
     if(s.pop0===undefined)s.pop0=s.pop;
+    if(L.reuse)for(const b of L.reuse(Math.max(3,Math.round(s.buildings.length/25))))if(b.idx!==undefined)updateBuildingInstance(b);
     const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
     if(s.kind==='village'&&AD()>=950&&s.pop>420&&s.prosperity>50&&(roadsN>=2||s.river||s.harbor)&&chance('sim',0.4)){
       L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}

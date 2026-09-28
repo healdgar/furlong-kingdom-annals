@@ -199,6 +199,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
   cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.
   About two seeds in five lie by the sea; the World tab (or `&c=sea` /
   `&c=land`) can ask for a coast or keep the realm inland.
+- Trades sit where their custom is. A lot becomes a shop, tavern, inn,
+  smithy, bakehouse, tannery, warehouse or granary only where enough
+  custom reaches its door: households within a short walk, the realm's
+  traffic on that road (each road carries the people-weighted share of
+  all journeys between places that must use it), travellers at the gate,
+  boats at the quay, the market close by. A trade shares that custom with
+  the rivals already near, and noisome trades keep off homes and the
+  market. Each year some homes where custom has grown open as shops, and
+  trades whose custom has gone close. Click one to see why it stands there.
 - A realm of fiefs. Every furlong has a lord, and fighting moves it:
   - every house keeps a standing household host at its seat, recruited
     from its people; neighbouring lords with grudges or land-hunger fight
