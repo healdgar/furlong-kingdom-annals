@@ -55,7 +55,9 @@ Wake the dragon · Assassinate the monarch · Contest the succession…),
 Press **♛ Rule** (or `R`) to stop watching and govern. Providence's dials and
 Acts are sealed while you rule; the crown's own levers take their place:
 
-- **Petitions.** The court brings decisions to you — restive houses demanding
+- **Petitions.** Each names who and where it touches, with a link to show
+  them on the map and what bears on the answer (standing, purse, towns;
+  people, unrest, holder). The court brings decisions to you — restive houses demanding
   lands, famine relief, sealing a plague town's gates, answering the dragon,
   bounties on outlaws, debasing the coin, border disputes, tourneys. The game
   pauses when one arrives (toggleable); if you stay silent, the council
@@ -106,9 +108,25 @@ itself; you rule one lord's domain:
   lay a road from one of your towns, pave a road to one, found a village on
   your own land or open waste, send gifts to court.
 - **Neighbours**: defy a neighbouring house in a private war, or sue for peace.
+  Houses marry into each other: a match is ten years' pledged peace (breaking
+  it costs you your word). At a private war's end the towns taken go back,
+  save the best one to a decisive victor; the loser remembers.
+- **Town works** (in any town of your own, crown or lord): a mill (+20% grain),
+  a granary (keeps 60% more against famine), a market charter (dues half
+  again), assarters (for three years the plough takes in the wood and waste).
+  Lords and the council build these on their own too.
+- **Why?** Your standing at court is explained: what moves it year by year
+  (tax, unrest, legitimacy, the monarch's character, a strong house's pride)
+  and the recent swings with their causes; the purse shows last year's
+  accounts (rents, markets, hosts, castellans, garrisons, works, land).
 - **Your hosts** wait on your orders like the crown's (click one, then a town).
-- **The throne**: raise your banners and claim it. If your house wins the
-  crown, you rule on as the sovereign.
+- **The throne**: raise your banners and claim it, or seek a royal match to
+  bring royal blood into your line (a claim). When a monarch dies with no
+  child, the crown passes to the royal kin; failing them, the great houses
+  elect (royal blood, might, friendships and grudges sway the votes, and the
+  runner-up may fight). A crown with no legitimacy left and most houses
+  estranged is set aside by election. If your house wins the crown, you rule
+  on as the sovereign.
 - **Your table**: your own petitions come to you — the crown's summons in its
   wars, a rising's envoys asking you to join, a weak throne you could claim,
   creditors when the purse runs dry, a rioting royal town offering itself to
@@ -117,6 +135,17 @@ itself; you rule one lord's domain:
   a won private war, a village of your own, and the crown itself.
 
 ## How it works
+
+- **The great houses' wealth.** A lord lives on his tenants' rents and the
+  dues of his markets (the crown takes only a feudal aid from his towns);
+  each fief beyond his hall keeps a castellan out of its own rents; hosts and
+  garrisons are paid by the head, and garrisons go home in peace. Debt past
+  what a lord's lands can answer for costs him land (to a richer neighbour, or
+  to the crown for the debt). A great lord enfeoffs cadets or castellans with
+  his outlying fiefs and sells some for silver; a house with silver and no
+  land buys one. A line that dies out escheats to the crown. So the crown
+  tends to grow, as crowns did, by escheat, forfeiture and purchase, while
+  the houses rise and fall around it.
 
 - Deterministic worldgen via seeded `sfc32` RNG with **separate streams** for
   generation (map seed) and history (map seed mixed with the fate seed) —
