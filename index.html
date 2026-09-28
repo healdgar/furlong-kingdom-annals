@@ -3062,14 +3062,17 @@ function rebuildDetails(){
         cut(nx,nz,nx*qx+nz*qz-g.hw-0.8,-9);}
       for(const pl of S.places||[]){const pr=Math.max(...(pl.r||[8]))+1,nx=pl.x-b.x,nz=pl.z-b.z,d=Math.hypot(nx,nz);if(d>pr+2&&d<R+pr)cut(nx/d,nz/d,(nx*pl.x+nz*pl.z)/d-pr,-9);}
       if(S.wallRad){const a=Math.atan2(b.z-S.pos.z,b.x-S.pos.x),wr=wallRadAt(S,a),d=dist2d(b.x,b.z,S.pos.x,S.pos.z);
-        if(wallKindAt(S,a)!==1){const nx=Math.cos(a),nz=Math.sin(a),c=nx*S.pos.x+nz*S.pos.z;if(d<wr-2)cut(nx,nz,c+wr-4,-9);else if(d>wr+2)cut(-nx,-nz,-(c+wr+4),-9);}} // lots stop short of the wall, within or without
+        if(wallKindAt(S,a)!==1){const nx=Math.cos(a),nz=Math.sin(a),c=nx*S.pos.x+nz*S.pos.z;if(d<wr-2)cut(nx,nz,c+wr-1.6,-9);else if(d>wr+2)cut(-nx,-nz,-(c+wr+1.6),-9);}} // a lot runs up to the wall and takes it for its bound (no fence along it)
+      b._inCastle=false;
+      for(const C of castleKeepOut(S)){const d=dist2d(b.x,b.z,C.x,C.z); // the castle is its own round parcel, ditch and palisade its bounds: lots outside stop short of it
+        if(d<C.r+1)b._inCastle=true;else{const nx=(b.x-C.x)/d,nz=(b.z-C.z)/d;cut(-nx,-nz,-(nx*C.x+nz*C.z+C.r+(C.motte?0.3:0.9)),-9);}} // up to the palisade or the ditch's lip, which bound it
       b.lot=P;
       for(let k=0;k<P.length;k++){const a=P[k],c=P[(k+1)%P.length],e=a.e;if(e===-9||e===undefined)continue;
-        if(e>=0){const key=Math.min(e,b.idx)+'_'+Math.max(e,b.idx);if(edges.has(key))continue;edges.set(key,[a,c,b]);}
-        else edges.set('b'+b.idx+'_'+k,[a,c,b]);}
+        if(e>=0){const key=Math.min(e,b.idx)+'_'+Math.max(e,b.idx);if(edges.has(key))continue;edges.set(key,[a,c,b,e]);}
+        else edges.set('b'+b.idx+'_'+k,[a,c,b,-1]);}
     }
     const col=t=>t===2?0x9a9182:t===1?0x8a7453:0x7d6647;
-    for(const[,[a,c,b]]of edges){const L=Math.hypot(c.x-a.x,c.z-a.z);if(L<1.5)continue;
+    for(const[,[a,c,b,e]]of edges){const L=Math.hypot(c.x-a.x,c.z-a.z);if(L<1.5||b._inCastle||e>=0&&G.bldList[e]&&G.bldList[e]._inCastle)continue; // no garden fences inside the castle's own ring
       const t=b.arch==='temple'||b.arch==='keep'?2:(b.tier||0),n=Math.max(1,Math.round(L/8)),ry=Math.atan2(c.x-a.x,c.z-a.z);
       for(let k=0;k<n;k++){const x=a.x+(c.x-a.x)*(k+0.5)/n,z=a.z+(c.z-a.z)*(k+0.5)/n; // short lengths, each set on its own ground
         let inB=false;for(const o of bh.near(x,z,4))if(o.state!=='gone'&&!o.removed&&dist2d(x,z,o.x,o.z)<Math.min(o.w,o.d)*0.5){inB=true;break;} // under a house the line is its party wall
@@ -3104,6 +3107,14 @@ function wallGates(s){
   g.roads=roads;
   return g;
 }
+function castleKeepOut(s){ // the ditched works of a place, as circles nothing else may cross: the motte and its ditch, the bailey, a hill castle, a cathedral close
+  const o=[];if(s.motte)o.push({x:s.motte.x,z:s.motte.z,r:s.motte.r+5.5,motte:true});
+  for(const R of[s.bailey,s.hillCastle,s.burgRing])if(R)o.push({x:R.x,z:R.z,r:R.r});return o;}
+function segOutside(p,q,C){ // the parts of segment p→q that lie outside circle C
+  const dx=q.x-p.x,dz=q.z-p.z,fx=p.x-C.x,fz=p.z-C.z,a=dx*dx+dz*dz||1e-9,b=2*(fx*dx+fz*dz),c=fx*fx+fz*fz-C.r*C.r,disc=b*b-4*a*c;
+  if(disc<=0)return c>=0?[[p,q]]:[];
+  const sq=Math.sqrt(disc),t1=(-b-sq)/(2*a),t2=(-b+sq)/(2*a),at=t=>({x:p.x+dx*t,z:p.z+dz*t}),out=[];
+  if(t1>0)out.push([p,at(Math.min(1,t1))]);if(t2<1)out.push([at(Math.max(0,t2)),q]);return out;}
 function rebuildWalls(){
   if(G.wallGrp){scene.remove(G.wallGrp);disposeTree(G.wallGrp);}
   const grp=new THREE.Group(),acc=newAcc(),acc2=newAcc(),ditch=newAcc(),inst={merlon:[],tower:[],cap:[],gate:[],stake:[],gtower:[]};
@@ -3133,10 +3144,12 @@ function rebuildWalls(){
     const blocked=p=>riverAt(p.x,p.z,1)||lakeAt(s,p.x,p.z,1)||W.water[cIdx(toCell(p.x),toCell(p.z))]===1
       ||(s.wallRad&&Math.abs(dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x)))<6);
     const gate=(p,q)=>(s.streets||[]).some(st=>!st.hidden&&!st.gone&&st.kind!=='edge'&&st.pts.some((u,i)=>i>0&&segSegDist(p,q,st.pts[i-1],u)<st.hw+1.2));
+    const keepOut=castleKeepOut(s).filter(C=>Math.abs(C.x-cx)+Math.abs(C.z-cz)>1); // another work's ditch: the palisade runs up to it and stops
     for(let k=0;k<n;k++){const a0=k/n*6.2832,a1=(k+1)/n*6.2832,p=P(a0),q=P(a1),m=P((a0+a1)/2);
       if(blocked(m)||blocked(p)&&blocked(q)||gate(p,q))continue;
-      slab(p,q,stone?2.6:1.4,h,stone?0xa59c8d:0x6e5334,stone?0x958c7e:0x5f472d);}
-    for(let k=0;k<4;k++){const a=k/4*6.2832+0.4,t=P(a);if(blocked(t))continue;inst.tower.push([t.x,hAt(t.x,t.z),t.z,stone,h,stone?7:4.5]);}
+      let segs=[[p,q]];for(const C of keepOut)segs=segs.flatMap(([u,v])=>segOutside(u,v,C));
+      for(const[u,v]of segs)if(dist2d(u.x,u.z,v.x,v.z)>0.8)slab(u,v,stone?2.6:1.4,h,stone?0xa59c8d:0x6e5334,stone?0x958c7e:0x5f472d);}
+    for(let k=0;k<4;k++){const a=k/4*6.2832+0.4,t=P(a);if(blocked(t)||keepOut.some(C=>dist2d(t.x,t.z,C.x,C.z)<C.r+3))continue;inst.tower.push([t.x,hAt(t.x,t.z),t.z,stone,h,stone?7:4.5]);}
   };
   for(const s of W.settlements){
     if(s.lake){const dm=s.lake.dam,px=-Math.sin(dm.a)*dm.w/2,pz=Math.cos(dm.a)*dm.w/2; // the mill dam
