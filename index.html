@@ -948,7 +948,10 @@ function roadCost(a,b){ // between neighboring cells
     const dh=Math.abs(W.h[a]-W.h[b])/CELL;
     let c=1+dh*dh*46;
     if(W.water[b]===1)return 1e9;
-    if(W.water[b]===2)c+=26; // bridge
+    if(W.water[b]===2)c+=16+Math.min(30,Math.sqrt(W.flow[b])*0.6); // a bridge, dearer the broader the stream: crossings seek the narrows
+    else{if(!W._bank){W._bank=new Uint8Array(GRID*GRID);for(let i=0;i<GRID*GRID;i++)if(W.water[i]===2){const x=i%GRID,z=(i/GRID)|0;
+        for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++)if(inB(x+dx,z+dz)&&W.water[cIdx(x+dx,z+dz)]!==2)W._bank[cIdx(x+dx,z+dz)]=1;}}
+      if(W._bank[b])c+=2;} // the river's edge floods and slips: a road crosses it, it does not follow it
     const bi=W.biome[b];
     if(bi===B.FOREST||bi===B.PINE)c+=2.2;
     if(bi===B.MARSH)c+=6;if(bi===B.ROCK)c+=7;if(bi===B.SNOW)c+=14;
@@ -2058,7 +2061,8 @@ function stitchRoads(){ // a road now runs centre → its spoke street → the o
     if(sa&&sa.length)k0=Math.max(k0,near(sa[sa.length-1],0,Math.ceil(n/2))+1);
     if(sb&&sb.length)k1=Math.min(k1,near(sb[sb.length-1],Math.floor(n/2),n)-1);
     const pts=k1>=k0?O.slice(k0,k1+1):[];
-    const head=[{x:A.pos.x,z:A.pos.z},...(sa||[])],tail=[...(sb?[...sb].reverse():[]),{x:B.pos.x,z:B.pos.z}];
+    const ctr=(S,sp)=>!sp||!sp.length||dist2d(sp[0].x,sp[0].z,S.pos.x,S.pos.z)<30?[{x:S.pos.x,z:S.pos.z}]:[]; // the centre, unless it stands off the streets (the town grew elsewhere)
+    const head=[...ctr(A,sa),...(sa||[])],tail=[...(sb?[...sb].reverse():[]),...ctr(B,sb)];
     const kp=keepToBank(pts); // carts go where the road is drawn
     r.path=[...head,...kp,...tail];r.len=polyLen(r.path);
     // the stretch drawn as a king's road (spoke ends included so it joins the street)
@@ -2376,13 +2380,18 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   const FR=[-1,-0.78,-0.45,0,0.45,0.78,1];
   const roadCol=(pal)=>(k,j)=>j===0||j===6?pal.verge:j===2||j===4?pal.rut:j===3?pal.crown:pal.dirt;
   // lay a road or street, splitting it into dry runs; every wet run becomes a bridge bank to bank
+  const dupSpan=(a,b,hw)=>spans.some(o=>{const m={x:(a.x+b.x)/2,z:(a.z+b.z)/2}; // a second road on the same crossing uses the bridge already there
+    return segDist(m.x,m.z,o.a,o.b)<o.hw+hw+2&&segDist(a.x,a.z,o.a,o.b)<o.hw+hw+8&&segDist(b.x,b.z,o.a,o.b)<o.hw+hw+8;});
   const lay=(pts,hw,lift,col)=>{
+    const W8=pts.map(q=>riverAt(q.x,q.z,hw*0.5+1));
+    for(let k=1;k<pts.length-1;k++)if(!W8[k]){let j=k;while(j<pts.length-1&&!W8[j])j++; // a dry blip mid-stream (a bar, a bend) does not split the bridge
+      if(W8[k-1]&&W8[j]&&j-k<=3&&dist2d(pts[k-1].x,pts[k-1].z,pts[j].x,pts[j].z)<18)for(let m=k;m<j;m++)W8[m]=W8[k-1];k=j;}
     let run=[],wet=null;
     const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>hw,lift,col});run=[];};
     for(let k=0;k<pts.length;k++){
-      const w=riverAt(pts[k].x,pts[k].z,hw*0.5+1);
+      const w=W8[k];
       if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y};flush();}wet.y=Math.max(wet.y,w.y);}
-      else{if(wet){spans.push({a:wet.from,b:pts[k],y:wet.y,hw});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
+      else{if(wet){if(!dupSpan(wet.from,pts[k],hw))spans.push({a:wet.from,b:pts[k],y:wet.y,hw});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
     }
     flush();
   };
@@ -2405,6 +2414,50 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
       :(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
+  }
+  { /* junctions: where ways meet or cross, the overlapping verges and ruts give way to one trodden patch,
+       shaped by the ways that come in (its corners worn round by carts cutting them) */
+    if(G.roadJoins){scene.remove(G.roadJoins);G.roadJoins.geometry.dispose();G.roadJoins=null;}
+    const lines=[];
+    for(const r of W.roads)lines.push({P:resample(r.drawn||r.path,5),hw:r.grade?4.8:4.2,pv:!!r.grade});
+    for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge'){const P=resample(st.pts,5);
+      lines.push({P,hw:st.hw,pv:st.kind==='wallst'||P.some(q=>dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr)});}}
+    const H=makeHash(24);
+    lines.forEach((l,li)=>{for(let k=0;k<l.P.length-1;k++){const a=l.P[k],b=l.P[k+1];H.add({x:(a.x+b.x)/2,z:(a.z+b.z)/2,a,b,li,k},dist2d(a.x,a.z,b.x,b.z)/2+l.hw);}});
+    const J=[],addArm=(x,z,d,hw,pv)=>{let j=J.find(o=>dist2d(o.x,o.z,x,z)<7);if(!j)J.push(j={x,z,arms:[],pv:false});j.arms.push({dx:d[0],dz:d[1],hw});j.pv=j.pv||pv;};
+    const dirOf=(a,b)=>{const L=dist2d(a.x,a.z,b.x,b.z)||1;return[(b.x-a.x)/L,(b.z-a.z)/L];};
+    const armsAt=(l,g,t)=>{const P=l.P,k=g.k,out=[]; // the ways out of a point on a line: back along it, and on
+      if(k>0||t>0.2)out.push(dirOf(g.b,g.a));if(k<P.length-2||t<0.8)out.push(dirOf(g.a,g.b));return out;};
+    lines.forEach((l,li)=>{const P=l.P;if(P.length<2)return;
+      for(const[e,n]of[[P[0],P[1]],[P[P.length-1],P[P.length-2]]]){ // a way ending on another
+        let best=null,bd=1e9,bt=0;
+        for(const g of H.near(e.x,e.z,l.hw+8)){if(g.li===li)continue;const o=lines[g.li],dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,t=clamp(((e.x-g.a.x)*dx+(e.z-g.a.z)*dz)/L2,0,1),d=Math.hypot(e.x-g.a.x-dx*t,e.z-g.a.z-dz*t);
+          if(d<o.hw+l.hw*0.5+1.5&&d<bd){bd=d;best=g;bt=t;}}
+        if(!best)continue;const o=lines[best.li],x=best.a.x+(best.b.x-best.a.x)*bt,z=best.a.z+(best.b.z-best.a.z)*bt;
+        addArm(x,z,dirOf(e,n),l.hw,l.pv);for(const d of armsAt(o,best,bt))addArm(x,z,d,o.hw,o.pv);}
+      for(let k=0;k<P.length-1;k++){const a=P[k],b=P[k+1]; // two ways crossing
+        for(const g of H.near((a.x+b.x)/2,(a.z+b.z)/2,4)){if(g.li<=li)continue;
+          const d1x=b.x-a.x,d1z=b.z-a.z,d2x=g.b.x-g.a.x,d2z=g.b.z-g.a.z,den=d1x*d2z-d1z*d2x;if(Math.abs(den)<1e-6)continue;
+          const t=((g.a.x-a.x)*d2z-(g.a.z-a.z)*d2x)/den,u=((g.a.x-a.x)*d1z-(g.a.z-a.z)*d1x)/den;if(t<0||t>1||u<0||u>1)continue;
+          const x=a.x+d1x*t,z=a.z+d1z*t,o=lines[g.li];
+          for(const d of armsAt(l,{a,b,k},t))addArm(x,z,d,l.hw,l.pv);for(const d of armsAt(o,g,u))addArm(x,z,d,o.hw,o.pv);}}
+    });
+    const jacc=newAcc();
+    for(const j of J){if(j.arms.length<2||riverAt(j.x,j.z,4))continue;
+      const own=W.settlements.find(s=>(s.places||[]).some(p=>dist2d(p.x,p.z,j.x,j.z)<Math.max(...(p.r||[8]))+2));if(own)continue; // a market square is its own junction
+      const mh=Math.max(...j.arms.map(a=>a.hw)),ext=mh*1.25+1.5,pts=[];
+      for(const a of j.arms){const px=-a.dz,pz=a.dx;for(const sd of[-1,1])pts.push({x:j.x+a.dx*ext+px*a.hw*sd*1.02,z:j.z+a.dz*ext+pz*a.hw*sd*1.02});
+        pts.push({x:j.x+a.dx*mh*0.9+px*mh*0.9,z:j.z+a.dz*mh*0.9+pz*mh*0.9},{x:j.x+a.dx*mh*0.9-px*mh*0.9,z:j.z+a.dz*mh*0.9-pz*mh*0.9});}
+      pts.sort((p,q)=>Math.atan2(p.z-j.z,p.x-j.x)-Math.atan2(q.z-j.z,q.x-j.x));
+      const hull=[];for(const q of pts){while(hull.length>=2){const a=hull[hull.length-2],b=hull[hull.length-1];if((b.x-a.x)*(q.z-a.z)-(b.z-a.z)*(q.x-a.x)<=0)hull.pop();else break;}hull.push(q);} // convex, wound about the centre
+      while(hull.length>3){const a=hull[hull.length-2],b=hull[hull.length-1],q=hull[0];if((b.x-a.x)*(q.z-a.z)-(b.z-a.z)*(q.x-a.x)<=0)hull.pop();else break;}
+      const pal=j.pv?PAVECOL:ROADCOL,base=jacc.p.length/3,R=[0,0.55,1],n=hull.length;
+      for(const f of R)for(let k=0;k<(f?n:1);k++){const q=f?{x:j.x+(hull[k].x-j.x)*f,z:j.z+(hull[k].z-j.z)*f}:j;
+        jacc.p.push(q.x,hAt(q.x,q.z)+0.36,q.z);const nn=terrNormal(q.x,q.z);jacc.n.push(nn[0],nn[1],nn[2]);C1.setHex(f===1?pal.rut:pal.dirt);jacc.c.push(C1.r,C1.g,C1.b);}
+      for(let k=0;k<n;k++){const k1=(k+1)%n,r1=base+1,r2=base+1+n;jacc.i.push(base,r1+k1,r1+k,r1+k,r1+k1,r2+k1,r1+k,r2+k1,r2+k);}
+    }
+    if(jacc.i.length){G.roadJoins=accMesh(jacc,G.joinMat||(G.joinMat=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-8})));
+      G.roadJoins.receiveShadow=true;scene.add(G.roadJoins);}
   }
   G.roads=accMesh(acc,G.roadMat||(G.roadMat=new THREE.MeshLambertMaterial({vertexColors:true,
     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-4})));
@@ -2982,7 +3035,7 @@ function rebuildDetails(){
       if(da<=0)out.push(a);if(da*db<0){const t=da/(da-db);out.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t,e:a.e});}}return out;};
     const edges=new Map();
     for(const b of G.bldList){if(b.state==='gone'||b.removed||!b.s)continue;
-      const S=b.s,R=(S.kind==='village'||S.kind==='hamlet'?26:20)+b._r;
+      const S=b.s,R=(S.kind==='village'?13:18)+b._r; // a croft and its toft; a burgage plot runs further back
       const cr=Math.cos(b.rot||0),sr=Math.sin(b.rot||0);let P=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v],k)=>({x:b.x+(u*cr+v*sr)*R,z:b.z+(v*cr-u*sr)*R,e:-1-k})); // squared to the house // e: which line made each edge (≥0 a neighbour, -1..-4 the bound, -9 public ground)
       const cut=(nx,nz,c,e)=>{const L=Math.hypot(nx,nz)||1,Q=clip(P,nx/L,nz/L,c/L);if(Q.length<3)return false;
         for(let k=0;k<Q.length;k++){const a=Q[k],q=Q[(k+1)%Q.length];if(Math.abs(a.x*nx/L+a.z*nz/L-c/L)<1e-6&&Math.abs(q.x*nx/L+q.z*nz/L-c/L)<1e-6)a.e=e;}P=Q;return true;};
