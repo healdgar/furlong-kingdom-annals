@@ -4006,6 +4006,9 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     if(k==='clearing')t.clearUntil=day()+360*3;else{(t.works||(t.works={}))[k]=day();if(k==='market')t.prosperity=clamp(t.prosperity+5,0,100);}
     emit(hi>0?'house':'trade',3,t.pos,`${hi>0?W.houses[hi].name:'The crown'} ${k==='mill'?'builds a mill':k==='granary'?'builds a granary':k==='market'?'grants a market charter':'sets assarters to clear the waste'} at ${t.name}.`);
   }
+  if(day()%360===250)for(let a=1;a<W.houses.length;a++){const A=W.houses[a];if(a===plyH()||A.exiled||(A.gold||0)<1500)continue; // old grudges are paid in sedition
+    const foes=Object.keys(A.grudges||{}).map(Number).filter(b=>b>0&&W.houses[b]&&!W.houses[b].exiled&&!atWar(a,b));
+    if(foes.length&&chance('sim',0.2)){const b=pick('sim',foes);A.gold-=300;book(A,'intrigue',-300);incite(a,b);}}
   if(day()%360===240){ // marriages between neighbouring houses: ten years' peace between them
     const L=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&W.settlements.some(s=>s.owner===i));
     for(const a of L)if(chance('sim',0.15)){const nb=lordNeighbours(a).filter(b=>b!==plyH()&&!atWar(a,b)&&!((W.houses[a].grudges||{})[b])&&!(((W.houses[a].pacts||{})[b]||0)>day()));
@@ -4066,7 +4069,10 @@ function startFeud(a,b,by){ // a private war: both lords call out their tenants
   const fd={a,b,start:day(),until:day()+360*(1+randi('sim',2)),by,name:`the ${pick('sim',FEUD_NAMES)} of ${A.name.replace('House ','')} and ${B.name.replace('House ','')}`,
     la:G.land.F.filter(f=>f.lord===a).length,lb:G.land.F.filter(f=>f.lord===b).length};
   (W.feuds=W.feuds||[]).push(fd);
-  for(const hi of[a,b]){const seat=W.settlements.findIndex(s=>s.owner===hi);if(seat>=0)raiseArmy(hi,seat,hostTarget(hi)*1.6,'host');}
+  for(const hi of[a,b]){const seat=W.settlements.findIndex(s=>s.owner===hi);if(seat<0)continue;const host=raiseArmy(hi,seat,hostTarget(hi)*1.6,'host');
+    const foe=hi===a?b:a,allies=W.houses.map((o,i)=>i).filter(i=>i>0&&i!==hi&&i!==foe&&!W.houses[i].exiled&&((W.houses[i].pacts||{})[hi]||0)>day()&&!atWar(i,foe)); // kin by marriage send knights
+    for(const i of allies){const hh=W.armies.find(x=>x.house===i&&x.standing&&!x.gone&&x.state==='idle');if(!hh)continue;const k=hh.strength*0.3;hh.strength-=k;host.strength+=k;
+      emit('war',5,W.settlements[seat].pos,`${W.houses[i].name} sends knights to aid ${W.houses[hi].name}, as kin by marriage.`);}}
   for(const x of W.armies)if(x.house===a||x.house===b)x.hold=x.house===ply&&x.standing; // the player's household still waits on orders; the levies take the field
   emit('war',8,W.settlements[A.seat]?W.settlements[A.seat].pos:W.capital.pos,by!=null?`${A.name} defies ${B.name} and rides out over the land between them — ${fd.name}.`
     :`${A.name} and ${B.name} fall to open war over the land between them — ${fd.name}. The crown ${W.legitimacy>60?'frowns, but':'is'} too weak to part them.`);
@@ -5615,7 +5621,7 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
   if(!give.length)return;
   const name='House '+give[0].name.replace(/(mere|holt|ford|caster|wyck|march|fell|combe|worth|bridge|haven|moor|dale|garth|stead|port|field|burn|cester|ham|by)$/,'')+pick('sim',['ing','mont','ric','wald','hurst']);
   const cC=CULT[h.cult]||CULT.anglo,cr=nameRng(day()+hi*101),cname=cC.house(give[0].name,cr,cC,r1(cr,cC.roots));
-  const nh={name:!W.houses.some(o=>o.name===cname)?cname:!W.houses.some(o=>o.name===cname+' of '+give[0].name)?cname+' of '+give[0].name:name, /* a cadet takes its name from its fief, in its own tongue */cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
+  const nh={name:[cname,cname+' the Younger',cname+' of the March',cname+' the Cadet'].find(n=>!W.houses.some(o=>o.name===n))||name, /* a cadet takes its name from its fief, in its own tongue */cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
   {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
     Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0});}
   {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
@@ -7351,6 +7357,7 @@ function lordPanelHTML(){
     for(const j of nb){const o=W.houses[j],fd=(W.feuds||[]).find(f=>(f.a===hi&&f.b===j)||(f.b===hi&&f.a===j));
       x+=`<div class="houserow"><img src="${sigURL(j)}"><span class="hname" style="flex:1">${esc(o.name.replace('House ',''))}</span><span class="tag">${W.settlements.filter(s=>s.owner===j).length} towns · ${fd?'at feud':'at peace'}</span></div>`;
       const pk=((h.pacts||{})[j]||0)>day();if(pk)x+=`<div class="note" style="margin:0 0 2px">pledged by marriage until ${dateStr(h.pacts[j])}</div>`;
+      x+=cbtn('lord','incite:'+j,'Stir up their tenants',300,cd('l_inc'+j),'unrest in their greatest town; if your agents are taken, a grudge');
       x+=fd?cbtn('lord','peace:'+j,'Sue for peace',0,'','each side keeps what it holds'):cbtn('lord','feud:'+j,pk?'Break the pact and defy them':'Defy them — a private war',0,houseAtWar(hi)&&!fd&&(W.feuds||[]).filter(f=>f.a===hi||f.b===hi).length>=2?'already at war':'','your levies take the field; the crown frowns');}
   }
   x+=`<div class="dhead">The throne</div>`;
@@ -7394,6 +7401,7 @@ function lordCmd(cmd,arg){
       if(((h.pacts||{})[j]||0)>day()){delete h.pacts[j];if(W.houses[j].pacts)delete W.houses[j].pacts[hi];W.houses[j].grudges=W.houses[j].grudges||{};W.houses[j].grudges[hi]=true;
         emit('house',6,W.settlements[h.seat]?.pos,`${h.name} breaks its marriage pact with ${W.houses[j].name}! Its word is worth less now.`);h.loyalty=clamp(h.loyalty-6,0,100);}
       startFeud(hi,j,hi);h.loyalty=clamp(h.loyalty-(W.legitimacy>60?6:2),0,100);break;}
+    case 'incite':{const j=+arg;if(cdLeft('l_inc'+j)||!spend(hi,300))return;setCd('l_inc'+j,120);book(h,'intrigue',-300);incite(hi,j);break;}
     case 'peace':{const j=+arg,fd=(W.feuds||[]).find(f=>(f.a===hi&&f.b===j)||(f.b===hi&&f.a===j));
       if(fd){fd.until=day();emit('war',5,seat.pos,`${h.name} sends heralds to ${W.houses[j].name} to treat for peace.`);}break;}
     case 'rebel':{if(W.war)return;
@@ -7413,6 +7421,13 @@ function lordPlace(mode,p,arg){ // map clicks for a lord's works
     if(cdLeft('l_vil')||purse(hi)<1200)return;
     const n=W.settlements.length;if(doAct('village',p,{from:seat,owner:hi})&&W.settlements.length>n){spend(hi,1200);setCd('l_vil',360);sovAmbition('found');}}
 }
+function incite(by,j){ // agents in a rival's market: bread riots and sedition; found out, and the rival does not forget
+  const own=W.settlements.filter(s=>s.owner===j).sort((a,b)=>b.pop-a.pop),t=own[0];if(!t)return false;
+  t.unrest=clamp(t.unrest+20,0,100);t.prosperity=clamp(t.prosperity-5,1,100);
+  const B=W.houses[by],J=W.houses[j],caught=chance('sim',0.3);
+  if(caught){(J.grudges||(J.grudges={}))[by]=true;emit('house',6,t.pos,`Agents of ${B.name} are taken stirring up the townsmen of ${t.name}. ${J.name} will remember it.`);}
+  else emit('fates',3,t.pos,`Sedition runs through the market of ${t.name}; no one knows who pays the agitators.`);
+  return true;}
 function tickLordPlayer(){ // what comes to a lord's table
   const hi=plyH(),h=W.houses[hi];if(!h)return;
   if(W.war&&W.war.rebel!==hi&&!inRevolt(hi)&&!h._summoned&&day()-W.war.start>20){h._summoned=W.war.start;
