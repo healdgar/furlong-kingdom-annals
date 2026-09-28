@@ -61,6 +61,17 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - **Decrees** (gold + cooldown): royal feast, open the granaries,
   extraordinary levy, bounty riders, charter a village on the map, raise the
   royal host, sue for peace, pay the wyrm, send champions against it.
+- **Works** (orders the world carries out over time, each marked on the map
+  while it is in hand): lay a road between two places (surveyed and priced
+  by the ground, built by gangs month by month, used by the carts when
+  open); pave a road (a third faster); buy a lord's furlong (envoys make an
+  offer; he answers weeks later); clear a quarter of a crown town (condemned,
+  pulled down house by house as leases end, laid out anew and rebuilt by the
+  town's own growth). In a lord's town the crown cannot order it, only
+  persuade: a grant of gold, a grant of crown land beside his, a remission of
+  his dues, the royal host at his gates (he yields or rises), or plain
+  asking. Lords build roads of their own where a long way round carries
+  much traffic.
 - **The great houses**: honour them, take a hostage (they cannot rise for two
   years), arrange a royal match, or attaint them for treason — seize their
   lands on success, civil war on failure.
@@ -136,8 +147,9 @@ Acts are sealed while you rule; the crown's own levers take their place:
   the strips, ridge and furrow, headlands and hedgerows from small data
   textures.
 - The ground is dressed by its surroundings rather than a texture library.
-  Distance fields (about 6 m) to water, walls, roads, the wood's edge and
-  buildings are kept current as the map changes, and the terrain shader
+  Distance fields (about 6 m texels; exact to the edge of each road, wall
+  and river near it, so verges and ditches run true) to water, walls, roads,
+  the wood's edge and buildings are kept current as the map changes, and the terrain shader
   paints by circumstance and by combinations of circumstance:
   - river + town: stone embankments; river alone: mud and reeds;
   - river + wood: alder carr; river + steep: a raw cut bank;
@@ -173,7 +185,16 @@ Acts are sealed while you rule; the crown's own levers take their place:
   choices: candidates are scored and one is drawn at a temperature, so the
   likely usually happens but not always.
 - Roads, streets and rivers are draped, connected strips (verges and ruts,
-  shallows and deep water); bridges span wherever a road meets a river.
+  shallows and deep water); bridges span wherever a road crosses a river,
+  and a road that follows a river keeps to its bank. A river's width goes
+  with the square root of what drains into it, so where two like streams
+  meet it swells; a tributary's mouth flares into the other's channel.
+- Lots: wilderness belongs to no one until it is taken in; farmland is held
+  in furlongs; and houses built on a furlong take their lots out of it.
+  The ground about the houses is cut into adjoining parcels, each house
+  holding what lies nearer to it than to its neighbours (weighted by size),
+  up to the street, the river, the market square and the town wall.
+  Fences follow the parcel lines: wattle, paling, then low stone walls.
 - Trade consignments run on the sim clock, but what you see is their traffic:
   each sends out a small convoy of carts (one per unit of goods), barges or
   cogs that travel at a walking pace in real time.
@@ -212,6 +233,12 @@ Acts are sealed while you rule; the crown's own levers take their place:
   churches, town halls and mills are named in the same tongue; inns and
   shops have signs made in its grammar (Zum Goldenen Hirsch, À la Couronne
   d'Or, U Zlatého Jelena), their master's name, or a promise to customers.
+- Overlays (Overlays tab) read the simulation directly: territories;
+  the trade network (each road as wide as its share of all journeys between
+  places, sea lanes and river barges in blue); land and property value
+  (fields by yield and nearness to buyers, houses by their rent: the market,
+  a busy frontage, the walls, stone); production and stores (a chart over
+  each place); prosperity, plague and unrest.
 - Trades sit where their custom is. A lot becomes a shop, tavern, inn,
   smithy, bakehouse, tannery, warehouse or granary only where enough
   custom reaches its door: households within a short walk, the realm's
@@ -221,6 +248,11 @@ Acts are sealed while you rule; the crown's own levers take their place:
   the rivals already near, and noisome trades keep off homes and the
   market. Each year some homes where custom has grown open as shops, and
   trades whose custom has gone close. Click one to see why it stands there.
+  Institutions follow the same rule: a windmill on high open ground by the
+  fields (from c. 1180), a bathhouse by running water among many households,
+  a hospital by a gate or a busy road near a church, a dyehouse on running
+  water near the cloth market, a toll house at a gate or bridgehead on a
+  busy road, a guildhall on the market.
 - A realm of fiefs. Every furlong has a lord, and fighting moves it:
   - every house keeps a standing household host at its seat, recruited
     from its people; neighbouring lords with grudges or land-hunger fight
