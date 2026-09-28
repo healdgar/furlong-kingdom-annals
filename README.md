@@ -96,8 +96,12 @@ Acts are sealed while you rule; the crown's own levers take their place:
   Each wall is traced around the dense core of its age (keeping to the near
   bank of a river, riding hill crests, left open at cliffs, pulling down the
   houses in its way); later suburbs spill past the gates and across bridges.
-  When a city outgrows its wall the old line becomes a street with a few
-  towers left standing. Institutions stay put and are rebuilt larger on
+  A wall never runs through a keep, hall, church, bailey or close; it goes
+  round them. When a city outgrows its wall the new circuit reuses the old
+  wherever the town has not spilled past it and runs out only around the
+  suburbs; stretches of the old wall left inside are pulled down for a
+  street where streets already cross them, or built into by houses, with a
+  few towers left standing. Institutions stay put and are rebuilt larger on
   their own ground (keep → castle, church → minster); fires clear districts
   that are rebuilt in stone on straighter streets; sieges raze suburbs that
   grow back. Each town's history is in its inspector card, and natural
@@ -147,8 +151,8 @@ Acts are sealed while you rule; the crown's own levers take their place:
   - open ground: tussock and flowers.
 - The history keeps going while you play. The generation steps that shaped
   each town's past also run live, triggered by the simulation: a town that
-  outgrows its wall raises a wider circuit and the old line becomes a
-  street; a great fire's burned district is cleared and laid out again in
+  outgrows its wall raises a wider circuit that keeps what it can of the
+  old; a great fire's burned district is cleared and laid out again in
   stone on a straight street; a siege burns the suburbs outside the gates;
   a thriving village is chartered as a town; keeps and churches are rebuilt
   larger on their own ground. Dated entries appear in each town's history.
@@ -199,6 +203,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
   cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.
   About two seeds in five lie by the sea; the World tab (or `&c=sea` /
   `&c=land`) can ask for a coast or keep the realm inland.
+- Every great house has a tongue (English, German, French, Italian, Norse,
+  Slavic, Celtic, Castilian): most share the crown's, the marches may not.
+  Places are named in the tongue of the nearest seat and for why they are
+  there (a ford, a bridge, a hill fort, a harbour, a mine, a clearing):
+  Ashford, Eschfurt, Gué-le-Frêne, Vado de Lobo. Daughter villages often
+  take their mother's name (Neu-, Nether, Villanueva de). Castles,
+  churches, town halls and mills are named in the same tongue; inns and
+  shops have signs made in its grammar (Zum Goldenen Hirsch, À la Couronne
+  d'Or, U Zlatého Jelena), their master's name, or a promise to customers.
 - Trades sit where their custom is. A lot becomes a shop, tavern, inn,
   smithy, bakehouse, tannery, warehouse or granary only where enough
   custom reaches its door: households within a short walk, the realm's
