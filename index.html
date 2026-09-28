@@ -3028,7 +3028,7 @@ function syncOwner(s){ // the town changed hands: its fields go with it
   const old=s._lord;s._lord=s.owner;
   for(const f of s.furl||[])if(f.lord===old||f.lord<0)setLord(f,s.owner,false);
 }
-function hostTarget(hi){const pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(W.houses[hi].might||1));}
+function hostTarget(hi){const h=W.houses[hi],pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(h.might||1))*(hi>0?1+clamp((h.gold||0)/8000,0,1):1);} // a full purse hires swords
 function ensureHosts(){ // every house keeps a household host at its seat, topped up from its people
   W.houses.forEach((h,hi)=>{
     let seat=h.seat;if(!W.settlements[seat]||W.settlements[seat].owner!==hi)seat=W.settlements.findIndex(s=>s.owner===hi);
@@ -3039,9 +3039,14 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
     if(!a){
       a=raiseArmy(hi,seat,tgt*0.6,hi===0?'crown':'host');a.standing=true;a.home=seat;
       a.name=(hi===0?'The Royal Household':'Household of '+h.name.replace('House ',''));a.hold=hi===0&&!!(W.player&&W.player.on);
-    }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt){ // recruits come in at home, a few each month
-      const s=W.settlements[a.home],add=Math.min(tgt-a.strength,tgt*0.08,s.pop*0.01);
-      if(add>0){a.strength+=add;s.pop-=add*0.7;}
+    }else if(!houseAtWar(hi)&&a.state==='idle'&&a.strength>tgt*1.1){ // peace: the levies go home to the harvest, the household keeps its sworn men
+      const go=(a.strength-tgt)*0.35;a.strength-=go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
+    }else if(hi>0&&(h.gold??0)<-300&&a.state!=='battle'&&a.strength>5){ // unpaid, the men drift home to their fields
+      const go=a.strength*0.04;a.strength-=go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
+    }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
+      const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
+      const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/1.5:1e9);
+      if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0)h.gold-=add*1.5;}
     }
   });
 }
@@ -3058,7 +3063,7 @@ function armyLand(a){ // occupation, foraging and supply, once a day
   a.supply-=use;
   if(!G.land||!houseAtWar(a.house))return;
   // take the land about it, if no enemy host is near enough to dispute it
-  if(W.armies.some(b=>!b.gone&&b!==a&&atWar(a.house,b.house)&&dist2d(b._spos.x,b._spos.z,p.x,p.z)<350))return;
+  if(W.armies.some(b=>!b.gone&&b!==a&&atWar(a.house,b.house)&&b.strength>=a.strength*0.3&&dist2d(b._spos.x,b._spos.z,p.x,p.z)<350))return; // a real host disputes it; a handful of men does not
   const F=G.land.F,fx=Math.floor((p.x+SIZE/2)/FG),fz=Math.floor((p.z+SIZE/2)/FG);
   const cmd=notableById(a.commander),cruel=cmd&&cmd.traits&&cmd.traits.includes('cruel');
   for(let j=fz-2;j<=fz+2;j++)for(let i=fx-2;i<=fx+2;i++){
@@ -3149,7 +3154,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const seatS=W.settlements[h.seat]||own[0];
     const income=own.reduce((t,s)=>t+s.pop*0.045*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1),0); // far fiefs: the castellans skim
     const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
-    const upkeep=hosts+Math.pow(own.length,1.5)*3.5; // every castle wants a castellan, every hall a feast
+    const upkeep=hosts+(Math.pow(own.length,1.5)-1)*3.5; // every castle beyond the lord's own hall wants a castellan
     h.gold+=income-upkeep;h.lastNet=income-upkeep;
     if(h.gold<-600&&own.length>1){
       const seat=W.settlements[h.seat]||own[0];
@@ -3171,7 +3176,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
     if(crownTowns.length>(W.settlements.length-1)*0.4){
       const far=crownTowns.sort((a,b)=>dist2d(b.pos.x,b.pos.z,W.capital.pos.x,W.capital.pos.z)-dist2d(a.pos.x,a.pos.z,W.capital.pos.x,W.capital.pos.z))[0];
-      const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>=0&&day()-(W.houses[i]._grantT||-1e9)>360*5);
+      const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>-1000&&day()-(W.houses[i]._grantT||-1e9)>360*5);
       const exiled=W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].exiled&&day()-(W.houses[i].exiledDay||0)>360*8);
       const landless=loyal.filter(i=>!W.settlements.some(s=>s.owner===i));
       const to=landless.length?landless[0]:exiled.length&&chance('sim',0.6)?exiled[0]:loyal.length?wpick(loyal,i=>W.houses[i].loyalty/20,1):-1;
@@ -4803,14 +4808,17 @@ function tickMilitary(){
       let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
       if(best>=0){marchArmy(a,best);if(chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);continue;}}
     if(a.state==='idle'&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
-      a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;
+      if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;}
+      else{routHome(a);if(a.gone)continue;} // too few to try it: back to its own
     }
+    if(a.state==='idle'&&!a.hold){const m=W.armies.find(b=>b!==a&&!b.gone&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
+      if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
-    if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())){
+    if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
       // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
       let tgt=-1,bd=1e18;
       W.settlements.forEach((s,si)=>{
-        if(si===a.at||!hostileTo(a,s))return;
+        if(si===a.at||!hostileTo(a,s)||(!inRebellion(a)&&defenceOf(s)>a.strength*2))return; // no lord rides at walls he could not even raid
         const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);
         if(d<bd){bd=d;tgt=si;}
       });
@@ -4825,7 +4833,7 @@ function tickMilitary(){
       a.at=a.target;a.state='arrived';
       const s=W.settlements[a.at];
       if(hostileTo(a,s)){
-        const defend=(s.garrison||0)+s.pop*0.05*(s.walls>0?2:1);
+        const defend=defenceOf(s);
         if(!inRebellion(a)&&a.strength<defend*2){ // too weak to take it: a raid, the fields burned and the land about it held for a season
           a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};
           emit('war',6,s.pos,`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`);
@@ -4846,7 +4854,7 @@ function tickMilitary(){
         if(a.raid){a.raid=false;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
         else takeSettlement(a,s);
       }else if(chance('sim',0.01)){ // sortie
-        if(resolveClash(a,{strength:s.garrison*3,morale:60,house:s.owner,name:'garrison of '+s.name})){
+        if(resolveClash(a,{strength:s.garrison*3+sheltered(s),morale:60,house:s.owner,name:'garrison of '+s.name})){
           emit('war',6,s.pos,`A sortie from ${s.name} is beaten back with slaughter at the gates.`);
         }else{
           liftSiege(a);routHome(a);
@@ -4861,6 +4869,8 @@ function tickMilitary(){
   for(let i=0;i<W.armies.length;i++)for(let j=i+1;j<W.armies.length;j++){
     const a=W.armies[i],b=W.armies[j];
     if(!atWar(a.house,b.house)||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
+    const hides=(x,y)=>x.state==='idle'&&W.settlements[x.at]&&W.settlements[x.at].owner===x.house&&x.strength<y.strength*0.6;
+    if(hides(a,b)||hides(b,a)||a.strength<5||b.strength<5)continue; // the weaker keeps within its gates and adds to the defence
     if(dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z)<130){
       for(const x of[a,b]){ // remember the road each host was on, and abandon any siege
         x._resume=x.state==='march'?{f:clamp((now-x.departDay)/Math.max(0.01,x.arriveDay-x.departDay),0,1)}:null;
@@ -4892,8 +4902,8 @@ function tickMilitary(){
       a.foe=b.foe=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
       routFromField(l);
-      if(l.strength<40)disbandArmy(l);
-      if(w.strength<40)disbandArmy(w);
+      if(l.strength<(l.standing?10:40)&&!l.gone)disbandArmy(l); // a broken household scatters; the lord gathers a new one at his seat
+      if(w.strength<40&&!w.standing)disbandArmy(w);
     }
   }
   // war score over time & exhaustion
@@ -4917,6 +4927,9 @@ function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
 function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
+function sheltered(s){const si=W.settlements.indexOf(s);return W.armies.filter(b=>!b.gone&&b.house===s.owner&&b.at===si&&(b.state==='idle'||b.state==='arrived')).reduce((t,b)=>t+b.strength,0);}
+function defenceOf(s){return (s.garrison||0)+s.pop*0.05*(s.walls>0?2:1)+sheltered(s);}
+function fitToCampaign(a){return a.strength>=Math.max(30,hostTarget(a.house)*0.45);}
 function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the rebellion, or a private war)?
   return atWar(a.house,s.owner);
 }
@@ -4924,6 +4937,11 @@ function liftSiege(a){
   W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
 }
 function routHome(a){
+  if(!W.settlements[a.home]||W.settlements[a.home].owner!==a.house){ // its home has fallen: flee to the nearest place still its own
+    const p=a._spos||W.settlements[a.at].pos;let best=-1,bd=1e18;
+    W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
+    if(best<0){disbandArmy(a);return;}a.home=best;
+  }
   const r=route(a.at,a.home);
   if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/900;}
   else{a.state='idle';a.at=a.home;}
