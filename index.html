@@ -435,6 +435,11 @@ function smoothPath(p,iters){ // [1 2 1] passes; the ends stay pinned
   return q;
 }
 function segDist(px,pz,a,b){const dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz||1;const t=clamp(((px-a.x)*dx+(pz-a.z)*dz)/L2,0,1);return Math.hypot(px-(a.x+dx*t),pz-(a.z+dz*t));}
+function segSegDist(a,b,c,d){ // 0 if they cross
+  const o=(p,q,r)=>(q.x-p.x)*(r.z-p.z)-(q.z-p.z)*(r.x-p.x);
+  if(o(a,b,c)*o(a,b,d)<0&&o(c,d,a)*o(c,d,b)<0)return 0;
+  return Math.min(segDist(a.x,a.z,c,d),segDist(b.x,b.z,c,d),segDist(c.x,c.z,a,b),segDist(d.x,d.z,a,b));
+}
 function slopeAt(cx,cz){
   const h=W.h,c=h[cIdx(cx,cz)];let m=0;
   for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]])if(inB(cx+dx,cz+dz))m=Math.max(m,Math.abs(h[cIdx(cx+dx,cz+dz)]-c));
@@ -1054,6 +1059,7 @@ function layoutSettlement(s){
       if(s.citadel&&dist2d(c.x,c.z,s.citadel.x,s.citadel.z)<s.citadel.S*0.85)return false;
       if(!soft&&s.bailey&&(dist2d(c.x,c.z,s.bailey.x,s.bailey.z)<s.bailey.r+4||dist2d(c.x,c.z,s.motte.x,s.motte.z)<s.motte.r+3))return false;
       for(const t of s.remnants)if(dist2d(c.x,c.z,t.x,t.z)<t.r+1)return false;
+      for(const R of[s.hillCastle,s.burgRing])if(R&&Math.abs(dist2d(c.x,c.z,R.x,R.z)-R.r)<3.5)return false; // nothing astride a castle's curtain or the close wall
     }
     if(inside&&outside)return false;
     const F={x:f.x,z:f.z,w:f.w+gap*2,d:f.d+gap*2,rot:f.rot};
@@ -1439,6 +1445,7 @@ function layoutSettlement(s){
       }
       if(!fits(f,gap))return null;
       if(c._why&&!HOME.has(arch))extra.why=c._why;c._why=null;
+      {const dx=c.mx-f.x,dz=c.mz-f.z,L=Math.hypot(dx,dz)||1;extra.fx=dx/L;extra.fz=dz/L;} // which face looks onto the street
       const b=place(arch,tier,f,c.d<Rmax*0.25?'market':c.d<Rmax*0.5?'artisan':'residential',hm,extra);c.done=true;built++;
       if(focus===oldVil&&oldVil)b.q='village';
       return b;
@@ -1748,6 +1755,8 @@ function layoutSettlement(s){
     s.roadSpoke[ri]=[...via,...outward];
     return {joined};
   };
+  for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
+    if(!b.inst&&Math.abs(dist2d(b.x,b.z,R.x,R.z)-R.r)<Math.hypot(b.w,b.d)/2+2)unplace(b);
   s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,live:liveOps};
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
@@ -1871,7 +1880,7 @@ function surfY(x,z){ // the walking surface: the ground, or a bridge deck where 
   for(const b of S){if(x<b.x0||x>b.x1||z<b.z0||z>b.z1)continue;
     const dx=b.b.x-b.a.x,dz=b.b.z-b.a.z,L2=dx*dx+dz*dz||1,t=((x-b.a.x)*dx+(z-b.a.z)*dz)/L2;if(t<0||t>1)continue;
     if(Math.hypot(x-(b.a.x+dx*t),z-(b.a.z+dz*t))>b.hw)continue;
-    const d=t<0.5?b.hA+(b.hM-b.hA)*t*2:b.hM+(b.hB-b.hM)*(t-0.5)*2;if(d>g)return d;}
+    const d=b.hA+(b.hB-b.hA)*t+b.rise*Math.sin(Math.PI*t);if(d>g)return d;}
   return g;
 }
 function setInst(im,i,x,y,z,ry,sx,sy,sz){
@@ -2026,7 +2035,7 @@ const ROADCOL={verge:0x6d6a44,dirt:0x8f7a52,rut:0x7a6546,crown:0x9c8660};
 const PAVECOL={verge:0x6f685a,dirt:0x8d8576,rut:0x80796b,crown:0x9a9384};
 function rebuildRoadMesh(){ // king's roads, streets and market squares: one draped, vertex-coloured mesh; bridges where roads meet rivers
   if(G.roads){scene.remove(G.roads);G.roads.geometry.dispose();}
-  if(G.bridges){scene.remove(G.bridges);G.bridges.dispose();}
+  if(G.bridges){scene.remove(G.bridges);G.bridges.geometry.dispose();}
   riverStrips();
   const acc=newAcc(),spans=[];
   const FR=[-1,-0.78,-0.45,0,0.45,0.78,1];
@@ -2064,28 +2073,30 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   G.roads.receiveShadow=true;
   scene.add(G.roads);
   // bridges: a timber/stone deck spanning bank to bank, parapets, and a pier in midstream
-  const bx=new THREE.BoxGeometry(1,1,1);
-  G.bridges=new THREE.InstancedMesh(bx,new THREE.MeshLambertMaterial({}),Math.max(1,spans.length*7));
-  let bi=0;
-  G.bridgeSpans=[];
-  const tilt=(i,x,y,z,ry,pitch,sx,sy,sz)=>{Q1.setFromEuler(new THREE.Euler(0,ry,pitch,'YZX'));M4.compose(V1.set(x,y,z),Q1,V2.set(sx,sy,sz));G.bridges.setMatrixAt(i,M4);};
+  /* bridges: masonry on piers, a run of arches no wider than a medieval mason could turn (some twelve yards),
+     the deck humped over them from bank to bank, parapets following the hump */
+  G.bridgeSpans=[];const parts=[];
   for(const sp of spans){
-    const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L0=Math.hypot(dx,dz)||1,ry=-Math.atan2(dz,dx);
-    const mx=(sp.a.x+sp.b.x)/2,mz=(sp.a.z+sp.b.z)/2,ux=dx/L0,uz=dz/L0;
-    // each end sits on its own bank, the crown clears the water: a deck that meets the road on both sides
-    const hA=hAt(sp.a.x-ux*1.5,sp.a.z-uz*1.5)+0.4,hB=hAt(sp.b.x+ux*1.5,sp.b.z+uz*1.5)+0.4,hM=Math.max((hA+hB)/2,sp.y+2.6);
-    const A={x:sp.a.x-ux*3,z:sp.a.z-uz*3},Bp={x:sp.b.x+ux*3,z:sp.b.z+uz*3},M={x:mx,z:mz},L=L0+6;
-    G.bridgeSpans.push({a:A,b:Bp,hA,hM,hB,hw:sp.hw+0.6,x0:Math.min(A.x,Bp.x)-sp.hw-2,x1:Math.max(A.x,Bp.x)+sp.hw+2,z0:Math.min(A.z,Bp.z)-sp.hw-2,z1:Math.max(A.z,Bp.z)+sp.hw+2});
-    const px=-uz,pz=ux,bw=sp.hw*2+0.4;
-    for(const[P,Q,h0,h1]of[[A,M,hA,hM],[M,Bp,hM,hB]]){ // two ramps meeting at the crown
-      const cx=(P.x+Q.x)/2,cz=(P.z+Q.z)/2,hl=L/2,pitch=Math.atan2(h1-h0,hl),yc=(h0+h1)/2,len=Math.hypot(hl,h1-h0)+0.3;
-      tilt(bi,cx,yc-0.6,cz,ry,pitch,len,1.2,bw);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
-      for(const sd of[-1,1]){tilt(bi,cx+px*sd*(bw/2-0.3),yc+0.5,cz+pz*sd*(bw/2-0.3),ry,pitch,len,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
-    }
-    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,hM-sp.y+2.4,bw-1.6);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
+    const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L0=Math.hypot(dx,dz)||1,ux=dx/L0,uz=dz/L0,px=-uz,pz=ux;
+    const A={x:sp.a.x-ux*3,z:sp.a.z-uz*3},Bp={x:sp.b.x+ux*3,z:sp.b.z+uz*3},Ls=L0+6,bw=sp.hw*2+0.6;
+    const hA=hAt(sp.a.x-ux*1.5,sp.a.z-uz*1.5)+0.4,hB=hAt(sp.b.x+ux*1.5,sp.b.z+uz*1.5)+0.4,wy=sp.y;
+    const Lw=Math.max(4,L0-1),n=Math.max(1,Math.ceil(Lw/12)),a=Lw/n,pier=n>1?Math.min(2.4,a*0.22):0,ra=Math.min(a*0.42,(a-pier)/2);
+    const rise=Math.max(0.35+Ls*0.02,wy+0.4+ra+1.5-(hA+hB)/2);
+    const deck=t=>hA+(hB-hA)*t+rise*Math.sin(Math.PI*t);
+    G.bridgeSpans.push({a:A,b:Bp,hA,hB,rise,hw:sp.hw+0.6,x0:Math.min(A.x,Bp.x)-sp.hw-2,x1:Math.max(A.x,Bp.x)+sp.hw+2,z0:Math.min(A.z,Bp.z)-sp.hw-2,z1:Math.max(A.z,Bp.z)+sp.hw+2});
+    const sh=new THREE.Shape(),K=Math.max(8,Math.round(Ls/2)),yb=wy-2.5,s0=(Ls-Lw)/2,spring=wy+0.4;
+    sh.moveTo(0,hA-2.5);for(let k=0;k<=K;k++)sh.lineTo(Ls*k/K,deck(k/K));sh.lineTo(Ls,hB-2.5);sh.lineTo(Ls-s0*0.5,yb);
+    for(let k=n-1;k>=0;k--){const x0=s0+k*a+pier/2,x1=s0+(k+1)*a-pier/2;
+      const rk=Math.max(0.6,Math.min(ra,Math.min(deck(x0/Ls),deck(x1/Ls),deck((x0+x1)/2/Ls))-1.3-spring)); // the arches by the banks stay under the ramp
+      sh.lineTo(x1,yb);sh.lineTo(x1,spring);for(let j=1;j<=10;j++){const f=j/10;sh.lineTo(x1-(x1-x0)*f,spring+rk*Math.sin(Math.PI*f));}sh.lineTo(x0,yb);}
+    sh.lineTo(s0*0.5,yb);sh.lineTo(0,hA-2.5);
+    const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),new THREE.Vector3(0,1,0),new THREE.Vector3(px,0,pz)).setPosition(A.x,0,A.z);
+    const body=new THREE.ExtrudeGeometry(sh,{depth:bw,bevelEnabled:false,curveSegments:1});body.translate(0,0,-bw/2);parts.push([body,M]);
+    const par=new THREE.Shape();par.moveTo(0,deck(0)-0.1);for(let k=1;k<=K;k++)par.lineTo(Ls*k/K,deck(k/K)-0.1);for(let k=K;k>=0;k--)par.lineTo(Ls*k/K,deck(k/K)+1.05);
+    for(const sd of[-1,1]){const g=new THREE.ExtrudeGeometry(par,{depth:0.55,bevelEnabled:false,curveSegments:1});g.translate(0,0,sd*(bw/2-0.28)-0.275);parts.push([g,M]);}
   }
-  G.bridges.count=bi;G.bridges.castShadow=true;G.bridges.receiveShadow=true;
-  G.bridges.instanceMatrix.needsUpdate=true;if(G.bridges.instanceColor)G.bridges.instanceColor.needsUpdate=true;
+  G.bridges=new THREE.Mesh(parts.length?mergeGeoms(parts):new THREE.BufferGeometry(),new THREE.MeshLambertMaterial({color:0x9d9383}));
+  G.bridges.castShadow=true;G.bridges.receiveShadow=true;
   scene.add(G.bridges);
 }
 const TV_DRY=new THREE.Color(0xa39d5e);
@@ -2271,20 +2282,45 @@ function updateTerrainColors(si,blend,amp){ // amp: how much of the season to sh
   recolorFields(si,blend,snowT,aq);
   // trees seasonal tint
   if(G.decid){
-    const dc=new THREE.Color([0x40682f,0x4a6c2e,0x96541e,0x5e5344][si]);
+    const tint=(summer,now)=>new THREE.Color(summer).lerp(new THREE.Color(now),aq); // fast-forward holds the summer leaf
+    const dc=tint(0x4a6c2e,[0x40682f,0x4a6c2e,0x96541e,0x5e5344][si]);
     G.decid.material.color.copy(dc);
-    G.pine.material.color.setHex(si===3?0x314a37:0x28472f);
+    G.pine.material.color.copy(tint(0x28472f,si===3?0x314a37:0x28472f));
+    if(G.small)G.small.material.color.copy(tint(0x6d9444,[0x9cc46e,0x6d9444,0xc08a2e,0x7a6a58][si])); // fresh leaf in spring, gold in autumn
+    if(G.regrow)G.regrow.material.color.copy(dc);
   }
 }
 
 /* ---------------- trees --------------------------------------------------- */
+function treeGeom(parts){ // [geometry, bark or leaf colour, 1 if crown]: the crown alone takes the season's tint
+  const pos=[],nor=[],col=[],cr=[],c=new THREE.Color();
+  for(const[g0,hex,crown]of parts){const g=g0.index?g0.toNonIndexed():g0;c.setHex(hex);
+    const P=g.attributes.position,N=g.attributes.normal;
+    for(let i=0;i<P.count;i++){pos.push(P.getX(i),P.getY(i),P.getZ(i));nor.push(N.getX(i),N.getY(i),N.getZ(i));
+      const j=crown?0.9+hash01(i*3.1+pos.length)*0.2:1;col.push(c.r*j,c.g*j,c.b*j);cr.push(crown);}}
+  const out=new THREE.BufferGeometry();
+  out.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));out.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
+  out.setAttribute('color',new THREE.Float32BufferAttribute(col,3));out.setAttribute('aCrown',new THREE.Float32BufferAttribute(cr,1));
+  return out;
+}
+function crownMat(hex){ // the material colour is the leaf of the season, and it tints the crown only: bark stays bark
+  const m=new THREE.MeshLambertMaterial({color:hex,vertexColors:true});
+  m.onBeforeCompile=sh=>{
+    sh.vertexShader='attribute float aCrown;\nvarying float vCrown;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n  vCrown=aCrown;');
+    sh.fragmentShader='varying float vCrown;\n'+sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n  diffuseColor.rgb=mix(vColor.rgb,diffuseColor.rgb,vCrown);');
+  };
+  return m;
+}
+const BARK=0x5a4330,BIRCH=0x9c9284;
 function buildTrees(){
-  const trunk=new THREE.CylinderGeometry(0.5,0.8,3.2,5,1,true);trunk.translate(0,1.6,0);
-  const blob=new THREE.IcosahedronGeometry(3.4,0);blob.translate(0,5.4,0);blob.scale(1,1.15,1);
-  const decidG=mergeGeoms([[trunk,new THREE.Matrix4()],[blob,new THREE.Matrix4()]]);
-  const cone=new THREE.ConeGeometry(2.6,7.5,6);cone.translate(0,5.2,0);
-  const pineG=mergeGeoms([[trunk,new THREE.Matrix4()],[cone,new THREE.Matrix4()]]);
-  const spots={dec:[],pine:[]};
+  const cyl=(r0,r1,h,n)=>{const g=new THREE.CylinderGeometry(r0,r1,h,n||5,1,true);g.translate(0,h/2,0);return g;};
+  const ball=(r,y,sy,det)=>{const g=new THREE.IcosahedronGeometry(r,det);g.scale(1,sy,1);g.translate(0,y,0);return g;};
+  const cone=(r,h,y)=>{const g=new THREE.ConeGeometry(r,h,6,1,true);g.translate(0,y+h/2,0);return g;};
+  // a broadleaf: a clear bole and a round crown; a conifer: tiers of cones; a small tree: a slim stem and a light crown (fruit, birch, rowan)
+  const decidG=treeGeom([[cyl(0.34,0.55,4.4),BARK,0],[ball(3.2,6.6,1.05,0),0xffffff,1]]); // low-poly: some twenty thousand trees stand in the realm
+  const pineG=treeGeom([[cyl(0.3,0.5,2.4,4),BARK,0],[cone(2.9,4.8,1.6),0xffffff,1],[cone(1.8,4,4.6),0xf4f4f4,1]]);
+  const smallG=treeGeom([[cyl(0.18,0.28,2.8,4),BIRCH,0],[ball(1.8,3.9,1.25,0),0xffffff,1]]);
+  const spots={dec:[],pine:[],small:[]};
   const nj=makeNoise(SEED^0x77E);
   for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
     const i=cIdx(cx,cz),bio=W.biome[i];
@@ -2294,28 +2330,108 @@ function buildTrees(){
     for(let t=0;t<dens;t++){
       const x=cellX(cx)+ (nj(cx*3+t*7,cz*3)-0.5)*CELL*1.4, z=cellZ(cz)+(nj(cx*3,cz*3+t*13)-0.5)*CELL*1.4;
       if(anyLake(x,z))continue;
-      const arr=bio===B.FOREST?spots.dec:spots.pine;
+      const m=nj(cx*7-t*3,cz*7+t*5),edge=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>inB(cx+dx,cz+dz)&&W.biome[cIdx(cx+dx,cz+dz)]!==bio);
+      // mixed woods: broadleaves with a few conifers, and the small trees of the wood's edge; upland pine with broadleaves low down
+      const arr=bio===B.FOREST?(m<0.12?spots.pine:(edge&&m>0.62)||m>0.86?spots.small:spots.dec):(m<0.16&&W.h[i]<320?spots.dec:spots.pine);
       arr.push({x,z,s:0.8+nj(cx+t,cz-t)*1.2,v:nj(cx*5+t,cz*5-t)});
     }
   }
+  // the open country is not bare: a tree in the hedge, one by the track, a few by the pond (land a plough reaches will clear them)
+  for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
+    const i=cIdx(cx,cz),bio=W.biome[i];
+    if((bio!==B.MEADOW&&bio!==B.FARM&&bio!==B.MARSH)||W.water[i]||W.roadCells[i]||slopeAt(cx,cz)>0.4)continue;
+    const m=nj(cx*11+3,cz*11-7);if(m>(bio===B.MARSH?0.2:0.09))continue;
+    const x=cellX(cx)+(nj(cx*5,cz*9)-0.5)*CELL,z=cellZ(cz)+(nj(cx*9,cz*5)-0.5)*CELL;
+    if(anyLake(x,z)||W.settlements.some(s=>dist2d(x,z,s.pos.x,s.pos.z)<(s.wallR||s.radius)*1.1))continue;
+    (m<0.03?spots.dec:spots.small).push({x,z,s:0.75+nj(cx-4,cz+4)*0.7,v:nj(cx*2,cz*3)});
+  }
   // thin evenly to the instance budget (capping in scan order used to plant only the northern forests)
-  for(const k of['dec','pine']){const a=spots[k],cap=9000;if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
-  G.decid=new THREE.InstancedMesh(decidG,new THREE.MeshLambertMaterial({color:0x4c7a3c}),Math.max(1,spots.dec.length));
-  G.pine=new THREE.InstancedMesh(pineG,new THREE.MeshLambertMaterial({color:0x2e5138}),Math.max(1,spots.pine.length));
-  spots.dec.forEach((t,i)=>{setInst(G.decid,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(0.9+t.v*0.3),t.s);G.decid.setColorAt(i,C1.setRGB(0.82+t.v*0.3,0.86+t.v*0.26,0.8+t.v*0.2));});
-  spots.pine.forEach((t,i)=>{setInst(G.pine,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(1+t.v*0.4),t.s);G.pine.setColorAt(i,C1.setRGB(0.85+t.v*0.2,0.88+t.v*0.2,0.86+t.v*0.2));});
-  G.decid.instanceMatrix.needsUpdate=true;G.pine.instanceMatrix.needsUpdate=true;
-  G.regrow=new THREE.InstancedMesh(decidG,new THREE.MeshLambertMaterial({color:0x557f40}),5000);G.regrow.castShadow=true;G.regrowFree=[];
+  for(const k of['dec','pine','small']){const a=spots[k],cap=k==='small'?3000:9000;if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
+  G.decid=new THREE.InstancedMesh(decidG,crownMat(0x4c7a3c),Math.max(1,spots.dec.length));
+  G.pine=new THREE.InstancedMesh(pineG,crownMat(0x2e5138),Math.max(1,spots.pine.length));
+  G.small=new THREE.InstancedMesh(smallG,crownMat(0x6f9444),Math.max(1,spots.small.length));
+  const TM={dec:G.decid,pine:G.pine,small:G.small};G.treeMesh=TM;
+  for(const k in TM)spots[k].forEach((t,i)=>{setInst(TM[k],i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(k,t.v),t.s);TM[k].setColorAt(i,C1.setRGB(0.84+t.v*0.26,0.86+t.v*0.24,0.82+t.v*0.2));});
+  for(const k in TM)TM[k].instanceMatrix.needsUpdate=true;
+  G.regrow=new THREE.InstancedMesh(decidG,crownMat(0x557f40),5000);G.regrow.castShadow=true;G.regrowFree=[];
   for(let i=4999;i>=0;i--){setInst(G.regrow,i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(i);}scene.add(G.regrow);
   G.treeHash=makeHash(40);G.treeSpots=spots;
-  for(const k of['dec','pine'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
+  for(const k of['dec','pine','small'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
   linkTrees();
   featInit();hookTerrainShader(G.terrain.material);
-  G.decid.castShadow=G.pine.castShadow=true;
-  scene.add(G.decid);scene.add(G.pine);
+  G.decid.castShadow=G.pine.castShadow=G.small.castShadow=true;
+  scene.add(G.decid);scene.add(G.pine);scene.add(G.small);
 }
 
 /* ---------------- buildings ---------------------------------------------- */
+function wallAtlas(){ /* one bay of one storey per tile, tiled across each face by its real size in the shader:
+     columns: timber-frame, stone, wattle, ashlar; rows: upper storey, ground storey, ground specials
+     (a door, a door, an open shopfront with its stall board and shutter, a workshop's great doors) */
+  const T=64,c=document.createElement('canvas');c.width=T*4;c.height=T*3;const g=c.getContext('2d');
+  const rnd=(()=>{let a=7;return()=>(a=(a*16807)%2147483647)/2147483647;})();
+  const tile=(col,row,fn)=>{g.save();g.translate(col*T,row*T);g.beginPath();g.rect(0,0,T,T);g.clip();fn();g.restore();};
+  const plaster=()=>{g.fillStyle='#fff';g.fillRect(0,0,T,T);for(let i=0;i<14;i++){g.fillStyle=`rgba(0,0,0,${rnd()*0.035})`;g.fillRect(rnd()*T,rnd()*T,5+rnd()*9,3+rnd()*5);}};
+  const stone=(dark)=>{g.fillStyle=dark?'#cfc9be':'#ebe5d8';g.fillRect(0,0,T,T);g.strokeStyle='rgba(70,60,50,0.14)';g.lineWidth=1;
+    for(let y=0;y<T;y+=13){g.beginPath();g.moveTo(0,y+0.5);g.lineTo(T,y+0.5);g.stroke();for(let x=((y/13)%2)*12;x<T;x+=24){g.beginPath();g.moveTo(x+0.5,y);g.lineTo(x+0.5,y+13);g.stroke();}}
+    for(let i=0;i<25;i++){g.fillStyle=`rgba(0,0,0,${rnd()*0.04})`;g.fillRect(rnd()*T,rnd()*T,3+rnd()*6,2+rnd()*3);}};
+  const frame=(braces)=>{g.fillStyle='rgba(58,38,24,0.9)';g.fillRect(0,0,4,T);g.fillRect(T-4,0,4,T);g.fillRect(0,T-5,T,5);g.fillRect(0,0,T,3);
+    if(braces){g.strokeStyle='rgba(58,38,24,0.85)';g.lineWidth=3;g.beginPath();g.moveTo(3,T-6);g.lineTo(14,T-22);g.moveTo(T-3,T-6);g.lineTo(T-14,T-22);g.stroke();}};
+  const win=(x,y,w,h,shut)=>{g.fillStyle='rgba(30,26,24,0.92)';g.fillRect(x,y,w,h);g.strokeStyle='rgba(230,220,200,0.55)';g.lineWidth=1;g.strokeRect(x+0.5,y+0.5,w-1,h-1);
+    g.beginPath();g.moveTo(x+w/2,y);g.lineTo(x+w/2,y+h);g.moveTo(x,y+h/2);g.lineTo(x+w,y+h/2);g.stroke();
+    if(shut){g.fillStyle='rgba(80,60,40,0.9)';g.fillRect(x-6,y,5,h);g.fillRect(x+w+1,y,5,h);}};
+  const door=(x,w,arched)=>{g.fillStyle='rgba(70,46,28,0.95)';g.fillRect(x,18,w,T-18);if(arched){g.beginPath();g.arc(x+w/2,18,w/2,Math.PI,0);g.fill();}
+    g.strokeStyle='rgba(30,20,12,0.6)';for(let k=1;k<4;k++){g.beginPath();g.moveTo(x+k*w/4,18);g.lineTo(x+k*w/4,T);g.stroke();}};
+  // row 0: upper storeys
+  tile(0,0,()=>{plaster();frame(true);win(22,14,20,26,false);});
+  tile(1,0,()=>{stone(false);win(24,12,16,28,false);g.fillStyle='rgba(90,80,70,0.5)';g.fillRect(21,9,22,4);});
+  tile(2,0,()=>{plaster();g.fillStyle='rgba(70,52,34,0.8)';g.fillRect(0,0,3,T);g.fillRect(T-3,0,3,T);win(26,20,12,14,false);});
+  tile(3,0,()=>{stone(true);g.fillStyle='rgba(30,26,24,0.9)';g.fillRect(30,16,4,26);});
+  // row 1: ground storeys of homes
+  tile(0,1,()=>{plaster();frame(false);win(22,20,20,22,true);});
+  tile(1,1,()=>{stone(false);win(24,18,16,24,false);});
+  tile(2,1,()=>{plaster();g.fillStyle='rgba(70,52,34,0.8)';g.fillRect(0,0,3,T);g.fillRect(T-3,0,3,T);win(27,24,10,12,false);});
+  tile(3,1,()=>{stone(true);});
+  // row 2: doors, the shopfront, the workshop
+  tile(0,2,()=>{plaster();frame(false);door(22,20,false);});
+  tile(1,2,()=>{stone(false);door(22,20,true);});
+  tile(2,2,()=>{plaster();frame(false);g.fillStyle='rgba(28,22,18,0.95)';g.fillRect(6,12,T-12,T-22); // open shop: dark within, goods on the board
+    g.fillStyle='rgba(120,86,52,1)';g.fillRect(4,T-16,T-8,6);g.fillStyle='rgba(95,70,45,1)';g.fillRect(4,6,T-8,6);
+    for(let k=0;k<5;k++){g.fillStyle=['#b85c38','#d8b25a','#6f8f4a','#9a8a70','#c9c0a8'][k];g.fillRect(8+k*10,T-21,7,5);}});
+  tile(3,2,()=>{stone(true);g.fillStyle='rgba(35,26,20,0.95)';g.beginPath();g.moveTo(8,T);g.lineTo(8,24);g.arc(T/2,24,T/2-8,Math.PI,0);g.lineTo(T-8,T);g.fill();
+    g.fillStyle='rgba(96,68,40,0.95)';g.fillRect(8,26,10,T-26);g.fillRect(T-18,26,10,T-26);});
+  const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;
+}
+function wallMaterial(){ // walls laid out in whole storeys and bays for every face, whatever the house's size
+  const m=new THREE.MeshLambertMaterial({map:wallAtlas()});
+  m.onBeforeCompile=sh=>{
+    sh.vertexShader='attribute float aKind;attribute vec2 aFront;attribute float aBase;\nvarying vec2 vFace;varying vec2 vDim;varying float vKind;varying float vFrontDot;varying float vBase;\n'+
+      sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+  vec3 isc=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));
+  bool onX=abs(normal.x)>0.5;float fl=onX?isc.z:isc.x;
+  vFace=vec2((onX?position.z:position.x)*fl+fl*0.5,position.y*isc.y);vDim=vec2(fl,isc.y);
+  vKind=abs(normal.y)>0.5?-1.0:aKind;vBase=aBase;
+  vec3 iwn=normalize(mat3(instanceMatrix)*normal);vFrontDot=dot(iwn.xz,aFront);`);
+    sh.fragmentShader='varying vec2 vFace;varying vec2 vDim;varying float vKind;varying float vFrontDot;varying float vBase;\n'+
+      sh.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
+  if(vKind>=0.0){
+    float mat=mod(vKind,4.0),kind=floor(vKind/4.0+0.01);
+    float hb=max(1.0,vDim.y-vBase),nst=max(1.0,floor(hb/2.8+0.35)),sh=hb/nst,yv=vFace.y-vBase;
+    float nb=max(1.0,floor(vDim.x/3.1+0.5)),bw=vDim.x/nb,bi=floor(vFace.x/bw),fu=fract(vFace.x/bw);
+    float row=1.0,col=mat;bool front=vFrontDot>0.6;bool mid=abs(bi-floor(nb*0.5))<0.5;
+    if(yv<0.0){row=1.0;col=3.0;}
+    else if(yv>=sh){row=0.0;}
+    else if(front&&kind>1.5){row=2.0;col=3.0;}
+    else if(front&&kind>0.5){row=2.0;col=(mid&&nb>2.0)?(mat>0.5&&mat<1.5?1.0:0.0):2.0;}
+    else if(front&&mid&&mat<2.5){row=2.0;col=(mat>0.5&&mat<1.5)?1.0:0.0;}
+    float fv=fract(yv/sh);
+    vec4 texelColor=texture2D(map,vec2((col+clamp(fu,0.03,0.97))/4.0,1.0-(row+1.0-clamp(fv,0.03,0.97))/3.0));
+    if(yv<0.0)texelColor.rgb*=0.72;
+    diffuseColor*=texelColor;
+  }
+#endif`);
+  };
+  return m;
+}
 function wallTexture(){ // plaster/stone with a timber frame, a floor beam, windows and a door (tinted per building)
   const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
   g.fillStyle='#fff';g.fillRect(0,0,128,128);
@@ -2357,7 +2473,8 @@ function buildBuildings(){
   const N=G.bldList.length;
   const body=new THREE.BoxGeometry(1,1,1);body.translate(0,0.5,0);
   const SP=Math.max(2600,N*2); // room for the towns to grow a great deal
-  G.bodies=new THREE.InstancedMesh(body,new THREE.MeshLambertMaterial({map:wallTexture()}),N+SP);
+  for(const[k,n]of[['aKind',1],['aFront',2],['aBase',1]])body.setAttribute(k,new THREE.InstancedBufferAttribute(new Float32Array((N+SP)*n),n));
+  G.bodies=new THREE.InstancedMesh(body,wallMaterial(),N+SP);
   const roofG=gableGeom();
   G.roofs=new THREE.InstancedMesh(roofG,new THREE.MeshLambertMaterial({map:roofTexture()}),N+SP);
   G.bodies.castShadow=G.roofs.castShadow=true;G.bodies.receiveShadow=G.roofs.receiveShadow=true;
@@ -2409,6 +2526,13 @@ function updateBuildingInstance(b){
     if(b.arch==='inn')roofCol=ROOFS[Math.min(2,b.tier+1)][Math.floor(hue*3)%3];}
   const y0=b.y0??b.y-0.5;
   setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
+  { // how its walls are built, and what its street front is for
+    const A=G.bodies.geometry.attributes,a=b.arch;
+    const mat=a==='temple'||a==='keep'&&!b.motte||a==='tower'||a==='wall'?3:b.motte||a==='tannery'?2:b.tier===2?1:b.tier===0?2:0;
+    const kind=a==='shop'||a==='bakery'||a==='burgher'&&b.district==='market'?1:a==='smithy'||a==='warehouse'||a==='granary'||a==='mill'||a==='tannery'?2:0;
+    A.aKind.setX(i,mat+kind*4);A.aFront.setXY(i,b.fx||0,b.fz||0);A.aBase.setX(i,Math.max(0,b.y-y0));
+    A.aKind.needsUpdate=A.aFront.needsUpdate=A.aBase.needsUpdate=true;
+  }
   C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
   G.bodies.setColorAt(i,C1);
   const ruined=b.state==='ruin'||b.state==='rubble';
@@ -2425,6 +2549,9 @@ function updateBuildingInstance(b){
   if(G.bodies.instanceColor)G.bodies.instanceColor.needsUpdate=true;
   if(G.roofs.instanceColor)G.roofs.instanceColor.needsUpdate=true;
 }
+const STREETFRONT={ // what hangs on a trade's front: a pentice (1 = a cloth of the house's colour), a sign board, the ale-stake's bush
+  shop:{awn:1,sign:0x3e5f8a},bakery:{awn:0x8a6a44,sign:0xc4a24a},tavern:{sign:0x5b7a3a,bush:1},inn:{sign:0xa8452f,bush:1,awn:0x6e5236},
+  smithy:{awn:0x4d4640,sign:0x2e2a28},tannery:{awn:0x5a4a36},warehouse:{sign:0x6e5a3a}};
 function rebuildDetails(){
   G.detDirty=false;
   const cnt={box:0,cyl:0,cone:0,pyr:0};
@@ -2454,6 +2581,26 @@ function rebuildDetails(){
       const[x,z]=at(b,0,0);put('box',x,b.y+h,z,b.rot,b.w*0.5,6,b.d*0.4,0x8f897f); // the donjon's upper stage
     }else if(b.arch==='granary'){
       const[x,z]=at(b,0,0);put('pyr',x,b.y+h+h*0.62,z,b.rot,2.4,2.6,2.4,0x8a7444);
+    }
+    const look=STREETFRONT[b.arch==='burgher'&&b.district==='market'?'shop':b.arch];
+    const nst=Math.max(1,Math.floor(h/2.8+0.35));
+    if(b.fx!==undefined&&(look||nst>1&&b.tier===1)){ // the street front: a pentice over the open shop, a sign on its bracket, the ale-stake's bush
+      const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=b.fx*c-b.fz*sn,lz=b.fx*sn+b.fz*c,onX=Math.abs(lx)>Math.abs(lz);
+      const sg=Math.sign(onX?lx:lz)||1,half=(onX?b.w:b.d)/2,len=onX?b.d:b.w;
+      const L=(o,a)=>onX?at(b,sg*(half+o),a):at(b,a,sg*(half+o)),S=(n,a,y)=>onX?[n,y,a]:[a,y,n]; // o: out from the wall, a: along it
+      if(nst>1&&b.tier===1){const[x,z]=L(0.15,0),[sx,sy,sz]=S(0.4,len+0.2,0.32);put('box',x,b.y+h/nst-0.16,z,b.rot,sx,sy,sz,0x3e2a1c);} // the jetty beam: the shop below, the household above
+    }
+    if(look&&b.fx!==undefined){
+      const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=b.fx*c-b.fz*sn,lz=b.fx*sn+b.fz*c,onX=Math.abs(lx)>Math.abs(lz);
+      const sg=Math.sign(onX?lx:lz)||1,half=(onX?b.w:b.d)/2,len=onX?b.d:b.w;
+      const L=(o,a)=>onX?at(b,sg*(half+o),a):at(b,a,sg*(half+o)),S=(n,a,y)=>onX?[n,y,a]:[a,y,n];
+      if(look.awn){const[x,z]=L(0.7,0),[sx,sy,sz]=S(1.4,len*0.82,0.22);put('box',x,b.y+2.75,z,b.rot,sx,sy,sz,look.awn===1?[0xa8452f,0x3e5f8a,0xc4a24a,0x5b7a3a,0x8a5a3a][Math.floor(hu*5)]:look.awn);}
+      if(look.sign){const a0=len*0.36*(hu>0.5?1:-1);
+        {const[x,z]=L(0.8,a0),[sx,sy,sz]=S(1.6,0.14,0.14);put('box',x,b.y+3.7,z,b.rot,sx,sy,sz,0x3a2c20);}
+        {const[x,z]=L(1.2,a0),[sx,sy,sz]=S(0.9,0.12,0.72);put('box',x,b.y+2.85,z,b.rot,sx,sy,sz,look.sign);}}
+      if(look.bush){const a0=-len*0.36*(hu>0.5?1:-1);
+        {const[x,z]=L(1,a0),[sx,sy,sz]=S(2,0.14,0.14);put('box',x,b.y+3.4,z,b.rot,sx,sy,sz,0x3a2c20);}
+        {const[x,z]=L(2,a0);put('cyl',x,b.y+2.8,z,0,1.3,1.1,1.3,0x4f7a34);}}
     }
   }
   for(const s of W.settlements)for(const p of s.places||[]){ // a well on the green; a market cross and stalls on the market place
@@ -2513,25 +2660,30 @@ function rebuildWalls(){
     const top=Math.max(hAt(a.x,a.z),hAt(b.x,b.z))+h;
     prism([{x:a.x+px,z:a.z+pz},{x:b.x+px,z:b.z+pz},{x:b.x-px,z:b.z-pz},{x:a.x-px,z:a.z-pz}],top,colSide,colTop);
   };
-  const ring=(cx,cz,r,n,h,stone)=>{ // a small circuit: a castle's curtain or a cathedral close
-    for(let k=0;k<n;k++){const a0=k/n*6.2832,a1=(k+1)/n*6.2832;
-      slab({x:cx+Math.cos(a0)*r,z:cz+Math.sin(a0)*r},{x:cx+Math.cos(a1)*r,z:cz+Math.sin(a1)*r},stone?2.6:1.4,h,stone?0xa59c8d:0x6e5334,stone?0x958c7e:0x5f472d);}
-    for(let k=0;k<4;k++){const a=k/4*6.2832+0.4,x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;inst.tower.push([x,hAt(x,z),z,stone,h,stone?7:4.5]);}
+  const ring=(cx,cz,r,n,h,stone,s)=>{ // a small circuit: a castle's curtain or a cathedral close; open where water runs or a street passes (a gate), and not doubled where the town wall already stands
+    const P=a=>({x:cx+Math.cos(a)*r,z:cz+Math.sin(a)*r});
+    const blocked=p=>riverAt(p.x,p.z,1)||lakeAt(s,p.x,p.z,1)||W.water[cIdx(toCell(p.x),toCell(p.z))]===1
+      ||(s.wallRad&&Math.abs(dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x)))<6);
+    const gate=(p,q)=>(s.streets||[]).some(st=>!st.hidden&&!st.gone&&st.kind!=='edge'&&st.pts.some((u,i)=>i>0&&segSegDist(p,q,st.pts[i-1],u)<st.hw+1.2));
+    for(let k=0;k<n;k++){const a0=k/n*6.2832,a1=(k+1)/n*6.2832,p=P(a0),q=P(a1),m=P((a0+a1)/2);
+      if(blocked(m)||blocked(p)&&blocked(q)||gate(p,q))continue;
+      slab(p,q,stone?2.6:1.4,h,stone?0xa59c8d:0x6e5334,stone?0x958c7e:0x5f472d);}
+    for(let k=0;k<4;k++){const a=k/4*6.2832+0.4,t=P(a);if(blocked(t))continue;inst.tower.push([t.x,hAt(t.x,t.z),t.z,stone,h,stone?7:4.5]);}
   };
   for(const s of W.settlements){
     if(s.lake){const dm=s.lake.dam,px=-Math.sin(dm.a)*dm.w/2,pz=Math.cos(dm.a)*dm.w/2; // the mill dam
       prism([{x:dm.x+px-Math.cos(dm.a)*2.5,z:dm.z+pz-Math.sin(dm.a)*2.5},{x:dm.x+px+Math.cos(dm.a)*2.5,z:dm.z+pz+Math.sin(dm.a)*2.5},
         {x:dm.x-px+Math.cos(dm.a)*2.5,z:dm.z-pz+Math.sin(dm.a)*2.5},{x:dm.x-px-Math.cos(dm.a)*2.5,z:dm.z-pz-Math.sin(dm.a)*2.5}],s.lake.y+1,0x8f877a,0x9a917f);}
-    if(s.hillCastle)ring(s.hillCastle.x,s.hillCastle.z,s.hillCastle.r,14,s.hillCastle.timber&&!s.motteStone?4.5:7.5,!(s.hillCastle.timber&&!s.motteStone));
+    if(s.hillCastle)ring(s.hillCastle.x,s.hillCastle.z,s.hillCastle.r,14,s.hillCastle.timber&&!s.motteStone?4.5:7.5,!(s.hillCastle.timber&&!s.motteStone),s);
     if(s.motte){ // the mound, its ditch, a palisade (or shell wall) round its top, and the bailey below
       const m=s.motte,g=hAt(m.x,m.z),mg=new THREE.CylinderGeometry(9.5,m.r,MOTTEH+1.2,20,1);mg.translate(0,(MOTTEH+1.2)/2-1.2,0);
       const mm=new THREE.Mesh(mg,new THREE.MeshLambertMaterial({color:0x6d7d44}));mm.position.set(m.x,g,m.z);mm.castShadow=mm.receiveShadow=true;grp.add(mm);
       const dg=new THREE.RingGeometry(m.r,m.r+5,28);dg.rotateX(-Math.PI/2);const dm=new THREE.Mesh(dg,new THREE.MeshLambertMaterial({color:0x4d4a33,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));dm.position.set(m.x,g+0.3,m.z);grp.add(dm);
       const tg=new THREE.CylinderGeometry(8.6,8.6,s.motteStone?4:2.6,20,1,true);tg.translate(0,(s.motteStone?4:2.6)/2,0); // a palisade, later a shell wall, round the top
       const tm=new THREE.Mesh(tg,new THREE.MeshLambertMaterial({color:s.motteStone?0xa59c8d:0x6e5334,side:THREE.DoubleSide}));tm.position.set(m.x,g+MOTTEH,m.z);tm.castShadow=true;grp.add(tm);
-      if(s.bailey)ring(s.bailey.x,s.bailey.z,s.bailey.r,16,s.baileyStone?6:3.8,!!s.baileyStone);
+      if(s.bailey)ring(s.bailey.x,s.bailey.z,s.bailey.r,16,s.baileyStone?6:3.8,!!s.baileyStone,s);
     }
-    if(s.burgRing)ring(s.burgRing.x,s.burgRing.z,s.burgRing.r,14,4.5,false);
+    if(s.burgRing)ring(s.burgRing.x,s.burgRing.z,s.burgRing.r,14,4.5,false,s);
     if(s.citadel){ // a star citadel: a square of ramparts with a bastion at each corner
       const ct=s.citadel,ux=Math.cos(ct.rot),uz=Math.sin(ct.rot),vx=-uz,vz=ux,h=ct.S/2,cor=[];
       for(const[a,b]of[[1,1],[1,-1],[-1,-1],[-1,1]])cor.push({x:ct.x+ux*h*a+vx*h*b,z:ct.z+uz*h*a+vz*h*b,a,b});
@@ -2866,10 +3018,11 @@ function setFurlong(f,state){
   if((state===LS.TILLED||state===LS.PASTURE&&was!==LS.TILLED)&&f.sap)sapling(f,false);if(state===LS.TILLED)f.wild0=null;
   if(was!==state)for(const t of f.trees)showTree(t,!treeGone(f,t));
 }
+const treeSY=(k,v)=>k==='pine'?1+v*0.4:k==='small'?0.9+v*0.35:0.9+v*0.3;
 function showTree(t,on){
-  const m=t.k==='dec'?G.decid:G.pine,vis=!!on&&!t.cut;
+  const m=G.treeMesh[t.k],vis=!!on&&!t.cut;
   if(G.feat&&(t.shown!==false)!==vis)featTree(t,vis?1:-1);t.shown=vis;
-  if(on&&!t.cut)setInst(m,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*(t.k==='dec'?0.9+t.v*0.3:1+t.v*0.4),t.s);
+  if(on&&!t.cut)setInst(m,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(t.k,t.v),t.s);
   else setInst(m,t.i,t.x,-500,t.z,0,0.001,0.001,0.001);
   m.instanceMatrix.needsUpdate=true;
 }
@@ -2880,7 +3033,7 @@ function clearLandAt(x,z,r){ // a house or a road now stands here: no plough, an
 function clearLandUnder(b){clearLandAt(b.x,b.z,Math.hypot(b.w,b.d)/2+6);}
 function linkTrees(){ // which trees stand in which furlong; those in ploughland were felled long ago
   if(!G.land||!G.treeHash)return;
-  for(const k of['dec','pine'])for(const t of G.treeSpots[k]){const f=furlongAt(t.x,t.z);f.trees.push(t);if(treeGone(f,t))showTree(t,false);}
+  for(const k of['dec','pine','small'])for(const t of G.treeSpots[k]){const f=furlongAt(t.x,t.z);f.trees.push(t);if(treeGone(f,t))showTree(t,false);}
 }
 /* palettes: spring, summer, autumn, winter */
 const LANDCOL=[
@@ -3061,7 +3214,7 @@ function featInit(){
     if(W.water[c]===1||(W.h[c]<SEA+6&&hAt(x,z)<SEA+0.2))F.src[0][j*FR+i]=1;}
   for(const s of W.settlements)featWalls(s);
   featRoads();
-  for(const k of['dec','pine'])for(const t of G.treeSpots[k])if(t.shown!==false)featTree(t,1);
+  for(const k of['dec','pine','small'])for(const t of G.treeSpots[k])if(t.shown!==false)featTree(t,1);
   for(const s of W.settlements)for(const b of s.buildings)featBuilding(b);
   featCompute(0,0,FR-1,FR-1);
   const mk=d=>{const t=new THREE.DataTexture(d,FR,FR,THREE.RGBAFormat);t.magFilter=t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;t.needsUpdate=true;return t;};
@@ -5811,7 +5964,8 @@ function toggleWatch(){
    ========================================================================= */
 let sovPausedFrom=0,uiDownAt=0;
 function sovOn(){return !!(W&&W.player&&W.player.on)&&!document.body.classList.contains('watch');}
-function uiBusy(){return uiDownAt>0&&performance.now()-uiDownAt<1500;} // don't rebuild a button mid-click
+let uiHover=false;
+function uiBusy(){return uiHover||uiDownAt>0&&performance.now()-uiDownAt<1500;} // don't rebuild a button mid-click, or under a pointer resting on it
 function realmPop(){return W.settlements.reduce((t,s)=>t+s.pop,0);}
 function setHTML(el,h){if(el&&el._h!==h){el.innerHTML=h;el._h=h;}}
 function cdLeft(k){return Math.max(0,Math.ceil((W.player.cd[k]||0)-day()));}
@@ -6361,6 +6515,8 @@ function initUI(){
   // one delegated handler for every data-cmd control (crown panel, inspector, house & succession rows)
   const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;runCmd(t.dataset.cmd,t.dataset.arg);};
   document.getElementById('dbody').addEventListener('click',cmdClick);
+  document.getElementById('dbody').addEventListener('pointerover',e=>{uiHover=!!(e.target.closest&&e.target.closest('button,select,input'));});
+  document.getElementById('dbody').addEventListener('pointerleave',()=>{uiHover=false;});
   document.getElementById('inspacts').addEventListener('click',cmdClick);
   document.getElementById('dbody').addEventListener('input',e=>{
     if(e.target.id!=='sovtax')return;
