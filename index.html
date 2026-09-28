@@ -3487,9 +3487,9 @@ function agentMat(){ // small figures get a touch of self-light so they read aga
 }
 /* Trade runs on the sim clock (a consignment is days on the road, and can be robbed or carry plague);
    what you see on the roads is its traffic: each consignment sends out a little convoy of carts (or a
-   barge, or a cog), one to a unit of goods, which then travel at a pace of their own — a steady real-time
-   walk, a little quicker at the faster speeds — instead of flashing from town to town. */
+   barge, or a cog), one to a unit of goods: at ▶ a walking pace, and faster in proportion to the calendar. */
 const TRAFFIC_CAP=140,CART_UNIT=18;
+const visPace=()=>speedIdx>0?(SPEEDS[speedIdx]||0)/SPEEDS[1]:0; // ▶ is walking pace; every faster setting runs the little world as much faster as it runs the calendar
 function spawnCarts(c){
   const T=G.traffic||(G.traffic=[]);
   const boat=c.sea||c.river,n=boat?1:clamp(Math.round(c.qty/CART_UNIT),1,4);
@@ -3708,7 +3708,7 @@ function fxState(s,dt){ // lasting conditions show while they last
 function updateFx(dt,now){
   if(G.land&&G.land.uni)W.houses.forEach((h,i)=>{if(i<11)G.land.uni.uHouse.value[i+1].setHex(h.sigilHue[0]);});
   if(!G.fxList)return;
-  const pace=SPEEDS[speedIdx]||0,live=speedIdx>0?Math.max(1,pace/2):0.25; // scenes last in game time: full length at ▶▶, a moment at ⏩ (a yearly feast used to run into the next one)
+  const pace=SPEEDS[speedIdx]||0,live=speedIdx>0?pace/2:0.25; // scenes last in game time: full length at ▶▶, twice as long at ▶, a moment at ⏩
   for(let i=G.fxList.length-1;i>=0;i--){const e=G.fxList[i];e.t+=dt*live;if(e.t>=e.dur){G.fxList.splice(i,1);continue;}if(fxNear(e.x,e.z))fxScene(e,dt,now);}
   for(const s of W.settlements)if(fxNear(s.pos.x,s.pos.z))fxState(s,dt*(speedIdx>0?1:0.25)); // lasting states spawn at a steady real-time rate whatever the pace
   for(let k=0;k<2;k++){
@@ -3723,7 +3723,7 @@ function updateFx(dt,now){
   const zs=clamp(cam.cur.dist/320,1,4.5);G.fxPuff.material.size=16*zs;G.fxSpark.material.size=4.5*zs; // legible from altitude
   const sc=clamp(cam.cur.dist/900,0.6,3);
   for(const r of G.rings){if(r.t>=r.dur){r.m.visible=false;continue;}
-    r.t+=dt*(speedIdx>0?Math.max(1,(SPEEDS[speedIdx]||0)/2):1);const f=clamp(r.t/r.dur,0,1),e=1-(1-f)*(1-f);
+    r.t+=dt*(speedIdx>0?(SPEEDS[speedIdx]||0)/2:1);const f=clamp(r.t/r.dur,0,1),e=1-(1-f)*(1-f);
     r.m.position.set(r.x,r.y,r.z);r.m.scale.setScalar(Math.max(1,r.R*e*sc));r.m.material.opacity=0.75*(1-f);}
 }
 
@@ -6419,6 +6419,19 @@ function buildMapCanvas(){
     g.strokeStyle='rgba(233,220,195,0.92)';g.lineWidth=4;g.strokeText(s.name,x,ly);
     g.fillStyle='#2B2320';g.fillText(s.name,x,ly);
   }
+  /* hosts in the field: a pennant disc in the house's colours, the line of march inked ahead of it */
+  for(const a of W.armies){if(a.gone)continue;
+    const q=armySimPos(a),x=mx(q.x),y=mz(q.z),hex=v=>'#'+(v>>>0).toString(16).padStart(6,'0').slice(-6),H=W.houses[a.house];
+    const t=a.target!=null&&W.settlements[a.target]&&(a.state==='march'||a.state==='rout')?W.settlements[a.target]:null;
+    if(t){g.save();g.setLineDash([5,4]);g.strokeStyle=a.state==='rout'?'rgba(80,60,50,0.6)':'#8a2f22';g.lineWidth=1.6;g.beginPath();g.moveTo(x,y);g.lineTo(mx(t.pos.x),mz(t.pos.z));g.stroke();g.restore();}
+    const r=clamp(4+Math.sqrt(a.strength)*0.5,5,13);
+    if(a.state==='siege'){g.strokeStyle='#8a2f22';g.lineWidth=2;g.beginPath();g.arc(mx(W.settlements[a.at].pos.x),mz(W.settlements[a.at].pos.z),22,0,7);g.stroke();}
+    g.fillStyle=hex(H.sigilHue[0]);g.strokeStyle=hex(H.sigilHue[1]);g.lineWidth=2.4;g.beginPath();g.arc(x,y,r,0,7);g.fill();g.stroke();
+    g.strokeStyle='#2B2320';g.lineWidth=1;g.beginPath();g.arc(x,y,r+1.6,0,7);g.stroke();
+    if(a.state==='battle'){g.strokeStyle='#8a2f22';g.lineWidth=2.5;g.beginPath();g.moveTo(x-r-5,y-r-5);g.lineTo(x+r+5,y+r+5);g.moveTo(x+r+5,y-r-5);g.lineTo(x-r-5,y+r+5);g.stroke();}
+    g.font='italic 12px "IM Fell English",Georgia,serif';g.textAlign='center';g.strokeStyle='rgba(233,220,195,0.9)';g.lineWidth=3;
+    const lab=(a.standing?'':'⚔ ')+Math.round(a.strength);g.strokeText(lab,x,y+r+13);g.fillStyle='#2B2320';g.fillText(lab,x,y+r+13);
+  }
   /* compass rose */
   {const cx=S-78,cy=S-92,R=38;
     g.save();g.translate(cx,cy);
@@ -6644,7 +6657,7 @@ function animateWorld(dt,now){
   /* --- traffic: carts, barges and cogs on their own clock --- */
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
-  const showDots=cam.cur.dist>900,vm=[0,1,1.5,2.5,4,8][speedIdx]||0,T=G.traffic||[];
+  const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
   for(let i=T.length-1;i>=0;i--){const t=T[i];t.d+=t.spd*vm*dt;
     if(t.d>=t.len||t.cons.robbed){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
   for(const t of T){
@@ -6696,7 +6709,7 @@ function animateWorld(dt,now){
     a._rpos={x:p.x,y:y+10,z:p.z};
     placeMarker(a,houseMarker(a.house),p.x,y,p.z,a.standing?26:32);
     if(a.flag){
-      const fs=clamp(cam.cur.dist*0.0011,0.3,4.5); // a real banner up close, a legible marker from on high
+      const fs=clamp(cam.cur.dist*0.0019,0.45,4.5); // a real banner up close, a legible marker from on high
       a.flag.position.set(p.x+Math.cos(p.dir||0)*2,y+19*fs+Math.sin(now*2+a.id)*0.2*fs,p.z+Math.sin(p.dir||0)*2);
       a.flag.quaternion.copy(camera.quaternion); // true billboard; Euler .y alone skews at most angles
       a.flag.scale.setScalar(fs);
@@ -6704,10 +6717,10 @@ function animateWorld(dt,now){
     // soldiers when near: ranks in the house's colours; scaled up with distance so a host still reads
     const dcam=dist2d(camera.position.x,camera.position.z,p.x,p.z);
     if(dcam<2600){
-      const H=W.houses[a.house],us=clamp(cam.cur.dist*0.0025,1.15,4);
+      const H=W.houses[a.house],us=clamp(cam.cur.dist*0.0055,1.2,7);
       const cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};
       cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5)); // even a sable livery must read at a glance
-      const n=Math.min(140,Math.max(12,Math.round(a.strength/5))),per=10;
+      const n=Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
       const dir=p.dir||0,fx=Math.cos(dir),fz=Math.sin(dir),lx=-fz,lz=fx;
       for(let k=0;k<n&&si2<1500;k++){
         const col=k%per-(per-1)/2,row=Math.floor(k/per);
@@ -6776,11 +6789,13 @@ function animateWorld(dt,now){
       }
       let k=0;
       for(const c of G.citList){
-        if(c.pause>0)c.pause-=dt;else{c.t+=c.v*dt;if(Math.random()<dt*0.05)c.pause=1+Math.random()*4;}
+        const vt=dt*visPace();
+        if(c.pause>0)c.pause-=vt;else{c.t+=c.v*vt;if(Math.random()<vt*0.05)c.pause=1+Math.random()*4;}
+        if(c.v*vt>c.L){c.t=Math.random()*c.L;} // at the fast settings a whole street's worth of walking passes in a frame
         if(c.t<0||c.t>c.L){c.v=-c.v;c.t=clamp(c.t,0,c.L);}
         const p=polyPos(c.st.pts,c.t/c.L);if(!p)continue;
         const dir=p.dir||0,x=p.x-Math.sin(dir)*c.off,z=p.z+Math.cos(dir)*c.off;
-        const bob=c.pause>0?0:Math.abs(Math.sin(now*7+k*2))*0.06;
+        const bob=c.pause>0||!vt?0:Math.abs(Math.sin(now*7+k*2))*0.06;
         const ry=-dir+(c.v>0?Math.PI/2:-Math.PI/2);
         setInst(G.citizens,k,x,hAt(x,z)+0.28+bob,z,ry,1,1,1);setInst(G.citKit,k,x,hAt(x,z)+0.28+bob,z,ry,1,1,1);
         G.citizens.setColorAt(k,c.col);k++;
