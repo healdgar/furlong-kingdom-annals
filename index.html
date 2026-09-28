@@ -180,6 +180,9 @@ body.watch #watchdate{display:block;}
 #uiback{position:absolute;top:10px;right:10px;z-index:40;display:none;background:rgba(20,16,12,.55);color:var(--parch);border:1px solid rgba(233,220,195,.35);
   border-radius:4px;padding:5px 10px;font-size:12px;cursor:pointer;}
 body.watch #uiback,body.hideui #uiback{display:block;}
+#perfbox{position:absolute;left:10px;bottom:36px;z-index:35;display:none;background:rgba(20,16,12,.82);color:#e9dcc3;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
+  padding:7px 9px;border-radius:4px;max-width:min(430px,calc(100vw - 20px));pointer-events:auto;}
+#perfbox button{margin-top:4px;font:inherit;background:#e9dcc3;color:#2b2320;border:0;border-radius:3px;padding:2px 8px;cursor:pointer;}
 #placehint{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:30;display:none;
   background:var(--red);color:var(--parch);padding:5px 16px;border-radius:4px;font-size:13px;white-space:nowrap;}
 body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hideui #petition{display:none !important;}
@@ -275,10 +278,11 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 </div>
 
 <div id="beat"><div class="bt" id="beattext"></div><div class="bd" id="beatdate"></div></div>
+<div id="perfbox"></div>
 <button id="uiback" title="Show the controls again (Esc)">✕ controls</button>
 <div id="placehint">Click the map to place — Esc to cancel</div>
 <div id="petition"></div>
-<div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · 1–4 speed · R rule · M map · C watch · H hide UI</div>
+<div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -4850,6 +4854,7 @@ function initInput(){
       case 'h':case 'H':document.body.classList.toggle('hideui');break;
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
+      case 'p':case 'P':perfToggle();break;
       case 'r':case 'R':setSovereign(!sovOn());break; // takes up again whichever house was last played
       case 'Escape':
         if(document.body.classList.contains('watch'))toggleWatch();
@@ -7718,6 +7723,9 @@ function initUI(){
       else{const h=W.houses[+i],seat=h&&W.settlements[h.seat];if(seat)flyTo(seat.pos.x,seat.pos.z,700);const hd=h&&notableById(h.head);if(hd)showInspect({type:'notable',n:hd});}}
   });
   document.getElementById('rulebtn').addEventListener('click',()=>setSovereign(!sovOn()));
+  document.getElementById('perfbox').addEventListener('click',e=>{if(e.target.id!=='perfcopy')return;const t=perfReport(false);
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{e.target.textContent='Copied!';},()=>prompt('Performance report:',t));});
+  if(/[#&]perf/.test(location.hash))setTimeout(()=>perfToggle(true),1200);
   document.getElementById('uiback').addEventListener('click',()=>{if(document.body.classList.contains('watch'))toggleWatch();document.body.classList.remove('hideui');}); // the way back out on a touch screen
   const chron=document.getElementById('chron');
   const setChronMin=on=>{chron.classList.toggle('min',on);document.getElementById('chronmin').textContent=on?'▸':'▾';};
@@ -8337,6 +8345,7 @@ function simErr(e){errN++;if(performance.now()-errT>5000){errT=performance.now()
 function animate(t){
   requestAnimationFrame(animate);
   const now=t/1000;
+  const rawDt=lastT?now-lastT:0.016; // the true frame interval, for the performance monitor
   let dt=Math.min(0.1,now-lastT||0.016);lastT=now;
   // advance simulation
   if(!Number.isFinite(simAccum))simAccum=0;
@@ -8345,6 +8354,7 @@ function animate(t){
   while(simAccum>=1&&(ticks<1||performance.now()-tb<28)){ // time-budgeted, so the fastest speed runs as fast as the machine allows
     if(speedIdx===0){simAccum=0;break;} // a petition paused the realm mid-frame: stop here, not a dozen days on
     simAccum-=1;try{simTick();}catch(e){simErr(e);}ticks++;}
+  const tSim=performance.now(); // (the performance monitor's marks)
   const cap=Math.max(45,(SPEEDS[speedIdx]||0)*0.25);if(simAccum>cap)simAccum=cap; // don't spiral if a frame stalls
   W.clock.frac=W.clock.frac||0;
   if(SPEEDS[speedIdx]>0)W.clock.frac=simAccum; // 0..1 within the current day
@@ -8356,6 +8366,7 @@ function animate(t){
   try{director.update(perfNow(),dt);updateCamera(dt,now);animateWorld(dt,now);}
   catch(e){simErr(e);}
   finally{W.clock.day=saveDay;} // an error mid-frame must not leave the calendar on a fractional (or worse) day
+  const tWorld=performance.now();
   if(G.detDirty&&now-(G.detT||0)>Math.max(0.5,(G.detMs||0)*0.015)){const t0=performance.now();G.detT=now;rebuildDetails();G.detMs=performance.now()-t0;} // the costlier the rebuild, the rarer
   featFlush(now);
   if(G.ordersDirty)refreshOrders();
@@ -8366,8 +8377,37 @@ function animate(t){
     if((uiT=(uiT+1)%2)===0)refreshCrownPanel();}
   overlayT-=dt;
   if(overlayT<=0){overlayT=6;if(overlayMode)refreshOverlay();}
+  const tR0=performance.now();
+  if(PERF.on)perfGpuBegin();
   renderer.render(scene,camera);
+  if(PERF.on){perfGpuEnd();const tR1=performance.now();perfFrame(rawDt,ticks,tSim-tb,tWorld-tSim,tR0-tWorld,tR1-tR0,tR1-tb);}
 }
+/* ---- performance monitor (P, or #perf): frame, sim, world, rebuild and render times, GPU time where the browser can tell, scene size ---- */
+const PERF={on:false,f:[],q:[],gpu:[],ext:null,t:0};
+function perfToggle(on){PERF.on=on??!PERF.on;const el=document.getElementById('perfbox');if(el)el.style.display=PERF.on?'block':'none';
+  if(PERF.on&&!PERF.ext){const gl=renderer.getContext();PERF.gl=gl;PERF.ext=gl.getExtension&&gl.getExtension('EXT_disjoint_timer_query_webgl2')||false;}}
+function perfGpuBegin(){const e=PERF.ext,gl=PERF.gl;if(!e||PERF.q.length>4)return;const q=gl.createQuery();gl.beginQuery(e.TIME_ELAPSED_EXT,q);PERF.cur=q;}
+function perfGpuEnd(){const e=PERF.ext,gl=PERF.gl;if(!e||!PERF.cur)return;gl.endQuery(e.TIME_ELAPSED_EXT);PERF.q.push(PERF.cur);PERF.cur=null;
+  while(PERF.q.length){const q=PERF.q[0];if(!gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE))break;PERF.q.shift();
+    if(!gl.getParameter(e.GPU_DISJOINT_EXT))PERF.gpu.push(gl.getQueryParameter(q,gl.QUERY_RESULT)/1e6);gl.deleteQuery(q);if(PERF.gpu.length>120)PERF.gpu.shift();}}
+function perfFrame(dt,ticks,sim,world,rebuild,render,total){
+  PERF.f.push({dt:dt*1000,ticks,sim,world,rebuild,render,total});if(PERF.f.length>240)PERF.f.shift();
+  const n=performance.now();if(n-PERF.t<500)return;PERF.t=n;
+  const el=document.getElementById('perfbox');if(el)el.innerHTML=perfReport(true);}
+function perfReport(html){
+  const F=PERF.f,avg=k=>F.reduce((t,x)=>t+x[k],0)/Math.max(1,F.length),mx=k=>F.reduce((t,x)=>Math.max(t,x[k]),0),g=PERF.gpu;
+  const fps=1000/Math.max(1,avg('dt')),inf=renderer.info,mem=performance.memory,gpu=g.length?g.reduce((t,v)=>t+v,0)/g.length:null;
+  const busy=avg('total')/Math.max(1,avg('dt'))*100;
+  const L=[`${fps.toFixed(fps<10?1:0)} fps · frame ${avg('dt').toFixed(1)} ms (worst ${mx('dt').toFixed(0)})`,
+    `main thread busy ${busy.toFixed(0)}% of each frame`,
+    `sim ${avg('sim').toFixed(1)} ms (${avg('ticks').toFixed(1)} days/frame, worst ${mx('sim').toFixed(0)})`,
+    `world ${avg('world').toFixed(1)} · rebuilds ${avg('rebuild').toFixed(1)} (worst ${mx('rebuild').toFixed(0)}) · render ${avg('render').toFixed(1)} ms`,
+    `GPU ${gpu!=null?gpu.toFixed(1)+' ms/frame ('+Math.min(100,gpu/Math.max(1,avg('dt'))*100).toFixed(0)+'% busy)':PERF.ext===false?'timer not available in this browser':'measuring…'}`,
+    `${inf.render.calls} draw calls · ${(inf.render.triangles/1e6).toFixed(2)}M triangles · ${inf.memory.geometries} geometries · ${inf.memory.textures} textures`,
+    mem?`JS heap ${(mem.usedJSHeapSize/1048576).toFixed(0)} / ${(mem.jsHeapSizeLimit/1048576).toFixed(0)} MB`:'',
+    `${W.settlements.length} places · ${G.bldList.length} buildings · ${W.armies.length} hosts · ${(W.caravans||[]).length} caravans · speed ${SPEEDS[speedIdx]} d/s · ${innerWidth}×${innerHeight}@${devicePixelRatio}`].filter(Boolean);
+  if(!html)return L.join('\n');
+  return L.map(l=>`<div>${l}</div>`).join('')+`<button id="perfcopy">Copy report</button>`;}
 async function boot(){
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);

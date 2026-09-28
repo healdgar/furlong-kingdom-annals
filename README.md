@@ -29,6 +29,11 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   Fate box blank). *Copy share link* carries both, reproducing your realm and
   its history exactly.
 - **Export chronicle** downloads the full annals of your run as a `.txt`.
+- **Performance monitor** (`P`, or `#perf` in the URL): frame rate and frame
+  time, how much of each frame the main thread is busy (simulation, world
+  animation, mesh rebuilds, render submission), GPU time per frame where the
+  browser exposes a GPU timer, draw calls, triangles, memory and scene size.
+  *Copy report* puts it on the clipboard.
 
 ## Controls
 
