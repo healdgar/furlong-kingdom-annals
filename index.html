@@ -1866,6 +1866,14 @@ function mergeGeoms(list){ // list of [geometry, matrix] → one non-indexed Buf
   return out;
 }
 const M4=new THREE.Matrix4(),Q1=new THREE.Quaternion(),V1=new THREE.Vector3(),V2=new THREE.Vector3(),C1=new THREE.Color();
+function surfY(x,z){ // the walking surface: the ground, or a bridge deck where one crosses the water
+  const g=hAt(x,z),S=G.bridgeSpans;if(!S)return g;
+  for(const b of S){if(x<b.x0||x>b.x1||z<b.z0||z>b.z1)continue;
+    const dx=b.b.x-b.a.x,dz=b.b.z-b.a.z,L2=dx*dx+dz*dz||1,t=((x-b.a.x)*dx+(z-b.a.z)*dz)/L2;if(t<0||t>1)continue;
+    if(Math.hypot(x-(b.a.x+dx*t),z-(b.a.z+dz*t))>b.hw)continue;
+    const d=t<0.5?b.hA+(b.hM-b.hA)*t*2:b.hM+(b.hB-b.hM)*(t-0.5)*2;if(d>g)return d;}
+  return g;
+}
 function setInst(im,i,x,y,z,ry,sx,sy,sz){
   Q1.setFromEuler(new THREE.Euler(0,ry||0,0));
   M4.compose(V1.set(x,y,z),Q1,V2.set(sx||1,sy||1,sz||1));
@@ -2057,16 +2065,24 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   scene.add(G.roads);
   // bridges: a timber/stone deck spanning bank to bank, parapets, and a pier in midstream
   const bx=new THREE.BoxGeometry(1,1,1);
-  G.bridges=new THREE.InstancedMesh(bx,new THREE.MeshLambertMaterial({}),Math.max(1,spans.length*4));
+  G.bridges=new THREE.InstancedMesh(bx,new THREE.MeshLambertMaterial({}),Math.max(1,spans.length*7));
   let bi=0;
+  G.bridgeSpans=[];
+  const tilt=(i,x,y,z,ry,pitch,sx,sy,sz)=>{Q1.setFromEuler(new THREE.Euler(0,ry,pitch,'YZX'));M4.compose(V1.set(x,y,z),Q1,V2.set(sx,sy,sz));G.bridges.setMatrixAt(i,M4);};
   for(const sp of spans){
-    const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L=Math.hypot(dx,dz)+6,ry=-Math.atan2(dz,dx);
-    const mx=(sp.a.x+sp.b.x)/2,mz=(sp.a.z+sp.b.z)/2;
-    const deck=Math.max(hAt(sp.a.x,sp.a.z),hAt(sp.b.x,sp.b.z),sp.y+2.2)+0.4;
-    const px=-dz/(L-6||1),pz=dx/(L-6||1),bw=sp.hw*2+0.4;
-    setInst(G.bridges,bi,mx,deck-0.6,mz,ry,L,1.2,bw);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
-    for(const sd of[-1,1]){setInst(G.bridges,bi,mx+px*sd*(bw/2-0.3),deck+0.5,mz+pz*sd*(bw/2-0.3),ry,L,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
-    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,deck-sp.y+2.4,bw-1.6);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
+    const dx=sp.b.x-sp.a.x,dz=sp.b.z-sp.a.z,L0=Math.hypot(dx,dz)||1,ry=-Math.atan2(dz,dx);
+    const mx=(sp.a.x+sp.b.x)/2,mz=(sp.a.z+sp.b.z)/2,ux=dx/L0,uz=dz/L0;
+    // each end sits on its own bank, the crown clears the water: a deck that meets the road on both sides
+    const hA=hAt(sp.a.x-ux*1.5,sp.a.z-uz*1.5)+0.4,hB=hAt(sp.b.x+ux*1.5,sp.b.z+uz*1.5)+0.4,hM=Math.max((hA+hB)/2,sp.y+2.6);
+    const A={x:sp.a.x-ux*3,z:sp.a.z-uz*3},Bp={x:sp.b.x+ux*3,z:sp.b.z+uz*3},M={x:mx,z:mz},L=L0+6;
+    G.bridgeSpans.push({a:A,b:Bp,hA,hM,hB,hw:sp.hw+0.6,x0:Math.min(A.x,Bp.x)-sp.hw-2,x1:Math.max(A.x,Bp.x)+sp.hw+2,z0:Math.min(A.z,Bp.z)-sp.hw-2,z1:Math.max(A.z,Bp.z)+sp.hw+2});
+    const px=-uz,pz=ux,bw=sp.hw*2+0.4;
+    for(const[P,Q,h0,h1]of[[A,M,hA,hM],[M,Bp,hM,hB]]){ // two ramps meeting at the crown
+      const cx=(P.x+Q.x)/2,cz=(P.z+Q.z)/2,hl=L/2,pitch=Math.atan2(h1-h0,hl),yc=(h0+h1)/2,len=Math.hypot(hl,h1-h0)+0.3;
+      tilt(bi,cx,yc-0.6,cz,ry,pitch,len,1.2,bw);G.bridges.setColorAt(bi++,C1.setHex(0x8a7a62));
+      for(const sd of[-1,1]){tilt(bi,cx+px*sd*(bw/2-0.3),yc+0.5,cz+pz*sd*(bw/2-0.3),ry,pitch,len,1.2,0.6);G.bridges.setColorAt(bi++,C1.setHex(0x9b917f));}
+    }
+    setInst(G.bridges,bi,mx,sp.y-3,mz,ry,2.4,hM-sp.y+2.4,bw-1.6);G.bridges.setColorAt(bi++,C1.setHex(0x8f877a));
   }
   G.bridges.count=bi;G.bridges.castShadow=true;G.bridges.receiveShadow=true;
   G.bridges.instanceMatrix.needsUpdate=true;if(G.bridges.instanceColor)G.bridges.instanceColor.needsUpdate=true;
@@ -6786,7 +6802,7 @@ function animateWorld(dt,now){
     if(t.d<0)continue; // still loading at the gate
     const c=t.info,p=polyPos(t.poly,t.d/t.len);
     if(!p)continue;
-    const y=c.sea?SEA+1:(c.river?hAt(p.x,p.z)+1.2:hAt(p.x,p.z)+1.0); // road surface or water line
+    const y=c.sea?SEA+1:(c.river?hAt(p.x,p.z)+1.2:surfY(p.x,p.z)+1.0); // road surface (a bridge deck over water) or water line
     c._rpos={x:p.x,y:y+8,z:p.z};
     if(!t.proxy){
       t.proxy=new THREE.Mesh(new THREE.SphereGeometry(12,6,5),new THREE.MeshBasicMaterial({visible:false}));
@@ -6827,7 +6843,7 @@ function animateWorld(dt,now){
       p={x:a.battlePos.x+off,z:a.battlePos.z+off*0.5,dir:a.side==='crown'?0.46:Math.PI+0.46};
     }
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
-    const y=hAt(p.x,p.z);
+    const y=surfY(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
     placeMarker(a,houseMarker(a.house),p.x,y,p.z,a.standing?26:32);
     if(a.flag){
@@ -6850,7 +6866,7 @@ function animateWorld(dt,now){
         if(a.state==='battle'){sx+=Math.sin(now*7+k*3)*0.9*us;sz+=Math.cos(now*6+k*5)*0.9*us;}
         else if(a.state==='siege'||a.state==='idle'){sx+=Math.sin(k*12.9)*0.5;sz+=Math.cos(k*7.3)*0.5;}
         const bob=a.state==='march'||a.state==='rout'?Math.abs(Math.sin(now*8+k))*0.12*us:0;
-        const yy=hAt(sx,sz)+bob,ry=-dir+Math.PI/2+(a.state==='rout'?Math.PI:0);
+        const yy=surfY(sx,sz)+bob,ry=-dir+Math.PI/2+(a.state==='rout'?Math.PI:0);
         setInst(G.soldiers,si2,sx,yy,sz,ry,us,us,us);setInst(G.soldierShields,si2,sx,yy,sz,ry,us,us,us);setInst(G.soldierKit,si2,sx,yy,sz,ry,us,us,us);
         G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);
         si2++;
@@ -6919,7 +6935,7 @@ function animateWorld(dt,now){
         const dir=p.dir||0,x=p.x-Math.sin(dir)*c.off,z=p.z+Math.cos(dir)*c.off;
         const bob=c.pause>0||!vt?0:Math.abs(Math.sin(now*7+k*2))*0.06;
         const ry=-dir+(c.v>0?Math.PI/2:-Math.PI/2);
-        setInst(G.citizens,k,x,hAt(x,z)+0.28+bob,z,ry,1,1,1);setInst(G.citKit,k,x,hAt(x,z)+0.28+bob,z,ry,1,1,1);
+        const yz=surfY(x,z)+0.28+bob;setInst(G.citizens,k,x,yz,z,ry,1,1,1);setInst(G.citKit,k,x,yz,z,ry,1,1,1);
         G.citizens.setColorAt(k,c.col);k++;
       }
       G.citizens.count=G.citKit.count=k;
