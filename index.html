@@ -2330,13 +2330,24 @@ function riverStrips(){
   }
   return G.rivStrips;
 }
-function keepToBank(P){ // a road that runs along a river keeps to the bank; it bridges only where it crosses
-  if(!G.rivHash)return P;
-  return P.map((p,k)=>{const w=riverAt(p.x,p.z,3);if(!w)return p;
-    const a=P[Math.max(0,k-1)],b=P[Math.min(P.length-1,k+1)],rl=Math.hypot(b.x-a.x,b.z-a.z)||1,dx=w.b.x-w.a.x,dz=w.b.z-w.a.z,L=Math.hypot(dx,dz)||1,tx=dx/L,tz=dz/L;
-    if(Math.abs(((b.x-a.x)*tx+(b.z-a.z)*tz)/rl)<0.75)return p;
-    const u=(p.x-w.a.x)*tx+(p.z-w.a.z)*tz,nx=-tz,nz=tx,sd=Math.sign((p.x-w.a.x)*nx+(p.z-w.a.z)*nz)||1;
-    return{...p,x:w.a.x+tx*u+nx*sd*(w.hw+6),z:w.a.z+tz*u+nz*sd*(w.hw+6)};});
+function keepToBank(P0){ // a road that meets a river keeps to its bank, and crosses square to the stream
+  if(!G.rivHash||P0.length<2)return P0;
+  const wet=q=>riverAt(q.x,q.z,1);
+  if(!P0.some(wet)&&!P0.some((q,k)=>k&&wet({x:(q.x+P0[k-1].x)/2,z:(q.z+P0[k-1].z)/2})))return P0;
+  const P=resample(P0,5),out=[];
+  for(let k=0;k<P.length;){
+    if(!wet(P[k])||k===0){out.push(P[k]);k++;continue;}
+    let j=k;while(j<P.length-1&&wet(P[j+1]))j++;
+    if(j>=P.length-1){for(let m=k;m<P.length;m++)out.push(P[m]);break;}
+    const a=P[k-1],b=P[j+1],w=wet(P[(k+j)>>1])||wet(P[k]),dx=w.b.x-w.a.x,dz=w.b.z-w.a.z,L=Math.hypot(dx,dz)||1,tx=dx/L,tz=dz/L,nx=-tz,nz=tx;
+    const side=q=>Math.sign((q.x-w.a.x)*nx+(q.z-w.a.z)*nz)||1,bank=(q,sd)=>{const u=(q.x-w.a.x)*tx+(q.z-w.a.z)*tz;return{x:w.a.x+tx*u+nx*sd*(w.hw+5),z:w.a.z+tz*u+nz*sd*(w.hw+5)};};
+    const sa=side(a),sb=side(b),cx=b.x-a.x,cz=b.z-a.z,cl=Math.hypot(cx,cz)||1;
+    if(sa===sb)for(let m=k;m<=j;m++)out.push(bank(P[m],sa)); // dipped into the stream and out again: along the bank
+    else if(Math.abs(cx*tx+cz*tz)/cl>0.55){const m={x:(a.x+b.x)/2,z:(a.z+b.z)/2};out.push(bank(m,sa),bank(m,sb));} // slanting across: along the bank, then straight over
+    else for(let m=k;m<=j;m++)out.push(P[m]);
+    k=j+1;
+  }
+  return out;
 }
 function riverAt(x,z,pad){ // the river segment under (x,z), if any
   for(const o of G.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;
@@ -2807,16 +2818,16 @@ function buildBuildings(){
   G.bodies.instanceMatrix.needsUpdate=true;G.roofs.instanceMatrix.needsUpdate=true;
   scene.add(G.bodies);scene.add(G.roofs);
   // detail props: chimneys, bell towers & spires, keep turrets, wells, market stalls
-  const cap=(N+SP)*9+600; // yard fences take the most
+  const cap=(N+SP)*3+600;
   const box=new THREE.BoxGeometry(1,1,1);box.translate(0,0.5,0);
   const cyl=new THREE.CylinderGeometry(0.5,0.5,1,10);cyl.translate(0,0.5,0);
   const cone=new THREE.ConeGeometry(0.5,1,10);cone.translate(0,0.5,0);
   const pyr=new THREE.ConeGeometry(0.5,1,4);pyr.rotateY(Math.PI/4);pyr.translate(0,0.5,0);
   G.det={};
-  for(const[k,g,n]of[['box',box,cap],['cyl',cyl,800],['cone',cone,800],['pyr',pyr,600]]){
+  for(const[k,g,n]of[['box',box,cap],['fence',box,(N+SP)*6+400],['cyl',cyl,800],['cone',cone,800],['pyr',pyr,600]]){
     const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),n);
     for(let i=0;i<n;i++)m.setColorAt(i,C1.setHex(0xffffff)); // allocate colours at full size now: created lazily at count 0 (no cones yet in a Dark Ages realm) they render black
-    m.castShadow=true;m.receiveShadow=true;m.frustumCulled=false;scene.add(m);G.det[k]=m;
+    m.castShadow=k!=='fence';m.receiveShadow=true;m.frustumCulled=false;scene.add(m);G.det[k]=m; // fences are too low to throw much shadow
   }
   rebuildDetails();
   rebuildWalls();
@@ -2878,7 +2889,7 @@ const STREETFRONT={ // what hangs on a trade's front: a pentice (1 = a cloth of 
   dyer:{awn:1},toll:{sign:0x8a2f22},guildhall:{sign:0xc4a24a,awn:0x3e5f8a}};
 function rebuildDetails(){
   G.detDirty=false;
-  const cnt={box:0,cyl:0,cone:0,pyr:0};
+  const cnt={box:0,fence:0,cyl:0,cone:0,pyr:0};
   const put=(k,x,y,z,ry,sx,sy,sz,col)=>{const m=G.det[k];if(cnt[k]>=m.instanceMatrix.count)return;setInst(m,cnt[k],x,y,z,ry,sx,sy,sz);m.setColorAt(cnt[k]++,C1.setHex(col));};
   const at=(b,ox,oz)=>{const c=Math.cos(b.rot),sn=Math.sin(b.rot);return[b.x+ox*c+oz*sn,b.z-ox*sn+oz*c];};
   const sails=[];
@@ -2948,7 +2959,7 @@ function rebuildDetails(){
        to its neighbours (weighted by its size, so no line runs through a hall), up to the street, the river, the market
        and the town wall; out at the edge a lot takes a bite of the furlong it was built on, and the rest stays field.
        Fences run along the parcel lines: wattle, then paling, then low stone walls in the better streets. */
-    const bh=makeHash(32),sh=makeHash(32);
+    const T0=performance.now(),bh=makeHash(32),sh=makeHash(32);
     for(const b of G.bldList)if(b.state!=='gone'&&!b.removed){b._r=Math.hypot(b.w,b.d)/2;bh.add(b,b._r);}
     const seg=(a,c,hw)=>{const o={a,b:c,hw,x:(a.x+c.x)/2,z:(a.z+c.z)/2};sh.add(o,dist2d(a.x,a.z,c.x,c.z)/2+hw);};
     for(const o of W.settlements)for(const st of o.streets)if(!st.hidden&&!st.gone)for(let k=0;k<st.pts.length-1;k++)seg(st.pts[k],st.pts[k+1],st.hw);
@@ -2962,8 +2973,10 @@ function rebuildDetails(){
       const cr=Math.cos(b.rot||0),sr=Math.sin(b.rot||0);let P=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v],k)=>({x:b.x+(u*cr+v*sr)*R,z:b.z+(v*cr-u*sr)*R,e:-1-k})); // squared to the house // e: which line made each edge (≥0 a neighbour, -1..-4 the bound, -9 public ground)
       const cut=(nx,nz,c,e)=>{const L=Math.hypot(nx,nz)||1,Q=clip(P,nx/L,nz/L,c/L);if(Q.length<3)return false;
         for(let k=0;k<Q.length;k++){const a=Q[k],q=Q[(k+1)%Q.length];if(Math.abs(a.x*nx/L+a.z*nz/L-c/L)<1e-6&&Math.abs(q.x*nx/L+q.z*nz/L-c/L)<1e-6)a.e=e;}P=Q;return true;};
-      for(const o of bh.near(b.x,b.z,R*2)){if(o===b||o.state==='gone'||o.removed)continue;
-        const nx=o.x-b.x,nz=o.z-b.z;cut(nx,nz,((o.x*o.x+o.z*o.z)-(b.x*b.x+b.z*b.z)-o._r*o._r+b._r*b._r)/2,o.idx);} // the power bisector
+      const nb=[];for(const o of bh.near(b.x,b.z,R*2))if(o!==b&&o.state!=='gone'&&!o.removed){const D=dist2d(b.x,b.z,o.x,o.z);if(D>0.1)nb.push([(D*D-o._r*o._r+b._r*b._r)/(2*D),o]);}
+      nb.sort((p,q)=>p[0]-q[0]);let far=R*1.42; // nearest first: the cell shrinks fast, and a line beyond its farthest corner cuts nothing
+      for(const[h,o]of nb){if(h>far)break;
+        if(cut(o.x-b.x,o.z-b.z,((o.x*o.x+o.z*o.z)-(b.x*b.x+b.z*b.z)-o._r*o._r+b._r*b._r)/2,o.idx)){far=0;for(const q of P)far=Math.max(far,dist2d(b.x,b.z,q.x,q.z));}} // the power bisector
       for(const g of sh.near(b.x,b.z,R)){const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,t=clamp(((b.x-g.a.x)*dx+(b.z-g.a.z)*dz)/L2,0,1),qx=g.a.x+dx*t,qz=g.a.z+dz*t;
         let nx=qx-b.x,nz=qz-b.z;const d=Math.hypot(nx,nz);if(d<0.5||d>R*1.3)continue;nx/=d;nz/=d;
         cut(nx,nz,nx*qx+nz*qz-g.hw-0.8,-9);}
@@ -2977,10 +2990,11 @@ function rebuildDetails(){
     }
     const col=t=>t===2?0x9a9182:t===1?0x8a7453:0x7d6647;
     for(const[,[a,c,b]]of edges){const L=Math.hypot(c.x-a.x,c.z-a.z);if(L<1.5)continue;
-      const t=b.arch==='church'||b.arch==='cathedral'||b.arch==='castle'?2:(b.tier||0),n=Math.max(1,Math.round(L/5)),ry=Math.atan2(c.x-a.x,c.z-a.z);
+      const t=b.arch==='church'||b.arch==='cathedral'||b.arch==='castle'?2:(b.tier||0),n=Math.max(1,Math.round(L/8)),ry=Math.atan2(c.x-a.x,c.z-a.z);
       for(let k=0;k<n;k++){const x=a.x+(c.x-a.x)*(k+0.5)/n,z=a.z+(c.z-a.z)*(k+0.5)/n; // short lengths, each set on its own ground
         let inB=false;for(const o of bh.near(x,z,4))if(o.state!=='gone'&&!o.removed&&dist2d(x,z,o.x,o.z)<Math.min(o.w,o.d)*0.5){inB=true;break;} // under a house the line is its party wall
-        if(!inB)put('box',x,hAt(x,z)-0.25,z,ry,t===2?0.45:0.2,t===2?1.35:1.05,L/n+0.1,col(t));}}
+        if(!inB)put('fence',x,hAt(x,z)-0.25,z,ry,t===2?0.45:0.2,t===2?1.35:1.05,L/n+0.1,col(t));}}
+    G.lotMs=performance.now()-T0;
   }
   if(G.sails)for(const g of G.sails){scene.remove(g);disposeTree(g);}
   G.sails=sails.map(b=>{ // a cross of four sails on the windward face, turning about the hub
@@ -7837,7 +7851,7 @@ function animate(t){
   const saveDay=W.clock.day;W.clock.day=Number.isFinite(displayDay)?displayDay:saveDay;
   try{director.update(perfNow(),dt);updateCamera(dt,now);animateWorld(dt,now);}
   finally{W.clock.day=saveDay;} // an error mid-frame must not leave the calendar on a fractional (or worse) day
-  if(G.detDirty&&now-(G.detT||0)>0.5){G.detT=now;rebuildDetails();}
+  if(G.detDirty&&now-(G.detT||0)>Math.max(0.5,(G.detMs||0)*0.015)){const t0=performance.now();G.detT=now;rebuildDetails();G.detMs=performance.now()-t0;} // the costlier the rebuild, the rarer
   featFlush(now);
   if(G.ordersDirty)refreshOrders();
   if(G.orders)for(const m of G.orders.children)m.material.opacity=0.35+0.25*Math.sin(now*3); // an order in hand pulses gently
