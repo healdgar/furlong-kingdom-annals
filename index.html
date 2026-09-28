@@ -287,15 +287,16 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 
 /* ---------------- RNG: sfc32, separate streams for gen & history -------- */
 function sfc32(a,b,c,d){return function(){a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=(a+b)|0;a=b^b>>>9;b=c+(c<<3)|0;c=(c<<21|c>>>11);d=d+1|0;t=t+d|0;c=c+t|0;return(t>>>0)/4294967296;};}
-function seedStreams(seed){
+function seedStreams(seed,fate){ // the map seed shapes the land; the fate seed (if any) the history lived on it
   function mix(n){n=Math.imul(n^n>>>15,n|1);n^=n+Math.imul(n^n>>>7,n|61);return(n^n>>>14)>>>0;}
-  const s=seed>>>0;
+  const s=seed>>>0,f=fate?mix((fate>>>0)+0x51ed):0;
   return {
     gen: sfc32(mix(s),mix(s+0x9e37),mix(s+0x85eb),mix(s+0xc2b2)),
-    sim: sfc32(mix(s+0x1b87),mix(s+0x27d4),mix(s+0x1656),mix(s+0x9c83))
+    sim: sfc32(mix((s+0x1b87)^f),mix((s+0x27d4)^f),mix((s+0x1656)^f),mix((s+0x9c83)^f))
   };
 }
-let SEED=1234567, RS=null, COAST_PREF=null; // null: as the seed falls; 'sea' or 'land' from the hash
+let SEED=1234567, FATE=0, RS=null, COAST_PREF=null; // COAST_PREF null: as the seed falls; 'sea' or 'land' from the hash
+function realmHash(){return '#s='+SEED+'&f='+FATE+'&y='+START_AD+(COAST_PREF?'&c='+COAST_PREF:'');} // this land, this history
 const rand=(st)=>RS[st]();
 const randi=(st,n)=>Math.floor(RS[st]()*n);
 const pick=(st,arr)=>arr[Math.floor(RS[st]()*arr.length)];
@@ -686,9 +687,9 @@ function slopeAt(cx,cz){
 }
 
 async function generateWorld(seed,progress){
-  SEED=seed>>>0; RS=seedStreams(SEED);
+  SEED=seed>>>0; RS=seedStreams(SEED,FATE);
   const n1=makeNoise(SEED^0xA53), n2=makeNoise(SEED^0x5EED), n3=makeNoise(SEED^0xF00D), nMoist=makeNoise(SEED^0xB0A);
-  W={startAD:FOUNDING_AD,seed:SEED,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
+  W={startAD:FOUNDING_AD,seed:SEED,fate:FATE,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
      biome:new Uint8Array(GRID*GRID),moist:new Float32Array(GRID*GRID),
      settlements:[],roads:[],routes:{},houses:[],notables:[],armies:[],caravans:[],banditCamps:[],
      riverPaths:[],bridges:[],roadCells:new Uint8Array(GRID*GRID),treasury:2200,legitimacy:70,
@@ -7451,7 +7452,8 @@ function buildDrawer(tab){
     }
   }else if(tab==='world'){
     body.innerHTML=`
-      <div class="wrow">Seed<br><input type="text" id="seedin" value="${SEED}"></div>
+      <div class="wrow">Land (map seed)<br><input type="text" id="seedin" value="${SEED}"></div>
+      <div class="wrow">Fate (history seed)<br><input type="text" id="fatein" value="" placeholder="a new history (this one: ${FATE})"></div>
       <div class="wrow">Begin play in<br><select id="erain">${[[850,'AD 850 — the founding: hamlets, motte and bailey'],[1066,'AD 1066 — the realm run forward 216 years'],[1250,'AD 1250 — run forward 400 years'],[1400,'AD 1400 — run forward 550 years']].map(([y,t])=>`<option value="${y}"${START_AD===y?' selected':''}>${t}</option>`).join('')}</select></div>
       <div class="wrow">Coast<br><select id="ecoast">${[['','as the seed falls (about 2 in 5 by the sea)'],['sea','by the sea'],['land','inland']].map(([v,t])=>`<option value="${v}"${(COAST_PREF||'')===v?' selected':''}>${t}</option>`).join('')}</select></div>
       <button class="wbtn" id="btnreforge">Reforge the realm</button>
@@ -7464,7 +7466,8 @@ function buildDrawer(tab){
     document.getElementById('btnreforge').addEventListener('click',()=>{
       const v=parseInt(document.getElementById('seedin').value,10);
       const cp=document.getElementById('ecoast').value;
-      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'');
+      const fv=parseInt(document.getElementById('fatein').value,10); // blank: the same land lives a new history
+      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&f='+((isNaN(fv)?1+Math.floor(Math.random()*1e9):fv)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'');
       location.reload();
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
@@ -7547,7 +7550,7 @@ function initUI(){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   });
   document.getElementById('btnshare').addEventListener('click',()=>{
-    const url=location.href.split('#')[0]+'#s='+SEED+'&y='+START_AD+(COAST_PREF?'&c='+COAST_PREF:''); // (origin is "null" on file://)
+    const url=location.href.split('#')[0]+realmHash(); // the same land and the same history (origin is "null" on file://)
     (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
       ()=>{document.getElementById('btnshare').textContent='Copied!';setTimeout(()=>document.getElementById('btnshare').textContent='Copy share link',1400);},
       ()=>prompt('Share this realm:',url));
@@ -7555,7 +7558,8 @@ function initUI(){
   document.getElementById('inspx').addEventListener('click',hideInspect);
   G.labelsOn=true;
   setInterval(()=>{if(document.getElementById('housepanel')&&!uiBusy())refreshHousePanel();},4000);
-  window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/),c=location.hash.match(/c=(sea|land)/);if(m&&(parseInt(m[1],10)>>>0)!==SEED||(c?c[1]:null)!==COAST_PREF)location.reload();});
+  window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/),c=location.hash.match(/c=(sea|land)/),f=location.hash.match(/f=(\d+)/);
+    if(m&&(parseInt(m[1],10)>>>0)!==SEED||(c?c[1]:null)!==COAST_PREF||f&&(parseInt(f[1],10)>>>0)!==FATE)location.reload();});
 }
 /* =========================================================================
    PARCHMENT MAP — the realm drawn as the chroniclers would draw it
@@ -8182,7 +8186,8 @@ async function boot(){
   START_AD=clamp(ym?+ym[1]:em&&em[1]==='high'?1250:850,850,1500);
   const m=location.hash.match(/s=(\d+)/);
   const seed=m?parseInt(m[1],10)>>>0:Math.floor(Math.random()*1e9);
-  if(!m)history.replaceState(null,'','#s='+seed+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:''));
+  const fm=location.hash.match(/f=(\d+)/);FATE=fm?parseInt(fm[1],10)>>>0:1+Math.floor(Math.random()*1e9); // a new history each time, unless the link names one
+  {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:''));}
   const line=document.getElementById('loadline'),bar=document.querySelector('#loadbar>div');
   const progress=(txt,f)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
     return new Promise(r=>setTimeout(r,30));};

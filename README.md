@@ -23,8 +23,11 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 # then open http://localhost:8080  (the browser fetches three.js from cdnjs)
 ```
 
-- **Persistence is the seed**: the URL hash (`#s=1234567`) fully determines the
-  generated world. *Copy share link* reproduces your realm exactly.
+- **Land and fate**: the map seed (`#s=1234567`) fixes the land; the fate seed
+  (`&f=…`) fixes the history lived on it. A new game rolls a fresh fate, so the
+  same land runs a different history each time (Realm tab: *Reforge* with the
+  Fate box blank). *Copy share link* carries both, reproducing your realm and
+  its history exactly.
 - **Export chronicle** downloads the full annals of your run as a `.txt`.
 
 ## Controls
@@ -116,7 +119,8 @@ itself; you rule one lord's domain:
 ## How it works
 
 - Deterministic worldgen via seeded `sfc32` RNG with **separate streams** for
-  generation and history — intervening in history never changes the map.
+  generation (map seed) and history (map seed mixed with the fate seed) —
+  intervening in history, or rolling a new fate, never changes the map.
 - Worldgen pipeline: fBm terrain with domain warping and a mountain spine →
   flow-accumulation rivers carved as soft valleys → biomes → settlement siting →
   A* king's roads relaxed into smooth curves → town layout → houses, heraldry,
