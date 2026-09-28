@@ -3810,6 +3810,7 @@ function syncOwner(s){ // the town changed hands: its fields go with it
   const old=s._lord;s._lord=s.owner;
   for(const f of s.furl||[])if(f.lord===old||f.lord<0)setLord(f,s.owner,false);
 }
+function book(h,k,v){if(h){const L=h.led||(h.led={});L[k]=(L[k]||0)+v;}} // a house's running ledger: where its gold came from and went
 function hostTarget(hi){const h=W.houses[hi],pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(h.might||1))*(hi>0?1+clamp((h.gold||0)/8000,0,1):1);} // a full purse hires swords
 function ensureHosts(){ // every house keeps a household host at its seat, topped up from its people
   W.houses.forEach((h,hi)=>{
@@ -3828,7 +3829,7 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
     }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
       const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
       const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/1.5:1e9);
-      if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0)h.gold-=add*1.5;}
+      if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0){h.gold-=add*1.5;book(h,'recruits',-add*1.5);}}
     }
   });
 }
@@ -3940,7 +3941,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const income=dues*own.reduce((t,s)=>t+s.pop*0.045*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1),0); // far fiefs: the castellans skim
     const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
     const upkeep=hosts+(Math.pow(own.length,1.5)-1)*3.5+own.reduce((t,s)=>t+(s.garrison||0),0)*0.36; // every castle beyond the lord's own hall wants a castellan, every garrison its pay
-    h.gold+=income-upkeep;h.lastNet=income-upkeep;
+    h.gold+=income-upkeep;h.lastNet=income-upkeep;book(h,'rents',income);book(h,'hosts',-hosts);book(h,'castellans',-(Math.pow(own.length,1.5)-1)*3.5);book(h,'garrisons',-(upkeep-hosts-(Math.pow(own.length,1.5)-1)*3.5));
     if(dues!==1)for(const s of own){s.unrest=clamp(s.unrest+(dues-1)*10,0,100);if(dues<1)s.prosperity=clamp(s.prosperity+(1-dues)*2,0,100);}
     if(hi===plyH()&&h.gold<-600&&own.length>1&&!h._debtAsk){h._debtAsk=true;debtPetition(hi,own);return;} // your creditors come to you, not to the auctioneer
     if(h.gold>=-600)h._debtAsk=false;
@@ -3952,7 +3953,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       const buyers=W.houses.map((o,i)=>i).filter(i=>i!==hi&&!W.houses[i].exiled&&!atWar(i,hi)&&(i===0?W.treasury>price*3&&crownShare<0.4:W.houses[i].gold>price));
       const near=i=>{let d=1e9;for(const s of W.settlements)if(s.owner===i)d=Math.min(d,dist2d(s.pos.x,s.pos.z,sell.pos.x,sell.pos.z));return d;};
       const to=buyers.length?wpick(buyers,i=>-near(i)/600+((i===0?W.treasury:W.houses[i].gold)/Math.max(1,price))*0.2,0.7):-1;
-      if(to>=0){if(to===0)W.treasury-=price;else W.houses[to].gold-=price;h.gold+=price;
+      if(to>=0){if(to===0)W.treasury-=price;else{W.houses[to].gold-=price;book(W.houses[to],'land',-price);}h.gold+=price;book(h,'land',price);
         sell.owner=to;syncOwner(sell);if(to>0)W.houses[to].loyalty=clamp(W.houses[to].loyalty+2,0,100);refreshOverlay();
         emit('house',6,sell.pos,`${h.name}, deep in debt, sells ${sell.name} and its lands to ${W.houses[to].name} for ${price.toLocaleString()} gold.`);}
       else if(h.gold<-1500){h.loyalty=clamp(h.loyalty-3,0,100);} // no buyer: the creditors press, and the lord grows desperate
@@ -4073,7 +4074,7 @@ function foundTown(){ // a lord founds a new market town, laid out in one stroke
     sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z)});}
   const site=wpick(sites,q=>-q.d/1500,1);if(!site)return;
   const n=W.settlements.length;
-  if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;}
+  if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;book(W.houses[hi],'founding',-1200);}
 }
 function foundDaughter(s){
   const vill=W.settlements.filter(o=>o.kind==='village').length;
@@ -5528,6 +5529,8 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
   const name='House '+give[0].name.replace(/(mere|holt|ford|caster|wyck|march|fell|combe|worth|bridge|haven|moor|dale|garth|stead|port|field|burn|cester|ham|by)$/,'')+pick('sim',['ing','mont','ric','wald','hurst']);
   const cC=CULT[h.cult]||CULT.anglo,cr=nameRng(day()+hi*101),cname=cC.house(give[0].name,cr,cC,r1(cr,cC.roots));
   const nh={name:W.houses.some(o=>o.name===cname)?name:cname,cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
+  {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
+    Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0});}
   if(ci<0){if(W.houses.length>=11)return;W.houses.push(nh);ci=W.houses.length-1;}else{Object.assign(W.houses[ci],nh);delete W.houses[ci]._url;}
   son.house=ci;son.role='head';W.houses[ci].head=son.id;
   for(const s of give){s.owner=ci;syncOwner(s);}
@@ -6859,7 +6862,7 @@ function tickProjects(){ // daily: the works go forward as far as they are paid 
       const who=q.payer>0?W.houses[q.payer]:null,share=q.cost/q.days,funds=who?(who.gold||0):W.treasury;
       if(funds<share||who&&who.exiled||who&&houseAtWar(q.payer)&&q.type==='road'){if(!q.stalled){q.stalled=true;emit('trade',3,W.settlements[q.type==='road'?q.ai:q.r.a].pos,`Work on the ${q.type==='road'?'road':'paving'} ${q.type==='road'?`from ${W.settlements[q.ai].name}`:''} halts: ${who&&houseAtWar(q.payer)?'the gangs are called to the war':'the money has run out'}.`);}continue;}
       if(q.stalled){q.stalled=false;}
-      if(who)who.gold-=share;else W.treasury-=share;q.paid+=share;
+      if(who){who.gold-=share;book(who,'works',-share);}else W.treasury-=share;q.paid+=share;
       const was=Math.floor(q.done*10);q.done=Math.min(1,q.done+1/q.days);
       if(q.type==='pave')q.r.paveF=q.done;
       if(Math.floor(q.done*10)!==was)G.roadsDirty=G.ordersDirty=true; // the built stretch shows as it grows, the pegs ahead of it thin
