@@ -88,8 +88,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - **Settlements** (inspector): relief grain, garrison, walls, quarantine,
   suppress unrest — in the crown's own towns. A lord's towns are his: the
   crown must persuade him.
-- **War**: click a crown host → *Order a march* → click a town. Hosts hold
-  where you send them until released to their captains. A host too weak to
+- **War**: click a host of yours → *Order a march* → click a town, or open
+  ground to camp there (across country is slower than the road). Hosts hold
+  where you send them until released to their captains. Everything moves on
+  one clock: carts (500 m a day) arrive when their goods do, and hosts are
+  slower (400 m a day on the road, 250 across country). Hosts meet where their
+  paths cross, not only at towns; against a host keeping to its town, the
+  battle is fought before the gates. A battle shows as two lines facing each
+  other, surging and falling back, the dead where they fell, dust over the
+  melee and a ⚔ over the field. A host too weak to
   storm a place raids it instead — burns and occupies its fields for a
   season, then withdraws with the plunder; taking a town means a siege.
   Zoomed out, hosts, camps and the dragon show as heraldic badges.

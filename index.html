@@ -334,6 +334,7 @@ const GOODS=['grain','fish','timber','ore','tools','cloth','wine'];
 const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8};
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
+const CART_MPD=500,BARGE_MPD=700,COG_MPD=900,MARCH_MPD=400,FIELD_MPD=250; // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
 const SPEEDS=[0,0.5,2,8,30,360]; // days per second; the last reels a year a second, to watch growth
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
 
@@ -4357,7 +4358,7 @@ function spawnCarts(c){
   if(T.length+n>TRAFFIC_CAP)return;
   if(boat&&T.filter(t=>t.info.sea===c.sea&&t.info.river===c.river&&(t.info.sea||t.info.river)).length>=8)return;
   const len=polyLen(c.poly);if(!(len>1))return;
-  for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,d:-k*15-Math.random()*6,spd:(c.sea?11:c.river?7:5.5)*(0.9+Math.random()*0.2),
+  for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,d:-k*15-Math.random()*6,spd:len/Math.max(0.2,c.arriveDay-c.departDay)*(0.95+0.1*Math.random()*0.2),
     info:{origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
 }
 /* map markers: from altitude every host, outlaw camp and the dragon shows as a round badge that stays legible
@@ -4881,7 +4882,8 @@ function onClick(e){
     const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
     if(p){
-      if(mode==='order')orderArmy(arg,nearestSettlementIdx(p.x,p.z));
+      if(mode==='order'){const i=nearestSettlementIdx(p.x,p.z),t=W.settlements[i];
+        if(dist2d(p.x,p.z,t.pos.x,t.pos.z)<(t.radius||90)*1.4)orderArmy(arg,i);else orderArmyTo(arg,p.x,p.z);}
       else if(mode==='charter'){if(W.treasury>=arg&&doAct('village',p)){W.treasury-=arg;setCd('d_charter',360);sovAmbition('founder');}}
       else if(mode==='road1'){const i=nearestSettlementIdx(p.x,p.z),s=W.settlements[i];
         if(dist2d(p.x,p.z,s.pos.x,s.pos.z)>(s.radius||90)*2)emit('crown',2,p,'The road must start from a place.');
@@ -5269,7 +5271,7 @@ function tickEconomy(){
         const qty=Math.min(o2.stores[best.g]*0.4,60);
         o2.stores[best.g]-=qty;
         const c={origin:oi,dest:best.di,good:best.g,qty,value:qty*price(dd,best.g),
-          poly:best.r.poly,len:best.r.len,departDay:day(),arriveDay:day()+(best.r.time??best.r.len)/1000,robbed:false,
+          poly:best.r.poly,len:best.r.len,departDay:day(),arriveDay:day()+(best.r.time??best.r.len)/CART_MPD,robbed:false,
           proxy:null,sea:false};
         W.caravans.push(c);
         const rr=W.roads.find(r=>(r.a===oi&&r.b===best.di)||(r.a===best.di&&r.b===oi));
@@ -5291,7 +5293,7 @@ function tickEconomy(){
           if(r){
             const qty=Math.min(o.stores[g]*0.25,40);o.stores[g]-=qty;
             W.caravans.push({origin:oi,dest:di,good:g,qty,value:qty*price(d2,g),poly:r.poly,len:r.len,
-              departDay:day(),arriveDay:day()+(r.time??r.len)/1000,robbed:false,sea:false,proxy:null});
+              departDay:day(),arriveDay:day()+(r.time??r.len)/CART_MPD,robbed:false,sea:false,proxy:null});
             const rr=W.roads.find(r2=>(r2.a===oi&&r2.b===di)||(r2.a===di&&r2.b===oi));
             if(rr)rr.vol=(rr.vol||0)+0.5;
           }
@@ -5311,7 +5313,7 @@ function tickEconomy(){
         const qty=Math.min(o.stores[g]*0.3,70);o.stores[g]-=qty;
         const poly=downstream?pr.route.poly:[...pr.route.poly].reverse();
         W.caravans.push({origin:oi,dest:di,good:g,qty,value:qty*price(d2,g),poly,len:pr.route.len,
-          departDay:day(),arriveDay:day()+pr.route.len/1500,robbed:false,sea:false,river:true,proxy:null});
+          departDay:day(),arriveDay:day()+pr.route.len/BARGE_MPD,robbed:false,sea:false,river:true,proxy:null});
       }
     }
   }
@@ -5325,7 +5327,7 @@ function tickEconomy(){
       if(spareOf(a,g)>50&&!closedToTrade(a)&&!closedToTrade(b)){ // cogs used to sail into plague ports and sieges
         const qty=Math.min(a.stores[g]*0.4,90);a.stores[g]-=qty;
         const sr=seaRoute(ai,bi);if(!sr){a.stores[g]+=qty;}else{const poly=sr.poly,len=sr.len;
-        W.caravans.push({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/1600,robbed:false,sea:true});}
+        W.caravans.push({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/COG_MPD,robbed:false,sea:true});}
       }
     }
   }
@@ -5758,10 +5760,16 @@ function makeArmyFlag(a){
   scene.add(bn);a.flag=bn;
 }
 function marchArmy(a,toS){
+  if(a.field){ // encamped in the open: across country to the road's end
+    const t=W.settlements[toS],from=a.field,L=dist2d(from.x,from.z,t.pos.x,t.pos.z);
+    a.field=null;a.target=toS;a.fieldTo=null;a.poly=[{x:from.x,z:from.z},{x:t.pos.x,z:t.pos.z}];a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';return;}
   const r=route(a.at,toS);
   if(!r){a.state='idle';return;}
-  a.target=toS;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/700;a.state='march';
+  a.target=toS;a.fieldTo=null;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/MARCH_MPD;a.state='march';
 }
+function marchToPoint(a,x,z){ // a host sent to a place with no name: by road to the nearest town, then across country — or straight there
+  const from=armySimPos(a),L=dist2d(from.x,from.z,x,z);
+  a.field=null;a.target=nearestSettlementIdx(x,z);a.fieldTo={x,z};a.poly=[{x:from.x,z:from.z},{x,z}];a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';}
 function startWar(hi,why){
   if(W.war)return;
   const h=W.houses[hi];
@@ -5801,13 +5809,19 @@ function armySimPos(a){ // authoritative position in sim time (render _rpos may 
     const p=polyPos(a.poly,f);
     if(p)return p;
   }
+  if(a.field)return {x:a.field.x,z:a.field.z};
   const s=W.settlements[a.at];
   return {x:s.pos.x,z:s.pos.z};
 }
+function closestApproach(a,b){ // two hosts moving straight over the day (from yesterday's place to today's): how near they came, and where
+  const p0=a._ppos||a._spos,p1=a._spos,q0=b._ppos||b._spos,q1=b._spos;
+  const dx0=p0.x-q0.x,dz0=p0.z-q0.z,vx=(p1.x-p0.x)-(q1.x-q0.x),vz=(p1.z-p0.z)-(q1.z-q0.z),vv=vx*vx+vz*vz;
+  const t=vv>1e-6?clamp(-(dx0*vx+dz0*vz)/vv,0,1):1,px=p0.x+(p1.x-p0.x)*t,pz=p0.z+(p1.z-p0.z)*t,qx=q0.x+(q1.x-q0.x)*t,qz=q0.z+(q1.z-q0.z)*t;
+  return {d:Math.hypot(px-qx,pz-qz),x:(px+qx)/2,z:(pz+qz)/2};}
 function tickMilitary(){
   if(!W.war&&W.armies.length===0)return;
   const now=day();
-  for(const a of W.armies)a._spos=armySimPos(a);
+  for(const a of W.armies){a._ppos=a._spos||armySimPos(a);a._spos=armySimPos(a);}
   for(const a of W.armies){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
     armyLand(a);
@@ -5815,11 +5829,11 @@ function tickMilitary(){
     if(a.supply<18&&a.state==='idle'&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house)){ // hungry: fall back on its own granaries
       let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
       if(best>=0){marchArmy(a,best);if(chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);continue;}}
-    if(a.state==='idle'&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
+    if(a.state==='idle'&&!a.field&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
       if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;}
       else{routHome(a);if(a.gone)continue;} // too few to try it: back to its own
     }
-    if(a.state==='idle'&&!a.hold){const m=W.armies.find(b=>b!==a&&!b.gone&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
+    if(a.state==='idle'&&!a.hold&&!a.field){const m=W.armies.find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
       if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
     if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
@@ -5837,6 +5851,7 @@ function tickMilitary(){
       }
       if(tgt>=0)marchArmy(a,tgt);
     }
+    if(a.state==='march'&&now>=a.arriveDay&&a.fieldTo){a.field=a.fieldTo;a.fieldTo=null;a.at=nearestSettlementIdx(a.field.x,a.field.z);a.state='idle';a.hold=true;continue;} // camps where it was sent, and waits
     if(a.state==='march'&&now>=a.arriveDay){
       a.at=a.target;a.state='arrived';
       const s=W.settlements[a.at];
@@ -5879,12 +5894,16 @@ function tickMilitary(){
     if(!atWar(a.house,b.house)||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
     const hides=(x,y)=>x.state==='idle'&&W.settlements[x.at]&&W.settlements[x.at].owner===x.house&&x.strength<y.strength*0.6;
     if(hides(a,b)||hides(b,a)||a.strength<5||b.strength<5)continue; // the weaker keeps within its gates and adds to the defence
-    if(dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z)<130){
+    const meet=closestApproach(a,b);
+    if(meet.d<130){ // where their paths crossed; against a host keeping to its town, before the gates on the side the enemy came from
+      for(const[x,y]of[[a,b],[b,a]])if(x.state==='idle'&&!x.field){const t=W.settlements[x.at];if(t&&dist2d(meet.x,meet.z,t.pos.x,t.pos.z)<(t.radius||90)+40){
+        const fx=(y._ppos||y._spos).x-t.pos.x,fz=(y._ppos||y._spos).z-t.pos.z,L=Math.hypot(fx,fz)||1,R=(t.extentR||t.radius||90)+35;meet.x=t.pos.x+fx/L*R;meet.z=t.pos.z+fz/L*R;}}
+      a._spos=b._spos={x:meet.x,z:meet.z};
       for(const x of[a,b]){ // remember the road each host was on, and abandon any siege
         x._resume=x.state==='march'?{f:clamp((now-x.departDay)/Math.max(0.01,x.arriveDay-x.departDay),0,1)}:null;
         x.battleStart=now;liftSiege(x);
       }
-      a.state=b.state='battle';a.battleUntil=b.battleUntil=now+2;a.foe=b;b.foe=a;
+      a.state=b.state='battle';a.battleUntil=b.battleUntil=now+3;a.field=b.field=null;a.foe=b;b.foe=a;
       const where=nearestPlaceName(a._spos.x,a._spos.z);
       a.battleName=b.battleName='the Battle of '+where;a.battlePos={x:a._spos.x,z:a._spos.z};b.battlePos=a.battlePos;
       emit('war',8,a.battlePos,`The hosts meet near ${where}! Arrows darken the sky as the lines close.`);
@@ -5935,7 +5954,7 @@ function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
 function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
-function sheltered(s){const si=W.settlements.indexOf(s);return W.armies.filter(b=>!b.gone&&b.house===s.owner&&b.at===si&&(b.state==='idle'||b.state==='arrived')).reduce((t,b)=>t+b.strength,0);}
+function sheltered(s){const si=W.settlements.indexOf(s);return W.armies.filter(b=>!b.gone&&!b.field&&b.house===s.owner&&b.at===si&&(b.state==='idle'||b.state==='arrived')).reduce((t,b)=>t+b.strength,0);}
 function defenceOf(s){return (s.garrison||0)+s.pop*0.05*(s.walls>0?2:1)+sheltered(s);}
 function fitToCampaign(a){return a.strength>=Math.max(30,hostTarget(a.house)*0.45);}
 function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the rebellion, or a private war)?
@@ -5959,7 +5978,8 @@ function resumeAfterBattle(a){
   if(r&&a.poly&&a.target!=null){ // pick the march back up where the battle interrupted it
     const span=a.arriveDay-a.departDay;
     a.state='march';a.departDay=day()-r.f*span;a.arriveDay=a.departDay+span;
-  }else a.state='idle';
+  }else{a.state='idle';const bp=a.battlePos,t=W.settlements[a.at]; // holds the field it won, unless that was at its own gates
+    if(bp&&(!t||dist2d(bp.x,bp.z,t.pos.x,t.pos.z)>220)){a.field={x:bp.x,z:bp.z};a.at=nearestSettlementIdx(bp.x,bp.z);}}
 }
 function routFromField(a){
   const r=a._resume;a._resume=null;
@@ -7201,9 +7221,15 @@ function orderArmy(a,si){
   emit('war',3,s.pos,`By the crown's command, ${a.name} marches on ${s.name}.`);
   refreshInspect();
 }
+function orderArmyTo(a,x,z){
+  if(!a||a.gone)return;
+  if(a.state==='battle'){emit('war',2,null,`${a.name} is locked in battle and cannot heed new orders.`);return;}
+  if(a.state==='siege')liftSiege(a);
+  a.hold=true;marchToPoint(a,x,z);
+  emit('war',3,{x,z},`${a.name} marches across country towards ${nearestPlaceName(x,z)}.`);refreshInspect();}
 function armyCmd(cmd,id){
   const a=W.armies.find(x=>x.id===+id);if(!a||a.house!==plyH())return;
-  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a settlement to march ${a.name} there — Esc to cancel`);}
+  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a town to march ${a.name} there, or open ground to camp there — Esc to cancel`);}
   else if(cmd==='hold'){a.hold=true;if(a.state==='march'){a.nextOrder=null;}emit('war',2,null,`${a.name} is ordered to hold and await the crown's word.`);}
   else if(cmd==='release'){a.hold=false;a.nextOrder=null;emit('war',2,null,`${a.name} is given leave to make war as its captains see fit.`);}
   else if(cmd==='disband'){if(a.state==='battle')return;disbandArmy(a);hideInspect();
@@ -7211,7 +7237,7 @@ function armyCmd(cmd,id){
 }
 function armyActsHTML(a){
   if(a.state==='battle')return '<div class="note">Locked in battle.</div>';
-  return cbtn('a-order',a.id,'Order a march… (click a town)',0,'')+
+  return cbtn('a-order',a.id,'Order a march… (click a town, or open ground to camp there)',0,'')+
     (a.hold?cbtn('a-release',a.id,'Release to its captains',0,''):cbtn('a-hold',a.id,'Hold position',0,''))+
     cbtn('a-disband',a.id,'Pay off and disband (saves 14 g/day)',0,'');
 }
@@ -8156,7 +8182,7 @@ function animateWorld(dt,now){
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
   const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
-  for(let i=T.length-1;i>=0;i--){const t=T[i];t.d+=t.spd*vm*dt;
+  for(let i=T.length-1;i>=0;i--){const t=T[i];t.d+=t.spd*(SPEEDS[speedIdx]||0)*dt; // metres a day, on the calendar's clock: the carts arrive when their goods do
     if(t.d>=t.len||t.cons.robbed){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
   for(const t of T){
     if(t.d<0)continue; // still loading at the gate
@@ -8206,16 +8232,23 @@ function animateWorld(dt,now){
       placeMarker(e,houseMarker(0),p.x,y,p.z,20);}
   }
   /* --- armies --- */
-  let si2=0;
+  let si2=0;const activeBattles=new Set();G.battleSprites=G.battleSprites||new Map();
   for(const a of W.armies){
     let p;
     if(a.state==='march'||a.state==='rout'){
       const f=(simDay-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay);
       p=polyPos(a.poly,f);
-    }else if(a.state==='battle'&&a.battlePos){ // fight where the hosts met, not back at their muster town
-      const off=a.side==='crown'?-14:14;
-      p={x:a.battlePos.x+off,z:a.battlePos.z+off*0.5,dir:a.side==='crown'?0.46:Math.PI+0.46};
+    }else if(a.state==='battle'&&a.battlePos){ // fight where the hosts met: two lines facing each other, surging together and falling back
+      const bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=a.foe&&a.foe.id<a.id?-1:1,ux=Math.cos(ax),uz=Math.sin(ax);
+      const surge=10-7*Math.max(0,Math.sin(now*1.6+(sd>0?0:0.4))); // the lines close, clash, and recoil
+      p={x:bp.x+ux*sd*surge,z:bp.z+uz*sd*surge,dir:ax+(sd>0?Math.PI:0)};
+      if(sd<0){activeBattles.add(a.battleName);let sp=G.battleSprites.get(a.battleName);
+        if(!sp){sp=new THREE.Sprite(new THREE.SpriteMaterial({map:markerTex('battle',g2=>{badge(g2,'#2b2320','#e8c247');g2.fillStyle='#e8dcc2';g2.font='bold 32px serif';g2.textAlign='center';g2.fillText('⚔',32,44);}),depthTest:false,transparent:true,sizeAttenuation:false}));
+          sp.renderOrder=7;sp.scale.set(0.05,0.05,1);sp.userData.pick={type:'army',a};scene.add(sp);G.battleSprites.set(a.battleName,sp);}
+        sp.position.set(bp.x,surfY(bp.x,bp.z)+26+Math.sin(now*3)*1.5,bp.z);
+        if(Math.random()<dt*6)spawnSmoke(bp.x+(Math.random()-0.5)*30,surfY(bp.x,bp.z),bp.z+(Math.random()-0.5)*30,false);} // dust over the melee
     }
+    if(!p&&a.field)p={x:a.field.x,z:a.field.z,dir:0}; // encamped in the open where it was sent
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
     const y=surfY(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
@@ -8237,16 +8270,20 @@ function animateWorld(dt,now){
       for(let k=0;k<n&&si2<1500;k++){
         const col=k%per-(per-1)/2,row=Math.floor(k/per);
         let sx=p.x+(fx*(-row*1.9)+lx*col*1.3)*us,sz=p.z+(fz*(-row*1.9)+lz*col*1.3)*us;
-        if(a.state==='battle'){sx+=Math.sin(now*7+k*3)*0.9*us;sz+=Math.cos(now*6+k*5)*0.9*us;}
+        let fallen=false;
+        if(a.state==='battle'){sx+=Math.sin(now*7+k*3)*0.9*us;sz+=Math.cos(now*6+k*5)*0.9*us; // the press of the melee
+          const prog=clamp((simDay-(a.battleStart||simDay))/Math.max(0.5,(a.battleUntil||simDay+1)-(a.battleStart||simDay)),0,1);fallen=(k*37%100)/100<prog*0.3;} // and the dead lie where they fell
         else if(a.state==='siege'||a.state==='idle'){sx+=Math.sin(k*12.9)*0.5;sz+=Math.cos(k*7.3)*0.5;}
         const bob=a.state==='march'||a.state==='rout'?Math.abs(Math.sin(now*8+k))*0.12*us:0;
         const yy=surfY(sx,sz)+bob,ry=-dir+Math.PI/2+(a.state==='rout'?Math.PI:0);
-        setInst(G.soldiers,si2,sx,yy,sz,ry,us,us,us);setInst(G.soldierShields,si2,sx,yy,sz,ry,us,us,us);setInst(G.soldierKit,si2,sx,yy,sz,ry,us,us,us);
+        const hy=fallen?us*0.22:us;
+        setInst(G.soldiers,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierShields,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierKit,si2,sx,yy,sz,ry,us,hy,us);
         G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);
         si2++;
       }
     }
   }
+  for(const[k,sp]of G.battleSprites)if(!activeBattles.has(k)){scene.remove(sp);sp.material.dispose();G.battleSprites.delete(k);} // the field falls quiet
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
   if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
