@@ -72,11 +72,12 @@ Acts are sealed while you rule; the crown's own levers take their place:
   his dues, the royal host at his gates (he yields or rises), or plain
   asking. Lords build roads of their own where a long way round carries
   much traffic.
-- **The great houses**: honour them, take a hostage (they cannot rise for two
-  years), arrange a royal match, or attaint them for treason — seize their
-  lands on success, civil war on failure.
+- **The great houses**: honour them, take a hostage (they are far less likely
+  to rise for two years), arrange a royal match, or attaint them for
+  treason — seize their lands on success, civil war on failure.
 - **Settlements** (inspector): relief grain, garrison, walls, quarantine,
-  suppress unrest.
+  suppress unrest — in the crown's own towns. A lord's towns are his: the
+  crown must persuade him.
 - **War**: click a crown host → *Order a march* → click a town. Hosts hold
   where you send them until released to their captains. A host too weak to
   storm a place raids it instead — burns and occupies its fields for a
@@ -87,6 +88,30 @@ Acts are sealed while you rule; the crown's own levers take their place:
   village) plus two points per year build your dynasty's **legacy** (✦). If
   your line loses the throne, the reign is scored and you may rule on as the
   new dynasty. Best legacy per seed is kept in the browser.
+
+## Play a great house
+
+In the Crown tab, *Or take up a great house* lists every landed house; pick
+one (or open the game with `&h=N`, e.g. `#s=7&h=2`). The crown then governs
+itself; you rule one lord's domain:
+
+- **Purse and dues.** Your towns' rents fill the house purse; hosts,
+  castellans and garrisons drain it. Set the dues on your tenants: heavier
+  fills the purse and stirs the towns, lighter lets them prosper. The crown
+  takes only a feudal aid from your towns (its own towns pay it in full).
+- **Works and largesse**: keep open table, call out the levy or send it home,
+  lay a road from one of your towns, pave a road to one, found a village on
+  your own land or open waste, send gifts to court.
+- **Neighbours**: defy a neighbouring house in a private war, or sue for peace.
+- **Your hosts** wait on your orders like the crown's (click one, then a town).
+- **The throne**: raise your banners and claim it. If your house wins the
+  crown, you rule on as the sovereign.
+- **Your table**: your own petitions come to you — the crown's summons in its
+  wars, a rising's envoys asking you to join, a weak throne you could claim,
+  creditors when the purse runs dry, a rioting royal town offering itself to
+  your banner. Everything else the lords and the council decide as before.
+- **Ambitions**: three and six towns, a full strongroom, the crown's favour,
+  a won private war, a village of your own, and the crown itself.
 
 ## How it works
 
