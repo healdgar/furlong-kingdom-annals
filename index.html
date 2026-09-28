@@ -3907,6 +3907,7 @@ function landSuccession(){
 function tickDomains(){ // monthly: owners, hosts, the frontier, and private wars
   if(!G.land||day()%30!==20)return;
   {let rent=0;for(const f of G.land.F)if(f.bought&&f.lord===0)rent+=landValue(f)*0.45;W.treasury+=rent;} // the furlongs the crown bought pay their rent
+  for(const s of W.settlements)if(s.owner===0&&!s.siegeBy){const need=s.pop*0.04*(s.walls>0?1.5:1)+10;if(s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}} // the crown's garrisons too
   if(day()%(360*3)===20)lordsRoads();
   for(const s of W.settlements)syncOwner(s);
   ensureHosts();
@@ -3935,13 +3936,19 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   W.houses.forEach((h,hi)=>{
     if(hi===0||h.exiled)return;
     if(h.gold===undefined)h.gold=800*(h.wealth||1);
-    const own=W.settlements.filter(s=>s.owner===hi);if(!own.length)return;
+    const own=W.settlements.filter(s=>s.owner===hi);
+    if(!own.length){if(h.gold<0)h.gold*=0.85;return;} // nothing left to seize: the creditors write off what they cannot get
+    if(h.gold<-5000)h.gold=-5000; // no one lends a lord more than his lands can answer for
     const seatS=W.settlements[h.seat]||own[0];
     const dues=h.dues||1; // the player's lord may press his tenants harder, or ease them
-    const income=dues*own.reduce((t,s)=>t+s.pop*0.045*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1),0); // far fiefs: the castellans skim
+    const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1); // far fiefs: the castellans skim
+    const income=own.reduce((t,s)=>t+rentOf(s),0);
+    const castellans=own.reduce((t,s)=>t+(s===seatS?0:2+rentOf(s)*0.25),0); // each fief beyond the lord's hall keeps a castellan out of its own rents
     const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
-    const upkeep=hosts+(Math.pow(own.length,1.5)-1)*3.5+own.reduce((t,s)=>t+(s.garrison||0),0)*0.36; // every castle beyond the lord's own hall wants a castellan, every garrison its pay
-    h.gold+=income-upkeep;h.lastNet=income-upkeep;book(h,'rents',income);book(h,'hosts',-hosts);book(h,'castellans',-(Math.pow(own.length,1.5)-1)*3.5);book(h,'garrisons',-(upkeep-hosts-(Math.pow(own.length,1.5)-1)*3.5));
+    const upkeep=hosts+castellans+own.reduce((t,s)=>t+(s.garrison||0),0)*0.2; // and every garrison wants its pay
+    for(const s of own){const need=s.pop*0.04*(s.walls>0?1.5:1)+10; // a garrison beyond what the town needs goes home unless the enemy is at the gate
+      if(!s.siegeBy&&s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}}
+    h.gold+=income-upkeep;h.lastNet=income-upkeep;book(h,'rents',income);book(h,'hosts',-hosts);book(h,'castellans',-castellans);book(h,'garrisons',-(upkeep-hosts-castellans));
     if(dues!==1)for(const s of own){s.unrest=clamp(s.unrest+(dues-1)*10,0,100);if(dues<1)s.prosperity=clamp(s.prosperity+(1-dues)*2,0,100);}
     if(hi===plyH()&&h.gold<-600&&own.length>1&&!h._debtAsk){h._debtAsk=true;debtPetition(hi,own);return;} // your creditors come to you, not to the auctioneer
     if(h.gold>=-600)h._debtAsk=false;
@@ -3956,6 +3963,8 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       if(to>=0){if(to===0)W.treasury-=price;else{W.houses[to].gold-=price;book(W.houses[to],'land',-price);}h.gold+=price;book(h,'land',price);
         sell.owner=to;syncOwner(sell);if(to>0)W.houses[to].loyalty=clamp(W.houses[to].loyalty+2,0,100);refreshOverlay();
         emit('house',6,sell.pos,`${h.name}, deep in debt, sells ${sell.name} and its lands to ${W.houses[to].name} for ${price.toLocaleString()} gold.`);}
+      else if(h.gold<-2000&&W.treasury>price){W.treasury-=price;h.gold+=price;book(h,'land',price);sell.owner=0;syncOwner(sell);h.loyalty=clamp(h.loyalty-4,0,100);refreshOverlay();
+        emit('house',6,sell.pos,`${h.name} cannot pay its creditors; the crown takes ${sell.name} and its lands for the debt.`);}
       else if(h.gold<-1500){h.loyalty=clamp(h.loyalty-3,0,100);} // no buyer: the creditors press, and the lord grows desperate
     }
   });
@@ -3965,8 +3974,8 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
     if(crownTowns.length>(W.settlements.length-1)*0.4){
       const far=crownTowns.sort((a,b)=>dist2d(b.pos.x,b.pos.z,W.capital.pos.x,W.capital.pos.z)-dist2d(a.pos.x,a.pos.z,W.capital.pos.x,W.capital.pos.z))[0];
-      const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>-1000&&day()-(W.houses[i]._grantT||-1e9)>360*5);
-      const exiled=W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].exiled&&day()-(W.houses[i].exiledDay||0)>360*8);
+      const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>-3000&&day()-(W.houses[i]._grantT||-1e9)>360*5);
+      const exiled=W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].exiled&&!W.houses[i].extinct&&W.notables.some(n=>n.alive&&n.house===i&&ageOf(n)>=16)&&day()-(W.houses[i].exiledDay||0)>360*8); // only a house with someone left to recall
       const landless=loyal.filter(i=>!W.settlements.some(s=>s.owner===i));
       const to=landless.length?landless[0]:exiled.length&&chance('sim',0.6)?exiled[0]:loyal.length?wpick(loyal,i=>W.houses[i].loyalty/20,1):-1;
       if(to>0&&far){const h=W.houses[to],back=h.exiled;
@@ -5262,8 +5271,9 @@ function tickEconomy(){
       const d=W.settlements[c.dest];
       if(!c.robbed){
         d.stores[c.good]+=c.qty;
-        const profit=c.value*0.35;
-        W.treasury+=profit*(MOD.tax/100);
+        const profit=c.value*0.35,lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;
+        if(lord){const toll=profit*0.15;lord.gold=(lord.gold||0)+toll;book(lord,'markets',toll);W.treasury+=profit*(MOD.tax/100)*0.4;} // a lord's market pays him its dues, and the crown its aid
+        else W.treasury+=profit*(MOD.tax/100);
         d.prosperity=clamp(d.prosperity+0.4,0,100);
         W.settlements[c.origin].prosperity=clamp(W.settlements[c.origin].prosperity+0.3,0,100);
         // plague travels the trade network
@@ -5531,6 +5541,8 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
   const nh={name:W.houses.some(o=>o.name===cname)?name:cname,cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
   {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
     Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0});}
+  {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
+    Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0,extinct:false});}
   if(ci<0){if(W.houses.length>=11)return;W.houses.push(nh);ci=W.houses.length-1;}else{Object.assign(W.houses[ci],nh);delete W.houses[ci]._url;}
   son.house=ci;son.role='head';W.houses[ci].head=son.id;
   for(const s of give){s.owner=ci;syncOwner(s);}
@@ -5555,7 +5567,11 @@ function killNotable(n,cause,silent){
     if(heir){heir.role='head';h.head=heir.id;heir.agenda=n.agenda;
       const younger=n.heirs.map(notableById).find(k=>k&&k.alive&&k!==heir&&ageOf(k)>=16&&k.sex==='m');
       if(younger)partition(n.house,younger);}
-    else{const any=W.notables.find(m=>m.alive&&m.house===n.house&&ageOf(m)>=16);if(any){any.role='head';h.head=any.id;}}
+    else{const any=W.notables.find(m=>m.alive&&m.house===n.house&&ageOf(m)>=16);if(any){any.role='head';h.head=any.id;}
+      else if(!W.notables.some(m=>m.alive&&m.house===n.house)&&n.house>0){ // the line is ended: its fiefs escheat to the crown
+        const lands=W.settlements.filter(s=>s.owner===n.house);for(const s of lands){s.owner=0;syncOwner(s);}
+        h.exiled=true;h.extinct=true;h.exiledDay=day();h.gold=0;refreshOverlay(); // its hosts in the field fight on until they are paid off
+        emit('crown',8,W.settlements[h.seat]?.pos||W.capital.pos,`The line of ${h.name} is ended; ${lands.length?`its ${lands.length>1?lands.length+' fiefs escheat':'fief escheats'} to the crown`:'its name passes from the rolls'}.`);}}
   }
 }
 function succession(){
@@ -5877,7 +5893,8 @@ function takeSettlement(a,s){
     emit('war',8,s.pos,`${s.name} opens its gates to ${a.name}; the banner of ${W.houses[a.house].name} flies from its walls.`);
   }
   if(inRebellion(a)&&s.takenFrom==null)s.takenFrom=s.owner; // remembered, so the peace can settle it
-  s.owner=a.house;s.garrison=Math.max(s.garrison*0.3,Math.round(a.strength*0.25));syncOwner(s);a.holdUntil=day()+60; // the victors stay to hold what they took
+  s.owner=W.houses[a.house]&&W.houses[a.house].extinct?0:a.house; // a host whose line is ended takes it for no one: it escheats to the crown
+  s.garrison=Math.max(s.garrison*0.3,Math.round(a.strength*0.25));syncOwner(s);a.holdUntil=day()+60; // the victors stay to hold what they took
   if(inRebellion(a))warScore(a.house===0?30:-30);
   a.state='idle';
   refreshOverlay();
