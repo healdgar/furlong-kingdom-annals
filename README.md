@@ -255,6 +255,36 @@ itself; you rule one lord's domain:
   - **On the map:** the herds are drawn from the real counts, one beast for
     every few head, and move between pastures month by month. The town card
     shows the herds, the grazing and whether the plough-teams are enough.
+- **Ports and the sea beyond.**
+  - **Great ships** sail in from off the map: knarrs in the early centuries,
+    then great cogs, hulks and carracks. They come from Venice, Genoa,
+    Alexandria, Constantinople, Bruges, Lisbon, Bordeaux, Bergen, Lübeck,
+    Seville and others, each in its own era.
+  - **Cargo in:** spice and silk from the Levant, wine from Gascony and
+    Lisbon, stockfish and timber from the Baltic.
+  - **In port:** a ship ties up at a wharf, or on the shore where there is no
+    wharf, and pays the port lord's customs. If every berth is taken it lies
+    off and waits. It sails home loaded with the realm's wool, cloth, tin and
+    corn.
+  - **Onward trade:** spice and silk travel inland to the court and the rich
+    towns, who pay the most for them.
+  - **Wharves:** when a year's crowding outruns the berths, a new wharf is run
+    out from the quay into deep water, as a real building on the waterfront:
+    timber at first, stone after 1250 if stone can be had. Each wharf berths
+    two ships.
+  - **Cogs** between the realm's own ports now come alongside at the
+    waterfront rather than sailing up the high street.
+  - Click a ship to see where it's from, what it brought and what it's
+    loading.
+- **Stone.**
+  - **Quarries:** a place with crag, scree or steep hillside nearby opens a
+    quarry once towns within reach want stone.
+  - **Trade:** stone is a heavy good, carried cheapest by sea and river.
+  - **Building in stone** waits until the stone is in the yards, and uses it
+    up: stone walls, keeps, baileys, citadels, churches rebuilt larger, stone
+    houses in the rich heart of a town, stone wharves, and paved roads.
+  - **Paving:** a paving project stalls, with a note in the chronicle, until
+    stone reaches either end of the road.
 - **Family names** are fixed when a family is founded, and then inherited:
   - from what the founder did (Smith, Schmidt, Lefèvre, Kovář);
   - from where the family lived (Atwood, Dubois, Brookes);
