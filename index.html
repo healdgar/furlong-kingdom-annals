@@ -5876,6 +5876,7 @@ function tickMilitary(){
       let tgt=-1,bd=1e18;
       W.settlements.forEach((s,si)=>{
         if(si===a.at||!hostileTo(a,s)||(!inRebellion(a)&&defenceOf(s)>a.strength*2))return; // no lord rides at walls he could not even raid
+        if(!inRebellion(a)&&s.raidedUntil>day()&&a.strength<defenceOf(s)*2)return; // fields already burned: nothing left to take until the next harvest
         const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);
         if(d<bd){bd=d;tgt=si;}
       });
@@ -5908,7 +5909,7 @@ function tickMilitary(){
       const s=W.settlements[a.at];if(a.siegeArc)siegeArc(a,s);
       s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
       if(now>=a.siegeUntil){
-        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
+        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
           const cm=notableById(a.commander),A=a.strength*(a.morale/70)*(cm&&cm.traits.includes('bold')?1.18:1),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
           if(chance('sim',A/(A+D*1.2))){s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);}
@@ -6211,8 +6212,9 @@ function tickThreats(){
     const before=s.fires.length;
     s.fires=newFires.filter(b=>b.state==='burning');
     if(before>0&&s.fires.length===0){
-      if(s.ruinCount>=6){W.stats.greatFires++;
-        emit('fates',8,s.pos,`The great fire of ${s.name} is spent at last. ${s.ruinCount} roofs are fallen to ash; the survivors sift the ruins.`);
+      const lost=(s._burned||[]).length; // this fire's toll, not every roof the town has ever lost
+      if(lost>=6){W.stats.greatFires++;
+        emit('fates',8,s.pos,`The great fire of ${s.name} is spent at last. ${lost} roofs are fallen to ash; the survivors sift the ruins.`);
         s.prosperity=clamp(s.prosperity-12,1,100);}
       const B=s._burned||[];s._burned=[];
       if(B.length>=8&&s._lay&&s._lay.live){ // the burned district is cleared and laid out again: stone houses, and a straight street across it
@@ -6490,7 +6492,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
       else s._wallYr=year()-30;} // the old wall still serves: ask again in fifteen years
     else if(s.walls===1&&AD()>=1150&&s.prosperity>55&&s.pop>600&&chance('sim',0.25)&&L.live.stoneWall())did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
     else if(s.bailey&&!s.baileyStone&&AD()>=1150&&s.prosperity>55&&chance('sim',0.2)&&L.live.stoneBailey())did=`The bailey at ${s.name} is walled in stone.`;
-    else if(s.prosperity>(s.motte&&!s.motteStone?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=`The keep of ${s.name} is rebuilt in stone.`;}
+    else if(!s.motteStone&&s.prosperity>(s.motte?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=`The keep of ${s.name} is rebuilt in stone.`;}
     else if(s.kind!=='village'&&s.prosperity>65&&s.pop>s.pop0*1.6&&chance('sim',0.2)&&L.live.rebuildChurch())did=`The church of ${s.name} is pulled down and rebuilt larger, its new tower visible for leagues.`;
     else if(s.kind!=='village'&&AD()>=1000&&s.pop>900&&chance('sim',0.15)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
@@ -6592,9 +6594,10 @@ function doAct(act,p,opt){
     case 'comet':{W.comet={start:day(),until:day()+(MOD.myth>=2?360:12),teeth:MOD.myth>=2};
       emit('fates',6,W.capital.pos,`A great comet unfurls across the heavens, bright enough to read by.`);break;}
     case 'village':{const ci=toCell(p.x),cj=toCell(p.z);
-      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){emit('trade',2,p,'The surveyors find no good ground here.');return false;}
+      const loud=!opt||!opt.from||(opt.owner!=null&&opt.owner===plyH()&&!opt.fort&&!opt.planned); // a lord's own stewards do not report every site they reject
+      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){if(loud)emit('trade',2,p,'The surveyors find no good ground here.');return false;}
       if(W.settlements.some(o=>dist2d(p.x,p.z,o.pos.x,o.pos.z)<(o.radius||90)+150)){
-        emit('trade',2,p,'The surveyors will not charter a village in the shadow of another.');return false;}
+        if(loud)emit('trade',2,p,'The surveyors will not charter a village in the shadow of another.');return false;}
       const s={name:placeName(),kind:'village',pos:{x:p.x,z:p.z,y:hAt(p.x,p.z)},cx:ci,cz:cj,pop:60,
         prosperity:45,unrest:5,walls:0,stores:{grain:60,fish:5,timber:30,ore:5,tools:8,cloth:4,wine:2},
         harbor:false,river:false,owner:0,buildings:[],garrison:4,infected:0,recovered:0,plagueDead:0,
