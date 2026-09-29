@@ -1130,14 +1130,15 @@ function obbOverlap(A,B){ // separating-axis test on two footprints {x,z,w,d,rot
   }
   return true;
 }
+let HASH_STAMP=0;
 function makeHash(cs){ // tiny spatial hash for footprints and street segments
   const m=new Map(),key=(i,j)=>i*100003+j;
   return{
     add(o,r){for(let i=Math.floor((o.x-r)/cs);i<=Math.floor((o.x+r)/cs);i++)for(let j=Math.floor((o.z-r)/cs);j<=Math.floor((o.z+r)/cs);j++){
       const k=key(i,j);let a=m.get(k);if(!a)m.set(k,a=[]);a.push(o);}},
-    near(x,z,r){const out=new Set();
+    near(x,z,r){const out=[],st=++HASH_STAMP; // an array, each object once (stamped): no Set to allocate on every call
       for(let i=Math.floor((x-r)/cs);i<=Math.floor((x+r)/cs);i++)for(let j=Math.floor((z-r)/cs);j<=Math.floor((z+r)/cs);j++){
-        const a=m.get(key(i,j));if(a)for(const o of a)out.add(o);}
+        const a=m.get(key(i,j));if(a)for(const o of a)if(o.__hs!==st){o.__hs=st;out.push(o);}}
       return out;}
   };
 }
@@ -2207,8 +2208,9 @@ function surfY(x,z){ // the walking surface: the ground, or a bridge deck where 
     const d=b.hA+(b.hB-b.hA)*t+b.rise*Math.sin(Math.PI*t);if(d>g)return d;}
   return g;
 }
+const E1=new THREE.Euler();
 function setInst(im,i,x,y,z,ry,sx,sy,sz){
-  Q1.setFromEuler(new THREE.Euler(0,ry||0,0));
+  Q1.setFromEuler(E1.set(0,ry||0,0));
   M4.compose(V1.set(x,y,z),Q1,V2.set(sx||1,sy||1,sz||1));
   im.setMatrixAt(i,M4);
 }
@@ -2228,10 +2230,12 @@ const PAL={
 };
 
 function initGraphics(){
-  renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+  const touch=matchMedia&&matchMedia('(pointer:coarse)').matches;
+  renderer=new THREE.WebGLRenderer({antialias:!touch,powerPreference:'high-performance'}); // phones and tablets: no MSAA
+  const pixelBudget=()=>Math.min(devicePixelRatio,1.75,Math.sqrt((touch?2.5e6:3.7e6)/Math.max(1,innerWidth*innerHeight))); // never more than ~2.5–3.7 million pixels a frame
+  renderer.setPixelRatio(pixelBudget());
   renderer.setSize(innerWidth,innerHeight);
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap; // plain PCF: half the cost of the soft kind
   document.getElementById('gl').appendChild(renderer.domElement);
   scene=new THREE.Scene();
   camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,2,26000);
@@ -2269,8 +2273,8 @@ function initGraphics(){
   G.moonDisc=new THREE.Mesh(new THREE.SphereGeometry(150,12,10),new THREE.MeshBasicMaterial({color:0xd9e2f0,fog:false}));scene.add(G.moonDisc);
   // torch pool (night point lights)
   G.torches=[];
-  for(let i=0;i<8;i++){const pl=new THREE.PointLight(0xff9a3d,0,90,2);scene.add(pl);G.torches.push(pl);}
-  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  for(let i=0;i<2;i++){const pl=new THREE.PointLight(0xff9a3d,0,90,2);scene.add(pl);G.torches.push(pl);} // two: every lit surface pays for each one
+  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setPixelRatio(pixelBudget());renderer.setSize(innerWidth,innerHeight);});
 }
 
 /* ---------------- terrain, water, roads ---------------------------------- */
@@ -2445,7 +2449,11 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       lines.push({P,hw:st.hw,pv:st.kind==='wallst'||P.some(q=>dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr)});}}
     const H=makeHash(24);
     lines.forEach((l,li)=>{for(let k=0;k<l.P.length-1;k++){const a=l.P[k],b=l.P[k+1];H.add({x:(a.x+b.x)/2,z:(a.z+b.z)/2,a,b,li,k},dist2d(a.x,a.z,b.x,b.z)/2+l.hw);}});
-    const J=[],addArm=(x,z,d,hw,pv)=>{let j=J.find(o=>dist2d(o.x,o.z,x,z)<7);if(!j)J.push(j={x,z,arms:[],pv:false});j.arms.push({dx:d[0],dz:d[1],hw});j.pv=j.pv||pv;};
+    const J=[],JG=new Map(),jk=(i,k)=>i*100003+k,addArm=(x,z,d,hw,pv)=>{ // junctions found through a 7 m grid, not by scanning them all
+      const gi=Math.floor(x/7),gk=Math.floor(z/7);let j=null;
+      for(let a=-1;a<=1&&!j;a++)for(let b=-1;b<=1&&!j;b++)for(const o of JG.get(jk(gi+a,gk+b))||[])if(dist2d(o.x,o.z,x,z)<7){j=o;break;}
+      if(!j){J.push(j={x,z,arms:[],pv:false});const key=jk(gi,gk);if(!JG.has(key))JG.set(key,[]);JG.get(key).push(j);}
+      j.arms.push({dx:d[0],dz:d[1],hw});j.pv=j.pv||pv;};
     const dirOf=(a,b)=>{const L=dist2d(a.x,a.z,b.x,b.z)||1;return[(b.x-a.x)/L,(b.z-a.z)/L];};
     const armsAt=(l,g,t)=>{const P=l.P,k=g.k,out=[]; // the ways out of a point on a line: back along it, and on
       if(k>0||t>0.2)out.push(dirOf(g.b,g.a));if(k<P.length-2||t<0.8)out.push(dirOf(g.a,g.b));return out;};
@@ -2594,7 +2602,7 @@ float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i)
     #endif
   }`);
   };
-  G.apron=new THREE.Mesh(g,am);G.apron.userData.src=src;G.apron.userData.sides=sides;
+  G.apron=new THREE.Mesh(g,am);G.apron.renderOrder=1;G.apron.userData.src=src;G.apron.userData.sides=sides;
   G.apron.receiveShadow=false;scene.add(G.apron);recolorApron(); // beyond the shadow camera: receiving smeared its edge texels into streaks
 }
 function recolorApron(){
@@ -2617,7 +2625,7 @@ function buildTerrain(){
   g.computeVertexNormals();
   const col=new Float32Array(p.count*3);
   g.setAttribute('color',new THREE.BufferAttribute(col,3));
-  G.terrain=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));
+  G.terrain=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));G.terrain.renderOrder=1; // drawn after what stands on it, so hidden ground skips its costly shader
   G.terrain.receiveShadow=true;
   scene.add(G.terrain);
   updateTerrainColors(0,0);buildApron();
@@ -2770,20 +2778,23 @@ function buildTrees(){
   }
   // thin evenly to the instance budget (capping in scan order used to plant only the northern forests)
   for(const k of['dec','pine','small']){const a=spots[k],cap=k==='small'?3000:9000;if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
-  G.decid=new THREE.InstancedMesh(decidG,crownMat(0x4c7a3c),Math.max(1,spots.dec.length));
-  G.pine=new THREE.InstancedMesh(pineG,crownMat(0x2e5138),Math.max(1,spots.pine.length));
-  G.small=new THREE.InstancedMesh(smallG,crownMat(0x6f9444),Math.max(1,spots.small.length));
-  const TM={dec:G.decid,pine:G.pine,small:G.small};G.treeMesh=TM;
-  for(const k in TM)spots[k].forEach((t,i)=>{setInst(TM[k],i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(k,t.v),t.s);TM[k].setColorAt(i,C1.setRGB(0.84+t.v*0.26,0.86+t.v*0.24,0.82+t.v*0.2));});
-  for(const k in TM)TM[k].instanceMatrix.needsUpdate=true;
+  /* each species is cut into a 5×5 grid of chunks, each its own instanced mesh with its own bounds, so the renderer
+     draws (and shadows) only the woods in view rather than every tree in the realm */
+  G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138),small:crownMat(0x6f9444)};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
+  const TG={dec:decidG,pine:pineG,small:smallG},NC=5,CS=SIZE*1.4/NC,cix=v=>clamp(Math.floor((v+SIZE*0.7)/CS),0,NC-1);G.treeChunks=[];
+  for(const k in TG){const by=new Map();for(const t of spots[k]){const c=cix(t.z)*NC+cix(t.x);if(!by.has(c))by.set(c,[]);by.get(c).push(t);}
+    for(const[c,list]of by){const g=TG[k].clone(),cx=(c%NC+0.5)*CS-SIZE*0.7,cz=(Math.floor(c/NC)+0.5)*CS-SIZE*0.7;
+      g.boundingSphere=new THREE.Sphere(new THREE.Vector3(cx,hAt(cx,cz),cz),CS*0.75+120); // the chunk's own bounds: world-placed instances, culled as one
+      const m=new THREE.InstancedMesh(g,G.treeMat[k],list.length);m.frustumCulled=true;m.castShadow=true;
+      list.forEach((t,i)=>{t.m=m;t.ci=i;setInst(m,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(k,t.v),t.s);m.setColorAt(i,C1.setRGB(0.84+t.v*0.26,0.86+t.v*0.24,0.82+t.v*0.2));});
+      m.instanceMatrix.needsUpdate=true;G.treeChunks.push(m);}}
   G.regrow=new THREE.InstancedMesh(decidG,crownMat(0x557f40),5000);G.regrow.castShadow=true;G.regrowFree=[];
-  for(let i=4999;i>=0;i--){setInst(G.regrow,i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(i);}scene.add(G.regrow);
+  for(let i=4999;i>=0;i--){setInst(G.regrow,i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(i);}G.regrow.count=0;scene.add(G.regrow); // drawn only as far as the highest slot in use
   G.treeHash=makeHash(40);G.treeSpots=spots;
   for(const k of['dec','pine','small'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
   linkTrees();
   featInit();hookTerrainShader(G.terrain.material);
-  G.decid.castShadow=G.pine.castShadow=G.small.castShadow=true;
-  scene.add(G.decid);scene.add(G.pine);scene.add(G.small);
+  for(const m of G.treeChunks)scene.add(m);
 }
 
 /* ---------------- buildings ---------------------------------------------- */
@@ -3305,9 +3316,9 @@ function rebuildWalls(){
   const cy=new THREE.CylinderGeometry(0.5,0.56,1,10);cy.translate(0,0.5,0);
   const cn=new THREE.ConeGeometry(0.5,1,10);cn.translate(0,0.5,0);
   const mk=(g,n)=>{const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),Math.max(1,n));m.castShadow=true;m.receiveShadow=true;grp.add(m);return m;};
-  const mer=mk(bx,inst.merlon.length);
+  const mer=mk(bx,inst.merlon.length);mer.castShadow=false;
   inst.merlon.forEach((v,i)=>{setInst(mer,i,v[0],v[1],v[2],v[3],1.4,1.3,0.9);mer.setColorAt(i,C1.setHex(0xa39a8b));});
-  const sk=mk(new THREE.ConeGeometry(0.62,1,5).translate(0,0.5,0),inst.stake.length);
+  const sk=mk(new THREE.ConeGeometry(0.62,1,5).translate(0,0.5,0),inst.stake.length);sk.castShadow=false;
   inst.stake.forEach((v,i)=>{setInst(sk,i,v[0],v[1],v[2],v[3]*9,1,v[3]*1.3,1);sk.setColorAt(i,C1.setHex(0x7a5c3a).multiplyScalar(0.85+v[3]*0.2));});
   sk.instanceMatrix.needsUpdate=true;if(sk.instanceColor)sk.instanceColor.needsUpdate=true;
   const tw=mk(cy,inst.tower.length),tc=mk(cn,inst.tower.length);
@@ -3519,10 +3530,10 @@ function setFurlong(f,state){
 }
 const treeSY=(k,v)=>k==='pine'?1+v*0.4:k==='small'?0.9+v*0.35:0.9+v*0.3;
 function showTree(t,on){
-  const m=G.treeMesh[t.k],vis=!!on&&!t.cut;
+  const m=t.m,vis=!!on&&!t.cut;if(!m)return;
   if(G.feat&&(t.shown!==false)!==vis)featTree(t,vis?1:-1);t.shown=vis;
-  if(on&&!t.cut)setInst(m,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(t.k,t.v),t.s);
-  else setInst(m,t.i,t.x,-500,t.z,0,0.001,0.001,0.001);
+  if(on&&!t.cut)setInst(m,t.ci,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s,t.s*treeSY(t.k,t.v),t.s);
+  else setInst(m,t.ci,t.x,hAt(t.x,t.z)-0.3,t.z,0,0.001,0.001,0.001); // shrunk to nothing in place, so the chunk's bounds still hold
   m.instanceMatrix.needsUpdate=true;
 }
 function clearLandAt(x,z,r){ // a house or a road now stands here: no plough, and the trees are felled
@@ -3621,7 +3632,8 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       diffuseColor.rgb=mix(diffuseColor.rgb,col,ok*(isCommon?0.4:0.94));fieldA=isCommon?0.:ok;
     }
   }
-  { // ground detail from context
+  float dcam=distance(vWP,cameraPosition);
+  if(dcam<3200.){ // ground detail from context (sub-pixel beyond ~3 km: skipped, and faded out before it)
     vec2 fu=(wp+uSize*0.5)/uSize;
     vec4 T=texture2D(uFeat1,fu),T2=texture2D(uFeat2,fu);
     float dW=T.r*63.75,dWall=T.g*63.75,dRd=T.b*63.75,dWd=T.a*63.75,dB=T2.r*63.75;
@@ -3671,7 +3683,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       vec3 stone=vec3(0.62,0.6,0.55)*(0.82+0.18*step(0.5,fract(h/0.7+n3*0.15)))*(0.92+0.1*n2); // coursed masonry of the town's quays and embankments
       c=mix(c,mix(bank,stone,urb),band*0.88);
     }
-    diffuseColor.rgb=c;
+    diffuseColor.rgb=mix(c,diffuseColor.rgb,smoothstep(2400.,3200.,dcam));
   }
   { // lordship: each lord's land edged in his colours where it meets another's; land held by the sword hatched
     vec4 L1=texture2D(uLord,(c1+0.5)/uFN),L2=texture2D(uLord,(c2+0.5)/uFN);
@@ -3878,7 +3890,7 @@ function sapling(f,on){
   for(let k=0;k<40&&f.sap.length<14&&G.regrowFree.length;k++){
     const x=f.x+(rand('sim')-0.5)*FG*0.9,z=f.z+(rand('sim')-0.5)*FG*0.9,c=cIdx(toCell(x),toCell(z));
     if(furlongAt(x,z)!==f||W.water[c]||G.land.mask[c*4+2]||slopeAt(toCell(x),toCell(z))>0.5)continue;
-    f.sap.push({i:G.regrowFree.pop(),x,z,s:0.75+rand('sim')*0.5,k:'dec'});
+    f.sap.push({i:G.regrowFree.pop(),x,z,s:0.75+rand('sim')*0.5,k:'dec'});G.regrow.count=Math.max(G.regrow.count,f.sap[f.sap.length-1].i+1);
   }
   growSaplings(f);
 }
@@ -4272,7 +4284,7 @@ const BOX=(w,h,d)=>new THREE.BoxGeometry(w,h,d);
 function personParts(kind){ // faces +z, feet at y=0, ~1.8 m tall
   const fixed=[
     [BOX(0.2,0.8,0.24),TM(-0.13,0.4,0),0x4a4038],[BOX(0.2,0.8,0.24),TM(0.13,0.4,0),0x4a4038],
-    [new THREE.IcosahedronGeometry(0.17,1),TM(0,1.7,0),0xd9b08c]];
+    [new THREE.IcosahedronGeometry(0.17,0),TM(0,1.7,0),0xd9b08c]];
   const tint=[[BOX(0.5,0.78,0.3),TM(0,1.18,0),0xffffff],[BOX(0.14,0.62,0.16),TM(-0.33,1.2,0,0,0,0.08),0xffffff],[BOX(0.14,0.62,0.16),TM(0.33,1.2,0,0,0,-0.08),0xffffff]];
   const tint2=[];
   if(kind==='soldier'){
@@ -4292,7 +4304,7 @@ function cartGeom(){ // faces +x: an ox, a driver and a covered wagon
   fixed.push([BOX(1.7,0.08,0.08),TM(2.3,0.95,0.32),wood],[BOX(1.7,0.08,0.08),TM(2.3,0.95,-0.32),wood]);
   fixed.push([BOX(1.5,0.8,0.72),TM(3.5,1.05,0),ox],[BOX(0.55,0.5,0.42),TM(4.45,1.25,0),ox],[BOX(0.08,0.08,0.7),TM(4.5,1.55,0),0xd8cfa8]);
   for(const[x,z]of[[3.0,0.25],[3.0,-0.25],[3.95,0.25],[3.95,-0.25]])fixed.push([BOX(0.16,0.65,0.16),TM(x,0.33,z),ox]);
-  fixed.push([BOX(0.45,0.6,0.35),TM(1.25,1.55,0),0x6d5a3a],[new THREE.IcosahedronGeometry(0.17,1),TM(1.25,2.0,0),0xd9b08c]);
+  fixed.push([BOX(0.45,0.6,0.35),TM(1.25,1.55,0),0x6d5a3a],[new THREE.IcosahedronGeometry(0.17,0),TM(1.25,2.0,0),0xd9b08c]);
   const cover=new THREE.CylinderGeometry(0.85,0.85,2.6,10,1,true,0,Math.PI);
   return{fixed:colGeom(fixed),cover:colGeom([[cover,TM(-0.15,1.25,0,0,0,Math.PI/2),0xffffff]])};
 }
@@ -4310,7 +4322,7 @@ function bargeGeom(){ // faces +x: a flat river barge with its cargo and a polem
     [BOX(6.5,0.7,2.3),TM(0,0.35,0),0x7a5a36],[BOX(6.1,0.1,2.0),TM(0,0.72,0),0x9a7a50],
     [BOX(1.2,0.9,1.2),TM(-1.2,1.2,0.3),0x8a6a44],[BOX(1.0,0.8,1.0),TM(0.2,1.15,-0.4),0x9c7c4c],
     [new THREE.CylinderGeometry(0.45,0.45,0.9,8),TM(1.4,1.2,0.4),0x6e4e2e],
-    [BOX(0.4,0.8,0.3),TM(2.6,1.25,0),0x5b6b4a],[new THREE.IcosahedronGeometry(0.16,1),TM(2.6,1.85,0),0xd9b08c],
+    [BOX(0.4,0.8,0.3),TM(2.6,1.25,0),0x5b6b4a],[new THREE.IcosahedronGeometry(0.16,0),TM(2.6,1.85,0),0xd9b08c],
     [BOX(0.05,3.6,0.05),TM(2.9,1.6,0.3,0.3,0,0.35),0x6a5033]]);
 }
 function dragonGeom(){ // faces +z: body, belly, neck, horned head, tail, spines, folded legs
@@ -4650,9 +4662,10 @@ function setOverlay(mode){
   document.querySelectorAll('.ovbtn').forEach(b=>b.classList.toggle('on',b.dataset.o===overlayMode));
   if(G.land&&G.land.uni)G.land.uni.uTerr.value=0;
   if(!overlayMode)return;
-  refreshOverlay();
+  refreshOverlayNow(); // the player chose it: at once
 }
-function refreshOverlay(){
+function refreshOverlay(){G.ovDirty=true;} // the simulation asks; the frame loop redraws at most every 1.5 s
+function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
   if(!overlayMode)return;
   if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);} // materials leaked every refresh before
   const grp=new THREE.Group();
@@ -4708,10 +4721,10 @@ function campGroup(color){
   }
   return g;
 }
-function addCairn(x,z,text){
-  const c=new THREE.Mesh(new THREE.ConeGeometry(3,5,5),new THREE.MeshLambertMaterial({color:0x7d7870}));
-  c.position.set(x,hAt(x,z)+2,z);c.userData.pick={type:'cairn',text};
-  scene.add(c);G.cairns.push(c);
+function addCairn(x,z,text){ // one instanced mesh for every cairn in the realm (the oldest weather away past 2,000)
+  if(!G.cairnMesh){G.cairnMesh=new THREE.InstancedMesh(new THREE.ConeGeometry(3,5,5).translate(0,2.5,0),new THREE.MeshLambertMaterial({color:0x7d7870}),2000);G.cairnMesh.count=0;G.cairnMesh.castShadow=true;scene.add(G.cairnMesh);G.cairnText=[];G.cairnN=0;}
+  const i=G.cairnN%2000;G.cairnN++;setInst(G.cairnMesh,i,x,hAt(x,z)-0.5,z,0,1,1,1);G.cairnText[i]=text;
+  G.cairnMesh.count=Math.min(2000,G.cairnN);G.cairnMesh.instanceMatrix.needsUpdate=true;
 }
 /* =========================================================================
    CAMERA — one smoothed spring-damper rig; free / follow / director modes
@@ -4791,8 +4804,8 @@ function initInput(){
     const o=raycaster.ray.origin,d=raycaster.ray.direction;if(d.y>-0.02)return null;
     const t=(planeY-o.y)/d.y;return t>0?{x:o.x+d.x*t,z:o.z+d.z*t}:null;};
   const syncCam=()=>{cam.cur.focus.copy(cam.focus);updateCamera(0,perfNow());camera.updateMatrixWorld();}; // direct manipulation: no easing while the hand is on the map
-  const grabStart=(cx,cy)=>{const hit=(()=>{const m=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);raycaster.setFromCamera(m,camera);return raycaster.intersectObject(G.terrain)[0];})();
-    return {y:hit?hit.point.y:cam.cur.focus.y};};
+  const grabStart=(cx,cy)=>{const hit=(()=>{const m=new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1);raycaster.setFromCamera(m,camera);return rayGround(raycaster.ray);})();
+    return {y:hit?hit.y:cam.cur.focus.y};};
   const grabMove=(g,x0,y0,x1,y1)=>{const a=rayAt(x0,y0,g.y),b=rayAt(x1,y1,g.y);if(!a||!b)return;
     cam.focus.x+=a.x-b.x;cam.focus.z+=a.z-b.z;clampFocus();cam.follow=null;syncCam();};
   const zoomAt=(cx,cy,f)=>{ // zoom toward the point under the cursor
@@ -4868,14 +4881,17 @@ function initInput(){
   });
 }
 const raycaster=new THREE.Raycaster();
+function rayGround(ray){ // where a ray meets the ground: marched over the height field and bisected (a mesh raycast walks ~96k triangles)
+  const o=ray.origin,d=ray.direction;let t=0,prev=0;
+  for(let i=0;i<700;i++){const x=o.x+d.x*t,z=o.z+d.z*t,y=o.y+d.y*t,h=hAt(x,z);
+    if(y<=h){let a=prev,b=t;for(let k=0;k<20;k++){const m=(a+b)/2,mx=o.x+d.x*m,mz=o.z+d.z*m;if(o.y+d.y*m<=hAt(mx,mz))b=m;else a=m;}
+      return new THREE.Vector3(o.x+d.x*b,o.y+d.y*b,o.z+d.z*b);}
+    prev=t;t+=clamp((y-h)*0.5,1.5,400);if(t>40000)break;}
+  return null;}
 function groundPoint(e){
   const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
   raycaster.setFromCamera(m,camera);
-  if(overlayMode==='production'&&G.prodSprites&&G.prodSprites.length){ // a production card: click to enlarge it, again to shrink
-    const ph=raycaster.intersectObjects(G.prodSprites,false);
-    if(ph.length){const si=ph[0].object.userData.prod;G.prodBig=G.prodBig===si?null:si;refreshOverlay();return;}}
-  const hit=raycaster.intersectObject(G.terrain)[0];
-  return hit?hit.point:null;
+  return rayGround(raycaster.ray);
 }
 function onClick(e){
   if(placeMode){
@@ -4900,8 +4916,11 @@ function onClick(e){
   }
   const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
   raycaster.setFromCamera(m,camera);
+  if(overlayMode==='production'&&G.prodSprites&&G.prodSprites.length){ // a production card: click to enlarge it, again to shrink
+    const ph=raycaster.intersectObjects(G.prodSprites,false);
+    if(ph.length){const si=ph[0].object.userData.prod;G.prodBig=G.prodBig===si?null:si;refreshOverlayNow();return;}}
   // raycasting ignores .visible, so hidden things (a dragon that flew off) must be filtered out here
-  const targets=[...G.pickS,...G.cairns,...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),...(G.envoyMeshes?G.envoyMeshes.values():[]),G.bodies];
+  const targets=[...G.pickS,...(G.cairnMesh?[G.cairnMesh]:[]),...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),...(G.envoyMeshes?G.envoyMeshes.values():[]),G.bodies];
   if(G.dragonMesh.visible)targets.push(G.dragonMesh);
   for(const t of G.traffic||[])if(t.proxy)targets.push(t.proxy);
   const hits=raycaster.intersectObjects(targets,true);
@@ -4913,6 +4932,7 @@ function onClick(e){
     while(o&&!pk){pk=o.userData.pick;o=o.parent;}
     if(h.object===G.bodies&&h.instanceId!==undefined&&h.instanceId<G.bldList.length)
       pk={type:'building',b:G.bldList[h.instanceId]};
+    if(h.object===G.cairnMesh&&h.instanceId!==undefined)pk={type:'cairn',text:G.cairnText[h.instanceId]};
     if(!pk)continue;
     if(pk.type==='settlement'){town=town||pk;continue;}
     showInspect(pk);return;
@@ -8413,7 +8433,8 @@ function animate(t){
   if(hudT<=0){hudT=0.5;updateHUD();refreshInspect();renderPetition();
     if((uiT=(uiT+1)%2)===0)refreshCrownPanel();}
   overlayT-=dt;
-  if(overlayT<=0){overlayT=6;if(overlayMode)refreshOverlay();}
+  if(overlayT<=0){overlayT=6;if(overlayMode)refreshOverlayNow();}
+  if(G.ovDirty&&performance.now()-(G.ovT||0)>1500)refreshOverlayNow();
   const tR0=performance.now();
   if(PERF.on)perfGpuBegin();
   renderer.render(scene,camera);
