@@ -96,9 +96,22 @@ Acts are sealed while you rule; the crown's own levers take their place:
   paths cross, not only at towns; against a host keeping to its town, the
   battle is fought before the gates. A battle shows as two lines facing each
   other, surging and falling back, the dead where they fell, dust over the
-  melee and a ⚔ over the field. A host too weak to
+  melee and a ⚔ over the field.
+- **Sieges**: the besieged man their walls (or the castle's palisade, or
+  barricades at the town's edge); the besiegers are strung round outside the
+  walls, as far round as their numbers can hold. Roads through their lines
+  are cut — carts halt before them and wait — while a host too small to
+  encircle the town leaves the roads on the open side free to trade. A host too weak to
   storm a place raids it instead — burns and occupies its fields for a
   season, then withdraws with the plunder; taking a town means a siege.
+- **Fortifications**: a town's defence is its garrison, burghers and sheltering
+  hosts multiplied by its works — palisade and ditch, stone walls, a bastioned
+  trace, citadel, motte or hill castle — raised further by the share of the
+  circuit a river, cliff or hillside guards and by high ground. A siege ends in
+  a storm weighed against that defence (hunger cuts it); a failed storm costs
+  the besiegers dearly and either renews the siege or breaks it. A host
+  fighting before its own gates gets a third of its works' advantage. The town card
+  shows the multiplier and its causes.
   Zoomed out, hosts, camps and the dragon show as heraldic badges.
 - **Ambitions & legacy**: eight ambitions (coffers, multitude, concord,
   beloved, ten years' peace, crush a rebellion, slay the dragon, found a

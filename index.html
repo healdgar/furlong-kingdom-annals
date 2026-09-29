@@ -5000,9 +5000,7 @@ function showInspect(pk){
       const kinds=[...new Set(s.furl.filter(f=>f.state===LS.TILLED).map(f=>KIND_NAME[f.kind]))].filter(Boolean).join(', ');
       h+=row('Land',`${ha(ar.filter(f=>f.state===LS.TILLED||f.state===LS.BURNT).reduce((t,f)=>t+f.area,0))} ha under the plough in ${n(LS.TILLED)+n(LS.BURNT)} furlongs${n(LS.BURNT)?` (${n(LS.BURNT)} burned)`:''}${n(LS.PASTURE)?`, ${n(LS.PASTURE)} gone to grass`:''}${n(LS.SCRUB)?`, ${n(LS.SCRUB)} to scrub`:''}${s.assarts?`; ${s.assarts} assarted from the wood`:''}${s.landShort?'; no land left':''}${kinds?` — ${kinds}`:''}`);}
     if(s.mother)h+=row('Daughter of',s.mother);
-    if(s.bastions)h+=row('Fortifications','bastioned trace'+(s.citadel?' and citadel':''));
-    if(s.natDef>0.08&&s.wallKind){const k=s.wallKind,pc=v=>Math.round(k.filter(x=>x===v).length/k.length*100);
-      h+=row('Natural defences',[pc(2)?pc(2)+'% water':'',pc(1)?pc(1)+'% cliff':'',pc(3)?pc(3)+'% hillside':''].filter(Boolean).join(', '));}
+    {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
     h+=row('Garrison',Math.round(s.garrison));
     {const w=Object.keys(s.works||{}).map(k=>({mill:'a mill',granary:'a granary',market:'a chartered market'}[k])).filter(Boolean);if(s.clearUntil>day())w.push('assarters at work');if(w.length)h+=row('Works',w.join(', '));}
     if(s.infected>0.5)h+=row('Plague',Math.round(s.infected)+' sick, '+Math.round(s.plagueDead)+' dead');
@@ -5240,7 +5238,19 @@ function tickWeather(){
 function spareOf(s,g){ // what a place can send away: a hungry town keeps its food, and every town keeps a month's bread
   if(g==='grain'||g==='fish')return s.hunger>0.05?0:s.stores[g]-s.pop*(NEED.grain+NEED.fish)*30;
   return s.stores[g];}
-function closedToTrade(s){return s.infected/Math.max(1,s.pop)>0.15||!!s.siegeBy||s.quarantineUntil>day();}
+function closedToTrade(s,from){ // plague, sealed gates, or the besiegers' lines: a town part-encircled still trades on the roads they do not hold
+  if(s.infected/Math.max(1,s.pop)>0.15||s.quarantineUntil>day())return true;
+  if(!s.siegeBy)return false;const A=s.siegeBy.army&&s.siegeBy.army.siegeArc;
+  if(!A||A.w>=Math.PI*0.97)return true;
+  return from?siegeBlocks(s,Math.atan2(from.z-s.pos.z,from.x-s.pos.x)):false;}
+function siegeBlocks(s,ang){const A=s.siegeBy&&s.siegeBy.army&&s.siegeBy.army.siegeArc;if(!A)return !!s.siegeBy;
+  const d=Math.abs((((ang-A.c+Math.PI)%(2*Math.PI))+2*Math.PI)%(2*Math.PI)-Math.PI);return d<=A.w;}
+function siegeRadius(s){return s.wallRad?s.wallRad.reduce((t,v)=>t+v,0)/s.wallRad.length:s.bailey&&!s.wallRad?Math.max(s.bailey.r+20,(s.extentR||s.radius||90)*0.6):(s.extentR||s.radius||90)*0.9;}
+function siegeArc(a,s){ // the besiegers' lines: outside the walls, round as much of the town as their numbers can hold, facing the way they came
+  const R=siegeRadius(s),need=2*Math.PI*(R+30)*0.35,cover=clamp(a.strength/need,0.12,1);
+  let c=a.siegeArc?a.siegeArc.c:null;
+  if(c==null){const P=a.poly,q=P&&P.length>1?P[Math.max(0,P.length-2)]:a._ppos;c=q?Math.atan2(q.z-s.pos.z,q.x-s.pos.x):hash01(a.id)*6.28;}
+  a.siegeArc={c,w:cover*Math.PI,R};}
 const NEED={grain:0.007,fish:0.003,timber:0.0006,ore:0.0002,tools:0.0004,cloth:0.0005,wine:0.0004};
 function price(s,g){
   const need=s.pop*NEED[g]*25+5;
@@ -5276,7 +5286,7 @@ function tickEconomy(){
       let best=null;
       for(let di=0;di<W.settlements.length;di++){
         if(di===oi)continue;const d=W.settlements[di];
-        if(closedToTrade(d))continue; // emergent quarantine (or the crown's sealed gates)
+        if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
         for(const g of GOODS){
           const margin=price(d,g)-price(o,g);
           if(margin>GOODBASE[g]*0.5&&o.stores[g]>40){
@@ -5353,8 +5363,13 @@ function tickEconomy(){
   }
   for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);}
   // arrivals
+  const besieged=W.settlements.filter(t=>t.siegeBy);
   for(let i=W.caravans.length-1;i>=0;i--){
     const c=W.caravans[i];
+    if(besieged.length&&!c.robbed&&!c.sea&&!c.river&&day()<c.arriveDay){c.halted=false; // at the siege lines the carts stop, and wait for the road to open
+      const p=polyPos(c.poly,clamp((day()-c.departDay)/Math.max(0.01,c.arriveDay-c.departDay),0,1));
+      if(p)for(const t of besieged){const A=t.siegeBy.army&&t.siegeBy.army.siegeArc,Rr=(A?A.R:90)+30,d=dist2d(p.x,p.z,t.pos.x,t.pos.z);
+        if(d<Rr+45&&siegeBlocks(t,Math.atan2(p.z-t.pos.z,p.x-t.pos.x))){c.arriveDay+=1;c.departDay+=1;c.halted=true;break;}}}
     if(day()>=c.arriveDay){
       const d=W.settlements[c.dest];
       if(!c.robbed){
@@ -5878,24 +5893,34 @@ function tickMilitary(){
       if(hostileTo(a,s)){
         const defend=defenceOf(s);
         if(!inRebellion(a)&&a.strength<defend*2){ // too weak to take it: a raid, the fields burned and the land about it held for a season
-          a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};
+          a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
           emit('war',6,s.pos,`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`);
         }else if(!(s.walls>0&&s.garrison>20)){ // no walls: still days of skirmish before the place is theirs, longer against a garrison
-          a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:18)+Math.round((s.garrison||0)/6+s.pop/60);s.siegeBy={houseName:W.houses[a.house].name,army:a}; // the townsfolk defend their homes: weeks, not days
+          a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:18)+Math.round((s.garrison||0)/6+s.pop/60);s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s); // the townsfolk defend their homes: weeks, not days
         }else if(s.walls>0&&s.garrison>20){
           a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40)+(s.bastions?35:0)+(s.citadel?25:0); // river-girt, bastioned or citadel towns hold out longer
-          s.siegeBy={houseName:W.houses[a.house].name,army:a};
+          s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
           emit('war',8,s.pos,`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`);
         }else takeSettlement(a,s);
       }else a.state='idle';
     }
     if(a.state==='siege'){
-      const s=W.settlements[a.at];
+      const s=W.settlements[a.at];if(a.siegeArc)siegeArc(a,s);
       s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
       if(now>=a.siegeUntil){
-        s.siegeBy=null;
-        if(a.raid){a.raid=false;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
-        else takeSettlement(a,s);
+        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
+        else{ // the storm: the works and the ground weigh against the assault, hunger for it
+          const cm=notableById(a.commander),A=a.strength*(a.morale/70)*(cm&&cm.traits.includes('bold')?1.18:1),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
+          if(chance('sim',A/(A+D*1.2))){s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);}
+          else{
+            a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
+            if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.holdUntil=day()+60;
+              emit('war',8,s.pos,`The storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`);
+              if(inRebellion(a))warScore(a.side==='crown'?-10:10);}
+            else{a.siegeUntil=now+15+Math.round(rand('sim')*15);
+              emit('war',6,s.pos,`An assault on ${s.name} is thrown back from the ${s.walls>=2?'walls':s.walls?'palisade':'barricades'}; ${a.name} settles to starve it out.`);}
+          }
+        }
       }else if(chance('sim',0.01)){ // sortie
         if(resolveClash(a,{strength:s.garrison*3+sheltered(s),morale:60,house:s.owner,name:'garrison of '+s.name})){
           emit('war',6,s.pos,`A sortie from ${s.name} is beaten back with slaughter at the gates.`);
@@ -5916,7 +5941,9 @@ function tickMilitary(){
     if(hides(a,b)||hides(b,a)||a.strength<5||b.strength<5)continue; // the weaker keeps within its gates and adds to the defence
     const meet=closestApproach(a,b);
     if(meet.d<130){ // where their paths crossed; against a host keeping to its town, before the gates on the side the enemy came from
+      a.atGates=b.atGates=null;
       for(const[x,y]of[[a,b],[b,a]])if(x.state==='idle'&&!x.field){const t=W.settlements[x.at];if(t&&dist2d(meet.x,meet.z,t.pos.x,t.pos.z)<(t.radius||90)+40){
+        if(t.owner===x.house)x.atGates=x.at;
         const fx=(y._ppos||y._spos).x-t.pos.x,fz=(y._ppos||y._spos).z-t.pos.z,L=Math.hypot(fx,fz)||1,R=(t.extentR||t.radius||90)+35;meet.x=t.pos.x+fx/L*R;meet.z=t.pos.z+fz/L*R;}}
       a._spos=b._spos={x:meet.x,z:meet.z};
       for(const x of[a,b]){ // remember the road each host was on, and abandon any siege
@@ -5946,7 +5973,7 @@ function tickMilitary(){
       emit('war',8,pos,line);
       addCairn(pos.x,pos.z,a.battleName+', AD '+AD()+' — here '+w.name+' prevailed.');
       if(inRebellion(w,l))warScore(w.house===0?20:-20);
-      a.foe=b.foe=null;
+      a.foe=b.foe=null;a.atGates=b.atGates=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
       routFromField(l);
       if(l.strength<(l.standing?10:40)&&!l.gone)disbandArmy(l); // a broken household scatters; the lord gathers a new one at his seat
@@ -5975,13 +6002,32 @@ function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
 function sheltered(s){const si=W.settlements.indexOf(s);return W.armies.filter(b=>!b.gone&&!b.field&&b.house===s.owner&&b.at===si&&(b.state==='idle'||b.state==='arrived')).reduce((t,b)=>t+b.strength,0);}
-function defenceOf(s){return (s.garrison||0)+s.pop*0.05*(s.walls>0?2:1)+sheltered(s);}
+function prominence(s){ // height of the town above the country within ~300 m: high ground tires an assault
+  if(s._prom==null){let t=0;for(let k=0;k<12;k++){const an=k/12*Math.PI*2;t+=hAt(s.pos.x+Math.cos(an)*300,s.pos.z+Math.sin(an)*300);}s._prom=hAt(s.pos.x,s.pos.z)-t/12;}
+  return s._prom;}
+function fortOf(s){ // what the works and the lie of the land multiply the defenders by
+  let m=1;const parts=[];
+  if(s.walls>=2){m+=1.5;parts.push('stone walls');}else if(s.walls===1){m+=0.6;parts.push('palisade and ditch');}
+  if(s.bastions){m+=1;parts.push('bastioned trace');}
+  if(s.citadel){m+=0.4;parts.push('citadel');}
+  if(s.hillCastle){m+=0.4;parts.push('castle on the height');}
+  else if(s.motte){m+=s.motteStone?0.5:0.25;parts.push(s.motteStone?'stone keep on its motte':'motte and bailey');}
+  if(s.baileyStone){m+=0.2;if(!parts.includes('stone bailey'))parts.push('stone bailey');}
+  if(s.walls>0&&s.wallKind&&s.natDef>0.02){ // stretches of the circuit the river or a cliff guard: the assault must come elsewhere
+    const k=s.wallKind,f=v=>k.filter(x=>x===v).length/k.length,wet=f(2),cliff=f(1),hill=f(3),nat=wet+cliff+hill*0.5;
+    m*=1+nat*0.8;
+    const d=[wet>0.02?Math.round(wet*100)+'% river':'',cliff>0.02?Math.round(cliff*100)+'% cliff':'',hill>0.02?Math.round(hill*100)+'% hillside':''].filter(Boolean);
+    if(d.length)parts.push(d.join(', ')+' of the circuit');}
+  const pr=prominence(s);
+  if(pr>8){m*=1+Math.min(0.4,pr/100);parts.push(`high ground (${Math.round(pr)} m)`);}
+  return {mult:m,parts};}
+function defenceOf(s){return ((s.garrison||0)+s.pop*0.05+sheltered(s))*fortOf(s).mult;}
 function fitToCampaign(a){return a.strength>=Math.max(30,hostTarget(a.house)*0.45);}
 function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the rebellion, or a private war)?
   return atWar(a.house,s.owner);
 }
 function liftSiege(a){
-  W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
+  a.siegeArc=null;W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
 }
 function routHome(a){
   if(!W.settlements[a.home]||W.settlements[a.home].owner!==a.house){ // its home has fallen: flee to the nearest place still its own
@@ -6018,6 +6064,8 @@ function resolveClash(a,b){
   const ca=notableById(a.commander),cb=notableById(b.commander);
   let pa=a.strength*(a.morale/70)*(ca&&ca.traits.includes('bold')?1.18:1);
   let pb=b.strength*((b.morale||60)/70)*(cb&&cb.traits&&cb.traits.includes('bold')?1.18:1);
+  const gate=x=>{const t=x.atGates!=null&&W.settlements[x.atGates];return t?1+(fortOf(t).mult-1)*0.3:1;}; // fighting under its own walls, not from them
+  pa*=gate(a);pb*=gate(b);
   if(W.weather.state==='storm'||W.weather.state==='rain'){pa*=0.9+rand('sim')*0.2;pb*=0.9+rand('sim')*0.2;}
   return pa*(0.7+rand('sim')*0.6)>pb*(0.7+rand('sim')*0.6);
 }
@@ -8202,7 +8250,7 @@ function animateWorld(dt,now){
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
   const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
-  for(let i=T.length-1;i>=0;i--){const t=T[i];t.d+=t.spd*(SPEEDS[speedIdx]||0)*dt; // metres a day, on the calendar's clock: the carts arrive when their goods do
+  for(let i=T.length-1;i>=0;i--){const t=T[i];if(!t.cons.halted)t.d+=t.spd*(SPEEDS[speedIdx]||0)*dt; // metres a day, on the calendar's clock: the carts arrive when their goods do
     if(t.d>=t.len||t.cons.robbed){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
   for(const t of T){
     if(t.d<0)continue; // still loading at the gate
@@ -8269,6 +8317,9 @@ function animateWorld(dt,now){
         if(Math.random()<dt*6)spawnSmoke(bp.x+(Math.random()-0.5)*30,surfY(bp.x,bp.z),bp.z+(Math.random()-0.5)*30,false);} // dust over the melee
     }
     if(!p&&a.field)p={x:a.field.x,z:a.field.z,dir:0}; // encamped in the open where it was sent
+    const sieging=a.state==='siege'&&a.siegeArc&&W.settlements[a.at],A=sieging?a.siegeArc:null,st=W.settlements[a.at];
+    if(sieging){const r=A.R+30;p={x:st.pos.x+Math.cos(A.c)*r,z:st.pos.z+Math.sin(A.c)*r,dir:A.c+Math.PI};} // the banner at the middle of the lines
+    const onWalls=a.state==='idle'&&!a.field&&st&&st.siegeBy&&a.house===st.owner; // besieged: its men are up on the walls
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
     const y=surfY(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
@@ -8285,17 +8336,18 @@ function animateWorld(dt,now){
       const H=W.houses[a.house],us=clamp(cam.cur.dist*0.0055,1.2,7);
       const cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};
       cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5)); // even a sable livery must read at a glance
-      const n=Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
+      const n=onWalls?0:Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
       const dir=p.dir||0,fx=Math.cos(dir),fz=Math.sin(dir),lx=-fz,lz=fx;
       for(let k=0;k<n&&si2<1500;k++){
         const col=k%per-(per-1)/2,row=Math.floor(k/per);
-        let sx=p.x+(fx*(-row*1.9)+lx*col*1.3)*us,sz=p.z+(fz*(-row*1.9)+lz*col*1.3)*us;
+        let sx=p.x+(fx*(-row*1.9)+lx*col*1.3)*us,sz=p.z+(fz*(-row*1.9)+lz*col*1.3)*us,sdir=dir;
+        if(sieging){const f=(k+0.5)/n,an=A.c-A.w+2*A.w*f,rr=(st.wallRad?wallRadAt(st,an):A.R)+26+(k%3)*2.2*us;sx=st.pos.x+Math.cos(an)*rr;sz=st.pos.z+Math.sin(an)*rr;sdir=an+Math.PI;} // strung out round the town, facing the walls
         let fallen=false;
         if(a.state==='battle'){sx+=Math.sin(now*7+k*3)*0.9*us;sz+=Math.cos(now*6+k*5)*0.9*us; // the press of the melee
           const prog=clamp((simDay-(a.battleStart||simDay))/Math.max(0.5,(a.battleUntil||simDay+1)-(a.battleStart||simDay)),0,1);fallen=(k*37%100)/100<prog*0.3;} // and the dead lie where they fell
         else if(a.state==='siege'||a.state==='idle'){sx+=Math.sin(k*12.9)*0.5;sz+=Math.cos(k*7.3)*0.5;}
         const bob=a.state==='march'||a.state==='rout'?Math.abs(Math.sin(now*8+k))*0.12*us:0;
-        const yy=surfY(sx,sz)+bob,ry=-dir+Math.PI/2+(a.state==='rout'?Math.PI:0);
+        const yy=surfY(sx,sz)+bob,ry=-sdir+Math.PI/2+(a.state==='rout'?Math.PI:0);
         const hy=fallen?us*0.22:us;
         setInst(G.soldiers,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierShields,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierKit,si2,sx,yy,sz,ry,us,hy,us);
         G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);
@@ -8303,6 +8355,15 @@ function animateWorld(dt,now){
       }
     }
   }
+  for(const t of W.settlements){if(!t.siegeBy||si2>=1480)continue; // the besieged man their walls (or the castle's palisade, or barricades at the town's edge)
+    const dcam=dist2d(camera.position.x,camera.position.z,t.pos.x,t.pos.z);if(dcam>2600)continue;
+    const H=W.houses[t.owner]||W.houses[0],us=clamp(cam.cur.dist*0.0055,1.2,7),cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5));
+    const men=(t.garrison||0)+sheltered(t),n=Math.min(90,Math.max(8,Math.round(men/4))),ring=t.wallRad?null:t.bailey||t.hillCastle||null,R0=ring?ring.r:(t.extentR||t.radius||90)*0.85;
+    const top=t.wallRad?(t.walls>=2?7.5:4.2):ring?(t.baileyStone?5.5:3.5):0;
+    for(let k=0;k<n&&si2<1500;k++){const an=(k+0.5)/n*Math.PI*2+hash01(t.pos.x)*6.28;if(t.wallRad&&wallKindAt(t,an)===1)continue; // no wall where the river or the cliff is the defence
+      const rr=t.wallRad?wallRadAt(t,an):R0,cx=ring?ring.x:t.pos.x,cz=ring?ring.z:t.pos.z,sx=cx+Math.cos(an)*rr,sz=cz+Math.sin(an)*rr,ry=-an+Math.PI/2;
+      setInst(G.soldiers,si2,sx,surfY(sx,sz)+top,sz,ry,us,us,us);setInst(G.soldierShields,si2,sx,surfY(sx,sz)+top,sz,ry,us,us,us);setInst(G.soldierKit,si2,sx,surfY(sx,sz)+top,sz,ry,us,us,us);
+      G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);si2++;}}
   for(const[k,sp]of G.battleSprites)if(!activeBattles.has(k)){scene.remove(sp);sp.material.dispose();G.battleSprites.delete(k);} // the field falls quiet
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
