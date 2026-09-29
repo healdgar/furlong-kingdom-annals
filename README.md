@@ -97,6 +97,30 @@ Acts are sealed while you rule; the crown's own levers take their place:
   battle is fought before the gates. A battle shows as two lines facing each
   other, surging and falling back, the dead where they fell, dust over the
   melee and a ⚔ over the field.
+- **Who wins**: each side's strength is weighed by:
+  - its morale;
+  - its commander (arms, riding, nerve and wits);
+  - its men's own skill at arms (green levies against veterans and sell-swords);
+  - horse against foot: riders count fully on open ground, little in wood or
+    marsh, and half when charging uphill or out of a ford;
+  - the ground the attacker must cross: charging up a slope or through a river
+    costs it, and coming downhill helps;
+  - fatigue: it builds up on the march (faster across country) and wears off
+    in camp;
+  - fighting before one's own walls;
+  - weather and the day's luck.
+
+  The chronicle gives the reason for the day ("could not carry the slope",
+  "the charge of their horse told on the open ground"), and so does the cairn.
+- **The host is its men**:
+  - Levies are real people off the town's roll, the unmarried and practised
+    first; the rest are foreign sell-swords with their own names.
+  - Riders take the town's horses; a sell-sword who rides brings his own.
+  - Losses fall on the least skilled, and horses die with their riders.
+  - Released men walk home to their own villages.
+  - The army card shows where its men come from and its best fighters.
+  - A battle cairn lists every fallen man by side and home town, and the lords
+    slain.
 - **Sieges**: the besieged man their walls (or the castle's palisade, or
   barricades at the town's edge); the besiegers are strung round outside the
   walls, as far round as their numbers can hold. Roads through their lines
@@ -202,6 +226,25 @@ itself; you rule one lord's domain:
     comet's prophet from the capital.
   - The midsummer games are won by the realm's actual strongest wrestler, best
     archer or best rider.
+- **Beasts.** Every place keeps sheep, cattle, horses and swine.
+  - **Feed:** pasture and common waste, the fallow third of the open fields,
+    hay meadow for the winter, and the wood for swine.
+  - **Herd size:** each herd grows toward what the place needs: plough-teams
+    for its fields (oxen, and more horses after 1100), cows for its people, a
+    lord's stable at his seat, and sheep for whatever grass is left. Growth is
+    as fast as the herdsmen's husbandry allows, and never beyond what the grass
+    can carry. An overstocked place loses beasts in a hard winter.
+  - **Outputs:**
+    - milk, cheese and pork add to food;
+    - wool becomes cloth (homespun in villages, broadcloth where there are
+      weavers and dyers);
+    - too few plough-teams cut the grain harvest;
+    - the stable mounts the host's riders.
+  - **Losses:** raiders drive the herds home with them, murrain spreads from
+    village to village, and pasture that nothing grazes goes back to scrub.
+  - **On the map:** the herds are drawn from the real counts, one beast for
+    every few head, and move between pastures month by month. The town card
+    shows the herds, the grazing and whether the plough-teams are enough.
 - **Family names** are fixed when a family is founded, and then inherited:
   - from what the founder did (Smith, Schmidt, Lefèvre, Kovář);
   - from where the family lived (Atwood, Dubois, Brookes);
