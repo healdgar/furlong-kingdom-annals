@@ -37,6 +37,24 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
 ## Reading the realm
 
+- **People on the streets are real.** Walk the camera into a town: the folk
+  you see are its residents, keeping the day.
+  - At night everyone is at home.
+  - At dawn the smith goes to his forge, the ploughman to the fields, the
+    potter to the bench at home, and the children to play in the lane.
+  - Some go to market at midday; at dusk everyone heads home.
+  - Click anyone for their card: age, trade, home, spouse, parents, children,
+    how their family came by its name, their nature and learning, and what
+    they're doing now. Names on house and person cards link to each other.
+- **One scale.**
+  - **Travel between places:** the map's distances stand for a realm about 40
+    times larger (6 km of map for ~240 km), so every traveller moves at its
+    real pace in km a day ÷ 40. That gives, in map metres a day: ox-cart 500,
+    host on the road 400 and across country 250, a routed host 900, envoys
+    1,500, barges 700, cogs 2,800, great ships 3,500, the dragon 8,000.
+  - **Inside towns:** towns and houses are drawn true size, so the townsfolk
+    keep true time: a walk across town takes some forty minutes and passes in
+    a blink at the faster settings. What you see is the rhythm of their day.
 - **Names are links.** Towns, great houses and living notables named in the
   chronicle or in a petition are underlined. Click one to fly there and open
   its card (a house opens its head's card).
