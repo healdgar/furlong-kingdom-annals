@@ -299,7 +299,8 @@ function seedStreams(seed,fate){ // the map seed shapes the land; the fate seed 
   const s=seed>>>0,f=fate?mix((fate>>>0)+0x51ed):0;
   return {
     gen: sfc32(mix(s),mix(s+0x9e37),mix(s+0x85eb),mix(s+0xc2b2)),
-    sim: sfc32(mix((s+0x1b87)^f),mix((s+0x27d4)^f),mix((s+0x1656)^f),mix((s+0x9c83)^f))
+    sim: sfc32(mix((s+0x1b87)^f),mix((s+0x27d4)^f),mix((s+0x1656)^f),mix((s+0x9c83)^f)),
+    folk: sfc32(mix((s+0x3c6e)^f),mix((s+0x4a1d)^f),mix((s+0x5b2f)^f),mix((s+0x6d3a)^f)) // the common folk's lives: kept apart so they do not stir the chronicle's dice
   };
 }
 let SEED=1234567, FATE=0, RS=null, COAST_PREF=null; // COAST_PREF null: as the seed falls; 'sea' or 'land' from the hash
@@ -4860,9 +4861,11 @@ function initInput(){
     zoomAt(e.clientX,e.clientY,Math.exp(dy*0.0011));
   },{passive:false});
   window.addEventListener('keydown',e=>{
-    if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return; // typing in a field, a slider or a list: not a command
+    const sp=e.code==='Space'||e.key===' ';
+    if(/^(SELECT|TEXTAREA)$/.test(e.target.tagName)||e.target.tagName==='INPUT'&&!(sp&&e.target.type==='range'))return; // typing in a field or a list: not a command (a slider lets Space through)
+    if(sp&&document.activeElement&&/^(BUTTON|INPUT)$/.test(document.activeElement.tagName))document.activeElement.blur(); // else the focused button is 'clicked' by the same Space and undoes the pause
     if(e.ctrlKey||e.metaKey||e.altKey||e.repeat)return; // Ctrl+C copies text; a held key toggles once
-    switch(e.key){
+    switch(sp?' ':e.key){
       case ' ':e.preventDefault();sovPausedFrom=0;setSpeed(speedIdx===0?lastSpeed||2:0);break;
       case '1':setSpeed(1);break;case '2':setSpeed(2);break;case '3':setSpeed(3);break;case '4':setSpeed(4);break;case '5':setSpeed(5);break;
       case 'h':case 'H':document.body.classList.toggle('hideui');break;
@@ -6673,6 +6676,12 @@ function simTick(){
 const chronList=()=>document.getElementById('chronlist');
 let chronFilter='all', allLines=[], entryCount=0;
 const CATMAP={crown:'crown',war:'war',trade:'trade',fates:'fates'};
+function vary(key,list){ // one way of saying a thing, dealt from a shuffled deck so the annalist does not repeat himself until every wording has been used
+  const V=W.voice||(W.voice={});let d=V[key];
+  if(!d||d.n!==list.length||d.i>=d.o.length){const r=nameRng(((W.clock?W.clock.day:0)*31+[...key].reduce((t,c)=>t*33+c.charCodeAt(0)|0,7))|0),o=list.map((_,i)=>i);
+    for(let i=o.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[o[i],o[j]]=[o[j],o[i]];}
+    if(d&&o.length>1&&o[0]===d.last)[o[0],o[1]]=[o[1],o[0]];d=V[key]={o,i:0,n:list.length,last:-1};}
+  const k=d.o[d.i++];d.last=k;const v=list[k];return typeof v==='function'?v():v;}
 function emit(cat,pri,pos,text,opts){
   const ev={day:day(),cat,pri,pos:pos?{x:pos.x,z:pos.z}:null,text,opts:opts||{}};
   if(W&&W.houses)for(const h of W.houses)if(text&&text.includes(h.name))h._news={d:day(),t:text}; // what was last said of each house: the reason a sudden change of heart is remembered by
