@@ -372,9 +372,10 @@ const NAMEB={
   dragon:['Vermithrax','Scatha','Ancalor','Morghul','Fyrentar','Uldrath','Cindervane','Naghrast','Velkorag','Ashmaw']
 };
 function placeName(){ return pick('gen',NAMEB.pfx)+pick('gen',NAMEB.sfx); }
-function personName(sex,hi){ // one draw, as ever; the list is the house's tongue
-  const h=W&&W.houses&&W.houses[hi],C=CULT[(h&&h.cult)||(W&&W.houseCult&&W.houseCult[hi])||(W&&W.crownCult)]||null;
-  const L=C?(sex==='f'?C.f:C.m):(sex==='f'?NAMEB.femN:NAMEB.maleN);return L[Math.floor(rand('gen')*L.length)];}
+function personName(sex,hi,avoid){ // one draw from the gen stream, as ever (so worlds stay the same); the name itself is the least worn of several in the house's tongue
+  const h=W&&W.houses&&W.houses[hi],c=(h&&h.cult)||(W&&W.houseCult&&W.houseCult[hi])||(W&&W.crownCult)||'anglo',u=rand('gen');
+  const kin=avoid||(h&&W.notables?W.notables.filter(n=>n.alive&&n.house===hi).map(n=>n.name):null);
+  return givenPick(c,sex,kin,nameRng(((u*4294967296)>>>0)^(W.nameCtr=(W.nameCtr||0)+1)));}
 /* ---------------- cultures: every great house speaks a language, and names its places, castles, churches and
    shops in it. A place is named for why it is there (the ford, the bridge, the hill fort, the harbour, the mouth,
    the clearing, the mine): the same site reads Ashford, Eschfurt, Gué-le-Frêne or Guado del Frassino. */
@@ -496,12 +497,102 @@ const CULT={
 };
 const CULT_NEAR={anglo:['anglo','celtic','norse','french'],german:['german','slavic','french','norse','italian'],french:['french','italian','iberian','german','celtic'],
   italian:['italian','french','german','iberian'],norse:['norse','german','anglo','slavic'],slavic:['slavic','german','norse'],celtic:['celtic','anglo','norse','french'],iberian:['iberian','french','italian']};
+/* more names for every tongue: given names, place roots, and the stuff of surnames (trade, dwelling, looks, father, home town) */
+const NAMEX={
+anglo:{
+ m:['Aldred','Alfred','Athelstan','Edgar','Edward','Edwin','Edric','Godwin','Harold','Leofwin','Osmund','Oswald','Wulfstan','Eadmund','Cuthbert','Bertram','Alan','Baldwin','Bartholomew','Henry','Richard','William','Robert','John','Thomas','Simon','Adam','Roger','Gilbert','Ralph','Reginald','Hubert','Miles','Nigel','Peter','Philip','Stephen','Warin','Herbert','Osbert','Elias','Everard','Fulk','Giles','Jordan','Lambert','Odo','Serlo','Hervey','Humphrey','Ivo','Jocelin','Lawrence','Martin','Nicholas','Piers','Ranulph','Swein','Tobias','Wymund','Anselm','Alured','Godric','Hereward','Ordgar','Toki','Alwin','Colin','Ailwin','Ketel','Wulfric'],
+ f:['Agnes','Alice','Amice','Avice','Beatrice','Cecily','Christina','Constance','Denise','Edith','Eleanor','Elena','Emma','Emmeline','Eve','Felice','Gundrada','Gunnora','Gytha','Hilda','Idonea','Isabel','Joan','Juliana','Katherine','Lettice','Margaret','Margery','Mabel','Matilda','Millicent','Osanna','Philippa','Rohese','Rose','Sibyl','Susanna','Thomasin','Ursula','Wenna','Alditha','Ediva','Elfleda','Godgifu','Bertha','Cristiana','Dionisia','Ermintrude','Ela','Sarra'],
+ roots:['Elm','Ox','Bex','Ket','Lud','Hen','Sher','Tam','Win','Yar','Barn','Dart','Fair','Grim','Hay','Kel','Lin','Nor','Pen','Rip','Stow','Tren','Wyn','Bat','Cran','Ferr','Gil','Mor'],
+ occ:{smith:'Smith',miller:'Miller',baker:'Baker',tanner:'Tanner',weaver:'Webb',dyer:'Dyer',carpenter:'Carpenter',mason:'Mason',fisher:'Fisher',shepherd:'Shepherd',cooper:'Cooper',thatcher:'Thatcher',potter:'Potter',brewer:'Brewer',butcher:'Butcher',carter:'Carter',reeve:'Reeve',tailor:'Taylor',cook:'Cook',hunter:'Hunter',forester:'Forster',wheelwright:'Wheeler',fletcher:'Fletcher',salter:'Salter',merchant:'Marchant',miner:'Miner',boatman:'Boatman',ploughman:'Plowman',herdsman:'Herd',bowyer:'Bowyer',glover:'Glover',chandler:'Chandler',shoemaker:'Cordwainer',roper:'Roper',spicer:'Spicer'},
+ loc:{wood:['Atwood','Wood','Underwood'],brook:['Brooks','Atbrook','Brook'],river:['Rivers','Atwater','Waters'],hill:['Hill','Hills','Underhill'],ford:['Ford','Atford','Fordham'],bridge:['Bridge','Bridges','Atbridge'],marsh:['Marsh','Marish','Fenn'],field:['Field','Fields','Atfield'],green:['Green','Greene','Attegreen'],well:['Well','Atwell','Wells'],stone:['Stone','Stones','Atstone'],heath:['Heath','Heathcote','Atheath'],lane:['Lane','Lanes','Attlane'],church:['Church','Kirk','Churchman'],mill:['Mill','Mills','Atmill'],moor:['Moor','Moore','Moores'],shore:['Shore','Shoreman','Strand'],orchard:['Orchard','Appleyard','Appleton'],grove:['Grove','Groves','Atgrove']},
+ nick:{tall:'Long',short:'Little',strong:'Strong',bold:'Hardy',kind:'Goodman',wise:'Wise',dark:'Black',fair:'White',red:'Reed',brown:'Brown',young:'Young',old:'Old',quick:'Swift',stout:'Stout'},
+ patr:f=>f.length%2?f+'son':(f.endsWith('s')?f:f+'s'),
+ origin:t=>t
+},
+german:{
+ m:['Adalbert','Adolf','Albert','Arnold','Arnulf','Balduin','Berthold','Bernhard','Bruno','Christian','Dietmar','Eckhart','Engelbert','Erhard','Ernst','Gebhard','Gerhard','Gero','Gunther','Hans','Hartwig','Heribert','Hermann','Hildebrand','Hugo','Ingo','Jakob','Johann','Karl','Kilian','Klaus','Lambert','Leopold','Liutpold','Manegold','Markward','Matthias','Meinhard','Notker','Ortwin','Poppo','Reinhard','Reinmar','Rupert','Sigmund','Tilo','Volker','Walther','Werner','Wilhelm','Wigand','Wolfger','Wichmann','Widukind','Willibald','Anselm','Hartmut','Ekkehard','Diether','Gottschalk','Heinz','Kuno','Lutz','Trutwin'],
+ f:['Adelheid','Adelinde','Agnes','Anna','Bertha','Brigitta','Christina','Clara','Dorothea','Elisabeth','Ermentrud','Frederun','Gerlinde','Gertrud','Gisela','Guda','Hedwig','Heilwig','Hildegard','Ida','Irmgard','Jutta','Katharina','Kunigunde','Lucia','Margarete','Mechthild','Oda','Osanna','Reinhild','Richardis','Sophia','Swanhild','Theophanu','Uta','Utelinde','Walburga','Willa','Adelgund','Aleit','Gudrun','Hemma','Imma','Liutgard','Trude','Ursula','Wiltrud','Elsbeth','Else','Grete','Hille'],
+ roots:['Buch','Dorn','Fried','Gams','Hall','Heid','Kirch','Lang','Mühl','Nord','Pfaff','Rhein','Sachs','Tann','Wies','Zell','Bad','Kalt','Rein','Gern','Hers','Neck','Süd','Ost','Weid','Birk','Wer','Hild'],
+ occ:{smith:'Schmidt',miller:'Müller',baker:'Becker',tanner:'Gerber',weaver:'Weber',dyer:'Färber',carpenter:'Zimmermann',mason:'Maurer',fisher:'Fischer',shepherd:'Schäfer',cooper:'Küfer',thatcher:'Decker',potter:'Töpfer',brewer:'Brauer',butcher:'Metzger',carter:'Fuhrmann',reeve:'Schulze',tailor:'Schneider',cook:'Koch',hunter:'Jäger',forester:'Förster',wheelwright:'Wagner',fletcher:'Pfeiler',salter:'Salzmann',merchant:'Kaufmann',miner:'Bergmann',boatman:'Schiffer',ploughman:'Pflüger',herdsman:'Hirt',bowyer:'Bogner',glover:'Handschuh',chandler:'Kerzler',shoemaker:'Schuster',roper:'Seiler',spicer:'Würzler'},
+ loc:{wood:['Waldner','Holzer','Buschmann'],brook:['Bachmann','Bacher'],river:['Auer','Wassermann'],hill:['Berger','Bühler','Hügel'],ford:['Furter','Furtner'],bridge:['Brücker','Brückner'],marsh:['Riedmann','Bruchmann','Sumpf'],field:['Feldner','Felder','Ackermann'],green:['Anger','Angerer','Grüner'],well:['Brunner','Brunnmann'],stone:['Steiner','Stein','Steinmann'],heath:['Heider','Heidmann'],lane:['Gasser','Gassner'],church:['Kirchner','Kirchmann'],mill:['Mühlbauer','Mühlmann'],moor:['Moser','Moormann'],shore:['Uferer','Strandmann'],orchard:['Baumgartner','Obstler','Gartner'],grove:['Hainer','Haindl','Lohner']},
+ nick:{tall:'Lang',short:'Klein',strong:'Stark',bold:'Kühn',kind:'Gutmann',wise:'Klug',dark:'Schwarz',fair:'Weiß',red:'Roth',brown:'Braun',young:'Jung',old:'Alt',quick:'Schnell',stout:'Dick'},
+ patr:f=>f.length%2?f+'s':f+'ing',
+ origin:t=>/e$/.test(t)?t+'r':t+'er'
+},
+french:{
+ m:['Adhémar','Amaury','Anselme','Arnaud','Aubert','Aubry','Baudoin','Bernard','Bertrand','Charles','Denis','Drogon','Étienne','Eudes','Évrard','Geoffroy','Gilles','Guy','Henri','Hervé','Hugues','Jacques','Jean','Josselin','Lambert','Louis','Mathieu','Michel','Nicolas','Odon','Olivier','Pierre','Raimond','Raymond','Renier','Richard','Roland','Sanche','Simon','Thierry','Thomas','Tristan','Ursin','Vivien','Yves','Enguerran','Ancel','Bouchard','Eustache','Gaucher','Jourdain','Lancelin','Milon','Payen','Pons','Guichard','Hélie','Girard','Ogier','Martin'],
+ f:['Adélaïde','Adeline','Alix','Aude','Berthe','Constance','Ermessende','Eustachie','Gisèle','Guillemette','Hersende','Ide','Isabelle','Jacquette','Jehanne','Laurette','Liénor','Lucie','Madeleine','Marie','Marion','Mathilde','Mélusine','Odette','Perrette','Pernelle','Richilde','Rose','Sancie','Simone','Suzanne','Ysabeau','Ysolde','Anne','Catherine','Colette','Denise','Emmeline','Hawis','Laure','Ombeline','Perronelle','Aélis','Aiglantine','Gilette','Ancelie','Nicolette','Ameline'],
+ roots:['Arc','Bec','Berg','Bour','Brun','Croix','Fleur','Four','Gris','Haut','Gaill','Lign','Mail','Neuf','Noir','Orm','Pin','Quer','Ray','Tour','Vign','Verd','Rond','Sec','Chat','Coq','Merl','Pomm','Sauv','Hess'],
+ occ:{smith:'Lefèvre',miller:'Meunier',baker:'Boulanger',tanner:'Tanneur',weaver:'Tisserand',dyer:'Teinturier',carpenter:'Charpentier',mason:'Maçon',fisher:'Pêcheur',shepherd:'Berger',cooper:'Tonnelier',thatcher:'Chaumier',potter:'Potier',brewer:'Brasseur',butcher:'Boucher',carter:'Charretier',reeve:'Prévôt',tailor:'Tailleur',cook:'Lecoq',hunter:'Chasseur',forester:'Forestier',wheelwright:'Charron',fletcher:'Fléchier',salter:'Saunier',merchant:'Marchand',miner:'Mineur',boatman:'Batelier',ploughman:'Laboureur',herdsman:'Vacher',bowyer:'Archer',glover:'Gantier',chandler:'Chandelier',shoemaker:'Cordonnier',roper:'Cordier',spicer:'Épicier'},
+ loc:{wood:['Dubois','Delbois','Dubosc'],brook:['Duruisseau','Ruisseau','Delrieu'],river:['Larivière','Delarivière','Rivière'],hill:['Dumont','Delmont','Ducoteau'],ford:['Dugué','Legué','Duguay'],bridge:['Dupont','Delpont','Pontier'],marsh:['Dumarais','Desmarais','Marais'],field:['Duchamp','Deschamps','Champagne'],green:['Dupré','Delaprée','Duprat'],well:['Dupuits','Dupuis','Delafontaine'],stone:['Delapierre','Dupierre','Lapierre'],heath:['Lalande','Delalande','Labruyère'],lane:['Duchemin','Delarue','Larue'],church:['Deléglise','Léglise','Dumoutier'],mill:['Dumoulin','Delmoulin','Moulin'],moor:['Delamare','Lamarre'],shore:['Durivage','Rivage','Delarive'],orchard:['Duverger','Delverger','Dupommier'],grove:['Dubocage','Bosquet','Delabosque']},
+ nick:{tall:'Lelong',short:'Lepetit',strong:'Lefort',bold:'Hardy',kind:'Lebon',wise:'Lesage',dark:'Lenoir',fair:'Leblond',red:'Leroux',brown:'Lebrun',young:'Lejeune',old:'Levieux',quick:'Levif',stout:'Legros'},
+ patr:f=>f,
+ origin:t=>/^Le /.test(t)?'du '+t.slice(3):/^La /.test(t)?'de la '+t.slice(3):/^Les /.test(t)?'des '+t.slice(4):/^[AEIOUÉÈÂÎÔHaeiouh]/.test(t)?"d'"+t:'de '+t
+},
+italian:{
+ m:['Alberto','Ambrogio','Andrea','Antonio','Arrigo','Azzo','Baldovino','Bartolomeo','Benedetto','Bonifacio','Bonaventura','Corrado','Dante','Domenico','Enrico','Enzo','Ezzelino','Federico','Fazio','Gherardo','Giacomo','Giovanni','Girolamo','Giuliano','Gualtiero','Guglielmo','Iacopo','Lamberto','Lando','Luca','Manfredi','Marco','Obizzo','Odoardo','Orlando','Pandolfo','Piero','Raimondo','Riccardo','Rinaldo','Roberto','Salimbene','Sandro','Simone','Taddeo','Tommaso','Ubaldo','Uberto','Vitale','Zanobi','Bonifazio','Buoso','Farinata','Guittone','Ildebrando','Bartolo','Cione','Ghino','Lapo','Federigo'],
+ f:['Agnese','Alda','Alessandra','Berta','Bice','Cecilia','Contessa','Diamante','Donella','Elena','Fiammetta','Filippa','Francesca','Gemma','Giulia','Ildegarda','Imelda','Jacopa','Lapa','Letizia','Lisa','Lombarda','Lucia','Margherita','Maria','Nicolosa','Piccarda','Pia','Sofia','Speranza','Tedora','Vanna','Zita','Agata','Albiera','Bartolomea','Ghisla','Gualdrada','Paola','Ricciarda','Selvaggia','Teodora','Tancia','Adelasia','Bonafede','Gherardesca'],
+ roots:['Cerro','Colle','Faggio','Gallo','Leone','Orso','Cervo','Falco','Lago','Mola','Noce','Olmo','Pino','Prato','Riva','Salto','Sasso','Vigna','Cedro','Fico','Gelso','Mela','Cane','Cala','Nero','Rosso'],
+ occ:{smith:'Ferrari',miller:'Molinari',baker:'Fornari',tanner:'Conciari',weaver:'Tessari',dyer:'Tintori',carpenter:'Falegnami',mason:'Muratori',fisher:'Pescatori',shepherd:'Pastore',cooper:'Botti',thatcher:'Pagliaro',potter:'Vasari',brewer:'Cervesari',butcher:'Beccari',carter:'Carrettieri',reeve:'Gastaldo',tailor:'Sarti',cook:'Cuoco',hunter:'Cacciatori',forester:'Boscaioli',wheelwright:'Carradori',fletcher:'Saettieri',salter:'Salinari',merchant:'Mercanti',miner:'Minatori',boatman:'Barcaioli',ploughman:'Aratori',herdsman:'Vaccari',bowyer:'Balestrieri',glover:'Guantai',chandler:'Candelari',shoemaker:'Calzolari',roper:'Cordari',spicer:'Speziali'},
+ loc:{wood:['Boschi','Del Bosco','Selvi'],brook:['Dal Rio','Rivi','Ruscelli'],river:['Fiumi','Dal Fiume','Del Fiume'],hill:['Colli','Del Colle','Dal Monte'],ford:['Guadi','Del Guado','Dal Guado'],bridge:['Ponti','Del Ponte','Dal Ponte'],marsh:['Paludi','Della Palude','Del Padule'],field:['Campi','Del Campo','Dal Campo'],green:['Prati','Del Prato','Dal Prato'],well:['Pozzi','Del Pozzo','Fontana'],stone:['Pietri','Della Pietra','Sasso'],heath:['Brughi','Delle Brughiere'],lane:['Vico','Del Vico','Della Strada'],church:['Chiesa','Della Chiesa','Pieve'],mill:['Molini','Del Molino','Dal Molin'],moor:['Lande','Della Landa'],shore:['Riva','Della Riva','Dalla Riva'],orchard:['Del Pomario','Pomari','Orti'],grove:['Boschetti','Del Boschetto','Della Selva']},
+ nick:{tall:'Longo',short:'Basso',strong:'Forte',bold:'Ardito',kind:'Buono',wise:'Savio',dark:'Moretti',fair:'Biondi',red:'Rossi',brown:'Bruno',young:'Giovine',old:'Vecchi',quick:'Veloce',stout:'Grasso'},
+ patr:f=>'di '+f,
+ origin:t=>/^(Il|Lo) /.test(t)?'dal '+t.slice(3):/^La /.test(t)?'dalla '+t.slice(3):'da '+t
+},
+norse:{
+ m:['Aki','Arne','Arnfinn','Asmund','Bard','Birger','Bjarni','Erling','Finn','Frode','Geir','Gorm','Gudmund','Guttorm','Hakon','Halfdan','Hauk','Helge','Hjalmar','Ingvar','Jon','Kolbein','Kol','Ljot','Njal','Odd','Orm','Ottar','Rolf','Rognvald','Skule','Snorre','Steinar','Styrbjorn','Svein','Thorkel','Thorfinn','Thorstein','Tore','Torgeir','Trygve','Vidar','Yngvar','Sigtrygg','Eyvind','Hrolf','Dag','Hallstein','Baard','Amund','Lodin','Vebjorn','Torbjorn','Ketil','Gisle','Gaute','Magnus','Thorir','Ulfar','Aslak'],
+ f:['Alfhild','Ase','Aslaug','Bergljot','Borghild','Brynhild','Dagny','Estrid','Gerd','Gro','Gunhild','Gyda','Hallgerd','Halldis','Herdis','Hild','Holmfrid','Inga','Jorunn','Katla','Liv','Margit','Ragna','Ragnfrid','Sigrun','Sunniva','Svanhild','Thorgerd','Thorunn','Thyra','Torhild','Turid','Unn','Vigdis','Yrsa','Aud','Arnora','Bodil','Frida','Gudny','Gudlaug','Ingunn','Ranveig','Groa','Thorbjorg','Thordis','Sigfrid','Eldrid'],
+ roots:['Alv','Arn','Fjell','Gaut','Hamar','Ing','Jarl','Kald','Kirk','Lang','Nor','Odd','Rand','Sand','Svart','Tun','Vest','Vig','Ål','Bakk','Nes','Ost','Hav','Dyr','Fur','Gard'],
+ occ:{smith:'Smed',miller:'Møller',baker:'Bager',tanner:'Garver',weaver:'Vever',dyer:'Farver',carpenter:'Timmermann',mason:'Murer',fisher:'Fisker',shepherd:'Gjeter',cooper:'Bødker',thatcher:'Tækker',potter:'Pottemaker',brewer:'Brygger',butcher:'Slagter',carter:'Kusk',reeve:'Foged',tailor:'Skrædder',cook:'Kokk',hunter:'Jeger',forester:'Skogmann',wheelwright:'Hjulmager',fletcher:'Pilmager',salter:'Saltmann',merchant:'Kjøpmann',miner:'Bergmann',boatman:'Båtmann',ploughman:'Plogmann',herdsman:'Hyrde',bowyer:'Buemager',glover:'Vantmaker',chandler:'Lysstøper',shoemaker:'Skomaker',roper:'Repslager',spicer:'Krydder'},
+ loc:{wood:['Skog','Skogen','Skogli'],brook:['Bekk','Bekke','Bæk'],river:['Elvestad','Åen','Elvik'],hill:['Berg','Haug','Bakke'],ford:['Vad','Vaden','Vadstein'],bridge:['Bro','Brovold','Broen'],marsh:['Myr','Myre','Myhre'],field:['Vang','Vangen','Aker'],green:['Grøn','Grønvold','Grønli'],well:['Kilde','Brønd','Kjelde'],stone:['Sten','Stein','Steen'],heath:['Hei','Heia','Lyng'],lane:['Gate','Stig','Sti'],church:['Kirke','Kirkebø','Kirkevold'],mill:['Mølle','Kvern','Kvernes'],moor:['Mo','Moen','Mosse'],shore:['Strand','Strandli','Vik'],orchard:['Frukthage','Hage','Hagen'],grove:['Lund','Lunde','Lundgren']},
+ nick:{tall:'Lang',short:'Lille',strong:'Sterk',bold:'Djerv',kind:'God',wise:'Vise',dark:'Svart',fair:'Hvit',red:'Rød',brown:'Brun',young:'Unge',old:'Gamle',quick:'Rask',stout:'Tykk'},
+ patr:f=>/s$/.test(f)?f+'son':f.replace(/ir$/,'i')+'sson',
+ origin:t=>t
+},
+slavic:{
+ m:['Bedřich','Bohumil','Bohuslav','Bratislav','Břetislav','Budivoj','Ctibor','Čeněk','Dalibor','Dětřich','Držislav','Hostivít','Hroznata','Jindřich','Jan','Jaroslav','Jaromil','Jiří','Kosmas','Kryštof','Lech','Lubomír','Mstislav','Mojmír','Ondřej','Pavel','Petr','Radim','Rastislav','Sambor','Sviatoslav','Spytihněv','Stanislav','Sudivoj','Tomáš','Vratislav','Vojtěch','Vok','Zbyhněv','Zdeslav','Zdeněk','Bogdan','Borivoj','Dobroslav','Władysław','Wojciech','Przemysł','Vseslav','Vsevolod','Mikuláš','Havel','Držek','Dobeš','Hynek','Ratibor','Sulislav','Jakub','Matěj','Michal','Martin','Šimon'],
+ f:['Adléta','Anastázie','Anna','Bohumila','Božena','Dagmar','Dobroslava','Eliška','Gertruda','Hedvika','Jarmila','Judita','Kateřina','Kunhuta','Markéta','Mlada','Olga','Přibyslava','Radmila','Sbyslava','Slavěna','Vlasta','Vojslava','Zbyslava','Bogumiła','Dąbrówka','Grzymisława','Salomea','Rycheza','Wanda','Wisława','Czcirada','Mstislava','Domaslava','Zuzana','Dorota','Hana','Blanka','Kristina','Eufemie','Milena','Ratibora','Věra','Vyšeslava','Ostroslava','Štěpánka'],
+ roots:['Bud','Chlum','Dub','Hlin','Hol','Kost','Krum','Lom','Mal','Mor','Ostr','Ptak','Rož','Sedl','Sok','Tach','Těš','Tur','Vod','Zel','Žel','Jablon','Sad','Kun','Jas','Boh','Stod','Tvrd','Lut','Vrb'],
+ occ:{smith:'Kovář',miller:'Mlynář',baker:'Pekař',tanner:'Koželuh',weaver:'Tkadlec',dyer:'Barvíř',carpenter:'Tesař',mason:'Zedník',fisher:'Rybář',shepherd:'Ovčák',cooper:'Bednář',thatcher:'Došek',potter:'Hrnčíř',brewer:'Sládek',butcher:'Řezník',carter:'Formán',reeve:'Rychtář',tailor:'Krejčí',cook:'Kuchař',hunter:'Lovec',forester:'Hajný',wheelwright:'Kolář',fletcher:'Šípař',salter:'Solař',merchant:'Kupec',miner:'Horník',boatman:'Lodník',ploughman:'Oráč',herdsman:'Pastucha',bowyer:'Lukař',glover:'Rukavičkář',chandler:'Svíčkař',shoemaker:'Švec',roper:'Provazník',spicer:'Kořenář'},
+ loc:{wood:['Lesák','Lesný','Podlesný'],brook:['Potůček','Potocký','Potok'],river:['Podříčný','Říčan','Zařecký'],hill:['Kopec','Kopecký','Vrchovský'],ford:['Brodský','Brodecký'],bridge:['Mostecký','Mostník'],marsh:['Blatný','Blatecký','Močál'],field:['Polák','Polný','Polan'],green:['Louček','Luční','Louka'],well:['Studnička','Studnič'],stone:['Kamenský','Kamínek','Skalický'],heath:['Vřesovský','Vřesák'],lane:['Uličný','Cestný'],church:['Kostelecký','Kostelník'],mill:['Mlýnek','Mlýnský'],moor:['Mokřanský','Močálek'],shore:['Břeh','Břežan'],orchard:['Sadílek','Sadovský','Sadský'],grove:['Hájek','Hájský','Hájecký']},
+ nick:{tall:'Dlouhý',short:'Krátký',strong:'Silný',bold:'Smělý',kind:'Dobrý',wise:'Moudrý',dark:'Černý',fair:'Bílý',red:'Rudý',brown:'Hnědý',young:'Mladý',old:'Starý',quick:'Rychlý',stout:'Tlustý'},
+ patr:f=>f.replace(/[aeiouyáéíóúůěý]$/i,'')+'ovič',
+ origin:t=>{const w=t.split(/[ -]/).pop().replace(/[aeiouyáéíóúůěý]$/i,'');return w+(/c$/.test(w)?'ký':'ský');}
+},
+celtic:{
+ m:['Bleddyn','Bran','Cadell','Cadfael','Cadfan','Cadwaladr','Cai','Cynfyn','Cynddelw','Deiniol','Dyfnwal','Einion','Elidir','Emrys','Gwilym','Gwion','Gwyn','Idwal','Ieuan','Ithel','Iestyn','Maredudd','Meilyr','Morgan','Morien','Nudd','Padrig','Rhydderch','Rhodri','Rhun','Tudur','Trahaearn','Urien','Ynyr','Cynwrig','Gwrgan','Selyf','Tewdwr','Bledri','Cradoc','Cadoc','Gronw','Ednyfed','Tristan','Jowan','Kenan','Petroc','Mawgan','Conan','Alan','Brychan','Riwal','Mael','Cathal','Diarmait','Donnchad','Muirchertach','Niall','Oengus','Ruaidri','Tadg','Tigernan','Cormac'],
+ f:['Adwen','Alys','Annest','Arianwen','Catrin','Cristin','Dyddgu','Efa','Eleri','Elen','Enid','Gwenhwyfar','Gwladus','Gwenfrewi','Lowri','Margred','Mabli','Marared','Nesta','Olwen','Tegwen','Tudful','Wenllian','Jowanet','Loveday','Tamsin','Aoife','Bebinn','Brigit','Cacht','Duibhessa','Etain','Finnguala','Mor','Sadb','Angharad','Gwerful','Gwenllian','Ffion','Lleucu','Generys','Cain','Creirwy','Tangwen','Gwawr'],
+ roots:['Bedw','Bran','Cefn','Crug','Elan','Fron','Gelli','Glyn','Gwern','Hafod','Hen','Llys','Melin','Nant','Onnen','Pwll','Rhiw','Tal','Ynys','Wen','Cadair','Eithin','Helyg','Gwenith','Tywyn','Cyll','Ffynnon','Ewyn'],
+ occ:{smith:'Gof',miller:'Melinydd',baker:'Pobydd',tanner:'Barcer',weaver:'Gwehydd',dyer:'Lliwydd',carpenter:'Saer',mason:'Maen',fisher:'Pysgotwr',shepherd:'Bugail',cooper:'Cwper',thatcher:'Toeydd',potter:'Crochenydd',brewer:'Bragwr',butcher:'Cigydd',carter:'Cartiwr',reeve:'Rhaglaw',tailor:'Teilwr',cook:'Cog',hunter:'Heliwr',forester:'Coedwr',wheelwright:'Olwyn',fletcher:'Saethydd',salter:'Halenwr',merchant:'Marsiandwr',miner:'Mwynwr',boatman:'Cychwr',ploughman:'Arddwr',herdsman:'Bugeilydd',bowyer:'Bwaydd',glover:'Menigydd',chandler:'Canwyllydd',shoemaker:'Crydd',roper:'Rhaffwr',spicer:'Sbeiswr'},
+ loc:{wood:['Coed','Coedwig','Ycoed'],brook:['Nant','Ynant','Ffrwd'],river:['Afon','Yrafon'],hill:['Bryn','Ybryn','Allt'],ford:['Rhyd','Yrhyd'],bridge:['Pont','Ypont'],marsh:['Cors','Ycors','Gors'],field:['Maes','Ymaes','Cae'],green:['Gwyrdd','Lawnt'],well:['Ffynnon','Yffynnon'],stone:['Maen','Ymaen','Carreg'],heath:['Rhos','Yrhos','Grug'],lane:['Heol','Lôn'],church:['Llan','Eglwys'],mill:['Melin','Ymelin'],moor:['Waun','Gwaun','Mynydd'],shore:['Traeth','Ytraeth','Glan'],orchard:['Perllan','Berllan'],grove:['Llwyn','Gelli']},
+ nick:{tall:'Hir',short:'Byr',strong:'Cryf',bold:'Dewr',kind:'Da',wise:'Doeth',dark:'Du',fair:'Gwyn',red:'Coch',brown:'Llwyd',young:'Ifanc',old:'Hen',quick:'Chwim',stout:'Tew'},
+ patr:f=>(/^(Brian|Conall|Fergus|Domnall|Aed|Cathal|Diarmait|Donnchad|Muirchertach|Niall|Oengus|Ruaidri|Tadg|Tigernan|Cormac)$/.test(f)?'Mac ':'ap ')+f,
+ origin:t=>t
+},
+iberian:{
+ m:['Alvar','Aparicio','Arias','Bernardo','Bartolomé','Beltrán','Bernal','Blasco','Cristóbal','Domingo','Enrique','Eneko','Fortún','Froilán','Fruela','Gil','Gómez','Gutierre','Hernando','Jimeno','Juan','Julián','Lope','Lorenzo','Manrique','Martín','Mateo','Menendo','Millán','Muño','Nuño','Oliveros','Pelayo','Ponce','Ramón','Raimundo','Suero','Tello','Vela','Velasco','Vicente','Berenguer','Guillén','Ximeno','Antolín','Benito','Bernabé','Cebrián','Ferrán','Illán','Marcos','Nicolás','Rui','Salvador','Tomé','Yusuf','Sebastián','Egas','Payo','Vasco'],
+ f:['Aldonza','Aldara','Blanca','Beatriz','Catalina','Clara','Dulce','Estefanía','Endregoto','Flora','Gontrodo','Guiomar','Isabel','Juana','Lambra','Lucía','Marina','María','Mencía','Menga','Milia','Munia','Nuña','Oria','Pascuala','Sol','Sunilda','Velasquita','Xemena','Ximena','Argenta','Gracia','Orabuena','Marquesa','Sibila','Aurembiaix','Godo','Jimena','Maria','Ermesenda','Leonor','Petronila','Aldonça','Mafalda','Sancha'],
+ roots:['Alto','Bravo','Cabra','Cuervo','Fuente','Gallo','Hoyo','Lara','Nuevo','Oso','Pino','Plata','Rey','Robles','Sierra','Trigo','Vega','Vid','Zorro','Sal','Peral','Nogal','Cedro','Cano','Miel','Pardo','Hayas','Fresno'],
+ occ:{smith:'Herrero',miller:'Molinero',baker:'Panadero',tanner:'Curtidor',weaver:'Tejedor',dyer:'Tintorero',carpenter:'Carpintero',mason:'Cantero',fisher:'Pescador',shepherd:'Pastor',cooper:'Cubero',thatcher:'Techero',potter:'Alfarero',brewer:'Cervecero',butcher:'Carnicero',carter:'Carretero',reeve:'Merino',tailor:'Sastre',cook:'Cocinero',hunter:'Cazador',forester:'Montero',wheelwright:'Carrero',fletcher:'Flechero',salter:'Salinero',merchant:'Mercader',miner:'Minero',boatman:'Barquero',ploughman:'Labrador',herdsman:'Vaquero',bowyer:'Ballestero',glover:'Guantero',chandler:'Candelero',shoemaker:'Zapatero',roper:'Cordelero',spicer:'Especiero'},
+ loc:{wood:['Del Bosque','Montes','Bosque'],brook:['Arroyo','Del Arroyo','Arroyos'],river:['Del Río','Ríos','Ribas'],hill:['Cerro','Del Cerro','Otero','Collado'],ford:['Vado','Del Vado','Vadillo'],bridge:['Puente','Del Puente','Puentes'],marsh:['Marismas','Laguna','Del Pantano'],field:['Campos','Del Campo','Llano'],green:['Prados','Del Prado','Pradilla'],well:['Pozo','Del Pozo','Fuentes'],stone:['Piedra','Peña','Peñalver'],heath:['Brezo','Landa','Del Páramo'],lane:['Calleja','De la Calle','Cañada'],church:['Iglesias','De la Iglesia','Ermita'],mill:['Molina','Del Molino','Molinos'],moor:['Páramo','Del Páramo','Paramos'],shore:['Ribera','Costa','De la Playa'],orchard:['Huerta','De la Huerta','Huertas'],grove:['Soto','Sotelo','Del Soto']},
+ nick:{tall:'Alto',short:'Bajo',strong:'Fuerte',bold:'Osado',kind:'Bueno',wise:'Sabio',dark:'Moreno',fair:'Rubio',red:'Bermejo',brown:'Pardo',young:'Mozo',old:'Viejo',quick:'Ligero',stout:'Gordo'},
+ patr:f=>{const T={Rodrigo:'Rodríguez',Fernando:'Fernández',Hernando:'Hernández',Ferrán:'Fernández',Martín:'Martínez',Sancho:'Sánchez',Gonzalo:'González',Álvaro:'Álvarez',Alvar:'Álvarez',Pedro:'Pérez',Diego:'Díaz',Ramiro:'Ramírez',Domingo:'Domínguez',Jimeno:'Giménez',Ximeno:'Jiménez',Enrique:'Enríquez',Lope:'López',Muño:'Muñoz',Nuño:'Núñez',Ordoño:'Ordóñez',Bermudo:'Bermúdez',Íñigo:'Íñiguez',Velasco:'Velázquez',Vela:'Velázquez',Suero:'Suárez',Menendo:'Menéndez',Gutierre:'Gutiérrez',Benito:'Benítez',Pelayo:'Peláez',Gómez:'Gómez',García:'García',Juan:'Yáñez',Alfonso:'Alfonsez',Antolín:'Antolínez',Blasco:'Blázquez',Tello:'Téllez',Vasco:'Vázquez',Illán:'Illánez',Egas:'Égez',Payo:'Páez',Lorenzo:'Lorenzo',Mateo:'Mateos',Marcos:'Marcos',Vicente:'Vicente',Tomé:'Tomás'};return T[f]||f.replace(/[aeiouáéíóú]$/i,'')+'ez';},
+ origin:t=>/^El /.test(t)?'del '+t.slice(3):/^La /.test(t)?'de la '+t.slice(3):/^Los /.test(t)?'de los '+t.slice(4):'de '+t
+}
+};
+for(const c in NAMEX)if(CULT[c])CULT[c].roots=[...new Set([...CULT[c].roots,...NAMEX[c].roots])];
 function r1(r,a){return a[Math.floor(r()*a.length)%a.length];}
 function nameRng(k){let a=(SEED^0x4E414D45^Math.imul(k|0,0x9E3779B1))>>>0,b=(a*31+0x51A7)>>>0,c=0x243F6A88^(k*7),d=(SEED+k*13)>>>0;const f=sfc32(a,b,c,d);for(let i=0;i<12;i++)f();return f;}
 function cultOf(x){return CULT[(x&&x.cult)||(W&&W.crownCult)||'anglo'];}
+const houseKey=n=>n.replace(/^House /,'').replace(/^(de |von |di |da |della |del )/,'').replace(/ (the Younger|of the March|Minor|the Cadet)$/,'').toLowerCase();
+function uniqueHouseName(C,seatName,r,skip){ // no two houses of the realm, living or ended, go by the same name
+  const taken=new Set(W.houses.filter(o=>o!==skip&&o.name).map(o=>houseKey(o.name)));
+  for(let t=0;t<10;t++){const n=C.house(t<4?seatName:fillName(r1(r,C.site.castle||C.site.farm),r1(r,C.roots)),r,C,r1(r,C.roots));if(!taken.has(houseKey(n)))return n;}
+  return 'House '+fillName(r1(r,C.site.farm),r1(r,C.roots));}
 function fillName(pat,root){ // '*' takes the root: joined to a letter it runs on in lower case (Montfleury), after a space or hyphen it keeps its capital
   const i=pat.indexOf('*');if(i<0)return pat;
-  const pre=pat.slice(0,i),joined=/[A-Za-zÀ-ÿ]$/.test(pre),rt=joined?root.toLowerCase():root[0].toUpperCase()+root.slice(1);
+  const pre=pat.slice(0,i),joined=/[A-Za-zÀ-ÿ]$/.test(pre);let rt=joined?root.toLowerCase():root[0].toUpperCase()+root.slice(1);
+  if(/^[aeiouy]/i.test(pat.slice(i+1))&&/[eé]$/.test(rt)&&rt.length>3)rt=rt.slice(0,-1); // Saule+onne → Saulonne, not Sauleonne
   const out=pre+rt+pat.slice(i+1);return out[0].toUpperCase()+out.slice(1);
 }
 function siteKeys(s,f){ // why the place is where it is, most telling first
@@ -524,12 +615,17 @@ function siteKeys(s,f){ // why the place is where it is, most telling first
 }
 function culturedName(cultId,keys,r,mother){ // the first telling feature usually wins; unique in the realm
   const C=CULT[cultId]||CULT.anglo,used=W.usedNames||(W.usedNames=new Set());
+  const RU=W.rootUse||(W.rootUse={});let best=null,bs=1e9,bRoot=null,bPat=null;
   for(let t=0;t<40;t++){
-    let n;
+    let n,root=null,pat=null;
     if(mother&&t<6&&r()<0.5)n=fillName(r1(r,C.neu),mother); // a daughter village takes its mother's name
-    else{const key=keys[Math.min(keys.length-1,Math.floor(Math.pow(r(),2.2)*keys.length))],pats=C.site[key]||C.site.farm;n=fillName(r1(r,pats),r1(r,C.roots));}
-    if(!used.has(n)){used.add(n);return n;}
+    else{const ki=Math.min(keys.length-1,Math.floor(Math.pow(r(),2.2)*keys.length)),key=keys[ki],pats=C.site[key]||C.site.farm;pat=r1(r,pats);root=r1(r,C.roots);n=fillName(pat,root);}
+    if(used.has(n))continue;
+    const sc=root?(RU[root]||0)*3+(RU['*'+pat]||0)*0.6+r()*0.5:-1; // a root or ending already worn in the realm is passed over: fewer Walcastles beside Walbury and Walchester
+    if(sc<bs){bs=sc;best=n;bRoot=root;bPat=pat;}
+    if(t>=7&&best)break;
   }
+  if(best){used.add(best);if(bRoot){RU[bRoot]=(RU[bRoot]||0)+1;RU['*'+bPat]=(RU['*'+bPat]||0)+1;}return best;}
   return fillName(r1(r,C.site.farm),r1(r,C.roots))+' '+(used.size);
 }
 function siteFeatures(x,z){ // the ground about a place, as the founders saw it
@@ -2100,10 +2196,268 @@ function mkNotable(o){
   const n=Object.assign({id:NID++,alive:true,spouse:null,heirs:[],grudges:[],epithet:'',
     traits:[],agenda:'bides their time',role:'courtier',house:0,dead:false},o);
   if(n.birthDay===undefined)n.birthDay=(W&&W.clock?W.clock.day:0)-(n.age||0)*360-(n.id*97)%360;
+  const ma=n.ma,pa=n.pa;delete n.ma;delete n.pa;
+  if(!n.g)endow(n,ma,pa); // blood from the parents (or a stranger's), and the teaching of a lord's household
+  if(!n.traits.length)n.traits=deriveTraits(n);else n.fixedTraits=true;
+  nameUse(n.name.split(' ')[0],1);
   W.notables.push(n);return n;
 }
 const TRAITS=['bold','craven','just','cruel','shrewd','dull','pious','cynical','fertile','sickly','comely','stern','generous','grasping','patient','wrathful'];
 function twoTraits(){const a=pick('gen',TRAITS);let b=pick('gen',TRAITS);let g=0;while(b===a&&g++<9)b=pick('gen',TRAITS);return[a,b];}
+/* ---------------- the folk: every soul in the realm, what each was born with and what each was taught.
+   Born with (heritability after twin and adoption studies): wits ~0.5, vigour ~0.4, stature ~0.8, boldness, warmth and
+   diligence (temperament) ~0.4-0.45, fertility ~0.25. A child's genotype is its parents' mean plus segregation noise; what
+   shows blends genotype with the child's own fortune, and stature and vigour with how well it was fed.
+   Taught: letters, reckoning, scripture, law, arms, riding, courtesy, a craft, husbandry. Rank, place, trade and age give
+   the chance to learn; wits and diligence the speed. The great houses are fed, tutored, fostered and squired. */
+const GENES=['wits','vigour','stature','boldness','warmth','diligence','fertility','looks'],GH2=[0.5,0.4,0.8,0.45,0.4,0.45,0.25,0.55];
+const GW=0,GV=1,GS=2,GB=3,GWa=4,GD=5,GF=6,GL=7;
+const SKILLS=['letters','reckoning','scripture','law','arms','riding','courtesy','craft','husbandry'];
+const KL=0,KR=1,KS=2,KLaw=3,KA=4,KRi=5,KC=6,KCr=7,KH=8;
+const HAIR=['dark','brown','fair','red'];
+const frand=()=>rand('folk');
+function fgauss(){let u=0;while(u===0)u=frand();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*frand());}
+function genome(ma,pa){const N=GENES.length,g=new Float32Array(N),e=new Float32Array(N);
+  for(let k=0;k<N;k++){g[k]=ma&&pa?(ma[k]+pa[k])/2+fgauss()*Math.SQRT1_2:fgauss();e[k]=fgauss();}return {g,e};}
+function hairDraw(c){const w={norse:[1,3,5,1],celtic:[2,3,2,2],anglo:[2,4,3,1],german:[2,4,3,1],slavic:[3,4,2,1],french:[3,4,2,1],italian:[6,3,1,0.4],iberian:[6,3,1,0.4]}[c]||[3,4,2,1];
+  let t=w.reduce((a,b)=>a+b,0)*frand();for(let i=0;i<4;i++){t-=w[i];if(t<=0)return i;}return 1;}
+function ageYrs(p){return (day()-(p.b!=null?p.b:p.birthDay))/360;}
+function trait(p,k){ // what shows: genotype and fortune weighed by heritability, plus a rich or a hungry childhood; age saps vigour
+  if(!p.g)return 0;
+  let v=Math.sqrt(GH2[k])*p.g[k]+Math.sqrt(1-GH2[k])*p.e[k];
+  if(k===GS||k===GV)v+=p.fed||0;
+  if(k===GV){const a=ageYrs(p);if(a>40)v-=(a-40)*0.035;}
+  return v;}
+/* names: many draws, the least worn wins, so a realm does not call half its sons alike */
+const NX=c=>(typeof NAMEX!=='undefined'&&NAMEX[c])||null;
+const NPOOL={};
+function namePool(c,sex){const k=c+sex;if(!NPOOL[k]){const C=CULT[c]||CULT.anglo,X=NX(c);NPOOL[k]=[...new Set([...(sex==='f'?C.f:C.m),...(X?(sex==='f'?X.f:X.m):[])])];}return NPOOL[k];}
+function givenPick(c,sex,avoid,rng){
+  const P=namePool(c||'anglo',sex),U=W.nameUse||(W.nameUse={});rng=rng||frand;let best=P[0],bs=1e18;
+  for(let t=0;t<6;t++){const n=P[Math.floor(rng()*P.length)],sc=(U[n]||0)+(avoid&&avoid.includes(n)?1e6:0)+rng()*0.9;if(sc<bs){bs=sc;best=n;}}
+  return best;}
+function nameUse(n,d){const U=W.nameUse||(W.nameUse={});U[n]=Math.max(0,(U[n]||0)+d);}
+/* family names: taken once, from what the founder did, where he dwelt, what he looked like or whose son he was; then kept */
+const ARCH_TRADE={smithy:['smith'],mill:['miller'],windmill:['miller'],bakery:['baker'],tannery:['tanner','glover'],dyer:['dyer','weaver'],tavern:['brewer'],inn:['brewer','cook'],
+  shop:['merchant','chandler','tailor','spicer','shoemaker'],burgher:['merchant','tailor','weaver','shoemaker','glover'],warehouse:['merchant'],granary:['reeve'],guildhall:['merchant'],toll:['reeve']};
+const TILLERS=new Set(['ploughman','herdsman','shepherd']),BOOKISH=new Set(['merchant','spicer','reeve','salter','miller']),LETTERED=new Set(['merchant','spicer','reeve']);
+function tradesOf(s){
+  if(s._trades&&s._tradeT>day())return s._trades;const t=[];
+  for(const b of s.buildings||[])if(b.state!=='ruin'){const x=ARCH_TRADE[b.arch];if(x)t.push(...x);}
+  const role={fishing:['fisher','boatman'],port:['boatman','roper','fisher'],timber:['forester','carpenter'],mining:['miner','smith'],crossing:['carter','boatman']}[s.role];if(role)t.push(...role,...role);
+  t.push(...(s.kind==='village'?['ploughman','ploughman','ploughman','ploughman','ploughman','herdsman','shepherd','thatcher','carpenter']
+    :['carpenter','mason','cooper','potter','weaver','butcher','carter','thatcher','roper','bowyer','fletcher','salter','wheelwright','hunter','cook','ploughman','ploughman','herdsman']));
+  s._trades=t;s._tradeT=day()+360;return t;}
+function locFeature(s){ // the lie of the land the family's first house stood in
+  if(!s._locF){const m={ford:'ford',bridge:'bridge',harbor:'shore',mouth:'shore',fish:'shore',wood:'wood',clearing:'grove',hill:'hill',castle:'hill',marsh:'marsh',mine:'stone',valley:'stone',river:'brook',dam:'mill',field:'field',farm:'field'};
+    let k=[];try{k=siteKeys(s,siteFeatures(s.pos.x,s.pos.z)).map(x=>m[x]).filter(Boolean);}catch(e){}
+    s._locF=[...k,...k,'field','green','lane','well','heath','church','mill','orchard','moor','brook','wood','hill'];}
+  return s._locF[Math.floor(frand()*s._locF.length)];}
+function nickOf(p){ // the founder's looks and manner, as his neighbours saw them
+  const c=[[trait(p,GS),'tall'],[-trait(p,GS),'short'],[trait(p,GV)-0.2,'strong'],[trait(p,GB)-0.2,'bold'],[trait(p,GWa)-0.2,'kind'],[trait(p,GW)-0.3,'wise']].sort((a,b)=>b[0]-a[0]);
+  if(c[0][0]>1.1&&frand()<0.7)return c[0][1];
+  const r=frand();return r<0.7?HAIR[p.hair||0]:r<0.8?'young':r<0.88?'quick':r<0.95?'stout':'old';}
+function surnameFor(kind,c,x){
+  const X=NX(c)||NX('anglo');
+  if(!X)return {occ:x&&x[0].toUpperCase()+x.slice(1),loc:'Atte '+x,nick:x,patr:x+'son'}[kind]||'Newman';
+  if(kind==='occ')return X.occ[x]||X.occ.ploughman;
+  if(kind==='loc'){const L=X.loc[x]||X.loc.field;return L[Math.floor(frand()*L.length)];}
+  if(kind==='nick')return X.nick[x]||X.nick.young;
+  if(kind==='patr')return X.patr(x);
+  return X.origin(x);}
+function newFamily(s,si,founder){
+  const c=s.cult||W.crownCult,town=s.kind!=='village',tr=founder.tr,r=frand();
+  const k=r<(town?0.42:0.18)&&tr&&!TILLERS.has(tr)||r<0.08?'occ':r<(town?0.62:0.5)?'loc':r<0.86?'nick':'patr';
+  const n=k==='occ'?surnameFor('occ',c,tr||'ploughman'):k==='loc'?surnameFor('loc',c,locFeature(s)):k==='nick'?surnameFor('nick',c,nickOf(founder)):surnameFor('patr',c,givenPick(c,'m',null));
+  W.fams.push({n,c,k,tr,home:si,b:day()});return W.fams.length-1;}
+const famName=p=>p&&p.fam>=0&&W.fams[p.fam]?W.fams[p.fam].n:'';
+const folkName=p=>p.gn+(famName(p)?' '+famName(p):'');
+/* one soul */
+let PID=1;
+function mkPerson(s,si,o){
+  const p={id:PID++,sx:o.sx||(frand()<0.5?'m':'f'),b:o.b!=null?o.b:day(),si,fam:o.fam!=null?o.fam:-1,sk:new Float32Array(9),sp:null,tr:o.tr||null,fed:o.fed||0,lb:-9999,kn:null};
+  const G=genome(o.ma&&o.ma.g,o.pa&&o.pa.g);p.g=G.g;p.e=G.e;
+  p.hair=o.ma&&o.pa?(frand()<0.45?o.ma.hair:frand()<0.8?o.pa.hair:hairDraw(s.cult)):hairDraw(s.cult);
+  p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
+  (s.folk||(s.folk=[])).push(p);return p;}
+function dropPerson(p){p.dead=true;nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
+function removeAt(s,i){const a=s.folk,p=a[i];a[i]=a[a.length-1];a.pop();return p;}
+function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
+/* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
+function eduPlace(s){
+  if(s._edu&&s._eduY===year())return s._edu;
+  let church=false,cath=false;for(const b of s.buildings||[])if(b.arch==='temple'&&b.state!=='ruin'){church=true;if(b.cathedral)cath=true;}
+  const town=s.kind!=='village',ad=AD();
+  s._edu={church,cath:cath||s.kind==='capital',town,school:town&&ad>=1150,grammar:town&&ad>=1250&&s.pop>900};s._eduY=year();return s._edu;}
+function educate(p,a,s,noble){
+  if(a<5)return;
+  const pl=a<21?1:a<35?0.55:0.25,w=trait(p,GW),dl=trait(p,GD),book=Math.exp(0.35*w+0.25*dl)*pl,hand=Math.exp(0.12*w+0.3*dl)*pl,
+    body=hand*Math.exp(0.2*trait(p,GV)+0.12*trait(p,GB)),m=p.sx!=='f'&&p.sex!=='f',sk=p.sk,ad=AD(),L=(k,o,apt)=>{if(o>0)sk[k]+=Math.min(0.5,o*apt)*(1-sk[k]);};
+  if(noble){const r=p.role||'',rule=r==='head'||r==='monarch'||r==='heir'||r==='spouse'||r==='consort';
+    L(KL,(a<18?0.12:0.03)+(ad>=1100?0.06:0)+(r==='High Priest'||r==='Prophet'?0.2:0),book);
+    L(KR,0.04+(rule&&a>=20?0.05:0)+(r==='Master of Coin'?0.25:0),book);
+    L(KS,0.04+(r==='High Priest'||r==='Prophet'?0.3:0),book);
+    L(KLaw,0.015+(ad>=1150&&rule?0.05:0),book);
+    L(KA,m?(a>=8&&a<30?0.2:0.03):0.015,body);
+    L(KRi,a<30?(m?0.2:0.12):0.02,body);
+    L(KC,a>=7&&a<22?0.18:0.04,book);
+    L(KH,rule&&a>=18?0.06:0.01,hand);
+    if(r==='Master Smith')L(KCr,0.25,hand);
+    return;}
+  const e=eduPlace(s),tr=p.tr||'ploughman',till=TILLERS.has(tr),bk=BOOKISH.has(tr),kid=a<16,f=m?1:0.5;
+  L(KL,(kid?0.001+(e.church?0.002:0)+(e.school?0.006:0)+(e.grammar?0.012:0)+(e.cath?0.006:0):0)*f+(LETTERED.has(tr)?0.03:0),book); // few peasants read; the merchant's son is taught
+  L(KR,0.002+(e.town?0.004:0)+(bk?0.07:0),book);
+  L(KS,(e.church?0.002:0)+(e.cath?0.006:0),book);
+  L(KLaw,tr==='reeve'?0.05:tr==='merchant'?0.01:0.001,book);
+  L(KA,m&&a>=14&&a<45?0.03+(s.siegeBy?0.08:0)+(tr==='bowyer'||tr==='fletcher'||tr==='hunter'?0.05:0):0,body);
+  L(KRi,tr==='carter'||tr==='herdsman'?0.05:0.004,body);
+  L(KC,0.003+(bk?0.02:0),book);
+  L(KCr,till?0.005:a>=10&&a<25?0.18:0.05,hand);
+  L(KH,till||!e.town?(a>=8?(a<25?0.15:0.05):0):0.01,hand);}
+/* the rank-and-file notables share the folk's make-up */
+function endow(n,ma,pa){ // a notable's nature and nurture: parents' blood, a lord's table, a lord's tutors
+  const G=genome(ma&&ma.g,pa&&pa.g);n.g=G.g;n.e=G.e;n.fed=0.3;n.sk=new Float32Array(9);
+  n.hair=ma&&pa&&ma.hair!=null?(frand()<0.45?ma.hair:frand()<0.8?pa.hair:hairDraw(houseCultOf(n))):hairDraw(houseCultOf(n));
+  for(let y=5;y<=(n.age||0);y++){const b0=n.birthDay;n.birthDay=day()-(n.age-y)*360-1;educate(n,y,null,true);n.birthDay=b0;}}
+function houseCultOf(n){const h=W.houses&&W.houses[n.house];return (h&&h.cult)||W.crownCult||'anglo';}
+function deriveTraits(n){ // the old two-word character, now read off the person
+  const t=k=>trait(n,k),s=n.sk||new Float32Array(9),sc={bold:t(GB),craven:-t(GB),just:0.5*t(GWa)+0.5*t(GD)+s[KLaw],cruel:-1.1*t(GWa)-0.2*t(GD),
+    shrewd:t(GW)+0.6*s[KR],dull:-t(GW),pious:2.2*s[KS]-0.4+0.3*t(GWa),cynical:0.6*t(GW)-2*s[KS]+0.2,fertile:t(GF),sickly:-t(GV),
+    comely:t(GL)+0.25*t(GV),stern:0.7*t(GD)-0.7*t(GWa),generous:t(GWa),grasping:-0.8*t(GWa)+0.3*t(GD),
+    patient:t(GD)-0.5*t(GB),wrathful:0.5*t(GB)-0.6*t(GWa)-0.5*t(GD)};
+  const opp={bold:'craven',craven:'bold',just:'cruel',cruel:'just',shrewd:'dull',dull:'shrewd',pious:'cynical',cynical:'pious',generous:'grasping',grasping:'generous',patient:'wrathful',wrathful:'patient'};
+  const out=[];for(const [k] of Object.entries(sc).sort((a,b)=>b[1]-a[1])){if(out.length>=2)break;if(out.some(o=>opp[o]===k))continue;out.push(k);}
+  return out;}
+function generalship(n){ // arms, riding, nerve and wits in the saddle: 0.85–1.3
+  if(!n)return 1;if(!n.g)return n.traits&&n.traits.includes('bold')?1.18:1;
+  return clamp(1+0.14*n.sk[KA]+0.05*n.sk[KRi]+0.05*clamp(trait(n,GB),-2,2)+0.04*clamp(trait(n,GW),-2,2),0.85,1.3);}
+function stewardship(n){return n&&n.sk?clamp(0.94+0.08*(n.sk[KR]+n.sk[KH])+0.02*clamp(trait(n,GD),-2,2),0.9,1.12):1;}
+/* the settlement's people follow its numbers: the dead are the frail, the leavers the young, the newborn fill the gaps */
+function seedHousehold(s,si,young){ // a family arriving, or already there when the annals open
+  const c=s.cult||W.crownCult,tr=tradesOf(s)[Math.floor(frand()*tradesOf(s).length)],fa=18+frand()*(young?12:28);
+  const hu=mkPerson(s,si,{sx:'m',b:day()-fa*360,tr});hu.fam=newFamily(s,si,hu);
+  const wi=mkPerson(s,si,{sx:'f',b:day()-(fa-2+(frand()-0.5)*8)*360,tr});
+  {const o=s.folk.length>6&&frand()<0.5?s.folk[Math.floor(frand()*(s.folk.length-2))]:null;wi.fam=o&&o.fam>=0?o.fam:newFamily(s,si,wi);} // a wife from a family already in the place, or new to it
+  hu.sp=wi;wi.sp=hu;const out=[hu,wi];
+  const wa=ageYrs(wi),kids=Math.floor(frand()*Math.min(5,Math.max(0,wa-17)/3));
+  for(let k=0;k<kids;k++){const ka=Math.max(0,(wa-17)*frand());const ch=mkPerson(s,si,{b:day()-ka*360,ma:wi,pa:hu,fam:hu.fam,tr,avoid:out.map(x=>x.gn)});out.push(ch);}
+  if(!young&&frand()<0.2){const el=mkPerson(s,si,{sx:frand()<0.6?'f':'m',b:day()-(fa+20+frand()*12)*360,fam:hu.fam,tr});out.push(el);}
+  for(const p of out){const a=ageYrs(p);for(let y=5;y<=Math.min(a,40);y++)educate(p,y,s,false);}
+  return out;}
+function seedFolk(){
+  W.fams=W.fams||[];W.levies=W.levies||[];
+  W.settlements.forEach((s,si)=>{s.folk=s.folk||[];const n=Math.round(s.pop);while(s.folk.length<n)seedHousehold(s,si,false);});}
+function pickK(arr,k,w){ // k without replacement, weighted (exponential keys)
+  if(k<=0)return [];const keyed=arr.map((p,i)=>[Math.log(frand()||1e-9)/Math.max(1e-6,w(p)),i]);keyed.sort((a,b)=>b[0]-a[0]);
+  return keyed.slice(0,Math.min(k,arr.length)).map(x=>arr[x[1]]);}
+/* attraction: what draws one adult to another (after mate-preference studies): looks and youth, warmth, wits like one's own;
+   to a woman also a man's height, standing and nerve; and a spark between the two that no one can account for */
+function looksOf(p){const a=ageYrs(p);return trait(p,GL)+0.3*trait(p,GV)-(p.sx==='f'||p.sex==='f'?Math.max(0,a-24)*0.06:Math.max(0,a-35)*0.03);}
+function standing(p){return p.role?2:(BOOKISH.has(p.tr)?0.8:TILLERS.has(p.tr)?0:0.4)+0.4*(p.sk?p.sk[KCr]+p.sk[KR]:0);}
+function spark(a,b){const x=Math.min(a.id,b.id),y=Math.max(a.id,b.id);let h=Math.imul(x,0x9E3779B1)^Math.imul(y+0x51ED,0x85EBCA6B);h=Math.imul(h^h>>>15,0x2C1B3C6D);h^=h>>>12;return ((h>>>0)/4294967296-0.5)*2;}
+function attraction(a,b){
+  let v=0.8*looksOf(b)+0.35*trait(b,GWa)-0.35*Math.abs(trait(a,GW)-trait(b,GW))+0.6*spark(a,b);
+  if(a.sx==='f'||a.sex==='f')v+=0.35*trait(b,GS)+0.4*standing(b)+0.2*trait(b,GB);
+  return v;}
+function naturalChild(s,si,mo,fa,sire){ // a child out of wedlock: the father's blood, the mother's name (or her husband's, if no one guesses)
+  const known=!mo.sp||frand()<0.3,fam=sire?fitzFamily(s,si,sire):known?mo.fam:mo.sp.fam;
+  const ch=mkPerson(s,si,{ma:mo,pa:fa,fam,tr:mo.sp?mo.sp.tr:mo.tr,avoid:[mo.gn,...(mo.kn||[])]});
+  ch.bast=true;ch.sire=sire?sire.id:fa.id;mo.lb=day();(mo.kn||(mo.kn=[])).push(ch.gn);return ch;}
+function fitzFamily(s,si,n){ // a lord's natural son is known by his father's name
+  const c=s.cult||W.crownCult,X=NX(c),g=n.name.split(' ')[0];
+  const sur=c==='anglo'||c==='french'||c==='celtic'?'Fitz'+g:X?X.patr(g):g+'son';
+  W.fams.push({n:sur,c,k:'fitz',tr:null,home:si,b:day(),sire:n.id});return W.fams.length-1;}
+function yearOfFolk(s,si){ // deaths by age and frailty; schooling; weddings
+  const sick=s.pop>0&&(s.infected||0)/s.pop>0.05?2:1,hungry=(s.hunger||0)>0.25;
+  for(let i=s.folk.length-1;i>=0;i--){const p=s.folk[i],a=ageYrs(p);
+    let q=a<1?0.16:a<5?0.03:a<15?0.007:a<45?0.009+(p.sx==='f'&&p.sp?0.006:0):0.009*Math.exp((a-45)/9);
+    q*=Math.exp(-0.45*trait(p,GV))*sick*(hungry?1.4:1);
+    if(frand()<q){removeAt(s,i);dropPerson(p);continue;}
+    if(hungry&&a<16)p.fed-=0.04; // a hungry childhood stunts
+    if(a>=13.5&&a<14.5&&p.sx==='m'&&frand()<0.25)p.tr=tradesOf(s)[Math.floor(frand()*tradesOf(s).length)]; // a son leaves his father's trade
+    educate(p,a,s,false);}
+  const men=[],women=[];
+  for(const p of s.folk)if(!p.sp){const a=ageYrs(p);if(p.sx==='m'&&a>=18&&a<45)men.push(p);else if(p.sx==='f'&&a>=16&&a<38)women.push(p);}
+  for(const w of women){if(frand()>0.4)continue;
+    let pool=men,far=null;
+    if(!pool.length||frand()<0.12){const o=nearestOther(s,si);if(o){far=o;pool=o.folk.filter(p=>p.sx==='m'&&!p.sp&&ageYrs(p)>=18&&ageYrs(p)<45);}}
+    if(!pool.length)continue;
+    let best=null,bs=-1e9;for(let t=0;t<4;t++){const m=pool[Math.floor(frand()*pool.length)];if(m.sp||m.fam===w.fam)continue;
+      const d=attraction(w,m)+attraction(m,w)-0.5*Math.abs(standing(m)-standing(w));if(d>bs){bs=d;best=m;}} // mutual liking, and families that match
+    if(!best)continue;best.sp=w;w.sp=best;w.tr=best.tr;
+    if(far)moveTo(w,s,far,W.settlements.indexOf(far)); // the bride goes to her husband's village
+    const mi=men.indexOf(best);if(mi>=0)men.splice(mi,1);}
+  for(const w of s.folk){ // affairs: the bold and the heedless stray; now and then a child comes of it
+    if(w.sx!=='f'||w.dead||day()-w.lb<450)continue;const a=ageYrs(w);if(a<16||a>=40)continue;
+    const lust=0.012*Math.exp(0.45*trait(w,GB)-0.5*trait(w,GD)-(w.sp?0.3*trait(w,GWa):0))*(w.sp?1:1.5);
+    if(frand()>=lust)continue;
+    let best=null,bv=-1e9;for(let t=0;t<5;t++){const m=s.folk[Math.floor(frand()*s.folk.length)];if(!m||m.sx!=='m'||m===w.sp||m.fam===w.fam)continue;const ma=ageYrs(m);if(ma<18||ma>55)continue;
+      if(frand()>0.5*Math.exp(0.4*trait(m,GB)-0.4*trait(m,GD)))continue;const v=attraction(w,m);if(v>bv){bv=v;best=m;}}
+    if(best&&bv>0.3&&frand()<0.3)naturalChild(s,si,w,best,null);}}
+function nearestOther(s,si){
+  if(s._near==null||s._nearT<day()){let bd=1e18,bi=-1;W.settlements.forEach((o,oi)=>{if(oi===si)return;const d=dist2d(s.pos.x,s.pos.z,o.pos.x,o.pos.z);if(d<bd){bd=d;bi=oi;}});s._near=bi;s._nearT=day()+720;}
+  return W.settlements[s._near]||null;}
+function tickFolk(){
+  const d=day();if(d%30!==7||!W.fams)return;
+  const Ss=W.settlements,mon=(d/30|0)%12;
+  Ss.forEach((s,si)=>{if(!s.folk)s.folk=[];if(si%12===mon)yearOfFolk(s,si);});
+  const diff=Ss.map(s=>Math.round(s.pop)-s.folk.length),need=diff.reduce((t,v)=>t+Math.max(0,v),0),spare=diff.reduce((t,v)=>t+Math.max(0,-v),0);
+  const mig=[];
+  Ss.forEach((s,si)=>{ // too many souls for the place: to the host, down the road, or to the churchyard
+    let k=-diff[si];if(k<=0)return;
+    if(s._levy>0){const lv=pickK(s.folk.filter(p=>p.sx==='m'&&!p.dead&&ageYrs(p)>=16&&ageYrs(p)<42),Math.min(k,Math.round(s._levy)),()=>1);
+      for(const p of lv){removeAt(s,s.folk.indexOf(p));p.home=si;W.levies.push(p);}k-=lv.length;s._levy=Math.max(0,s._levy-lv.length);}
+    const go=Math.round(k*clamp(need/Math.max(1,spare),0,1)*((s.unrest||0)>50||(s.prosperity||50)<35?0.8:0.5));
+    const leave=pickK(s.folk,go,p=>{const a=ageYrs(p);return a>=16&&a<35?(p.sp?1:3):0.05;});
+    for(const p of leave){removeAt(s,s.folk.indexOf(p));mig.push(p);if(p.sp){const w=p.sp;if(w.si===si&&frand()<0.8){const j=s.folk.indexOf(w);if(j>=0){removeAt(s,j);mig.push(w);}}}}
+    const die=pickK(s.folk,k-leave.length,p=>{const a=ageYrs(p);return (a<2?3:a>55?1+(a-55)/5:0.25)*Math.exp(-0.5*trait(p,GV));});
+    for(const p of die){removeAt(s,s.folk.indexOf(p));dropPerson(p);}});
+  Ss.forEach((s,si)=>{ // too few: the levies home, the newborn, the newcomers
+    let k=Math.round(s.pop)-s.folk.length;if(k<=0)return;
+    for(let i=W.levies.length-1;i>=0&&k>0;i--)if(W.levies[i].home===si&&!W.levies[i].dead){const p=W.levies[i];W.levies.splice(i,1);p.si=si;s.folk.push(p);k--;}
+    const mothers=s.folk.filter(p=>p.sx==='f'&&p.sp&&!p.sp.dead&&p.sp.si===si&&d-p.lb>450&&ageYrs(p)>=16&&ageYrs(p)<45);
+    const pb=Math.min(0.09,k/Math.max(1,mothers.length)*1.2);
+    for(const m of mothers){if(k<=0)break;if(frand()>=pb*Math.exp(0.35*trait(m,GF)))continue;
+      const f=m.sp,ch=mkPerson(s,si,{ma:m,pa:f,fam:f.fam,tr:f.tr,avoid:[m.gn,f.gn,...(m.kn||[])]});m.lb=d;(m.kn||(m.kn=[])).push(ch.gn);k--;}
+    if(k>0&&mig.length){mig.sort((a,b)=>dist2d(Ss[a.si].pos.x,Ss[a.si].pos.z,s.pos.x,s.pos.z)-dist2d(Ss[b.si].pos.x,Ss[b.si].pos.z,s.pos.x,s.pos.z));
+      while(k>0&&mig.length){const p=mig.shift();p.si=si;s.folk.push(p);k--;}}
+    while(k>0){k-=seedHousehold(s,si,true).length;}});
+  for(const p of mig)dropPerson(p); // gone beyond the realm's borders
+  const inArms=W.armies.reduce((t,a)=>t+(a.gone?0:a.strength),0); // a host that melts away took its levies with it
+  while(W.levies.length>inArms*1.05){const i=Math.floor(frand()*W.levies.length);dropPerson(W.levies[i]);W.levies.splice(i,1);}
+  if(mon===0&&d%360<30)Ss.forEach(s=>{s._stat=null;});}
+function folkStat(s){ // what the town card shows, a year at a time
+  if(s._stat&&s._stat.y===year())return s._stat;
+  const F=s.folk||[],fc={},adults=F.filter(p=>ageYrs(p)>=16);
+  for(const p of F){const n=famName(p);if(n)fc[n]=(fc[n]||0)+1;}
+  const mean=k=>adults.length?adults.reduce((t,p)=>t+p.sk[k],0)/adults.length:0,share=(k,v)=>adults.length?adults.filter(p=>p.sk[k]>=v).length/adults.length:0;
+  const best=(fn)=>{let b=null,bv=-1e9;for(const p of adults){const v=fn(p);if(v>bv){bv=v;b=p;}}return b;};
+  s._stat={y:year(),n:F.length,fams:Object.keys(fc).length,top:Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,6),
+    letters:share(KL,0.5),reckon:share(KR,0.5),craft:mean(KCr),husb:mean(KH),arms:share(KA,0.4),
+    master:best(p=>TILLERS.has(p.tr)?-1:p.sk[KCr]),scholar:best(p=>p.sk[KL]+p.sk[KS])};
+  return s._stat;}
+function skillWord(v){return v>=0.8?'master':v>=0.6?'skilled':v>=0.4?'able':v>=0.2?'some':'';}
+function natureWords(p){ // the notable's make-up, in words
+  const t=k=>trait(p,k),w=(v,hi,lo)=>v>1?hi:v<-1?lo:'';
+  return [w(t(GW),'quick-witted','slow-witted'),w(t(GV),'hale','frail'),w(t(GS),'tall','short'),w(t(GB),'bold','timid'),w(t(GWa),'warm','cold'),w(t(GD),'diligent','idle'),w(t(GL),'fair of face','plain'),HAIR[p.hair||0]+'-haired'].filter(Boolean).join(', ');}
+function learningWords(p){const out=[];if(!p.sk)return '';SKILLS.forEach((k,i)=>{const w=skillWord(p.sk[i]);if(w)out.push(`${w} ${k}`);});return out.join(', ')||'unlettered and untaught';}
+function lordsNaturalChild(n){ // a lord's eye wanders among the women of his own town
+  if(frand()>=0.03*Math.exp(0.5*trait(n,GB)-0.6*trait(n,GD)-(n.spouse?0.2*trait(n,GWa):0)))return;
+  const h=houseOf(n),si=n.house===0?0:(h&&h.seat>=0?h.seat:0),s=W.settlements[si];if(!s||!s.folk||!s.folk.length)return;
+  let w=null,bv=-1e9;for(let t=0;t<8;t++){const q=s.folk[Math.floor(frand()*s.folk.length)];if(!q||q.sx!=='f'||day()-q.lb<450)continue;const a=ageYrs(q);if(a<17||a>35)continue;const v=attraction(n,q);if(v>bv){bv=v;w=q;}}
+  if(!w||frand()>0.35)return;
+  const ch=naturalChild(s,si,w,n,n);(n.nat||(n.nat=[])).push(ch);
+  if(!W.prehistory&&(n.role==='monarch'||n.role==='head'||n.role==='heir'||chance('sim',0.3)))
+    emit('crown',n.role==='monarch'?6:4,s.pos,vary('natural_child',[()=>`It is whispered in ${s.name} that ${folkName(w)}, a ${w.tr||'ploughman'}'s ${w.sp?'wife':'daughter'}, has borne a ${ch.sx==='f'?'daughter':'son'} with the look of ${fullTitle(n)}.`,
+      ()=>`${fullTitle(n)} acknowledges a natural ${ch.sx==='f'?'daughter':'son'}, ${folkName(ch)}, born to ${folkName(w)} of ${s.name}.`,
+      ()=>`A child of ${fullTitle(n)} is born out of wedlock in ${s.name}; the mother is ${folkName(w)}, and the gossips count the months.`,
+      ()=>`${s.name} has a new ${ch.sx==='f'?'daughter':'son'} of noble blood on the wrong side of the blanket: ${folkName(ch)}, got by ${fullTitle(n)} on ${folkName(w)}.`]));}
+function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
+  return mkNotable(Object.assign({name:folkName(p),sex:p.sx,birthDay:p.b,age:Math.floor(ageYrs(p)),g:p.g,e:p.e,sk:p.sk,hair:p.hair,fed:p.fed,born:{fam:famName(p),tr:p.tr,si:p.si}},o));}
+function promoteFrom(s,score){ // the ablest of a town's folk, stepping out of the crowd into the annals
+  if(!s||!s.folk||!s.folk.length)return null;let b=null,bv=-1e9;
+  for(const p of s.folk){const a=ageYrs(p);if(a<18||a>60)continue;const v=score(p);if(v>bv){bv=v;b=p;}}
+  if(!b)return null;removeAt(s,s.folk.indexOf(b));if(b.sp){b.sp.sp=null;b.sp=null;}nameUse(b.gn,-1);return b;}
 function makeHousesAndCast(){
   // crown house (index 0) + 5 great houses seated at settlements 1..n
   const beasts=['Stag','Wolf','Raven','Heron','Boar','Ox','Falcon','Adder'];
@@ -2120,8 +2474,7 @@ function makeHousesAndCast(){
   }
   W.houses.forEach((h,hi)=>{ // each house takes its name in its own tongue, mostly from its seat
     const C=CULT[h.cult=W.houseCult[hi]||W.crownCult],r=nameRng(500+hi),seat=W.settlements[h.seat]||W.capital;
-    h.name=C.house(seat.name.replace(/^(the |Burg |Château |Castello )/,''),r,C,r1(r,C.roots));
-    if(W.houses.some((o,oi)=>oi<hi&&o.name===h.name))h.name+=' '+['the Younger','of the March','Minor'][hi%3];
+    h.name='';h.name=uniqueHouseName(C,seat.name.replace(/^(the |Burg |Château |Castello )/,''),r,h);
   });
   // settlement ownership: nearest house seat (capital→crown)
   W.settlements.forEach((s,si)=>{
@@ -2134,27 +2487,27 @@ function makeHousesAndCast(){
   });
   // dynasty
   const msex=chance('gen',0.5)?'m':'f';
-  const monarch=mkNotable({name:personName(msex,0),sex:msex,age:28+randi('gen',18),house:0,role:'monarch',traits:twoTraits(),agenda:'keeps the realm whole'});
+  const monarch=mkNotable({name:personName(msex,0),sex:msex,age:28+randi('gen',18),house:0,role:'monarch',traits:(twoTraits(),[]),agenda:'keeps the realm whole'});
   const csex=msex==='m'?'f':'m';
-  const consort=mkNotable({name:personName(csex),sex:csex,age:24+randi('gen',16),house:1+randi('gen',5),role:'consort',traits:twoTraits(),agenda:'raises heirs for the crown'});
+  const consort=mkNotable({name:personName(csex),sex:csex,age:24+randi('gen',16),house:1+randi('gen',5),role:'consort',traits:(twoTraits(),[]),agenda:'raises heirs for the crown'});
   monarch.spouse=consort.id;consort.spouse=monarch.id;
   const nk=randi('gen',4);
   for(let i=0;i<nk;i++){
     const ks=chance('gen',0.5)?'m':'f';
-    const kid=mkNotable({name:personName(ks,0),sex:ks,age:Math.max(1,randi('gen',Math.max(2,monarch.age-20))),house:0,role:'heir',traits:twoTraits(),agenda:'learns the ways of court'});
+    const kid=mkNotable({name:personName(ks,0),sex:ks,age:Math.max(1,randi('gen',Math.max(2,monarch.age-20))),house:0,role:'heir',traits:(twoTraits(),[]),agenda:'learns the ways of court'});
     monarch.heirs.push(kid.id);
   }
   W.monarch=monarch;W.reignNum={};W.reignNum[monarch.name]=1;
   // house families
   for(let hi=1;hi<6;hi++){
     const hsx=chance('gen',0.5)?'m':'f';
-    const head=mkNotable({name:personName(hsx,hi),sex:hsx,age:30+randi('gen',25),house:hi,role:'head',traits:twoTraits(),agenda:pick('gen',['covets the crown','guards the marches','fills the coffers','nurses an old grudge','seeks a royal match'])});
-    const sp=mkNotable({name:personName(hsx==='m'?'f':'m',hi),sex:hsx==='m'?'f':'m',age:26+randi('gen',20),house:hi,role:'spouse',traits:twoTraits()});
+    const head=mkNotable({name:personName(hsx,hi),sex:hsx,age:30+randi('gen',25),house:hi,role:'head',traits:(twoTraits(),[]),agenda:pick('gen',['covets the crown','guards the marches','fills the coffers','nurses an old grudge','seeks a royal match'])});
+    const sp=mkNotable({name:personName(hsx==='m'?'f':'m',hi),sex:hsx==='m'?'f':'m',age:26+randi('gen',20),house:hi,role:'spouse',traits:(twoTraits(),[])});
     head.spouse=sp.id;sp.spouse=head.id;
     const kids=1+randi('gen',3);
     for(let k=0;k<kids;k++){
       const ks=chance('gen',0.5)?'m':'f';
-      const kid=mkNotable({name:personName(ks,hi),sex:ks,age:Math.max(1,randi('gen',Math.max(2,head.age-18))),house:hi,role:'scion',traits:twoTraits(),agenda:'rides at the hunt'});
+      const kid=mkNotable({name:personName(ks,hi),sex:ks,age:Math.max(1,randi('gen',Math.max(2,head.age-18))),house:hi,role:'scion',traits:(twoTraits(),[]),agenda:'rides at the hunt'});
       head.heirs.push(kid.id);
     }
     W.houses[hi].head=head.id;
@@ -2166,7 +2519,7 @@ function makeHousesAndCast(){
   // extended cousins to thicken the cast
   for(let i=0;i<24;i++){
     const sx=chance('gen',0.5)?'m':'f';
-    mkNotable({name:personName(sx),sex:sx,age:16+randi('gen',40),house:randi('gen',6),role:'cousin',traits:twoTraits(),agenda:pick('gen',['schemes quietly','tends the estates','drinks too deep','writes poor verse','collects falcons'])});
+    mkNotable({name:personName(sx),sex:sx,age:16+randi('gen',40),house:randi('gen',6),role:'cousin',traits:(twoTraits(),[]),agenda:pick('gen',['schemes quietly','tends the estates','drinks too deep','writes poor verse','collects falcons'])});
   }
 }
 function notableById(id){return W.notables.find(n=>n.id===id);}
@@ -3877,7 +4230,7 @@ function armyLand(a){ // occupation, foraging and supply, once a day
     if(f.state===LS.TILLED){a.supply=Math.min(100,a.supply+2.5); // they live off the enemy's corn, and burn what they can't carry
       if(chance('sim',cruel?0.6:0.3)){f.until=Math.ceil((day()+1)/360)*360+20;setFurlong(f,LS.BURNT);}}
     const was=f.lord;setLord(f,a.house,true);a.taken=(a.taken||0)+1;
-    if(!a._landNote&&a.taken>=6){a._landNote=true;emit('war',5,{x:f.x,z:f.z},`${a.name} overruns the fields of ${W.houses[was]?W.houses[was].name:'the enemy'} about ${nearestPlaceName(f.x,f.z)}; the villagers flee before it.`);}
+    if(!a._landNote&&a.taken>=6){a._landNote=true;emit('war',5,{x:f.x,z:f.z},((o,p)=>vary('overrun',[()=>`${a.name} overruns the fields of ${o} about ${p}; the villagers flee before it.`,()=>`The fields of ${o} about ${p} are overrun by ${a.name.replace(/^Host/,'the host')}; the villagers flee before it.`,()=>`${a.name} overruns the fields about ${p}, which belong to ${o}; the villagers flee before it.`,()=>`About ${p} the villagers flee before ${a.name.replace(/^Host/,'the host')}, which overruns the fields of ${o}.`,()=>`The villagers about ${p} flee as ${a.name} overruns the fields of ${o}.`,()=>`${cmd?`${cmd.name} leads ${a.name.replace(/^Host/,'the host')} over the fields of ${o} about ${p}`:`${a.name} overruns the fields of ${o} about ${p}`}; the villagers flee before it.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} overruns the fields of ${o} about ${p}; the villagers flee before it.`]))(W.houses[was]?W.houses[was].name:'the enemy',nearestPlaceName(f.x,f.z)));}
   }
 }
 /* land nobody works goes back to nature, step by step: grass, then thorn and scrub by the fifth year,
@@ -3964,7 +4317,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const seatS=W.settlements[h.seat]||own[0];
     const dues=h.dues||1; // the player's lord may press his tenants harder, or ease them
     const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1); // far fiefs: the castellans skim
-    const income=own.reduce((t,s)=>t+rentOf(s),0);
+    const income=own.reduce((t,s)=>t+rentOf(s),0)*stewardship(notableById(h.head)); // a lord who can reckon and knows his fields gets more of his rents
     const castellans=own.reduce((t,s)=>t+(s===seatS?0:2+rentOf(s)*0.25),0); // each fief beyond the lord's hall keeps a castellan out of its own rents
     const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
     const upkeep=hosts+castellans+own.reduce((t,s)=>t+(s.garrison||0),0)*0.2; // and every garrison wants its pay
@@ -4009,7 +4362,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   if(day()%360===200)for(let hi=1;hi<W.houses.length;hi++){const h=W.houses[hi];if(h.exiled||hi===plyH()||houseAtWar(hi))continue; // subinfeudation
     const n=W.settlements.filter(s=>s.owner===hi).length,cap=5+Math.round((h.might||1)*3);
     if(n>cap&&chance('sim',0.35)){let son=W.notables.find(m=>m.alive&&m.house===hi&&m.role!=='head'&&ageOf(m)>=16);
-      if(!son){const sx=chance('sim',0.7)?'m':'f';son=mkNotable({name:personName(sx,hi),sex:sx,age:24+randi('sim',16),house:hi,role:'cousin',traits:twoTraits(),agenda:'holds the march for the family'});son.birthDay=day()-son.age*360;}
+      if(!son){const sx=chance('sim',0.7)?'m':'f';son=mkNotable({name:personName(sx,hi),sex:sx,age:24+randi('sim',16),house:hi,role:'cousin',traits:(twoTraits(),[]),agenda:'holds the march for the family'});son.birthDay=day()-son.age*360;}
       partition(hi,son);}}
   if(day()%360===215)for(let hi=0;hi<W.houses.length;hi++){ // lords (and the council) with silver to spare build up their towns
     if(hi===plyH()||hi>0&&(W.houses[hi].exiled||(W.houses[hi].gold||0)<2500)||hi===0&&W.treasury<12000)continue;
@@ -4062,7 +4415,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
         for(const s of W.settlements)if(s.feudFrom!=null&&(s.feudFrom===fd.a||s.feudFrom===fd.b)&&s.owner===s.feudFrom)s.feudFrom=null;}
       if(win){const lo=win===A?B:A;(lo.grudges||(lo.grudges={}))[wi]=true;} // the loser does not forget
       if(win&&win===W.houses[plyH()])sovAmbition('feud');
-      emit('war',8,W.capital.pos,`${fd.name} ends${win?`; ${win.name} keeps the lands it took, and new border stones are set`:', each side keeping what it holds'}.`);
+      emit('war',8,W.capital.pos,((F)=>vary('feud_end',[()=>`${F} ends${win?`; ${win.name} keeps the lands it took, and new border stones are set`:', each side keeping what it holds'}.`,()=>`${win?`${F} is ended: ${win.name} keeps the lands it took, and new border stones are set.`:`${F} is ended, each side keeping what it holds.`}`,()=>`${win?`New border stones are set, and ${win.name} keeps the lands it took: ${fd.name} is at an end.`:`${F} is at an end, each side keeping what it holds.`}`,()=>`${win?`${win.name} keeps the lands it took when ${fd.name} ends, and new border stones are set.`:`Each side keeps what it holds when ${fd.name} ends.`}`,()=>`${win?`Peace comes at last to ${fd.name}; ${win.name} keeps the lands it took, and new border stones are set.`:`Peace comes at last to ${fd.name}, each side keeping what it holds.`}`,()=>`${win?`${F} is over. ${win.name} keeps the lands it took; new border stones are set.`:`${F} is over, and each side keeps what it holds.`}`]))(fd.name.replace(/^the /,'The ')));
     }
   }
   if(W.feuds.length<3&&chance('sim',0.5*MOD.aggr)){ // lords fight lords: the usual weather of a fiefdom
@@ -4092,8 +4445,8 @@ function startFeud(a,b,by){ // a private war: both lords call out their tenants
     for(const i of allies){const hh=W.armies.find(x=>x.house===i&&x.standing&&!x.gone&&x.state==='idle');if(!hh)continue;const k=hh.strength*0.3;hh.strength-=k;host.strength+=k;
       emit('war',5,W.settlements[seat].pos,`${W.houses[i].name} sends knights to aid ${W.houses[hi].name}, as kin by marriage.`);}}
   for(const x of W.armies)if(x.house===a||x.house===b)x.hold=x.house===ply&&x.standing; // the player's household still waits on orders; the levies take the field
-  emit('war',8,W.settlements[A.seat]?W.settlements[A.seat].pos:W.capital.pos,by!=null?`${A.name} defies ${B.name} and rides out over the land between them — ${fd.name}.`
-    :`${A.name} and ${B.name} fall to open war over the land between them — ${fd.name}. The crown ${W.legitimacy>60?'frowns, but':'is'} too weak to part them.`);
+  emit('war',8,W.settlements[A.seat]?W.settlements[A.seat].pos:W.capital.pos,by!=null?vary('feud_defy',[()=>`${A.name} defies ${B.name} and rides out over the land between them — ${fd.name}.`,()=>`${A.name} rides out over the land between them in defiance of ${B.name} — ${fd.name}.`,()=>`In defiance of ${B.name}, ${A.name} rides out over the land between them — ${fd.name}.`,()=>`${A.name} will not bow to ${B.name}, and rides out over the land between them: ${fd.name} has begun.`,()=>`${fd.name.replace(/^the /,'The ')} begins: ${A.name} defies ${B.name} and rides out over the land between them.`,()=>`The land between them is the quarrel: ${A.name} defies ${B.name} and rides out — ${fd.name}.`])
+    :((cr)=>vary('feud_open',[()=>`${A.name} and ${B.name} fall to open war over the land between them — ${fd.name}. The crown ${cr} too weak to part them.`,()=>`Open war breaks between ${A.name} and ${B.name} over the land that lies between them — ${fd.name}. The crown ${cr} too weak to part them.`,()=>`Over the land between them, ${A.name} and ${B.name} fall to open war; men call it ${fd.name}. The crown ${cr} too weak to part them.`,()=>`The crown ${cr} too weak to part ${A.name} and ${B.name}, who fall to open war over the land between them — ${fd.name}.`,()=>`${A.name} and ${B.name} cannot agree the land between them, and fall to open war — ${fd.name}. The crown ${cr} too weak to part them.`,()=>`Neither ${A.name} nor ${B.name} will yield the land between them; open war begins, and it is called ${fd.name}. The crown ${cr} too weak to part them.`]))(W.legitimacy>60?'frowns, but is':'is'));
   return fd;
 }
 
@@ -4129,7 +4482,7 @@ function tickLand(){ // monthly: the countryside follows the people
         if(was===LS.WOOD){s.assarts=(s.assarts||0)+1;
           if(s.assarts===1||s.assarts%15===0)emit('trade',3,{x:f.x,z:f.z},`The folk of ${s.name} are clearing the wood for new fields; the assarts ${pick('sim',['smoke with burning stumps','are ploughed between the stumps','are let at a penny the acre'])}.`);}
       }else if(!s.landShort){s.landShort=now;
-        if(s.kind!=='village'||s.pop>120)emit('trade',3,s.pos,`There is no more land to plough about ${s.name}; its younger sons look elsewhere.`);}
+        if(s.kind!=='village'||s.pop>120)emit('trade',3,s.pos,vary('no_land',[()=>`There is no more land to plough about ${s.name}; its younger sons look elsewhere.`,()=>`The plough has reached the last of the land about ${s.name}, and its younger sons look elsewhere.`,()=>`Its younger sons look elsewhere: there is no more land to plough about ${s.name}.`,()=>`About ${s.name} every furlong is under the plough and there is no more land to be had; its younger sons look elsewhere.`,()=>`There is no land left to plough about ${s.name}, and its younger sons look elsewhere.`]));}
     }else if(tilled>need*1.25+9000){ // too few hands: the farthest and poorest fields go back to grass
       const c=own.filter(f=>ARABLE.has(f.kind)&&f.state===LS.TILLED&&f.lord===s.owner).sort((a,b)=>d(b)-d(a)).slice(0,10);
       const f=wpick(c,f=>d(f)/350-0.6*f.fa/Math.max(1,f.n),0.35);
@@ -5005,6 +5358,12 @@ function showInspect(pk){
     if(s.mother)h+=row('Daughter of',s.mother);
     {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
     h+=row('Garrison',Math.round(s.garrison));
+    if(s.folk&&s.folk.length){const f=folkStat(s),pc=v=>Math.round(v*100)+'%';
+      h+=row('Folk',`${f.n.toLocaleString()} souls in ${f.fams} families`);
+      if(f.top.length)h+=row('Families',f.top.map(([n,c])=>`${esc(n)} (${c})`).join(', '));
+      h+=row('Learning',`${pc(f.letters)} lettered, ${pc(f.reckon)} can reckon; craft ${skillWord(f.craft)||'raw'}, husbandry ${skillWord(f.husb)||'raw'}`);
+      const nm=[f.master&&f.master.sk[KCr]>=0.5?`${esc(folkName(f.master))}, master ${esc(f.master.tr)}`:'',f.scholar&&f.scholar.sk[KL]>=0.6?`${esc(folkName(f.scholar))}, a lettered ${f.scholar.sx==='f'?'woman':'man'}`:''].filter(Boolean);
+      if(nm.length)h+=row('Of note',nm.join('; '));}
     {const w=Object.keys(s.works||{}).map(k=>({mill:'a mill',granary:'a granary',market:'a chartered market'}[k])).filter(Boolean);if(s.clearUntil>day())w.push('assarters at work');if(w.length)h+=row('Works',w.join(', '));}
     if(s.infected>0.5)h+=row('Plague',Math.round(s.infected)+' sick, '+Math.round(s.plagueDead)+' dead');
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
@@ -5043,6 +5402,9 @@ function showInspect(pk){
     sub.textContent=n.role+' · '+houseOf(n).name+(n.alive?'':' · deceased');
     h+=row('Age',n.alive?ageOf(n):(n.age??'—'));
     h+=row('Traits',n.traits.join(', '));
+    if(n.g){h+=row('Nature',natureWords(n));h+=row('Learning',learningWords(n));}
+    if(n.nat&&n.nat.length)h+=row('Natural children',n.nat.map(c=>esc(folkName(c))+(c.dead?' †':'')).join(', '));
+    if(n.born)h+=row('Born',`${esc(n.born.fam?n.name.split(' ')[0]+' '+n.born.fam:n.name)}, of a ${esc(n.born.tr||'ploughman')}'s family in ${esc(W.settlements[n.born.si]?.name||'—')}`);
     if(n.spouse){const sp=notableById(n.spouse);if(sp)h+=row('Spouse',sp.name);}
     if(n.heirs.length)h+=row('Children',n.heirs.map(id=>notableById(id)?.name).filter(Boolean).join(', '));
     h+=`<div class="agline">“${esc(n.agenda)}.”</div>`;
@@ -5216,6 +5578,7 @@ function simInit(){
     const r=riverRoute(i,j);
     if(r&&r.len>400)W.riverPairs.push({a:i,b:j,route:r});
   }
+  seedFolk(); // every soul in every place, with a name, a family, a nature and a schooling
 }
 
 /* ============================ WEATHER ==================================== */
@@ -5449,7 +5812,7 @@ function tickPopulation(){
     s.prosperity=clamp(s.prosperity+(hunger>0.25?-0.35:0.06)-(s.siegeBy?0.5:0)-(s.quarantineUntil>day()?0.12:0),1,100);
     if(hunger>0.4&&!s.famineFlag&&s.pop>100){
       s.famineFlag=true;
-      emit('trade',7,s.pos,`Famine stalks ${s.name}; the granaries stand empty and the ${['young','old','poor'][randi('sim',3)]} perish first.`);
+      emit('trade',7,s.pos,((w)=>vary('famine',[()=>`Famine stalks ${s.name}; the granaries stand empty and the ${w} perish first.`,()=>`Famine comes to ${s.name}: the granaries stand empty, and the ${w} perish first.`,()=>`The granaries of ${s.name} stand empty, and famine stalks the streets; the ${w} perish first.`,()=>`${s.name} is in the grip of famine; the granaries stand empty, and the ${w} perish first.`,()=>`The ${w} of ${s.name} perish first as famine stalks the town and the granaries stand empty.`,()=>`There is famine in ${s.name}; the granaries stand empty and the ${w} are first to perish.`]))(['young','old','poor'][randi('sim',3)]));
       W.legitimacy=clamp(W.legitimacy-4,0,100);
       famineStrikes(s);
     }
@@ -5526,18 +5889,18 @@ function tickPolitics(){
     if(chance('sim',0.001*MOD.aggr*grievance)){
       h.loyalty=clamp(h.loyalty-(8+randi('sim',12)),0,100);
       const seatPos=W.settlements[h.seat]?.pos||W.capital.pos;
-      emit('crown',4,seatPos,pick('sim',[
-        `${h.name} is passed over for the office of Warden of the Marches; its lord leaves court without taking leave.`,
-        `A hunting dispute on the borders of ${nearestPlaceName(seatPos.x,seatPos.z)} ends in drawn steel; ${h.name} nurses the insult.`,
-        `The crown seizes a contested toll-bridge claimed by ${h.name}. Harsh words are spoken in the hall.`,
-        `At the feast, the herald seats ${h.name} below the salt. The slight is not forgotten.`]));
+      emit('crown',4,seatPos,(pick('sim',[
+        ()=>vary('slight_office',[()=>`${h.name} is passed over for the office of Warden of the Marches; its lord leaves court without taking leave.`,()=>`The office of Warden of the Marches goes elsewhere, and ${h.name} is passed over; its lord leaves court without taking leave.`,()=>`${h.name} is passed over for the wardenship of the Marches, and its lord leaves court without taking leave.`,()=>`Its lord leaves court without taking leave: ${h.name} has been passed over for the office of Warden of the Marches.`,()=>`At court ${h.name} is passed over for the office of Warden of the Marches, and its lord rides out without taking leave.`,()=>`The Marches are given a Warden, and ${h.name} is passed over; its lord leaves court without taking leave.`]),
+        ()=>((p)=>vary('slight_hunt',[()=>`A hunting dispute on the borders of ${p} ends in drawn steel; ${h.name} nurses the insult.`,()=>`Over a hunting dispute on the borders of ${p} steel is drawn; ${h.name} nurses the insult.`,()=>`${h.name} nurses an insult: a hunting dispute on the borders of ${p} has ended in drawn steel.`,()=>`Hunters quarrel on the borders of ${p}, and the dispute ends in drawn steel; ${h.name} nurses the insult.`,()=>`A hunting dispute on the borders of ${p} ends in drawn steel, and ${h.name} does not forgive the insult.`,()=>`The insult of a hunting dispute on the borders of ${p} is nursed by ${h.name}; it ended in drawn steel.`]))(nearestPlaceName(seatPos.x,seatPos.z)),
+        ()=>vary('tollbridge',[()=>`The crown seizes a contested toll-bridge claimed by ${h.name}. Harsh words are spoken in the hall.`,()=>`A toll-bridge claimed by ${h.name} is seized by the crown; harsh words are spoken in the hall.`,()=>`The crown lays hands on a contested toll-bridge, claimed by ${h.name}. Harsh words are heard in the hall.`,()=>`Harsh words are spoken in the hall when the crown seizes a toll-bridge that ${h.name} claims.`,()=>`${h.name} and the crown contest a toll-bridge; the crown seizes it, and harsh words are spoken in the hall.`,()=>`The crown seizes the toll-bridge that ${h.name} claims; there are harsh words in the hall.`]),
+        ()=>vary('slight_salt',[()=>`At the feast, the herald seats ${h.name} below the salt. The slight is not forgotten.`,()=>`${h.name} is seated below the salt at the feast, by the herald's hand. The slight is not forgotten.`,()=>`The herald seats ${h.name} below the salt at the feast; it is a slight not soon forgotten.`,()=>`Below the salt at the feast sits ${h.name}, placed there by the herald. The slight is not forgotten.`,()=>`The slight is not forgotten: at the feast the herald seats ${h.name} below the salt.`,()=>`At the feast ${h.name} finds itself seated below the salt by the herald, and does not forget the slight.`])]))());
     }else if(h.loyalty<35&&(sovOn()||W.treasury>3000)&&chance('sim',0.004)&&!inRevolt(hi)){
       const seatPos=W.settlements[h.seat]?.pos||W.capital.pos;
       petition({key:'grant'+hi,title:`${h.name} is restive`,pos:seatPos,
         text:`Envoys of ${h.name} come to court with a list of grievances. Their loyalty stands at ${Math.round(h.loyalty)}; they hint that a house so ill-used might look to its own banners.`,
         ai:0,opts:[
         {label:'Grant them lands and offices',cost:600,act:()=>{h.loyalty=clamp(h.loyalty+12,0,100);
-          emit('crown',4,W.capital.pos,`Seeking peace at home, the crown grants lands and offices to ${h.name}; old wounds are salved with gold.`);}},
+          emit('crown',4,W.capital.pos,vary('crown_grant',[()=>`Seeking peace at home, the crown grants lands and offices to ${h.name}; old wounds are salved with gold.`,()=>`The crown grants lands and offices to ${h.name}, seeking peace at home; old wounds are salved with gold.`,()=>`To buy peace at home, lands and offices are granted by the crown to ${h.name}; old wounds are salved with gold.`,()=>`Old wounds are salved with gold: seeking peace at home, the crown grants lands and offices to ${h.name}.`,()=>`${h.name} is granted lands and offices by the crown, which seeks peace at home; old wounds are salved with gold.`,()=>`Lands and offices are heaped on ${h.name}; the crown seeks peace at home, and old wounds are salved with gold.`]));}},
         {label:'Demand a hostage for their good faith',act:()=>takeHostage(hi)},
         {label:'Send the envoys away empty-handed',act:()=>{h.loyalty=clamp(h.loyalty-5,0,100);W.legitimacy=clamp(W.legitimacy+1,0,100);
           emit('crown',4,seatPos,`The crown dismisses the grievances of ${h.name}. Its envoys ride home in silence.`);}}]});
@@ -5547,7 +5910,7 @@ function tickPolitics(){
   for(const s of W.settlements){
     if(s.unrest>72&&chance('sim',0.02)){
       s.unrest-=14;s.prosperity=clamp(s.prosperity-3,1,100);
-      emit('fates',5,s.pos,`Riot in ${s.name}! The mob overturns the market stalls and cries against the crown.`);
+      emit('fates',5,s.pos,vary('riot',[()=>`Riot in ${s.name}! The mob overturns the market stalls and cries against the crown.`,()=>`The mob of ${s.name} overturns the market stalls, crying against the crown: there is riot in the streets!`,()=>`${s.name} is in riot; the mob overturns the market stalls and cries against the crown.`,()=>`Riot! In ${s.name} the mob cries against the crown and overturns the market stalls.`,()=>`Market stalls are overturned in ${s.name} by a mob crying against the crown.`,()=>`The mob in ${s.name} cries against the crown, and the market stalls go over; there is riot in the streets.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, riot breaks out in ${s.name}: the mob overturns the market stalls and cries against the crown.`]));
       if(chance('sim',0.3))igniteFire(s,1,'riot');
     }
     if(s.unrest>90&&!s.revolted&&s.owner===0&&s.kind!=='capital'&&chance('sim',0.05)){
@@ -5570,8 +5933,10 @@ function tickPolitics(){
     if(!n.alive)continue;
     if((day()-n.birthDay)%360===0&&day()>n.birthDay){
       n.age=ageOf(n);
+      if(n.sk){educate(n,n.age,null,true);if(n.age<=30&&!n.fixedTraits)n.traits=deriveTraits(n);} // a year's tutors, squiring and court
+      if(n.g&&n.sex==='m'&&n.age>=18&&n.age<56&&W.fams)lordsNaturalChild(n);
       let q=n.age<50?0.006:(n.age-44)*0.007;
-      if(n.traits.includes('sickly'))q*=2.6;
+      q*=n.g?Math.exp(-0.5*trait(n,GV)):n.traits.includes('sickly')?2.6:1; // constitution, not a label
       if(W.plagueActive)q*=1.5;
       if(chance('sim',q*mythMult()))killNotable(n,pick('sim',['of a sudden fever','of the flux','in a fall from horseback','of a wound gone sour','peacefully, abed','choking at the feast']));
     }
@@ -5585,17 +5950,17 @@ function tickPolitics(){
       const sp=notableById(n.spouse);if(!sp||!sp.alive)continue;
       if(n.age>=18&&n.age<=44){
         let p=0.006*(n.house===0||sp.house===0?MOD.fert:1);
-        if(n.traits.includes('fertile'))p*=1.6;
+        p*=n.g?Math.exp(0.35*trait(n,GF)):n.traits.includes('fertile')?1.6:1;
         if(chance('sim',p)){
           const ks=chance('sim',0.5)?'m':'f';
           const parent=sp.role==='monarch'||sp.role==='head'?sp:n;
           const kid=mkNotable({name:personName(ks,parent.house),sex:ks,age:0,birthDay:day(),house:parent.house,
-            role:parent.role==='monarch'?'heir':'scion',traits:twoTraits(),agenda:'is yet in swaddling'});
+            role:parent.role==='monarch'?'heir':'scion',traits:(twoTraits(),[]),ma:n,pa:sp,agenda:'is yet in swaddling'});
           parent.heirs.push(kid.id);
           if(parent.role==='monarch')
-            emit('crown',7,W.capital.pos,`A ${ks==='f'?'daughter':'son'} is born to ${fullTitle(parent)} — the ${ks==='f'?'princess':'prince'} ${kid.name}. Bells ring in ${W.capital.name}.`);
+            emit('crown',7,W.capital.pos,((c,pr)=>vary('birth_royal',[()=>`A ${c} is born to ${fullTitle(parent)} — the ${pr} ${kid.name}. Bells ring in ${W.capital.name}.`,()=>`The ${pr} ${kid.name} is born to ${fullTitle(parent)}; bells ring in ${W.capital.name}.`,()=>`Bells ring in ${W.capital.name}: a ${c} is born to ${fullTitle(parent)}, and is named the ${pr} ${kid.name}.`,()=>`${fullTitle(parent)} is blessed with a ${c}. The ${pr} ${kid.name} is born, and bells ring in ${W.capital.name}.`,()=>`A ${c}, ${kid.name}, is born to ${fullTitle(parent)}; ${W.capital.name} rings its bells for the new ${pr}.`,()=>`The ${pr} ${kid.name} is born to ${fullTitle(parent)}, and ${W.capital.name} rings out its bells.`]))(ks==='f'?'daughter':'son',ks==='f'?'princess':'prince'));
           else if(chance('sim',0.4))
-            emit('crown',3,W.settlements[houseOf(parent).seat]?.pos||W.capital.pos,`${houseOf(parent).name} welcomes a ${ks==='f'?'daughter':'son'}, ${kid.name}.`);
+            emit('crown',3,W.settlements[houseOf(parent).seat]?.pos||W.capital.pos,((hn,c)=>vary('birth',[()=>`${hn} welcomes a ${c}, ${kid.name}.`,()=>`A ${c} is given to ${hn}; they name ${c==='son'?'him':'her'} ${kid.name}.`,()=>`${hn} has cause for rejoicing: a ${c}, ${kid.name}.`,()=>`The cradle is filled at ${hn}: a ${c}, ${kid.name}.`,()=>`${kid.name}, a ${c}, is welcomed into ${hn}.`,()=>`To ${hn} a ${c} is welcomed, ${kid.name}.`,()=>`The nurses of ${hn} carry in a ${c}, ${kid.name}.`]))(houseOf(parent).name,ks==='f'?'daughter':'son'));
         }
       }
     }
@@ -5612,7 +5977,7 @@ function tickPolitics(){
         if(royal&&other){other.loyalty=clamp(other.loyalty+10,0,100);}
         if(royal||chance('sim',0.3))
           emit('crown',royal?6:3,W.capital.pos,
-            `${fullTitle(a)} of ${houseOf(a).name} is wed to ${fullTitle(b)} of ${houseOf(b).name}${royal?'; the match binds the houses in friendship':''}. There is feasting ${royal?'for three days':'in the hall'}.`,{festival:royal});
+            ((A,B,ha,hb,m,fs)=>vary('wedding',[()=>`${A} of ${ha} is wed to ${B} of ${hb}${m}. There is feasting ${fs}.`,()=>`${A} of ${ha} and ${B} of ${hb} are wed${m}; there is feasting ${fs}.`,()=>`There is feasting ${fs} when ${A} of ${ha} is wed to ${B} of ${hb}${m}.`,()=>`${B} of ${hb} is given in marriage to ${A} of ${ha}${m}. There is feasting ${fs}.`,()=>`The wedding of ${A} of ${ha} and ${B} of ${hb} is kept with feasting ${fs}${m}.`]))(fullTitle(a),fullTitle(b),houseOf(a).name,houseOf(b).name,royal?'; the match binds the houses in friendship':'',royal?'for three days':'in the hall'),{festival:royal});
         if(royal)W.capital.festivalUntil=day()+3;
         break;
       }
@@ -5626,20 +5991,21 @@ function tickPolitics(){
       const h=W.houses[exiledIdx];
       const beasts=['Stag','Wolf','Raven','Heron','Boar','Ox','Falcon','Adder'];
       h.name='House '+(chance('sim',0.5)?pick('sim',NAMEB.pfx)+pick('sim',NAMEB.sfx):pick('sim',beasts)+pick('sim',['mane','fell','marck','wood','helm']));
-      {const st=W.settlements[h.seat]||W.capital;h.cult=st.cult||h.cult;const C=CULT[h.cult]||CULT.anglo,r=nameRng(day()+exiledIdx*7);h.name=C.house(st.name,r,C,r1(r,C.roots));}
+      {const st=W.settlements[h.seat]||W.capital;h.cult=st.cult||h.cult;const C=CULT[h.cult]||CULT.anglo,r=nameRng(day()+exiledIdx*7);h.name=uniqueHouseName(C,st.name,r,h);}
       h.charge=pick('sim',CHARGES);h.exiled=false;h.extinct=false;h.loyalty=68;h.might=0.6+rand('sim')*0.7;h.grudges={};h.gold=400;h.led={};h.memo=[];h.dues=undefined;
       delete h._url;
       if(W.settlements[h.seat]&&h.seat!==0&&W.settlements[h.seat].owner===0){W.settlements[h.seat].owner=exiledIdx;syncOwner(W.settlements[h.seat]);} // the forfeit seat, if the crown still holds it, really is granted
       const sx=chance('sim',0.5)?'m':'f';
-      const head=mkNotable({name:personName(sx,exiledIdx),sex:sx,age:32+randi('sim',15),house:exiledIdx,role:'head',
-        traits:twoTraits(),agenda:'means to prove the new blood worthy'});
-      head.birthDay=day()-head.age*360;
+      const fp=promoteFrom(W.settlements[h.seat],q=>q.sx===sx?q.sk[KA]+q.sk[KC]+q.sk[KR]+0.3*trait(q,GW)+0.2*trait(q,GB)+(ageYrs(q)>=28&&ageYrs(q)<50?0.5:0):-9); // the ablest of the seat's own folk
+      const head=fp?notableFromFolk(fp,{name:fp.gn,house:exiledIdx,role:'head',agenda:'means to prove the new blood worthy'})
+        :mkNotable({name:personName(sx,exiledIdx),sex:sx,age:32+randi('sim',15),house:exiledIdx,role:'head',traits:(twoTraits(),[]),agenda:'means to prove the new blood worthy'});
+      if(!fp)head.birthDay=day()-head.age*360;
       h.head=head.id;
-      const sp=mkNotable({name:personName(sx==='m'?'f':'m',exiledIdx),sex:sx==='m'?'f':'m',age:26+randi('sim',15),house:exiledIdx,role:'spouse',traits:twoTraits()});
+      const sp=mkNotable({name:personName(sx==='m'?'f':'m',exiledIdx),sex:sx==='m'?'f':'m',age:26+randi('sim',15),house:exiledIdx,role:'spouse',traits:(twoTraits(),[])});
       sp.birthDay=day()-sp.age*360;
       head.spouse=sp.id;sp.spouse=head.id;
       const seatPos=W.settlements[h.seat]?.pos||W.capital.pos;
-      emit('crown',6,seatPos,`The crown raises new blood to the peerage: ${fullTitle(head)} is granted the forfeit seat of ${W.settlements[h.seat]?.name||'the marches'}, and ${h.name} is entered in the rolls.`);
+      emit('crown',6,seatPos,`The crown raises new blood to the peerage: ${fullTitle(head)}${head.born?`, born ${head.name} ${head.born.fam}, ${head.sex==='f'?'daughter':'son'} of a ${head.born.tr||'ploughman'} of ${W.settlements[head.born.si]?.name||'the town'},`:''} is granted the forfeit seat of ${W.settlements[h.seat]?.name||'the marches'}, and ${h.name} is entered in the rolls.`);
       refreshHousePanel();
     }
   }
@@ -5649,10 +6015,13 @@ function tickPolitics(){
   if(W.clock.day%360===185&&!W.drought&&W.capital.hunger<0.15){
     W.capital.festivalUntil=day()+4;
     W.settlements.forEach(s=>s.unrest=clamp(s.unrest-6,0,100));
-    emit('crown',3,W.capital.pos,`The Feast of High Summer is held in ${W.capital.name}; there are games, and a great ox is roasted whole.`,{festival:true});
+    {const g=feastGames(),c=W.capital.name,w=({rain:', in spite of the rain',storm:', though storm-clouds gather',overcast:', under a grey sky',clear:', under a cloudless sky'})[(W.weather||{}).state]||'';
+    emit('crown',3,W.capital.pos,vary('feast_summer',[()=>`The Feast of High Summer is held in ${c}${w}. ${g}; a great ox is roasted whole.`,()=>`${c} keeps the Feast of High Summer${w}: ${g[0].toLowerCase()+g.slice(1)}, and an ox turns on the spit.`,
+      ()=>`At the Feast of High Summer in ${c}, ${g[0].toLowerCase()+g.slice(1)}. The ale runs until dark.`,()=>`High Summer at ${c}${w}: ${g[0].toLowerCase()+g.slice(1)}, and the crown feasts the town.`,()=>`The Feast of High Summer: ${g[0].toLowerCase()+g.slice(1)}, before the whole court at ${c}.`]),{festival:true});}
   }
   if(W.clock.day%360===230&&!W.drought){
-    emit('trade',3,W.capital.pos,`The harvest is brought in ${MOD.harvest>1.2?'heavy and golden':'in good order'}; tithes fill the granaries.`,{festival:true});
+    {const H=harvestReport();
+    emit('trade',3,W.capital.pos,vary('harvest',[()=>`The harvest is brought in ${H.q}. ${H.where}`,()=>`Reapers are home and the harvest is ${H.q}. ${H.where}`,()=>`The sheaves are carted home: ${H.q} this year. ${H.where}`,()=>`The harvest is ${H.q}; the tithe-barns fill. ${H.where}`,()=>`As autumn opens the harvest is reckoned ${H.q}. ${H.where}`]),{festival:true});}
     W.legitimacy=clamp(W.legitimacy+1,0,100);
   }
 }
@@ -5665,10 +6034,8 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
   const give=own.filter(s=>s!==seat).sort((a,b)=>dist2d(b.pos.x,b.pos.z,seat.pos.x,seat.pos.z)-dist2d(a.pos.x,a.pos.z,seat.pos.x,seat.pos.z)).slice(0,Math.floor(own.length/3));
   if(!give.length)return;
   const name='House '+give[0].name.replace(/(mere|holt|ford|caster|wyck|march|fell|combe|worth|bridge|haven|moor|dale|garth|stead|port|field|burn|cester|ham|by)$/,'')+pick('sim',['ing','mont','ric','wald','hurst']);
-  const cC=CULT[h.cult]||CULT.anglo,cr=nameRng(day()+hi*101),cname=cC.house(give[0].name,cr,cC,r1(cr,cC.roots));
+  const cC=CULT[h.cult]||CULT.anglo,cr=nameRng(day()+hi*101),cname=uniqueHouseName(cC,give[0].name,cr,null);
   const nh={name:[cname,cname+' the Younger',cname+' of the March',cname+' the Cadet'].find(n=>!W.houses.some(o=>o.name===n))||name, /* a cadet takes its name from its fief, in its own tongue */cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
-  {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
-    Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0});}
   {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
     Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0,extinct:false});}
   if(ci<0){if(W.houses.length>=11)return;W.houses.push(nh);ci=W.houses.length-1;}else{Object.assign(W.houses[ci],nh);delete W.houses[ci]._url;}
@@ -5679,14 +6046,14 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
 }
 function killNotable(n,cause,silent){
   if(!n.alive)return;
-  n.alive=false;n.deathDay=day();
+  n.alive=false;n.deathDay=day();nameUse(n.name.split(' ')[0],-1);
   const wasMonarch=n===W.monarch;
   const h=houseOf(n);
   if(!silent){
     const pos=n.house===0?W.capital.pos:(W.settlements[h.seat]?.pos||W.capital.pos);
     const pri=wasMonarch?10:n.role==='head'?7:n.role==='heir'?6:2;
     if(pri>2||n.epithet||chance('sim',0.22))
-      emit('crown',pri,pos,`${fullTitle(n)}${n.house>0&&n.role!=='head'?' of '+houseOf(n).name:''} has died ${cause}, in the ${ordinal(Math.max(1,n.age||ageOf(n)))} year of ${n.sex==='f'?'her':'his'} age.`);
+      emit('crown',pri,pos,((T,o,g)=>vary('death',[()=>`${T} has died ${cause}, in the ${o} year of ${g} age.`,()=>`${T} passes from this world ${cause}, in the ${o} year of ${g} age.`,()=>`In the ${o} year of ${g} age, ${T} has died ${cause}.`,()=>`${T} is taken ${cause}, in the ${o} year of ${g} age.`,()=>`Death comes to ${T} ${cause}, in the ${o} year of ${g} age.`,()=>`${T} has died ${cause}; ${g==='her'?'she':'he'} was in the ${o} year of ${g} age.`]))(fullTitle(n)+(n.house>0&&n.role!=='head'?' of '+houseOf(n).name:''),ordinal(Math.max(1,n.age||ageOf(n))),n.sex==='f'?'her':'his'));
   }
   if(n.spouse){const sp=notableById(n.spouse);if(sp)sp.spouse=null;}
   if(wasMonarch)succession();
@@ -5757,7 +6124,7 @@ function succession(){
     }
     if(!head){ // the realm scrapes the bottom of the barrel
       head=W.notables.filter(n=>n.alive&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0]
-        ||mkNotable({name:personName('m'),sex:'m',age:30,birthDay:day()-30*360,house:0,role:'monarch',traits:twoTraits(),agenda:'claims a crown found in a ditch'});
+        ||mkNotable({name:personName('m'),sex:'m',age:30,birthDay:day()-30*360,house:0,role:'monarch',traits:(twoTraits(),[]),agenda:'claims a crown found in a ditch'});
     }
     emit('crown',10,W.capital.pos,`${fullTitle(old)} dies without an heir of the body or of the blood! The great houses meet at ${W.capital.name}${ci>0?' and elect '+W.houses[ci].name+(W.houses[ci].claim?', whose line has royal blood':'')+' to the throne':''}.`);
     W.monarch=head;head.role='monarch';
@@ -5781,7 +6148,7 @@ function raiseArmy(hi,fromS,strength,side){
   const commanders=W.notables.filter(n=>n.alive&&n.house===hi&&ageOf(n)>=16&&(n.role==='head'||n.role==='scion'||n.role==='monarch'||n.role==='cousin'));
   const cmd=(hi===0&&commanders.find(n=>n.role!=='monarch'))||commanders[0]||W.notables.find(n=>n.alive&&ageOf(n)>=16); // a marshal leads the royal host; the king rides out only if there is no one else
   strength=Math.min(strength,s.pop*0.25);
-  s.pop-=strength*0.7;
+  s.pop-=strength*0.7;s._levy=(s._levy||0)+strength*0.7; // the young men of the place go with the host
   const a={id:++armyN,house:hi,side,name:'Host of '+W.houses[hi].name.replace('House ',''),
     strength,morale:70+randi('sim',20),supply:100,commander:cmd?cmd.id:null,
     at:fromS,target:null,poly:null,departDay:0,arriveDay:0,state:'idle',_rpos:{x:s.pos.x,y:s.pos.y,z:s.pos.z},
@@ -5898,13 +6265,13 @@ function tickMilitary(){
         const defend=defenceOf(s);
         if(!inRebellion(a)&&a.strength<defend*2){ // too weak to take it: a raid, the fields burned and the land about it held for a season
           a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
-          emit('war',6,s.pos,`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`);
+          emit('war',6,s.pos,vary('raid',[()=>`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`The corn about ${s.name} is put to the torch by ${a.name.replace(/^Host/,'the host')}; the townsfolk man the barricades.`,()=>`Before ${s.name} comes ${a.name}, burning the corn up to the gates; the townsfolk throw up barricades and man them.`,()=>`The townsfolk of ${s.name} man the barricades as ${a.name.replace(/^Host/,'the host')} raids their lands, burning the corn to the very gates.`,()=>{const c=notableById(a.commander);return c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} against ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`:`${a.name} comes against ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`;},()=>`${a.name} comes against ${s.name} with some ${Math.round(a.strength)} men, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`Smoke stands over the fields of ${s.name}: ${a.name} has burned the corn up to the gates, and the townsfolk man the barricades.`]));
         }else if(!(s.walls>0&&s.garrison>20)){ // no walls: still days of skirmish before the place is theirs, longer against a garrison
           a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:18)+Math.round((s.garrison||0)/6+s.pop/60);s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s); // the townsfolk defend their homes: weeks, not days
         }else if(s.walls>0&&s.garrison>20){
           a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40)+(s.bastions?35:0)+(s.citadel?25:0); // river-girt, bastioned or citadel towns hold out longer
           s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
-          emit('war',8,s.pos,`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`);
+          emit('war',8,s.pos,vary('invest',[()=>`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`,()=>`${a.name} sits down before ${s.name}; siege lines are dug and tents are pitched before the walls.`,()=>`Siege lines are dug about ${s.name} by ${a.name.replace(/^Host/,'the host')}, and a camp of tents rises before the walls.`,()=>`A camp of tents rises before the walls of ${s.name}: ${a.name} invests it, and the siege lines are dug.`,()=>`${s.name} is invested by ${a.name}; the siege lines are dug, and tents cover the ground before the walls.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`,()=>{const c=notableById(a.commander);return c?`${c.name} invests ${s.name} with ${a.name.replace(/^Host/,'the host')}; siege lines are dug and a camp of tents rises before the walls.`:`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`;}]));
         }else takeSettlement(a,s);
       }else a.state='idle';
     }
@@ -5912,25 +6279,25 @@ function tickMilitary(){
       const s=W.settlements[a.at];if(a.siegeArc)siegeArc(a,s);
       s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
       if(now>=a.siegeUntil){
-        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`);}
+        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
-          const cm=notableById(a.commander),A=a.strength*(a.morale/70)*(cm&&cm.traits.includes('bold')?1.18:1),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
+          const cm=notableById(a.commander),A=a.strength*(a.morale/70)*generalship(cm),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
           if(chance('sim',A/(A+D*1.2))){s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);}
           else{
             a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
             if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.holdUntil=day()+60;
-              emit('war',8,s.pos,`The storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`);
+              emit('war',8,s.pos,vary('storm_fails',[()=>`The storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${a.name} leaves its dead in the ditch at ${s.name}; the storm fails, and the siege is raised.`,()=>`The storm of ${s.name} fails, and its ditch is filled with the dead of ${a.name.replace(/^Host/,'the host')}; the siege is raised.`,()=>`${a.name} raises the siege of ${s.name}, leaving its dead in the ditch; the storm has failed.`,()=>`Failing in the storm of ${s.name}, ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`]));
               if(inRebellion(a))warScore(a.side==='crown'?-10:10);}
             else{a.siegeUntil=now+15+Math.round(rand('sim')*15);
-              emit('war',6,s.pos,`An assault on ${s.name} is thrown back from the ${s.walls>=2?'walls':s.walls?'palisade':'barricades'}; ${a.name} settles to starve it out.`);}
+              emit('war',6,s.pos,((w)=>vary('assault',[()=>`An assault on ${s.name} is thrown back from the ${w}; ${a.name} settles to starve it out.`,()=>`${a.name} storms ${s.name} and is flung back from the ${w}; it settles to starve the place out.`,()=>`${s.name} holds: the assault is thrown back from the ${w}, and ${a.name.replace(/^Host/,'the host')} settles to starve it out.`,()=>`${a.name}, some ${Math.round(a.strength)} strong, is thrown back from the ${w} of ${s.name} and settles to starve it out.`,()=>`Ladders are raised against ${s.name} and cast down from the ${w}; the assault is thrown back, and ${a.name} settles to starve it out.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the assault on ${s.name} breaks upon the ${w}; ${a.name} settles to starve it out.`,()=>`Its assault thrown back from the ${w} of ${s.name}, ${a.name.replace(/^Host/,'the host')} settles to starve it out.`]))(s.walls>=2?'walls':s.walls?'palisade':'barricades'));}
           }
         }
       }else if(chance('sim',0.01)){ // sortie
         if(resolveClash(a,{strength:s.garrison*3+sheltered(s),morale:60,house:s.owner,name:'garrison of '+s.name})){
-          emit('war',6,s.pos,`A sortie from ${s.name} is beaten back with slaughter at the gates.`);
+          emit('war',6,s.pos,vary('sortie',[()=>`A sortie from ${s.name} is beaten back with slaughter at the gates.`,()=>`The garrison of ${s.name} sallies out and is beaten back with slaughter at the gates.`,()=>`Men sally from ${s.name}, but are beaten back with slaughter at the gates.`,()=>`At the gates of ${s.name} a sortie is driven in with slaughter.`,()=>`${s.walls>=2?'From behind the walls':s.walls?'From behind the palisade':'From behind the barricades'} of ${s.name} a sortie is made, and beaten back with slaughter at the gates.`,()=>`The townsmen of ${s.name} make a sortie and are beaten back with slaughter at the gates.`,()=>`Slaughter at the gates of ${s.name}: a sortie is beaten back.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, a sortie from ${s.name} is beaten back with slaughter at the gates.`]));
         }else{
           liftSiege(a);routHome(a);
-          emit('war',8,s.pos,`The defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`);
+          emit('war',8,s.pos,vary('sally',[()=>`The defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`,()=>`At dawn the defenders of ${s.name} sally forth and put the besiegers to flight!`,()=>`Out of ${s.name} at first light pour its defenders; the besiegers are put to flight!`,()=>`The besiegers of ${s.name} are put to flight when its defenders sally forth at dawn!`,()=>`The gates of ${s.name} swing open at dawn, and the defenders put the besiegers to flight!`,()=>`${a.name} breaks before the defenders of ${s.name}, who sally forth at dawn and put the besiegers to flight!`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`,()=>`At dawn a sally from ${s.name} falls upon the lines of ${a.name.replace(/^Host/,'the host')}; the besiegers are put to flight!`]));
           if(inRebellion(a))warScore(a.side==='crown'?-14:14);
         }
       }
@@ -5957,7 +6324,7 @@ function tickMilitary(){
       a.state=b.state='battle';a.battleUntil=b.battleUntil=now+3;a.field=b.field=null;a.foe=b;b.foe=a;
       const where=nearestPlaceName(a._spos.x,a._spos.z);
       a.battleName=b.battleName='the Battle of '+where;a.battlePos={x:a._spos.x,z:a._spos.z};b.battlePos=a.battlePos;
-      emit('war',8,a.battlePos,`The hosts meet near ${where}! Arrows darken the sky as the lines close.`);
+      emit('war',8,a.battlePos,vary('meet',[()=>`The hosts meet near ${where}! Arrows darken the sky as the lines close.`,()=>`Near ${where} the hosts meet, and arrows darken the sky as the lines close!`,()=>`${a.name} and ${b.name.replace(/^Host/,'the host')} meet near ${where}; arrows darken the sky as the lines close!`,()=>`The lines close near ${where}, where the hosts meet under a hail of arrows!`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the hosts meet near ${where}! Arrows darken the sky as the lines close.`,()=>`${Math.round(a.strength)} men against ${Math.round(b.strength)}: the hosts meet near ${where}, and arrows darken the sky.`,()=>`In the ${SEASONS[seasonIdx()].toLowerCase()} the hosts meet near ${where}; arrows darken the sky as the lines close!`,()=>`Banners are shaken out and the hosts meet near ${where}; arrows darken the sky as the lines close!`]));
     }
   }
   for(const a of W.armies){
@@ -5971,7 +6338,7 @@ function tickMilitary(){
       const pos=a.battlePos||{x:a._spos.x,z:a._spos.z};
       l.strength*=0.42;l.morale=35;w.strength*=0.85;
       W.stats.battles++;
-      let line=`${w.name} carries the field at ${a.battleName}. The ${l.name.toLowerCase()} breaks and flees ${pick('sim',['into the dusk','through the fords','into the woods'])}.`;
+      let line=((f,ln,wn)=>vary('battle',[()=>`${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`,()=>`At ${a.battleName} the ${ln} is broken and flees ${f}; ${w.name} carries the field.`,()=>`${w.name} holds the field at ${a.battleName}; the ${ln} breaks and flees ${f}.`,()=>`The ${ln} gives way at ${a.battleName} and flees ${f}, and ${w.name} carries the field.`,()=>`Victory at ${a.battleName} goes to ${w.name}, which carries the field; the ${ln} breaks and flees ${f}.`,()=>`${cw?`Under ${cw.name}, the ${wn} carries the field at ${a.battleName}.`:`${w.name} carries the field at ${a.battleName}.`} The ${ln} breaks and flees ${f}.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`]))(pick('sim',['into the dusk','through the fords','into the woods']),l.name.replace(/^Host/,'host'),w.name.replace(/^Host/,'host'));
       if(cl&&chance('sim',0.22)){killNotable(cl,`at ${a.battleName}, sword in hand`,true);line+=` ${fullTitle(cl)} is slain in the rout.`;}
       else if(cw&&!cw.epithet&&chance('sim',0.3)){cw.epithet='the '+pick('sim',['Ironhand','Unbroken','Lionhearted','Grim','Victorious']);line+=` Men now name the victor ${fullTitle(cw)}.`;}
       emit('war',8,pos,line);
@@ -6066,8 +6433,8 @@ function routFromField(a){
 }
 function resolveClash(a,b){
   const ca=notableById(a.commander),cb=notableById(b.commander);
-  let pa=a.strength*(a.morale/70)*(ca&&ca.traits.includes('bold')?1.18:1);
-  let pb=b.strength*((b.morale||60)/70)*(cb&&cb.traits&&cb.traits.includes('bold')?1.18:1);
+  let pa=a.strength*(a.morale/70)*generalship(ca); // the commander's arms, seat, nerve and wits
+  let pb=b.strength*((b.morale||60)/70)*generalship(cb);
   const gate=x=>{const t=x.atGates!=null&&W.settlements[x.atGates];return t?1+0.22*Math.sqrt(fortOf(t).mult-1):1;}; // before its own gates: at even numbers ~3 fights in 4 won behind a typical circuit
   pa*=gate(a);pb*=gate(b);
   if(W.weather.state==='storm'||W.weather.state==='rain'){pa*=0.9+rand('sim')*0.2;pb*=0.9+rand('sim')*0.2;}
@@ -6081,9 +6448,9 @@ function takeSettlement(a,s){
   if(chance('sim',(cruel?(feud?0.4:1):(feud?0.06:0.25))*(s.walls>0?1:0.35))){ // a walled town that held out is sacked; an open village mostly just changes hands
     s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;
     igniteFire(s,2,'sack');
-    emit('war',9,s.pos,`${s.name} is taken and given over to sack! Smoke rises from the ${pick('sim',['market','temple quarter','granaries'])} and the chronicler weeps to record it.`);
+    emit('war',9,s.pos,((q)=>vary('sack',[()=>`${s.name} is taken and given over to sack! Smoke rises from the ${q} and the chronicler weeps to record it.`,()=>`${s.name} falls, and is given over to sack; smoke stands above the ${q}, and the chronicler weeps to record it.`,()=>`The chronicler weeps to record it: ${s.name} is taken and given over to sack, and the ${q} is wrapped in smoke.`,()=>`${s.name} is taken and given over to sack; the ${q} smokes to heaven.`,()=>`${a.name} takes ${s.name} and gives it over to sack. Smoke rises from the ${q}; the chronicler weeps to record it.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${s.name} is taken and given over to sack; smoke hangs over the ${q}, and the chronicler weeps to record it.`,()=>`No mercy is shown at ${s.name}: it is taken and given over to sack, the ${q} burning, and the chronicler weeps to record it.`]))(pick('sim',['market','temple quarter','granaries'])));
   }else{
-    emit('war',8,s.pos,`${s.name} opens its gates to ${a.name}; the banner of ${W.houses[a.house].name} flies from its walls.`);
+    emit('war',8,s.pos,((hn)=>vary('gates',[()=>`${s.name} opens its gates to ${a.name}; the banner of ${hn} flies from its walls.`,()=>`The gates of ${s.name} are opened to ${a.name}, and the banner of ${hn} flies from its walls.`,()=>`${s.name} yields to ${a.name}; its gates stand open, and the banner of ${hn} flies from the walls.`,()=>`${a.name} enters ${s.name} through its opened gates; the banner of ${hn} is raised upon its walls.`,()=>`The banner of ${hn} is raised upon the walls of ${s.name}, which opens its gates to ${a.name.replace(/^Host/,'the host')}.`,()=>{const c=notableById(a.commander);return `${s.name} opens its gates to ${c?`${c.name} and ${a.name.replace(/^Host/,'the host')}`:a.name}; the banner of ${hn} flies from its walls.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${s.name} opens its gates to ${a.name}; the banner of ${hn} flies from its walls.`]))(W.houses[a.house].name));
   }
   if(inRebellion(a)&&s.takenFrom==null)s.takenFrom=s.owner; // remembered, so the peace can settle it
   else if(!inRebellion(a)&&s.feudFrom==null)s.feudFrom=s.owner; // a private war's gains are for the peace to settle
@@ -6217,7 +6584,7 @@ function tickThreats(){
     if(before>0&&s.fires.length===0){
       const lost=(s._burned||[]).length; // this fire's toll, not every roof the town has ever lost
       if(lost>=6){W.stats.greatFires++;
-        emit('fates',8,s.pos,`The great fire of ${s.name} is spent at last. ${lost} roofs are fallen to ash; the survivors sift the ruins.`);
+        emit('fates',8,s.pos,vary('fire_spent',[()=>`The great fire of ${s.name} is spent at last. ${lost} roofs are fallen to ash; the survivors sift the ruins.`,()=>`The great fire at ${s.name} has burned itself out; ${lost} roofs are fallen to ash, and the survivors sift the ruins.`,()=>`At last the great fire of ${s.name} is spent. The survivors sift the ruins, where ${lost} roofs lie fallen to ash.`,()=>`${lost} roofs of ${s.name} are fallen to ash before the great fire is spent at last; the survivors sift the ruins.`,()=>`The great fire of ${s.name} sinks to embers at last. ${lost} roofs lie fallen to ash; the survivors sift the ruins.`,()=>`Men of ${s.name} sift the ruins now that the great fire is spent: ${lost} roofs are fallen to ash.`]));
         s.prosperity=clamp(s.prosperity-12,1,100);}
       const B=s._burned||[];s._burned=[];
       if(B.length>=8&&s._lay&&s._lay.live){ // the burned district is cleared and laid out again: stone houses, and a straight street across it
@@ -6226,7 +6593,7 @@ function tickThreats(){
         emit('trade',5,{x:cx,z:cz},`In ${s.name} the burned streets are cleared; the council lays out a new, straight street and orders the houses rebuilt in stone.`);}
     }
     if(s.fires.length===5&&!s._gfAnnounced){s._gfAnnounced=true;
-      emit('fates',8,s.pos,`Fire leaps from roof to roof in ${s.name}! The wind ${wet?'and the rain contend with':'feeds'} the blaze.`);}
+      emit('fates',8,s.pos,((wt)=>vary('fire_spreads',[()=>`Fire leaps from roof to roof in ${s.name}! The wind ${wt} the blaze.`,()=>`In ${s.name} fire leaps from roof to roof, and the wind ${wt} the blaze!`,()=>`The wind ${wt} the blaze at ${s.name}, where fire leaps from roof to roof!`,()=>`Roof to roof the fire runs in ${s.name}! The wind ${wt} the blaze.`,()=>`Fire takes one roof after another in ${s.name}! The wind ${wt} the blaze.`]))(wet?'and the rain contend with':'feeds'));}
     if(!s.fires.length)s._gfAnnounced=false;
   }
   // rebuilding — scars heal slowly, gated on prosperity
@@ -6238,16 +6605,16 @@ function tickThreats(){
   // lightning ignition
   if(W.weather.state==='storm'&&chance('sim',0.02*dis)){
     const s=pick('sim',W.settlements);
-    if(igniteFire(s,1,'lightning'))emit('fates',5,s.pos,`Lightning strikes a roof in ${s.name} and flames take hold.`);
+    if(igniteFire(s,1,'lightning'))emit('fates',5,s.pos,vary('lightning',[()=>`Lightning strikes a roof in ${s.name} and flames take hold.`,()=>`Lightning strikes a roof in ${s.name}; the thatch catches, and flames take hold.`,()=>`In ${s.name} lightning strikes a roof, and flames take hold.`,()=>`Flames take hold in ${s.name}, where lightning strikes a roof.`,()=>`In the storm lightning strikes a roof in ${s.name}, and flames take hold.`]));
   }
   // drought
   const si=seasonIdx();
   if(si===1&&!W.drought&&W.clock.day%360>=95&&W.clock.day%360<=100&&chance('sim',0.05*dis)){
     W.drought=true;lastSeasonKey='';
-    emit('fates',7,W.capital.pos,`No rain has fallen since the spring; the realm is gripped by drought. Fields wither to straw and the millponds shrink.`);
+    emit('fates',7,W.capital.pos,vary('drought',[()=>`No rain has fallen since the spring; the realm is gripped by drought. Fields wither to straw and the millponds shrink.`,()=>`Since the spring no rain has fallen, and drought grips the realm; the fields wither to straw and the millponds shrink.`,()=>`Drought grips the realm: no rain has fallen since the spring. The millponds shrink, and the fields wither to straw.`,()=>`The realm is gripped by drought, for no rain has fallen since the spring; millponds shrink and fields wither to straw.`,()=>`The sky stays hard and empty; no rain has fallen since the spring. Fields wither to straw, the millponds shrink, and the realm is gripped by drought.`,()=>`Fields wither to straw and the millponds shrink: drought grips the realm, and no rain has fallen since the spring.`]));
   }
   if(W.drought&&si===2){W.drought=false;lastSeasonKey='';
-    emit('fates',5,W.capital.pos,`Autumn rains at last break the drought, though the harvest is thin.`);}
+    emit('fates',5,W.capital.pos,vary('drought_ends',[()=>`Autumn rains at last break the drought, though the harvest is thin.`,()=>`The drought is broken by autumn rains at last, though the harvest is thin.`,()=>`At last the autumn rains break the drought; the harvest, however, is thin.`,()=>`Rain comes again with the autumn and breaks the drought, though the harvest is thin.`,()=>`The harvest is thin, but the autumn rains break the drought at last.`,()=>`The autumn rains come at last and break the drought; the harvest is thin.`]));}
   // flood
   if(si===0&&W.snowpack>60&&(W.weather.state==='storm'||W.weather.state==='rain')&&chance('sim',0.05*dis)&&!W.flooding){
     W.flooding=8;W.snowpack=15;
@@ -6255,7 +6622,7 @@ function tickThreats(){
       s.prosperity=clamp(s.prosperity-8,1,100);
       const riverside=s.buildings.filter(b=>b.state==='sound').slice(0,3);
       for(const b of riverside)if(chance('sim',0.4)){b.state='ruin';b.rebuildT=day()+150;s.ruinCount++;updateBuildingInstance(b);}
-      emit('fates',7,s.pos,`The river bursts its banks at ${s.name}! Brown water sweeps through the low streets, carrying off byres and bridges.`);
+      emit('fates',7,s.pos,vary('river_bursts',[()=>`The river bursts its banks at ${s.name}! Brown water sweeps through the low streets, carrying off byres and bridges.`,()=>`Brown water sweeps through the low streets of ${s.name}, carrying off byres and bridges; the river has burst its banks!`,()=>`The river bursts its banks at ${s.name}, and byres and bridges are carried off by the brown water in the low streets.`,()=>`The low streets of ${s.name} lie under brown water; the river has burst its banks, carrying off byres and bridges!`,()=>`Byres and bridges are swept away at ${s.name}, where the river bursts its banks and brown water fills the low streets.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the river bursts its banks at ${s.name}! Brown water sweeps through the low streets, carrying off byres and bridges.`]));
     }
   }
   // earthquake
@@ -6292,7 +6659,7 @@ function tickBandits(dis){
       const g=campGroup(0x4a4038);g.position.set(x,hAt(x,z),z);
       g.traverse(o=>o.userData.pick={type:'camp',camp});
       scene.add(g);G.campMeshes.set(camp,g);
-      emit('fates',5,{x,z},`Masterless men gather in the ${W.biome[i]===B.PINE?'pine uplands':'greenwood'}; travellers speak of a robber camp near ${nearestPlaceName(x,z)}.`);
+      emit('fates',5,{x,z},((w,p)=>vary('bandit_camp',[()=>`Masterless men gather in the ${w}; travellers speak of a robber camp near ${p}.`,()=>`Travellers speak of a robber camp near ${p}: masterless men have gathered in the ${w}.`,()=>`A robber camp is spoken of near ${p}; masterless men gather in the ${w}.`,()=>`Masterless men gather in the ${w}, and travellers tell of a robber camp near ${p}.`,()=>`In the ${w} near ${p} masterless men make a robber camp, and travellers speak of it with dread.`,()=>`Carters give ${p} a wider berth: masterless men gather in the ${w}, and there is talk of a robber camp near it.`]))(W.biome[i]===B.PINE?'pine uplands':'greenwood',nearestPlaceName(x,z)));
       break;
     }
   }
@@ -6311,13 +6678,16 @@ function tickBandits(dis){
       if(!p)continue;
       if(dist2d(camp.x,camp.z,p.x,p.z)<320&&chance('sim',0.12*MOD.bandit)){
         c.robbed=true;camp.raids++;camp.loot=(camp.loot||0)+c.value;
-        emit('fates',5,{x:p.x,z:p.z},`Bandits fall upon a caravan on the ${W.settlements[c.origin].name} road! The mules are driven off and the goods lost.`);
+        emit('fates',5,{x:p.x,z:p.z},((o)=>vary('caravan',[()=>`Bandits fall upon a caravan on the ${o} road! The mules are driven off and the goods lost.`,()=>`A caravan on the ${o} road is set upon by bandits! The mules are driven off and the goods lost.`,()=>`Bandits take a caravan on the ${o} road; the mules are driven off and the goods are lost.`,()=>`The goods are lost and the mules driven off when bandits fall upon a caravan on the ${o} road!`,()=>`On the ${o} road a caravan is stripped by bandits; the mules are driven off and the goods lost.`,()=>`Bandits waylay a caravan on the ${o} road. The mules are driven off, and the goods are lost.`]))(W.settlements[c.origin].name));
         W.settlements[c.dest].prosperity=clamp(W.settlements[c.dest].prosperity-1,1,100);
       }
     }
     if(camp.raids>=3&&!camp.king&&chance('sim',0.01)){
-      camp.king=personName('m')+' '+pick('sim',['the Red','Hooksword','of the Hollow','Half-hanged','the Quiet']);
-      const n=mkNotable({name:camp.king,sex:'m',age:30,birthDay:day()-30*360,house:0,role:'Bandit King',traits:['bold','cruel'],agenda:'reigns over the greenwood'});
+      const ep=pick('sim',['the Red','Hooksword','of the Hollow','Half-hanged','the Quiet']),home=W.settlements[nearestSettlementIdx(camp.x,camp.z)];
+      const fp=promoteFrom(home,p=>p.sx==='m'?trait(p,GB)-trait(p,GWa)-0.5*trait(p,GD)+p.sk[KA]:-9); // the boldest, hardest, least biddable man of the nearest place
+      let n;
+      if(fp){camp.king=folkName(fp)+' '+ep;n=notableFromFolk(fp,{name:camp.king,house:0,role:'Bandit King',agenda:'reigns over the greenwood'});}
+      else{camp.king=personName('m')+' '+ep;n=mkNotable({name:camp.king,sex:'m',age:30,birthDay:day()-30*360,house:0,role:'Bandit King',traits:['bold','cruel'],agenda:'reigns over the greenwood'});}
       camp.kingId=n.id;
       emit('fates',6,camp,`The outlaws have crowned a king of thieves: men whisper the name ${camp.king}.`);
     }
@@ -6431,7 +6801,9 @@ function tickOmens(myth,dis){
     emit('fates',6,W.capital.pos,`A comet burns in the ${pick('sim',['northern','western','evening'])} sky, trailing fire. ${myth>=2?'The wise are afraid: such stars rain ruin on the year beneath them.':'Some say it foretells the death of princes; others, a good vintage.'}`);
     W.settlements.forEach(s=>s.unrest=clamp(s.unrest+4,0,100));
     if(myth>=2&&!W.prophet){
-      const p=mkNotable({name:personName(chance('sim',0.5)?'m':'f'),sex:'m',age:40,birthDay:day()-40*360,house:0,role:'Prophet',traits:['pious','bold'],agenda:'cries doom in the market squares'});
+      const fp=promoteFrom(W.capital,q=>2*q.sk[KS]+q.sk[KL]+trait(q,GB)-0.5*trait(q,GD)); // the most scripture-soaked and least governable soul in the capital
+      const p=fp?notableFromFolk(fp,{house:0,role:'Prophet',agenda:'cries doom in the market squares'})
+        :mkNotable({name:personName(chance('sim',0.5)?'m':'f'),sex:'m',age:40,birthDay:day()-40*360,house:0,role:'Prophet',traits:['pious','bold'],agenda:'cries doom in the market squares'});
       W.prophet=p.id;
       emit('fates',5,W.capital.pos,`A ragged prophet appears at the gates of ${W.capital.name}, crying that the comet is a sword unsheathed.`);
     }
@@ -6495,7 +6867,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
       else s._wallYr=year()-30;} // the old wall still serves: ask again in fifteen years
     else if(s.walls===1&&AD()>=1150&&s.prosperity>55&&s.pop>600&&chance('sim',0.25)&&L.live.stoneWall())did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
     else if(s.bailey&&!s.baileyStone&&AD()>=1150&&s.prosperity>55&&chance('sim',0.2)&&L.live.stoneBailey())did=`The bailey at ${s.name} is walled in stone.`;
-    else if(!s.motteStone&&s.prosperity>(s.motte?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=`The keep of ${s.name} is rebuilt in stone.`;}
+    else if(!s.motteStone&&s.prosperity>(s.motte?45:68)&&s.pop>s.pop0*(s.motte?1.1:1.4)&&chance('sim',0.25)&&L.live.rebuildKeep()){s.motteStone=true;did=vary('keep_stone',[()=>`The keep of ${s.name} is rebuilt in stone.`,()=>`Masons rebuild the keep of ${s.name} in stone.`,()=>`The old keep of ${s.name} is pulled down and rebuilt in stone.`,()=>`In ${s.name} the keep is raised anew, in stone.`,()=>`Stone replaces the old work in the keep of ${s.name}, which is rebuilt.`]);}
     else if(s.kind!=='village'&&s.prosperity>65&&s.pop>s.pop0*1.6&&chance('sim',0.2)&&L.live.rebuildChurch())did=`The church of ${s.name} is pulled down and rebuilt larger, its new tower visible for leagues.`;
     else if(s.kind!=='village'&&AD()>=1000&&s.pop>900&&chance('sim',0.15)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
@@ -6516,7 +6888,7 @@ function tickGrowth(){
     if(s.pop>room*1.1&&s.prosperity>35&&!s.siegeBy){
       const n=s.pop>room*1.5?3:1;let got=0; // far behind: the town fills quickly
       for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b)got++;
-        if(b&&chance('sim',0.03))emit('trade',3,s.pos,`${s.name} grows: new roofs rise in the ${b.district} quarter.`);}
+        if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`,()=>`${s.name} grows: builders are busy in the ${b.district} quarter, and new roofs rise there.`,()=>`New roofs rise in the ${b.district} quarter of ${s.name}, which grows apace.`,()=>`The ${b.district} quarter of ${s.name} spreads: new roofs rise, and the town grows.`]));}
       if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
         const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.tier<Math.max(1,tierCap())).map(o=>[o,dist2d(o.x,o.z,s.pos.x,s.pos.z)]).sort((x,y)=>x[1]-y[1]).slice(0,30);
         const pk=wpick(low,x=>-x[1]/120+(x[0].arch==='burgher'||x[0].arch==='shop'?0.5:0),1),b=pk&&pk[0];
@@ -6598,9 +6970,9 @@ function doAct(act,p,opt){
       emit('fates',6,W.capital.pos,`A great comet unfurls across the heavens, bright enough to read by.`);break;}
     case 'village':{const ci=toCell(p.x),cj=toCell(p.z);
       const loud=!opt||!opt.from||(opt.owner!=null&&opt.owner===plyH()&&!opt.fort&&!opt.planned); // a lord's own stewards do not report every site they reject
-      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){if(loud)emit('trade',2,p,'The surveyors find no good ground here.');return false;}
+      if(W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.25){if(loud)emit('trade',2,p,vary('survey_ground',[()=>`The surveyors find no good ground here.`,()=>`The surveyors pace the ground and find it wanting; there is no good ground here.`,()=>`No good ground is to be had here, the surveyors say.`,()=>`Wet or steep, the site gives the surveyors no good ground.`,()=>`The surveyors shake their heads: there is no good ground here.`,()=>`Here the surveyors find no good ground, and turn away.`]));return false;}
       if(W.settlements.some(o=>dist2d(p.x,p.z,o.pos.x,o.pos.z)<(o.radius||90)+150)){
-        if(loud)emit('trade',2,p,'The surveyors will not charter a village in the shadow of another.');return false;}
+        if(loud)emit('trade',2,p,vary('survey_shadow',[()=>`The surveyors will not charter a village in the shadow of another.`,()=>`The surveyors will not charter a village so close beneath the shadow of another.`,()=>`A village here would lie in the shadow of another, and the surveyors will not charter it.`,()=>`The surveyors refuse a charter: the ground lies in the shadow of another.`,()=>`No village can be chartered here, say the surveyors; it would stand in the shadow of another.`,()=>`The surveyors mark the ground, then shake their heads: a village here would live in the shadow of another.`]));return false;}
       const s={name:placeName(),kind:'village',pos:{x:p.x,z:p.z,y:hAt(p.x,p.z)},cx:ci,cz:cj,pop:60,
         prosperity:45,unrest:5,walls:0,stores:{grain:60,fish:5,timber:30,ore:5,tools:8,cloth:4,wine:2},
         harbor:false,river:false,owner:0,buildings:[],garrison:4,infected:0,recovered:0,plagueDead:0,
@@ -6663,7 +7035,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -6676,6 +7048,20 @@ function simTick(){
 const chronList=()=>document.getElementById('chronlist');
 let chronFilter='all', allLines=[], entryCount=0;
 const CATMAP={crown:'crown',war:'war',trade:'trade',fates:'fates'};
+function feastGames(){ // the games are won by real people: the strongest wrestler, the truest archer, the boldest rider of the capital and its villages
+  const c=W.capital,near=W.settlements.filter(s=>dist2d(s.pos.x,s.pos.z,c.pos.x,c.pos.z)<1500),men=[];
+  for(const s of near)for(const p of s.folk||[])if(p.sx==='m'){const a=ageYrs(p);if(a>=17&&a<40)men.push(p);}
+  const G=[['The wrestling',p=>trait(p,GV)+0.6*trait(p,GS)+0.3*trait(p,GB)],['The archery at the butts',p=>2.5*p.sk[KA]+0.3*trait(p,GD)+0.2*trait(p,GW)],['The horse-race',p=>2.5*p.sk[KRi]+0.4*trait(p,GB)],['The quarterstaff bout',p=>1.5*p.sk[KA]+0.5*trait(p,GV)+0.4*trait(p,GB)]];
+  const g=G[year()%G.length];if(!men.length)return `${g[0]} draws the whole court`;
+  let b=null,bv=-1e9;for(const p of men){const v=g[1](p)+fgauss()*0.3;if(v>bv){bv=v;b=p;}}
+  const C=W.champs||(W.champs={}),k=g[0]+b.id,n=C[k]=(C[k]||0)+1;
+  return `${g[0]} is won by ${folkName(b)} of ${W.settlements[b.si]?.name||c.name}${n===2?', as it was before':n>2?`, for the ${['','','','third','fourth','fifth','sixth'][n]||n+'th'} time`:''}`;}
+function harvestReport(){ // what the reeves actually brought in, where the corn stood heaviest and whose strips were best
+  const V=W.settlements.filter(s=>s.pop>20),pp=s=>(s.stores.grain||0)/Math.max(1,s.pop),tot=V.reduce((t,s)=>t+(s.stores.grain||0),0)/Math.max(1,V.reduce((t,s)=>t+s.pop,0));
+  const q=tot<0.6?'thin, and the poor will feel it':tot<1.2?'fair':tot<2.2?'good':'heavy and golden';
+  const S=[...V].sort((a,b)=>pp(b)-pp(a)),best=S[0],worst=S[S.length-1];if(!best)return {q,where:''};
+  let r=null,rv=-1;for(const p of best.folk||[])if(ageYrs(p)>=20&&p.sk[KH]>rv){rv=p.sk[KH];r=p;}
+  return {q,where:`The corn stood heaviest about ${best.name}${r?`, where ${folkName(r)}'s strips were the envy of the manor`:''}${worst!==best?`; thinnest at ${worst.name}`:''}.`};}
 function vary(key,list){ // one way of saying a thing, dealt from a shuffled deck so the annalist does not repeat himself until every wording has been used
   const V=W.voice||(W.voice={});let d=V[key];
   if(!d||d.n!==list.length||d.i>=d.o.length){const r=nameRng(((W.clock?W.clock.day:0)*31+[...key].reduce((t,c)=>t*33+c.charCodeAt(0)|0,7))|0),o=list.map((_,i)=>i);

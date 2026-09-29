@@ -163,6 +163,62 @@ itself; you rule one lord's domain:
 
 ## How it works
 
+- **Every soul.** Each town's population is a roll of real people, each
+  with a name, a family, a trade and parents. The roll follows the town's
+  numbers:
+  - the frail and very young die first;
+  - young people leave shrinking towns for growing ones;
+  - brides move to their husband's village;
+  - levies march with the host, and the survivors come home;
+  - married mothers give birth, and newcomer households arrive when births
+    can't keep up.
+- **Nature.** Seven inherited traits, weighted by twin-study heritability:
+  - wits ~0.5, vigour ~0.4, stature ~0.8;
+  - boldness, warmth and diligence ~0.4–0.45;
+  - fertility ~0.25;
+  - plus hair colour.
+
+  A child's genes are the mean of its parents' plus random variation. What
+  shows mixes that with its own fortune. A hungry childhood stunts stature
+  and vigour; a lord's table adds to them. Vigour fades after forty.
+- **Nurture.** Nine skills are taught over a lifetime:
+  - letters, reckoning, scripture and law;
+  - arms, riding and courtesy;
+  - a craft and husbandry.
+
+  Rank, place, trade and age set the chance to learn; wits and diligence set
+  the speed, and youth learns fastest. Commoners mostly learn a trade or the
+  fields: a parish school, a town grammar school or a cathedral teaches a few
+  to read, and a merchant's son is taught to reckon. The great houses' children
+  get tutors, courtly fostering and squiring, so nobles are lettered and armed.
+- **What it changes.**
+  - A commander's arms, riding, nerve and wits weigh in battle.
+  - A lord who can reckon and knows husbandry collects more of his rents.
+  - Vigour sets a noble's death rate, fertility their children.
+  - The old two-word characters (bold, shrewd, pious…) are now read off each
+    person's nature and schooling.
+  - Commoners rise out of the roll: a new peer from the ablest of the seat's
+    folk, the outlaws' king from the hardest man of the nearest village, the
+    comet's prophet from the capital.
+  - The midsummer games are won by the realm's actual strongest wrestler, best
+    archer or best rider.
+- **Family names** are fixed when a family is founded, and then inherited:
+  - from what the founder did (Smith, Schmidt, Lefèvre, Kovář);
+  - from where the family lived (Atwood, Dubois, Brookes);
+  - from the founder's looks, as the neighbours saw them (Long, Little, Brown,
+    Leroux);
+  - or from the founder's father's name (Johnson, Haraldsson, ap Rhys).
+
+  Given names are drawn from pools of ~50–70 male and ~45–50 female names per
+  language. The name least used among the living wins, and siblings never
+  share a name.
+- **Names of places and houses.** A place-name root or ending already used in
+  the realm is passed over, and no two great houses share a name.
+- **The annalist's voice.** Recurring events rotate through several wordings
+  and weave in the weather, the commander and the walls, so no wording repeats
+  until all have been used. The harvest names where the corn stood heaviest
+  and whose strips were best.
+
 - **The great houses' wealth.** A lord lives on his tenants' rents and the
   dues of his markets (the crown takes only a feudal aid from his towns);
   each fief beyond his hall keeps a castellan out of its own rents; hosts and
