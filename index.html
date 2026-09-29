@@ -223,7 +223,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 00:00 UTC</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2270,7 +2270,7 @@ function newFamily(s,si,founder){
   const k=r<(town?0.42:0.18)&&tr&&!TILLERS.has(tr)||r<0.08?'occ':r<(town?0.62:0.5)?'loc':r<0.86?'nick':'patr';
   const n=k==='occ'?surnameFor('occ',c,tr||'ploughman'):k==='loc'?surnameFor('loc',c,locFeature(s)):k==='nick'?surnameFor('nick',c,nickOf(founder)):surnameFor('patr',c,givenPick(c,'m',null));
   W.fams.push({n,c,k,tr,home:si,b:day()});return W.fams.length-1;}
-const famName=p=>p&&p.fam>=0&&W.fams[p.fam]?W.fams[p.fam].n:'';
+const famName=p=>p&&p.sur?p.sur:p&&p.fam>=0&&W.fams[p.fam]?W.fams[p.fam].n:'';
 const folkName=p=>p.gn+(famName(p)?' '+famName(p):'');
 /* one soul */
 let PID=1;
@@ -2280,7 +2280,7 @@ function mkPerson(s,si,o){
   p.hair=o.ma&&o.pa?(frand()<0.45?o.ma.hair:frand()<0.8?o.pa.hair:hairDraw(s.cult)):hairDraw(s.cult);
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   (s.folk||(s.folk=[])).push(p);return p;}
-function dropPerson(p){p.dead=true;nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
+function dropPerson(p){p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
 function removeAt(s,i){const a=s.folk,p=a[i];a[i]=a[a.length-1];a.pop();return p;}
 function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
 /* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
@@ -2452,6 +2452,26 @@ function lordsNaturalChild(n){ // a lord's eye wanders among the women of his ow
       ()=>`${fullTitle(n)} acknowledges a natural ${ch.sx==='f'?'daughter':'son'}, ${folkName(ch)}, born to ${folkName(w)} of ${s.name}.`,
       ()=>`A child of ${fullTitle(n)} is born out of wedlock in ${s.name}; the mother is ${folkName(w)}, and the gossips count the months.`,
       ()=>`${s.name} has a new ${ch.sx==='f'?'daughter':'son'} of noble blood on the wrong side of the blanket: ${folkName(ch)}, got by ${fullTitle(n)} on ${folkName(w)}.`]));}
+/* the host is its men: every soldier a person off a town's roll, or a sell-sword from abroad; the weakest and least practised fall first */
+function levyMen(a,s,si,k){
+  if(!a.men)a.men=[];if(!s||!s.folk||k<=0)return;
+  const pool=s.folk.filter(p=>p.sx==='m'&&!p.dead&&ageYrs(p)>=16&&ageYrs(p)<45);
+  for(const p of pickK(pool,Math.min(k,pool.length),p=>(p.sp?0.6:1.4)*Math.exp(0.6*p.sk[KA]))){const i=s.folk.indexOf(p);if(i>=0)removeAt(s,i);p.home=si;a.men.push(p);}} // the unwed and the practised are the first called
+function hireMen(a,k){ // sell-swords: their own tongue, their own names
+  if(!a.men)a.men=[];const cs=Object.keys(CULT);
+  for(let i=0;i<k;i++){const c=cs[Math.floor(frand()*cs.length)],X=NX(c),G=genome();
+    const p={id:PID++,sx:'m',b:day()-(20+frand()*18)*360,si:-1,home:-1,fam:-1,sk:new Float32Array(9),sp:null,tr:'soldier',fed:0,lb:-9999,merc:c,g:G.g,e:G.e,hair:hairDraw(c)};
+    p.gn=givenPick(c,'m',null);p.sur=X?(frand()<0.5?X.patr(givenPick(c,'m',null)):X.nick[['tall','strong','bold','dark','red','young','quick','stout'][Math.floor(frand()*8)]]):'';
+    p.sk[KA]=0.35+frand()*0.45;p.sk[KRi]=frand()*0.5;a.men.push(p);}}
+function sendHome(p){const s=p.merc?null:W.settlements[p.home];if(!s||!s.folk){dropPerson(p);return;}p.si=p.home;s.folk.push(p);}
+function musterSync(a){ // the roll follows the host's numbers: the released go home, the rest of the missing are dead
+  if(!a.men)return [];const want=Math.max(0,Math.round(a.strength)),dead=[];let k=a.men.length-want;
+  if(k>0){const rel=Math.min(k,Math.round(a._rel||0));a._rel=0;
+    if(rel>0){for(const p of pickK(a.men,rel,p=>p.merc?0.3:1)){a.men.splice(a.men.indexOf(p),1);sendHome(p);}k-=rel;}
+    if(k>0)for(const p of pickK(a.men,k,p=>Math.exp(-1.2*p.sk[KA]-0.5*trait(p,GV)-0.3*p.sk[KRi]))){a.men.splice(a.men.indexOf(p),1);dropPerson(p);
+      dead.push({n:folkName(p),h:p.home,m:p.merc||null});}}
+  else if(k<0){levyMen(a,W.settlements[a.home],a.home,Math.round(-k*0.7));hireMen(a,Math.max(0,want-a.men.length));}
+  return dead;}
 function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
   return mkNotable(Object.assign({name:folkName(p),sex:p.sx,birthDay:p.b,age:Math.floor(ageYrs(p)),g:p.g,e:p.e,sk:p.sk,hair:p.hair,fed:p.fed,born:{fam:famName(p),tr:p.tr,si:p.si}},o));}
 function promoteFrom(s,score){ // the ablest of a town's folk, stepping out of the crowd into the annals
@@ -4197,9 +4217,9 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
       a=raiseArmy(hi,seat,tgt*0.6,hi===0?'crown':'host');a.standing=true;a.home=seat;
       a.name=(hi===0?'The Royal Household':'Household of '+h.name.replace('House ',''));a.hold=hi===plyH();
     }else if(!houseAtWar(hi)&&a.state==='idle'&&a.strength>tgt*1.1){ // peace: the levies go home to the harvest, the household keeps its sworn men
-      const go=(a.strength-tgt)*0.35;a.strength-=go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
+      const go=(a.strength-tgt)*0.35;a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
     }else if(hi>0&&(h.gold??0)<-300&&a.state!=='battle'&&a.strength>5){ // unpaid, the men drift home to their fields
-      const go=a.strength*0.04;a.strength-=go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
+      const go=a.strength*0.04;a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
     }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
       const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
       const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/1.5:1e9);
@@ -4442,7 +4462,7 @@ function startFeud(a,b,by){ // a private war: both lords call out their tenants
   (W.feuds=W.feuds||[]).push(fd);
   for(const hi of[a,b]){const seat=W.settlements.findIndex(s=>s.owner===hi);if(seat<0)continue;const host=raiseArmy(hi,seat,hostTarget(hi)*1.6,'host');
     const foe=hi===a?b:a,allies=W.houses.map((o,i)=>i).filter(i=>i>0&&i!==hi&&i!==foe&&!W.houses[i].exiled&&((W.houses[i].pacts||{})[hi]||0)>day()&&!atWar(i,foe)); // kin by marriage send knights
-    for(const i of allies){const hh=W.armies.find(x=>x.house===i&&x.standing&&!x.gone&&x.state==='idle');if(!hh)continue;const k=hh.strength*0.3;hh.strength-=k;host.strength+=k;
+    for(const i of allies){const hh=W.armies.find(x=>x.house===i&&x.standing&&!x.gone&&x.state==='idle');if(!hh)continue;const k=hh.strength*0.3;hh.strength-=k;host.strength+=k;if(hh.men){(host.men||(host.men=[])).push(...hh.men.splice(0,Math.round(k)));}
       emit('war',5,W.settlements[seat].pos,`${W.houses[i].name} sends knights to aid ${W.houses[hi].name}, as kin by marriage.`);}}
   for(const x of W.armies)if(x.house===a||x.house===b)x.hold=x.house===ply&&x.standing; // the player's household still waits on orders; the levies take the field
   emit('war',8,W.settlements[A.seat]?W.settlements[A.seat].pos:W.capital.pos,by!=null?vary('feud_defy',[()=>`${A.name} defies ${B.name} and rides out over the land between them — ${fd.name}.`,()=>`${A.name} rides out over the land between them in defiance of ${B.name} — ${fd.name}.`,()=>`In defiance of ${B.name}, ${A.name} rides out over the land between them — ${fd.name}.`,()=>`${A.name} will not bow to ${B.name}, and rides out over the land between them: ${fd.name} has begun.`,()=>`${fd.name.replace(/^the /,'The ')} begins: ${A.name} defies ${B.name} and rides out over the land between them.`,()=>`The land between them is the quarrel: ${A.name} defies ${B.name} and rides out — ${fd.name}.`])
@@ -5077,7 +5097,8 @@ function campGroup(color){
 }
 function addCairn(x,z,text){ // one instanced mesh for every cairn in the realm (the oldest weather away past 2,000)
   if(!G.cairnMesh){G.cairnMesh=new THREE.InstancedMesh(new THREE.ConeGeometry(3,5,5).translate(0,2.5,0),new THREE.MeshLambertMaterial({color:0x7d7870}),2000);G.cairnMesh.count=0;G.cairnMesh.castShadow=true;scene.add(G.cairnMesh);G.cairnText=[];G.cairnN=0;}
-  const i=G.cairnN%2000;G.cairnN++;setInst(G.cairnMesh,i,x,hAt(x,z)-0.5,z,0,1,1,1);G.cairnText[i]=text;
+  const i=G.cairnN%2000;G.cairnN++;if(G.cairnDead&&G.cairnText[i])delete G.cairnDead[G.cairnText[i]]; // the oldest stones weather away, and their names with them
+  setInst(G.cairnMesh,i,x,hAt(x,z)-0.5,z,0,1,1,1);G.cairnText[i]=text;
   G.cairnMesh.count=Math.min(2000,G.cairnN);G.cairnMesh.instanceMatrix.needsUpdate=true;
 }
 /* =========================================================================
@@ -5417,6 +5438,10 @@ function showInspect(pk){
     setHTML(title,`<img src="${sigURL(a.house)}">`+esc(a.name));
     sub.textContent='army of '+W.houses[a.house].name;
     h+=row('Strength',Math.round(a.strength));
+    if(a.men&&a.men.length){const M=a.men,merc=M.filter(p=>p.merc).length,hc={};for(const p of M)if(!p.merc&&W.settlements[p.home])hc[W.settlements[p.home].name]=(hc[W.settlements[p.home].name]||0)+1;
+      const best=[...M].sort((x,y)=>y.sk[KA]-x.sk[KA]).slice(0,3);
+      h+=row('Men',`${M.length-merc} levied from ${Object.entries(hc).sort((x,y)=>y[1]-x[1]).slice(0,4).map(([n,c])=>`${esc(n)} (${c})`).join(', ')||'—'}${merc?`; ${merc} sell-swords`:''}`);
+      h+=row('Best at arms',best.map(p=>`${esc(folkName(p))} (${skillWord(p.sk[KA])||'green'})`).join(', '));}
     h+=row('Morale',Math.round(a.morale));
     h+=row('Supply',Math.round(a.supply));
     const c=notableById(a.commander);
@@ -5507,6 +5532,11 @@ function showInspect(pk){
     setHTML(title,esc('Battle cairn'));
     sub.textContent='';
     h+=`<div class="agline">${esc(pk.text)}</div>`;
+    const D=G.cairnDead&&G.cairnDead[pk.text];
+    if(D){if(D.nobles.length)h+=row('Lords slain',esc(D.nobles.join(', ')));
+      for(const [side,dead] of D.sides){if(!dead.length)continue;
+        const nm=d=>esc(d.n)+(d.m?` <i>(${esc((CULT[d.m]||{}).adj||'foreign')} sell-sword)</i>`:W.settlements[d.h]?` <i>of ${esc(W.settlements[d.h].name)}</i>`:'');
+        h+=`<div class="agline" style="font-size:11.5px"><b>${esc(side)}</b> — ${dead.length} dead:<br>${dead.map(nm).join(', ')}</div>`;}}
   }else if(pk.type==='camp'){
     setHTML(title,esc(pk.camp.king?('Camp of '+pk.camp.king):'Bandit camp'));
     sub.textContent='outlaws of the greenwood';
@@ -6148,11 +6178,12 @@ function raiseArmy(hi,fromS,strength,side){
   const commanders=W.notables.filter(n=>n.alive&&n.house===hi&&ageOf(n)>=16&&(n.role==='head'||n.role==='scion'||n.role==='monarch'||n.role==='cousin'));
   const cmd=(hi===0&&commanders.find(n=>n.role!=='monarch'))||commanders[0]||W.notables.find(n=>n.alive&&ageOf(n)>=16); // a marshal leads the royal host; the king rides out only if there is no one else
   strength=Math.min(strength,s.pop*0.25);
-  s.pop-=strength*0.7;s._levy=(s._levy||0)+strength*0.7; // the young men of the place go with the host
+  s.pop-=strength*0.7;
   const a={id:++armyN,house:hi,side,name:'Host of '+W.houses[hi].name.replace('House ',''),
     strength,morale:70+randi('sim',20),supply:100,commander:cmd?cmd.id:null,
     at:fromS,target:null,poly:null,departDay:0,arriveDay:0,state:'idle',_rpos:{x:s.pos.x,y:s.pos.y,z:s.pos.z},
-    flag:null,battleUntil:0,siegeUntil:0,home:fromS};
+    flag:null,battleUntil:0,siegeUntil:0,home:fromS,men:[]};
+  levyMen(a,s,fromS,Math.round(strength*0.7));hireMen(a,Math.max(0,Math.round(strength)-a.men.length)); // the young men of the place, and sell-swords for the rest
   makeArmyFlag(a);
   W.armies.push(a);
   return a;
@@ -6224,6 +6255,7 @@ function closestApproach(a,b){ // two hosts moving straight over the day (from y
   const t=vv>1e-6?clamp(-(dx0*vx+dz0*vz)/vv,0,1):1,px=p0.x+(p1.x-p0.x)*t,pz=p0.z+(p1.z-p0.z)*t,qx=q0.x+(q1.x-q0.x)*t,qz=q0.z+(q1.z-q0.z)*t;
   return {d:Math.hypot(px-qx,pz-qz),x:(px+qx)/2,z:(pz+qz)/2};}
 function tickMilitary(){
+  for(const a of W.armies)if(!a.gone&&a.men&&a.men.length!==Math.round(a.strength)&&a.state!=='battle')musterSync(a);
   if(!W.war&&W.armies.length===0)return;
   const now=day();
   for(const a of W.armies){a._ppos=a._spos||armySimPos(a);a._spos=armySimPos(a);}
@@ -6239,7 +6271,7 @@ function tickMilitary(){
       else{routHome(a);if(a.gone)continue;} // too few to try it: back to its own
     }
     if(a.state==='idle'&&!a.hold&&!a.field){const m=W.armies.find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
-      if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
+      if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);if(a.men){(m.men||(m.men=[])).push(...a.men);a.men=[];}a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
     if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
       // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
@@ -6337,12 +6369,17 @@ function tickMilitary(){
       const cw=notableById(w.commander),cl=notableById(l.commander);
       const pos=a.battlePos||{x:a._spos.x,z:a._spos.z};
       l.strength*=0.42;l.morale=35;w.strength*=0.85;
+      const deadW=musterSync(w),deadL=musterSync(l),nobles=[];
       W.stats.battles++;
       let line=((f,ln,wn)=>vary('battle',[()=>`${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`,()=>`At ${a.battleName} the ${ln} is broken and flees ${f}; ${w.name} carries the field.`,()=>`${w.name} holds the field at ${a.battleName}; the ${ln} breaks and flees ${f}.`,()=>`The ${ln} gives way at ${a.battleName} and flees ${f}, and ${w.name} carries the field.`,()=>`Victory at ${a.battleName} goes to ${w.name}, which carries the field; the ${ln} breaks and flees ${f}.`,()=>`${cw?`Under ${cw.name}, the ${wn} carries the field at ${a.battleName}.`:`${w.name} carries the field at ${a.battleName}.`} The ${ln} breaks and flees ${f}.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`]))(pick('sim',['into the dusk','through the fords','into the woods']),l.name.replace(/^Host/,'host'),w.name.replace(/^Host/,'host'));
-      if(cl&&chance('sim',0.22)){killNotable(cl,`at ${a.battleName}, sword in hand`,true);line+=` ${fullTitle(cl)} is slain in the rout.`;}
+      if(cl&&chance('sim',0.22)){killNotable(cl,`at ${a.battleName}, sword in hand`,true);line+=` ${fullTitle(cl)} is slain in the rout.`;nobles.push(fullTitle(cl));}
       else if(cw&&!cw.epithet&&chance('sim',0.3)){cw.epithet='the '+pick('sim',['Ironhand','Unbroken','Lionhearted','Grim','Victorious']);line+=` Men now name the victor ${fullTitle(cw)}.`;}
       emit('war',8,pos,line);
-      addCairn(pos.x,pos.z,a.battleName+', AD '+AD()+' — here '+w.name+' prevailed.');
+      {const ct=a.battleName+', AD '+AD()+' — here '+w.name+' prevailed.';addCairn(pos.x,pos.z,ct);
+        (G.cairnDead||(G.cairnDead={}))[ct]={sides:[[w.name,deadW],[l.name,deadL]],nobles}; // the names cut on the stones
+        if(deadW.length+deadL.length)emit('war',4,pos,vary('cairn_raised',[()=>`A cairn is raised at ${a.battleName} over ${deadW.length+deadL.length} dead${nobles.length?', '+nobles.join(' and ')+' among them':''}.`,
+          ()=>`The dead of ${a.battleName} are buried where they fell — ${deadL.length} of ${l.name.replace(/^Host/,'the host')}, ${deadW.length} of the victors — and stones are heaped over them.`,
+          ()=>`${deadW.length+deadL.length} men lie under the cairn at ${a.battleName}${deadL[0]?`; the first name cut on the stone is ${deadL[0].n}`:''}.`]));}
       if(inRebellion(w,l))warScore(w.house===0?20:-20);
       a.foe=b.foe=null;a.atGates=b.atGates=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
@@ -6464,7 +6501,8 @@ function takeSettlement(a,s){
 }
 function disbandArmy(a){
   if(a.gone)return;
-  const s=W.settlements[a.home];if(s)s.pop+=a.strength*0.6;
+  if(a.men){musterSync(a);for(const p of a.men){sendHome(p);if(!p.merc&&W.settlements[p.home])W.settlements[p.home].pop+=1;}a.men=[];} // each man walks home to his own village; the sell-swords ride off
+  else{const s=W.settlements[a.home];if(s)s.pop+=a.strength*0.6;}
   liftSiege(a); // a dead army lifts its siege
   if(a.flag){scene.remove(a.flag);a.flag=null;}dropMarker(a);
   a.gone=true;
