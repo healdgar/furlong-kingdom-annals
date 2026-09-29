@@ -242,6 +242,16 @@ itself; you rule one lord's domain:
     - the stable mounts the host's riders.
   - **Losses:** raiders drive the herds home with them, murrain spreads from
     village to village, and pasture that nothing grazes goes back to scrub.
+  - **Trade:** beasts and wool are goods like grain. A place sells only the
+    beasts it doesn't need, and drovers walk them to where they fetch more: a
+    lord's stable short of horses, a village short of plough-oxen, a town
+    with no grass. Wool goes from sheep country to the towns with weavers and
+    dyers. Nobody invents grass where there is none.
+  - **Water mills:** a town with a mill on its river or millpond grinds corn,
+    fulls cloth (from 1150), drives trip-hammers for the smiths (1200) and
+    saws timber (1250).
+  - **Clickable:** click any beast, however small, to see whose it is, how many
+    head the place keeps and wants, and the price there.
   - **On the map:** the herds are drawn from the real counts, one beast for
     every few head, and move between pastures month by month. The town card
     shows the herds, the grazing and whether the plough-teams are enough.

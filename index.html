@@ -223,7 +223,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 16:22 UTC · after 77057ee</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 16:38 UTC · after 659948f</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -331,8 +331,8 @@ function fbm(n2,x,y,oct,lac,gain){
 
 /* ---------------- constants --------------------------------------------- */
 const SIZE=6000, GRID=220, CELL=SIZE/GRID, SEA=0;
-const GOODS=['grain','fish','timber','ore','tools','cloth','wine'];
-const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8};
+const GOODS=['grain','fish','timber','ore','tools','cloth','wine','wool','sheep','cattle','horses','swine'];
+const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8,wool:4,sheep:3,cattle:12,horses:25,swine:4}; // beasts are goods like any other: driven to market along the roads
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
 const CART_MPD=500,BARGE_MPD=700,COG_MPD=900,MARCH_MPD=400,FIELD_MPD=250; // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
@@ -4550,78 +4550,87 @@ function tickLand(){ // monthly: the countryside follows the people
    a lord's stable, sheep for whatever grass is left — as fast as its herdsmen's husbandry allows, and no faster than the
    grass. It gives milk, cheese and pork to the larder, wool to the looms, teams to the plough and horses to the host;
    raiders drive it off, murrain runs through it, and grass no beast crops goes back to scrub. */
-const LU={sheep:0.12,cattle:1,horses:1.1,swine:0.25},HERDR={sheep:0.4,cattle:0.22,horses:0.14,swine:0.9};
+const LU={sheep:0.12,cattle:1,horses:1.1,swine:0.25},HERDR={sheep:0.4,cattle:0.22,horses:0.14,swine:0.9},BEASTS=['sheep','cattle','horses','swine'];
 function grazeOf(s){ // livestock units the place's land can carry, and what of it is what
   let past=0,wild=0,till=0,wood=0,hay=0;
   for(const f of s.furl||[]){if(f.lord!==s.owner&&f.lord>=0)continue;const ha=f.area/10000;
     if(f.kind===LK.MEADOW&&f.state===LS.TILLED)hay+=ha;else if(f.state===LS.PASTURE)past+=ha;else if(f.state===LS.WILD||f.state===LS.SCRUB)wild+=ha;else if(f.state===LS.TILLED)till+=ha;else if(f.state===LS.WOOD)wood+=ha;}
-  const cap=past*1.0+wild*0.45+till*0.33*0.6+hay*1.4+6; // the fallow third of the open field is grazed; a hay meadow winters a beast
+  const cap=past*1.0+wild*0.45+till*0.33*0.6+hay*1.4+6; // the fallow third of the open field is grazed; a hay meadow winters a beast (where there is no grass, wool and meat come by the road)
   return {past,wild,till,wood,hay,cap,pann:wood*1.2+4};}
-function herdWant(s,g){ // what the place would keep
-  const ad=AD(),hShare=clamp((ad-1100)/400,0,0.4),draft=g.till/6; // a plough-team to every half-dozen hectares; horses take over some of the ploughing after 1100
+function herdWant(s,g){ // what the place would keep: teams for its ploughs, cows for its people, a lord's stable — and sheep only where there is grass for them
+  const ad=AD(),hShare=clamp((ad-1100)/400,0,0.4),draft=g.till/6;
   const h=W.houses[s.owner],seat=h&&h.seat===W.settlements.indexOf(s);
   const horses=draft*hShare+s.pop*0.004+(seat||s.kind==='capital'?20+s.pop*0.01:0);
   const cattle=draft*(1-hShare)+s.pop*0.06;
   const swine=Math.min(g.pann/LU.swine,s.pop*0.3);
   const sheep=Math.max(0,(g.cap-cattle*LU.cattle-horses*LU.horses)/LU.sheep)*0.9;
   return {sheep,cattle,horses,swine};}
+function looms(s){return (s.buildings||[]).filter(b=>(b.arch==='dyer'||b.arch==='burgher'||b.arch==='shop')&&b.state==='sound').length;}
+function waterMill(s){return !!(s.mill&&s.mill.state!=='ruin'&&(s.river||s.lake));} // a wheel on the river or the millpond
+function millUses(s){if(!waterMill(s))return [];const ad=AD(),u=['grinding corn'];if(ad>=1150)u.push('fulling cloth');if(ad>=1200)u.push('driving trip-hammers');if(ad>=1250)u.push('sawing timber');return u;}
+function woolWant(s){return looms(s)*6+(s.kind==='village'?2:5);}
 function tickLivestock(){
   const d=day();if(d%30!==18||!G.land)return;
   const winter=seasonIdx()===3,snow=W.weather&&W.weather.state==='snow';
   W.settlements.forEach((s,si)=>{
-    const g=grazeOf(s),want=herdWant(s,g);s._graze=g;
-    if(!s.herd){s.herd={};for(const k in LU)s.herd[k]=want[k]*0.8;}
-    const H=s.herd;let hus=0.3,n=0;for(const p of s.folk||[])if(p.tr==='herdsman'||p.tr==='shepherd'||(s.kind==='village'&&TILLERS.has(p.tr)&&ageYrs(p)>=16)){hus+=p.sk[KH];n++;}
+    const St=s.stores,g=grazeOf(s),want=herdWant(s,g);s._graze=g;s._want=want;
+    if(!s.hm){s.hm={press:0,murrain:0,murrainK:null};for(const k of BEASTS)St[k]=(St[k]||0)+want[k]*0.8;}
+    if(St.wool==null)St.wool=0;
+    const M=s.hm;let hus=0.3,n=0;for(const p of s.folk||[])if(p.tr==='herdsman'||p.tr==='shepherd'||(s.kind==='village'&&TILLERS.has(p.tr)&&ageYrs(p)>=16)){hus+=p.sk[KH];n++;}
     hus=n?hus/(n+1):0.3;const skill=0.7+0.6*hus; // good herdsmen lose fewer lambs and calves
-    const used=H.sheep*LU.sheep+H.cattle*LU.cattle+H.horses*LU.horses,press=used/Math.max(1,g.cap);H.press=press;
-    for(const k in LU){
-      const room=k==='swine'?1-H.swine*LU.swine/Math.max(1,g.pann):1-press;
-      if(H[k]<want[k])H[k]+=Math.max(0.3,H[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1);
-      else{const cull=(H[k]-want[k])*0.12;H[k]-=cull;s.stores.grain+=cull*(k==='cattle'?4:k==='swine'?1.5:k==='sheep'?0.6:0);} // the surplus goes to the shambles
-      if(s.siegeBy)H[k]*=0.96; // shut in, the beasts are eaten
+    const used=St.sheep*LU.sheep+St.cattle*LU.cattle+St.horses*LU.horses,press=used/Math.max(1,g.cap);M.press=press;
+    for(const k of BEASTS){
+      const room=k==='swine'?1-St.swine*LU.swine/Math.max(1,g.pann):1-press;
+      if(room>0)St[k]+=Math.max(0.3,St[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1); // they breed while there is grass; the surplus waits for the drovers
+      if(St[k]>want[k]*1.8){const cull=(St[k]-want[k]*1.8)*0.15;St[k]-=cull;St.grain+=cull*(k==='cattle'?4:k==='swine'?1.5:k==='sheep'?0.6:0);} // what no drover will take goes to the shambles
+      if(s.siegeBy)St[k]*=0.96; // shut in, the beasts are eaten
     }
-    if(press>1.1&&winter){const loss=Math.min(0.12,(press-1.1)*0.2)*(snow?1.6:1);for(const k of['sheep','cattle','horses'])H[k]*=1-loss;} // too many mouths for the hay
-    // murrain: a cattle-plague or the sheep-rot, carried between neighbours
-    if(H.murrain>0){H.murrain--;const k=H.murrainK;H[k]*=0.85;
-      for(const o of W.settlements)if(o!==s&&o.herd&&!(o.herd.murrain>0)&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1400&&frand()<0.08){o.herd.murrain=3+Math.floor(frand()*4);o.herd.murrainK=k;}}
-    else if(frand()<0.0006){H.murrain=3+Math.floor(frand()*4);H.murrainK=frand()<0.55?'cattle':'sheep';
-      if(!W.prehistory)emit('fates',4,s.pos,vary('murrain',[()=>`A murrain falls on the ${H.murrainK==='cattle'?'cattle':'flocks'} of ${s.name}; the carcasses are burned in the ditches.`,
-        ()=>`The ${H.murrainK==='cattle'?'kine':'sheep'} of ${s.name} sicken and die where they stand. The herdsmen cannot say why.`,
-        ()=>`${H.murrainK==='cattle'?'Cattle-plague':'The rot'} at ${s.name}: the byres are emptied and the smoke of the pyres hangs over the fields.`]));}
-    // the larder and the looms
-    s.stores.grain+=H.cattle*0.2+H.swine*0.05+H.sheep*0.015; // milk, cheese, bacon, mutton
-    const looms=(s.buildings||[]).filter(b=>(b.arch==='dyer'||b.arch==='burgher'||b.arch==='shop')&&b.state==='sound').length;
-    s.stores.cloth+=H.sheep*0.004*(1+Math.min(2,looms*0.25)); // homespun in the villages, broadcloth where there are weavers and dyers
-    // the plough wants its teams
-    const teams=H.cattle*0.6+H.horses*0.4,need=g.till/6;s.ploughF=need>0?clamp(0.75+0.25*teams/need,0.75,1.05):1;
+    if(press>1.1&&winter){const loss=Math.min(0.12,(press-1.1)*0.2)*(snow?1.6:1);for(const k of['sheep','cattle','horses'])St[k]*=1-loss;} // too many mouths for the hay
+    if(M.murrain>0){M.murrain--;const k=M.murrainK;St[k]*=0.85; // murrain: a cattle-plague or the sheep-rot, carried between neighbours
+      for(const o of W.settlements)if(o!==s&&o.hm&&!(o.hm.murrain>0)&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1400&&frand()<0.08){o.hm.murrain=3+Math.floor(frand()*4);o.hm.murrainK=k;}}
+    else if(frand()<0.0006){M.murrain=3+Math.floor(frand()*4);M.murrainK=frand()<0.55?'cattle':'sheep';
+      if(!W.prehistory)emit('fates',4,s.pos,vary('murrain',[()=>`A murrain falls on the ${M.murrainK==='cattle'?'cattle':'flocks'} of ${s.name}; the carcasses are burned in the ditches.`,
+        ()=>`The ${M.murrainK==='cattle'?'kine':'sheep'} of ${s.name} sicken and die where they stand. The herdsmen cannot say why.`,
+        ()=>`${M.murrainK==='cattle'?'Cattle-plague':'The rot'} at ${s.name}: the byres are emptied and the smoke of the pyres hangs over the fields.`]));}
+    St.grain+=St.cattle*0.2+St.swine*0.05+St.sheep*0.015; // milk, cheese, bacon, mutton
+    St.wool+=St.sheep*0.012; // the clip
+    // the looms: homespun at every hearth, broadcloth where there are weavers and dyers — and fuller where a water-wheel works the fulling stocks
+    const home=St.wool*0.08,cap=looms(s)*2.5*(waterMill(s)&&AD()>=1150?1.6:1),spin=Math.min(St.wool-home,cap);
+    St.wool-=home+Math.max(0,spin);St.cloth+=home*0.5+Math.max(0,spin)*0.8;
+    const teams=St.cattle*0.6+St.horses*0.4,need=g.till/6;s.ploughF=need>0?clamp(0.75+0.25*teams/need,0.75,1.05):1; // the plough wants its teams
   });
-  if(!W.prehistory&&G.sheep)renderHerds();}
-const grazed=f=>{const s=W.settlements[f.dom];if(s&&s.herd)return (s.herd.press||0)>0.25; // grass the beasts keep short does not go back to scrub
+  if(!W.prehistory&&G.herdMesh)renderHerds();}
+const grazed=f=>{const s=W.settlements[f.dom];if(s&&s.hm)return (s.hm.press||0)>0.25; // grass the beasts keep short does not go back to scrub
   return W.settlements.some(o=>dist2d(o.pos.x,o.pos.z,f.x,f.z)<(o.kind==='village'?800:1000));};
 function driveOffHerds(s,a){ // raiders take the beasts home with them
-  if(!s.herd)return 0;const home=W.settlements[a.home];let n=0;
-  for(const k of['sheep','cattle','swine']){const t=s.herd[k]*0.35;s.herd[k]-=t;n+=t;if(home&&home.herd)home.herd[k]+=t;}
+  if(!s.hm)return 0;const home=W.settlements[a.home];let n=0;
+  for(const k of['sheep','cattle','swine']){const t=(s.stores[k]||0)*0.35;s.stores[k]-=t;n+=t;if(home)home.stores[k]=(home.stores[k]||0)+t;}
   return Math.round(n);}
-function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s&&s.herd?Math.min(riders,Math.floor(s.herd.horses*0.6)):0;if(s&&s.herd)s.herd.horses-=h;a.horses=(a.horses||0)+h;}
-/* the herds on the map: each beast drawn stands for a few head, on the grass its village grazes */
+function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s?Math.min(riders,Math.floor((s.stores.horses||0)*0.6)):0;if(s)s.stores.horses=(s.stores.horses||0)-h;a.horses=(a.horses||0)+h;}
+/* the herds on the map: each beast drawn stands for a few head, on the grass its village grazes; click one to learn whose it is */
 const HERDDRAW={sheep:{per:8,cap:3000},cattle:{per:2,cap:1600},horses:{per:1.5,cap:700},swine:{per:4,cap:1400}};
 function buildHerdMeshes(){
-  const mk=(w,h,d,c,cap)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(0,h/2+0.35,0);const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({color:c}),cap);m.count=0;m.castShadow=false;scene.add(m);return m;};
-  G.herdMesh={sheep:mk(1.6,1.1,1,0xdcd6c8,3000),cattle:mk(2.6,1.5,1.1,0x7a5236,1600),horses:mk(2.4,1.7,0.8,0x4a3426,700),swine:mk(1.3,0.8,0.8,0xc99a8a,1400)};
-  G.sheep=G.herdMesh.sheep;}
+  const mk=(k,w,h,d,c,cap)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(0,h/2+0.35,0);const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({color:c}),cap);m.count=0;m.castShadow=false;m.userData.beast=k;scene.add(m);return m;};
+  G.herdMesh={sheep:mk('sheep',1.6,1.1,1,0xdcd6c8,3000),cattle:mk('cattle',2.6,1.5,1.1,0x7a5236,1600),horses:mk('horses',2.4,1.7,0.8,0x4a3426,700),swine:mk('swine',1.3,0.8,0.8,0xc99a8a,1400)};
+  G.herdOwner={sheep:new Int16Array(3000),cattle:new Int16Array(1600),horses:new Int16Array(700),swine:new Int16Array(1400)};G.herdPos=[];}
 function renderHerds(){
-  if(!G.herdMesh)return;const mon=(day()/30|0),M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0};
-  W.settlements.forEach((s,si)=>{if(!s.herd)return;const F=s.furl||[];
+  if(!G.herdMesh)return;const mon=(day()/30|0),M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0};G.herdPos=[];
+  W.settlements.forEach((s,si)=>{if(!s.hm)return;const F=s.furl||[];
     const grass=F.filter(f=>f.state===LS.PASTURE||f.state===LS.WILD||(seasonIdx()>=2&&f.state===LS.TILLED)),wood=F.filter(f=>f.state===LS.WOOD);
     const r=nameRng(si*977+mon*31); // the flocks move from month to month
-    for(const k in HERDDRAW){const D=HERDDRAW[k],n=Math.round((s.herd[k]||0)/D.per);
+    for(const k in HERDDRAW){const D=HERDDRAW[k],n=Math.round((s.stores[k]||0)/D.per);
       const where=k==='swine'?(wood.length?wood:grass):k==='horses'?null:grass;
       for(let i=0;i<n&&cnt[k]<D.cap;i++){let x,z;
         if(where&&where.length){const f=where[Math.floor(r()*where.length)],rad=Math.sqrt(f.area/Math.PI)*0.7,a=r()*Math.PI*2,q=Math.sqrt(r())*rad;x=f.x+Math.cos(a)*q;z=f.z+Math.sin(a)*q;}
-        else{const a=r()*Math.PI*2,q=(s.radius||60)+15+r()*70;x=s.pos.x+Math.cos(a)*q;z=s.pos.z+Math.sin(a)*q;} // the lord's paddock by the town
-        const c=cIdx(toCell(x),toCell(z));if(W.water[c])continue;
-        setInst(M[k],cnt[k]++,x,hAt(x,z),z,r()*6.28,1,1,1);}}});
+        else{const a=r()*Math.PI*2,q=(s.radius||60)+15+r()*70;x=s.pos.x+Math.cos(a)*q;z=s.pos.z+Math.sin(a)*q;} // the paddock by the town
+        const c=cIdx(toCell(x),toCell(z));if(W.water[c])continue;const y=hAt(x,z);
+        G.herdOwner[k][cnt[k]]=si;G.herdPos.push(x,y+1,z,BEASTS.indexOf(k),si);
+        setInst(M[k],cnt[k]++,x,y,z,r()*6.28,1,1,1);}}});
   for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;}}
+const BEAST_TEXT={sheep:['A flock of sheep','Wool for the looms (spun at home, or sold to the weavers and fullers of the towns), mutton and milk. Each drawn beast stands for about eight head.'],
+  cattle:['Cattle','Oxen for the plough-teams, cows for milk and cheese, hides for the tanners, beef when they are old. Each drawn beast stands for about two head.'],
+  horses:['Horses','Draught horses for the plough and the carts, and the riding horses of the lord and his men: a host has only as many horse as its riders can find. Each drawn beast is one or two.'],
+  swine:['Swine','Pigs turned into the wood for the acorns and beech-mast (pannage), and bacon for the winter. Each drawn beast stands for about four head.']};
 function foundTown(){ // a lord founds a new market town, laid out in one stroke (Freiburg): only in an age that plans towns
   if(AD()<1120||W.settlements.filter(o=>o.planned).length>=2||G.bldList.length+200>=G.bodies.instanceMatrix.count)return;
   const lords=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&(W.houses[i].gold||0)>1500);
@@ -5103,18 +5112,18 @@ function landValue(f){ // a furlong's worth: what it yields as it lies, and how 
 function prodOf(s){ // a year's output by good (the same sums the economy runs daily)
   const r=s.res||{},lf=s.landF??1,smiths=(s.buildings||[]).filter(b=>b.arch==='smithy'&&b.state==='sound').length;
   return {grain:(r.farm||0)*0.92*0.87*360*lf,fish:(r.fish||0)*0.8*360,timber:(r.forest||0)*0.05*360,ore:(r.ore||0)*0.05*360,tools:smiths*20+(s.kind!=='village'?30:0),
-    cloth:(s.kind==='capital'?0.9*360:0)+(s.herd?s.herd.sheep*0.004*12:0)+(s.buildings||[]).filter(b=>b.arch==='shop').length*3,wine:s.kind==='capital'?0.7*360:(s.furl||[]).filter(f=>f.kind===LK.VINE&&f.state===LS.TILLED).length*12};
+    cloth:(s.kind==='capital'?0.9*360:0)+(s.stores.sheep||0)*0.012*12*0.55+(s.buildings||[]).filter(b=>b.arch==='shop').length*3,wool:(s.stores.sheep||0)*0.012*12,sheep:(s.stores.sheep||0)*HERDR.sheep,cattle:(s.stores.cattle||0)*HERDR.cattle,horses:(s.stores.horses||0)*HERDR.horses,swine:(s.stores.swine||0)*HERDR.swine,wine:s.kind==='capital'?0.7*360:(s.furl||[]).filter(f=>f.kind===LK.VINE&&f.state===LS.TILLED).length*12};
 }
-const GOODCOL={grain:'#d8b25a',fish:'#5a8fc0',timber:'#6f8f4a',ore:'#8a8a92',tools:'#4d4640',cloth:'#b85c38',wine:'#7a2f5a'};
+const GOODCOL={grain:'#d8b25a',fish:'#5a8fc0',timber:'#6f8f4a',ore:'#8a8a92',tools:'#4d4640',cloth:'#b85c38',wine:'#7a2f5a',wool:'#b3a57e',sheep:'#9c9480',cattle:'#7a5236',horses:'#4a3426',swine:'#c9867a'};
 function prodSprite(p,mx,s){
-  const c=document.createElement('canvas');c.width=352;c.height=208;const g=c.getContext('2d');g.scale(2,2); // drawn at twice the size, so it stays crisp enlarged
-  g.fillStyle='rgba(233,220,195,0.9)';g.fillRect(0,0,176,104);g.strokeStyle='#2B2320';g.lineWidth=2;g.strokeRect(1,1,174,102);
-  g.fillStyle='#2B2320';g.font='13px Georgia,serif';g.textAlign='center';g.fillText(s.name,88,15);
+  const CW=8+GOODS.length*23,c=document.createElement('canvas');c.width=CW*2;c.height=208;const g=c.getContext('2d');g.scale(2,2); // drawn at twice the size, so it stays crisp enlarged
+  g.fillStyle='rgba(233,220,195,0.9)';g.fillRect(0,0,CW,104);g.strokeStyle='#2B2320';g.lineWidth=2;g.strokeRect(1,1,CW-2,102);
+  g.fillStyle='#2B2320';g.font='13px Georgia,serif';g.textAlign='center';g.fillText(s.name,CW/2,15);
   GOODS.forEach((k,i)=>{const x=8+i*23,h=Math.max(1,Math.sqrt(p[k]/mx[k])*56),st=clamp((s.stores[k]||0)/Math.max(1,s.pop*0.6),0,1)*56;
     g.fillStyle=GOODCOL[k];g.fillRect(x,82-h,16,h);g.fillStyle='rgba(43,35,32,0.8)';g.fillRect(x+17,82-st,3,st);
     g.fillStyle='#2B2320';g.font='10px Georgia,serif';g.fillText(k[0].toUpperCase()+k.slice(1,4),x+9,97);});
   const t=new THREE.CanvasTexture(c),sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:false}));
-  const si=W.settlements.indexOf(s),k=(s.kind==='village'?0.75:1)*(G.prodBig===si?2.3:1.45);sp.scale.set(0.15*k,0.0886*k,1);sp.renderOrder=G.prodBig===si?8:6;
+  const si=W.settlements.indexOf(s),k=(s.kind==='village'?0.75:1)*(G.prodBig===si?2.3:1.45);sp.scale.set(0.15*k*(8+GOODS.length*23)/176,0.0886*k,1);sp.renderOrder=G.prodBig===si?8:6;
   sp.userData.prod=si;(G.prodSprites||(G.prodSprites=[])).push(sp);return sp; // the same size on screen at any height; click one to read it close
 }
 let overlayMode=null;
@@ -5442,6 +5451,7 @@ function pickSmall(cx,cy,lim){ // small things by pixel proximity (a ~12 px halo
   if(W.dragon&&G.dragonMesh.visible){const p=G.dragonMesh.position;one(p.x,p.y+4,p.z,14*G.dragonMesh.scale.x,22,{type:'dragon'});}
   for(const e of W.envoys||[]){const m=G.envoyMeshes&&G.envoyMeshes.get(e.id);if(m)one(m.position.x,m.position.y+2*m.scale.x,m.position.z,4*m.scale.x,14,{type:'envoy',e});}
   for(const t of G.traffic||[])if(t.proxy){const p=t.proxy.position;one(p.x,p.y,p.z,12,13,{type:'caravan',c:t.info});}
+  if(cam.cur.dist<1400&&G.herdPos){const P=G.herdPos;for(let i=0;i<P.length;i+=5)one(P[i],P[i+1],P[i+2],2,7,{type:'beast',k:BEASTS[P[i+3]],si:P[i+4]});} // even a sheep can be asked what it is
   if(cam.cur.dist<900&&G.cairnMesh&&G.cairnText)for(let i=0;i<G.cairnMesh.count;i++){G.cairnMesh.getMatrixAt(i,_pm);const e=_pm.elements;one(e[12],e[13]+2,e[14],4,8,{type:'cairn',text:G.cairnText[i]});}
   return best;
 }
@@ -5451,6 +5461,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
   const gp=rayGround(raycaster.ray),gd=gp?raycaster.ray.origin.distanceTo(gp):Infinity,lim=gd+3+gd*0.004; // hits deeper than the ground are behind a hill
   const targets=[...G.pickS,...(G.cairnMesh?[G.cairnMesh]:[]),...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),...(G.envoyMeshes?G.envoyMeshes.values():[]),G.bodies,G.roofs];
   if(G.soldiers)targets.push(G.soldiers);
+  if(G.herdMesh&&cam.cur.dist<1400)targets.push(...Object.values(G.herdMesh));
   if(G.dragonMesh.visible)targets.push(G.dragonMesh);
   for(const t of G.traffic||[])if(t.proxy)targets.push(t.proxy);
   const hits=raycaster.intersectObjects(targets,true),lab=pickLabel(cx,cy);
@@ -5462,6 +5473,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
     if((h.object===G.bodies||h.object===G.roofs)&&h.instanceId!==undefined&&h.instanceId<G.bldList.length)pk={type:'building',b:G.bldList[h.instanceId]};
     if(h.object===G.cairnMesh&&h.instanceId!==undefined)pk={type:'cairn',text:G.cairnText[h.instanceId]};
     if(h.object===G.soldiers)pk=pickSoldier(h.point);
+    if(h.object.userData.beast&&h.instanceId!==undefined)pk={type:'beast',k:h.object.userData.beast,si:G.herdOwner[h.object.userData.beast][h.instanceId]};
     if(!pk)continue;
     if(pk.type==='settlement'){town=town||pk;continue;} // the invisible pick-sphere encloses the town: prefer the specific thing
     if(lab&&pk.type==='building')break; // a label drawn over a house takes the click; over anything smaller the thing wins
@@ -5535,9 +5547,10 @@ function showInspect(pk){
     if(s.mother)h+=row('Daughter of',s.mother);
     {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
     h+=row('Garrison',Math.round(s.garrison));
-    if(s.herd){const H=s.herd,g=s._graze||grazeOf(s),r=v=>Math.round(v).toLocaleString();
-      h+=row('Herds',`${r(H.sheep)} sheep, ${r(H.cattle)} cattle, ${r(H.horses)} horses, ${r(H.swine)} swine${H.murrain>0?` — <b>murrain among the ${H.murrainK}</b>`:''}`);
-      h+=row('Grazing',`${r(g.past)} ha pasture, ${r(g.wild)} ha common, ${r(g.hay)} ha hay meadow, fallow of ${r(g.till)} ha; ${H.press>1.05?'overstocked':H.press>0.7?'well stocked':'grass to spare'}; plough-teams ${(s.ploughF??1)>=0.98?'enough':'short'}`);}
+    if(s.hm){const H=s.stores,M=s.hm,g=s._graze||grazeOf(s),r=v=>Math.round(v||0).toLocaleString();
+      h+=row('Herds',`${r(H.sheep)} sheep, ${r(H.cattle)} cattle, ${r(H.horses)} horses, ${r(H.swine)} swine${M.murrain>0?` — <b>murrain among the ${M.murrainK}</b>`:''}`);
+      h+=row('Grazing',`${r(g.past)} ha pasture, ${r(g.wild)} ha common, ${r(g.hay)} ha hay meadow, fallow of ${r(g.till)} ha; ${M.press>1.05?'overstocked':M.press>0.7?'well stocked':g.cap<15?'little grass: beasts and wool come by the road':'grass to spare'}; plough-teams ${(s.ploughF??1)>=0.98?'enough':'short'}`);
+      h+=row('Wool',`${r(H.wool)} in store; ${looms(s)} loom-houses${waterMill(s)?'; a water-mill '+millUses(s).join(', '):''}`);}
     if(s.folk&&s.folk.length){const f=folkStat(s),pc=v=>Math.round(v*100)+'%';
       h+=row('Folk',`${f.n.toLocaleString()} souls in ${f.fams} families`);
       if(f.top.length)h+=row('Families',f.top.map(([n,c])=>`${esc(n)} (${c})`).join(', '));
@@ -5687,6 +5700,13 @@ function showInspect(pk){
     h+=row('Hoard',Math.round(d.hoard)+' gold');
     h+=row('Raids',d.wakes);
     flyToBtn(fb,'Follow',()=>{markManual();cam.follow=d;cam.dist=300;});
+  }else if(pk.type==='beast'){
+    const s=W.settlements[pk.si],T=BEAST_TEXT[pk.k]||[pk.k,''],n=Math.round(s&&s.stores[pk.k]||0);
+    setHTML(title,esc(T[0]));sub.textContent=s?`of ${s.name}`:'';
+    h+=`<div class="agline">${esc(T[1])}</div>`;
+    if(s){h+=row('Head in '+s.name,n.toLocaleString());h+=row('Wanted',Math.round(s._want?s._want[pk.k]:0).toLocaleString());h+=row('Price here',price(s,pk.k).toFixed(1)+' g a head');
+      if(s.hm&&s.hm.murrain>0&&s.hm.murrainK===pk.k)h+=row('Sickness','murrain among them');
+      flyToBtn(fb,'Visit '+s.name,()=>flyTo(s.pos.x,s.pos.z,300));}
   }else if(pk.type==='cairn'){
     setHTML(title,esc('Battle cairn'));
     sub.textContent='';
@@ -5792,6 +5812,8 @@ function tickWeather(){
 /* ============================ ECONOMY ==================================== */
 function spareOf(s,g){ // what a place can send away: a hungry town keeps its food, and every town keeps a month's bread
   if(g==='grain'||g==='fish')return s.hunger>0.05?0:s.stores[g]-s.pop*(NEED.grain+NEED.fish)*30;
+  if(LU[g]!==undefined)return (s.stores[g]||0)-(s._want?s._want[g]:1e9); // a place sells only the beasts it does not need
+  if(g==='wool')return (s.stores.wool||0)-woolWant(s)*4;
   return s.stores[g];}
 function closedToTrade(s,from){ // plague, sealed gates, or the besiegers' lines: a town part-encircled still trades on the roads they do not hold
   if(s.infected/Math.max(1,s.pop)>0.15||s.quarantineUntil>day())return true;
@@ -5806,9 +5828,9 @@ function siegeArc(a,s){ // the besiegers' lines: outside the walls, round as muc
   let c=a.siegeArc?a.siegeArc.c:null;
   if(c==null){const P=a.poly,q=P&&P.length>1?P[Math.max(0,P.length-2)]:a._ppos;c=q?Math.atan2(q.z-s.pos.z,q.x-s.pos.x):hash01(a.id)*6.28;}
   a.siegeArc={c,w:cover*Math.PI,R};}
-const NEED={grain:0.007,fish:0.003,timber:0.0006,ore:0.0002,tools:0.0004,cloth:0.0005,wine:0.0004};
+const NEED={grain:0.007,fish:0.003,timber:0.0006,ore:0.0002,tools:0.0004,cloth:0.0005,wine:0.0004,wool:0,sheep:0,cattle:0,horses:0,swine:0}; // the herds and the wool are wanted by what a place keeps and spins, not eaten by the head
 function price(s,g){
-  const need=s.pop*NEED[g]*25+5;
+  const need=(g==='wool'?woolWant(s)*6:LU[g]!==undefined?(s._want?s._want[g]:0)*1.1:s.pop*NEED[g]*25)+5; // a stable short of horses, a village short of plough-oxen, a town of idle looms
   return GOODBASE[g]*clamp(need/(s.stores[g]+2),0.3,4);
 }
 function tickEconomy(){
@@ -5817,16 +5839,17 @@ function tickEconomy(){
     const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1);
     s.stores.grain+=s.res.farm*0.92*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.landF??1)*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
-    s.stores.timber+=s.res.forest*0.05*workF;
+    s.stores.timber+=s.res.forest*0.05*workF*(waterMill(s)&&AD()>=1250?1.25:1); // and a water-driven saw more timber
     s.stores.ore+=s.res.ore*0.05*workF;
     if(s.kind!=='village'){ // craft conversion
-      const c=Math.min(s.stores.ore,s.stores.timber,1.4);
+      const c=Math.min(s.stores.ore,s.stores.timber,1.4*(waterMill(s)&&AD()>=1200?1.4:1)); // a water-driven trip-hammer works more iron
       s.stores.ore-=c*0.6;s.stores.timber-=c*0.6;s.stores.tools+=c*0.8;
     }
     if(s.kind==='capital'){s.stores.cloth+=0.9;s.stores.wine+=0.7;}
     for(const g of GOODS){
       s.stores[g]-=s.pop*NEED[g]*(g==='grain'||g==='fish'?0:1); // food eaten in population tick
-      s.stores[g]=clamp(s.stores[g],0,(s.pop*NEED[g]*220+400)*(g==='grain'&&s.works&&s.works.granary?1.6:1)); // a granary keeps more against the lean years
+      if(LU[g]!==undefined){s.stores[g]=Math.max(0,s.stores[g]||0);continue;}
+      s.stores[g]=clamp(s.stores[g]||0,0,(g==='wool'?woolWant(s)*60:0)+(s.pop*NEED[g]*220+400)*(g==='grain'&&s.works&&s.works.granary?1.6:1)); // a granary keeps more against the lean years
     }
     // taxes on production (towns held by houses in arms against the crown pay nothing): the crown's own towns pay it in full;
     // a lord's towns owe the crown only its feudal aid, their rents being his
@@ -5844,7 +5867,7 @@ function tickEconomy(){
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
         for(const g of GOODS){
           const margin=price(d,g)-price(o,g);
-          if(margin>GOODBASE[g]*0.5&&o.stores[g]>40){
+          if(margin>GOODBASE[g]*0.5&&(LU[g]!==undefined?spareOf(o,g)>(g==='horses'?4:12):o.stores[g]>40)){
             const r=route(oi,di);if(!r)continue;
             const score=margin/Math.max(600,r.len);
             if(!best||score>best.score)best={score,di,g,r};
@@ -5853,7 +5876,7 @@ function tickEconomy(){
       }
       if(best){
         const o2=W.settlements[oi],dd=W.settlements[best.di];
-        const qty=Math.min(o2.stores[best.g]*0.4,60);
+        const qty=LU[best.g]!==undefined?Math.min(spareOf(o2,best.g),best.g==='horses'?12:best.g==='cattle'?30:80):Math.min(o2.stores[best.g]*0.4,60); // a drove: the spare beasts, walked to market
         o2.stores[best.g]-=qty;
         const c={origin:oi,dest:best.di,good:best.g,qty,value:qty*price(dd,best.g),
           poly:best.r.poly,len:best.r.len,departDay:day(),arriveDay:day()+(best.r.time??best.r.len)/CART_MPD,robbed:false,
@@ -5872,7 +5895,7 @@ function tickEconomy(){
     if(oi!==di){
       const o=W.settlements[oi],d2=W.settlements[di];
       if(!closedToTrade(o)&&!closedToTrade(d2)){
-        const g=GOODS.reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
+        const g=GOODS.filter(x=>LU[x]===undefined).reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
         if(spareOf(o,g)>25){
           const r=route(oi,di);
           if(r){
@@ -5893,7 +5916,7 @@ function tickEconomy(){
     const oi=downstream?pr.a:pr.b,di=downstream?pr.b:pr.a;
     const o=W.settlements[oi],d2=W.settlements[di];
     if(!closedToTrade(o)&&!closedToTrade(d2)){
-      const g=GOODS.reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
+      const g=GOODS.filter(x=>LU[x]===undefined).reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
       if(spareOf(o,g)>25){
         const qty=Math.min(o.stores[g]*0.3,70);o.stores[g]-=qty;
         const poly=downstream?pr.route.poly:[...pr.route.poly].reverse();
@@ -6667,7 +6690,7 @@ function takeSettlement(a,s){
 function disbandArmy(a){
   if(a.gone)return;
   if(a.men){musterSync(a);for(const p of a.men){sendHome(p);if(!p.merc&&W.settlements[p.home])W.settlements[p.home].pop+=1;}a.men=[];
-    const hs=W.settlements[a.home];if(hs&&hs.herd&&a.horses)hs.herd.horses+=a.horses*0.8;a.horses=0;} // the horses come back to the home stable, less the sell-swords' own // each man walks home to his own village; the sell-swords ride off
+    const hs=W.settlements[a.home];if(hs&&a.horses)hs.stores.horses=(hs.stores.horses||0)+a.horses*0.8;a.horses=0;} // the horses come back to the home stable, less the sell-swords' own // each man walks home to his own village; the sell-swords ride off
   else{const s=W.settlements[a.home];if(s)s.pop+=a.strength*0.6;}
   liftSiege(a); // a dead army lifts its siege
   if(a.flag){scene.remove(a.flag);a.flag=null;}dropMarker(a);
