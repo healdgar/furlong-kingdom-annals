@@ -41,11 +41,14 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   you see are its residents.
   - **Their own route:** each walks their own way along the town's streets,
     from their door to their work (the smithy, the shop, the fields), perhaps
-    to market, and home.
+    to market, and home. On Sundays the town walks to mass and rests after;
+    a couple's households walk to the church on their wedding day; grown
+    children visit their mothers.
   - **Their own pace:** children quick, the old slow, the hale brisker.
-  - **True time:** the town is drawn true size, so they walk in true time,
-    apart from the calendar (as city-builders do). Pause stops them, and at
-    life pace nightfall sends them home.
+  - **On the calendar's clock:** each keeps personal hours by the day's
+    clock. At life pace their walking looks true; faster speeds fast-forward
+    their errands with everything else; pause freezes each one mid-errand,
+    on the way to work, market, mass or a wedding (click to see which).
   - **Where they're seen:** indoors at home or at a workshop they aren't
     drawn.
   - **Their card:** click anyone for age, trade, home, spouse, parents,
@@ -61,7 +64,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
   Travellers are drawn on the roads; click one to see who they are and where
   they're going. The towns they're heading for already count them.
-- **Life pace (🚶, or L).** A day takes a real minute: carts roll at about 8 m/s
+- **Life pace (🚶, or L).** A day takes ten real minutes: carts roll slowly
   on screen, hosts march, the flocks graze, and the townsfolk live their day
   in step with the sun (out at sunrise, market at noon, home at dusk). The
   simulation runs whole days just the same, only slower. On pause
@@ -95,7 +98,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 |---|---|
 | drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
 | click | inspect anything: settlements, buildings, armies, caravans, the dragon, walls, roads, streets, rivers, land parcels (tenure, lord, crop, state) |
-| `Space` | pause · `L` life pace (a day a minute) · `1–5` speeds (half a day to a year per second) |
+| `Space` | pause · `L` life pace (a day in ten minutes) · `1–5` speeds (half a day to a year per second) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
 | `M` | parchment map (click to fly) · `Esc` closes it |

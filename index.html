@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:16 UTC · after cea5bc9</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:43 UTC · after d12b4b0</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -275,7 +275,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
-    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day a minute — the folk keep their day, the carts roll at a walking pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
+    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in ten minutes — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
 <div id="watchdate">—</div>
@@ -376,7 +376,7 @@ const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8,wool:4,sh
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
 const CART_MPD=500,BARGE_MPD=700,COG_MPD=2800,MARCH_MPD=400,FIELD_MPD=250; /* one scale for every traveller: the map's distances stand for a realm ~40x larger (6 km of map ~ 240 km), so each moves at its real pace in km a day divided by 40 — ox-cart 20 km, host 16 on the road and 10 across country, barge 28, cog 110, great ship 140, envoy 60, dragon 320. Towns and houses are drawn true size, so the townsfolk keep true time: a walk across town is half an hour. */ // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
-const SPEEDS=[0,0.5,2,8,30,360,1/60]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day a minute, to watch the folk and the carts
+const SPEEDS=[0,0.5,2,8,30,360,1/600]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day in ten minutes: folk walk, carts roll and ships sail at near their true pace
 const LIFE=6,isLife=()=>speedIdx===LIFE||speedIdx===0&&lastSpeed===LIFE; // at life pace (or paused from it) the little world is shown as it goes
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
 
@@ -2451,6 +2451,7 @@ function yearOfFolk(s,si){ // deaths by age and frailty; schooling; weddings
     let best=null,bs=-1e9;for(let t=0;t<4;t++){const m=pool[Math.floor(frand()*pool.length)];if(m.sp||m.fam===w.fam)continue;
       const d=attraction(w,m)+attraction(m,w)-0.5*Math.abs(standing(m)-standing(w));if(d>bs){bs=d;best=m;}} // mutual liking, and families that match
     if(!best)continue;best.sp=w;w.sp=best;w.tr=best.tr;
+    (s._weds||(s._weds=[])).push({d:day()+1+Math.floor(frand()*20),a:best,b:w});if(s._weds.length>12)s._weds.shift(); // the wedding day, within the month
     if(far){const i=s.folk.indexOf(w);if(i>=0)removeAt(s,i);journey(w,si,W.settlements.indexOf(far),'bride');} // the bride walks to her husband's village
     const mi=men.indexOf(best);if(mi>=0)men.splice(mi,1);}
   for(const w of s.folk){ // affairs: the bold and the heedless stray; now and then a child comes of it
@@ -2635,7 +2636,7 @@ function streetPath(g,a,b){ // shortest way along the streets (A*)
   let guard=0;while(open.length&&guard++<6000){const[,v]=pop();if(v===b)break;for(const[w,d]of g.adj[v]){const ng=gs[v]+d;if(ng<gs[w]){gs[w]=ng;from[w]=v;open.push([ng+dist2d(g.N[w].x,g.N[w].z,T.x,T.z),w]);}}}
   if(from[b]<0)return null;const out=[];for(let v=b;v!==-1;v=from[v]){out.push(v);if(v===a)break;}return out.reverse();}
 function townsfolkFor(s){ // who is about in this town, and where each goes
-  if(s._hhY!==year())houseFolk(s);const g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
+  if(s._hhY!==year())houseFolk(s);const ch=s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'),g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
   const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
   const fx=cam.cur.focus.x,fz=cam.cur.focus.z,cand=s.folk.filter(p=>ageYrs(p)>=6&&!awayNow(p)&&householdHead(p).bh&&!householdHead(p).bh.removed);
   cand.sort((a,b)=>dist2d(householdHead(a).bh.x,householdHead(a).bh.z,fx,fz)-dist2d(householdHead(b).bh.x,householdHead(b).bh.z,fx,fz));
@@ -2648,8 +2649,8 @@ function townsfolkFor(s){ // who is about in this town, and where each goes
     else{work=h;what=p.tr?`at work at home, ${p.tr}`:'about the house';inside=true;}
     const pace=a<14?1.5:a>60?0.9:1.15+0.12*clamp(trait(p,GV),-2,2)+0.05*clamp(trait(p,GS),-2,2); // metres a second, as they are made
     out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
-      pace,sc:a<14?0.75:1,col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3),
-      x:h.x,z:h.z,ry:0,t:H*50,state:'home',until:H*25,route:null,ri:0,out:false,walking:false,goal:'home',doing:'at home'});}
+      church:ch?{x:ch.x,z:ch.z}:null,pace,sc:a<14?0.75:1,col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3),
+      x:h.x,z:h.z,ry:0,t:0,state:'home',until:0,route:null,ri:0,out:false,walking:false,goal:'home',doing:'at home'});}
   return out;}
 function planWalk(c,to,goal){ // the way: out of the door to the nearest street, along the streets, and in at the other end
   const g=c.g,a=nearestNode(g,c.x,c.z),b=nearestNode(g,to.x,to.z),P=streetPath(g,a,b),pts=[{x:c.x,z:c.z}];
@@ -2658,22 +2659,33 @@ function planWalk(c,to,goal){ // the way: out of the door to the nearest street,
   c.route=pts.map((q,k)=>{const r=pts[Math.min(pts.length-1,k+1)],o=pts[Math.max(0,k-1)],dx=r.x-o.x,dz=r.z-o.z,L=Math.hypot(dx,dz)||1;return k&&k<pts.length-1?{x:q.x-dz/L*side,z:q.z+dx/L*side}:q;});
   c.ri=0;c.state='walk';c.goal=goal;c.walking=true;c.out=true;
   const st=P&&P.length>1?g.N[P[Math.floor(P.length/2)]].st:null;c.via=st?(st.name||STREET_NAME[st.kind]||'the street'):'';
-  c.doing=`walking ${goal==='home'?'home':goal==='market'?'to market':'to work'}${c.via?' by '+c.via.toLowerCase():''}`;}
-function stepWalker(c,dt,night){
+  c.doing=`walking ${goal==='home'?'home':goal==='market'?'to market':goal==='church'?'to mass':goal==='wedding'?`to the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:goal==='visit'?`to visit ${c.p.sx==='f'?'her':'his'} mother`:'to work'}${c.via?' by '+c.via.toLowerCase():''}`;}
+function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true second at life pace); fr: the hour of the day
   c.t+=dt;if(!dt)return;
+  const H=(c.p.id*7919%1000)/1000,out0=0.23+H*0.05,mkt=0.48+H*0.06,home0=0.72+H*0.06,night=fr<out0-0.02||fr>=0.86; // each keeps their own hours
   if(c.state==='walk'){let m=c.pace*dt;
     while(m>0&&c.ri<c.route.length-1){const a={x:c.x,z:c.z},b=c.route[c.ri+1],d=dist2d(a.x,a.z,b.x,b.z);
       if(d<=m){c.x=b.x;c.z=b.z;c.ri++;m-=d;}else{c.x+=(b.x-a.x)/d*m;c.z+=(b.z-a.z)/d*m;c.ry=-Math.atan2(b.z-a.z,b.x-a.x)+Math.PI/2;m=0;}}
-    if(c.ri>=c.route.length-1){c.walking=false;const H=(c.p.id*7919%1000)/1000;
-      if(c.goal==='home'){c.state='home';c.out=false;c.doing='at home';c.until=c.t+(night?1e9:25+H*40);}
-      else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+20+H*30;}
-      else{c.state='work';c.out=!c.workIn;c.doing=c.what;c.until=c.t+45+H*60;}}
+    if(c.ri>=c.route.length-1){c.walking=false;
+      if(c.goal==='home'){c.state='home';c.out=false;c.doing='at home';}
+      else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+20+H*30;} // a while at the stalls
+      else if(c.goal==='church'||c.goal==='wedding'){c.state='church';c.out=false;c.doing=c.wedW?`at the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:'at mass';c.until=c.t+40+H*20;}
+      else if(c.goal==='visit'){c.state='visit';c.out=false;c.doing=`visiting ${c.p.sx==='f'?'her':'his'} mother, ${folkName(c.visitOf)}`;c.until=c.t+30+H*40;}
+      else{c.state='work';c.out=!c.workIn;c.doing=c.what;}}
     return;}
-  if(c.state!=='home'&&night){planWalk(c,c.home,'home');return;} // nightfall: home
-  if(c.t<c.until)return;
-  if(c.state==='home'){if(night){c.until=c.t+30;return;}planWalk(c,c.work,'work');}
-  else if(c.state==='work'){if(c.p.id%3===0&&ageYrs(c.p)>=14)planWalk(c,c.mk,'market');else planWalk(c,c.home,'home');}
-  else if(c.state==='market')planWalk(c,c.p.id%2?c.home:c.work,c.p.id%2?'home':'work');}
+  const sunday=day()%7===0,wed=c.church&&(c.s._weds||[]).find(w=>w.d===day()&&(w.a===c.p||w.b===c.p||householdHead(w.a)===householdHead(c.p)||householdHead(w.b)===householdHead(c.p)||w.a.ma===c.p||w.b.ma===c.p));
+  if(c.state==='home'&&!night&&c.dayDone!==day()){
+    if((sunday||wed)&&c.church&&c.chDay!==day()&&fr<0.5){c.chDay=day();c.wedW=wed||null;planWalk(c,c.church,wed?'wedding':'church');return;} // to mass, or to a wedding
+    if(fr<home0){const m=c.p.ma;if(ageYrs(c.p)>=18&&m&&!m.dead&&m.si===c.p.si&&c.visDay!==day()&&(c.p.id+day())%(sunday?5:23)===0&&householdHead(m).bh){c.visDay=day();const hb=householdHead(m).bh;c.visitOf=m;planWalk(c,{x:hb.x,z:hb.z},'visit');return;} // Sunday afternoons are for mothers
+      if(sunday){c.dayDone=day();return;} // the Lord's day: no work
+      planWalk(c,c.work,'work');}return;}
+  if(c.state==='church'&&c.t>=c.until){planWalk(c,sunday&&!c.wedW?c.home:c.work,sunday&&!c.wedW?'home':'work');return;}
+  if(c.state==='visit'&&c.t>=c.until){planWalk(c,sunday?c.home:c.work,sunday?'home':'work');return;}
+  if(c.state==='home')return;
+  if(fr>=home0||night){c.dayDone=day();planWalk(c,c.home,'home');return;} // home at dusk
+  if(c.state==='work'&&fr>=mkt&&c.p.id%3===0&&ageYrs(c.p)>=14&&c.mktDay!==day()){c.mktDay=day();planWalk(c,c.mk,'market');return;}
+  if(c.state==='market'&&c.t>=c.until)planWalk(c,c.work,'work');}
+
 function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
   const t=(W.travellers||[]).find(x=>x.p.id===id);if(t)return {p:t.p,s:W.settlements[t.to],t};return null;}
 function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
@@ -9560,9 +9572,9 @@ function animateWorld(dt,now){
     if(nearest&&cam.cur.dist<300&&nd<(nearest.extentR||nearest.radius)+120&&nearest.folk&&nearest.folk.length){
       const s=nearest;
       if(G.citList.length===0||G.citList[0].s!==s)G.citList=townsfolkFor(s);
-      const run=speedIdx>0?Math.min(dt,0.1):0,night=isLife()&&(()=>{const f=currentDayF();return f>0.77&&f<1.22;})();let k=0;G.citIdx=[];
-      for(const c of G.citList){stepWalker(c,run,night);if(!c.out)continue;
-        const x=c.x,z=c.z,bob=c.walking&&run?Math.abs(Math.sin(c.t*8.5))*0.06:0,yz=surfY(x,z)+0.28+bob;
+      const run=speedIdx>0?Math.min(dt,0.1)*(SPEEDS[speedIdx]||0)/SPEEDS[LIFE]:0,fr=W.clock.frac||0;let k=0;G.citIdx=[]; // the walkers' seconds are the calendar's, at life pace a true second
+      for(const c of G.citList){stepWalker(c,run,fr);if(!c.out)continue;
+        const x=c.x,z=c.z,bob=c.walking&&speedIdx===LIFE?Math.abs(Math.sin(c.t*8.5))*0.06:0,yz=surfY(x,z)+0.28+bob;
         setInst(G.citizens,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);setInst(G.citKit,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=160)break;}
       G.citizens.count=G.citKit.count=k;
       G.citizens.instanceMatrix.needsUpdate=true;G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
