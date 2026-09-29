@@ -276,6 +276,31 @@ itself; you rule one lord's domain:
     waterfront rather than sailing up the high street.
   - Click a ship to see where it's from, what it brought and what it's
     loading.
+- **Homes and households.** Every occupied house has a named household: a
+  married man's, a widow's or an unwed adult's. Unmarried children live with
+  their mother. Tradesmen live over their shops; a family keeps its house from
+  year to year; when a place is full, lodgers double up. Click a house to see
+  who lives there.
+- **Woodcutters, hay and the winter.**
+  - **Woodcutters** are real villagers wherever there is wood, and timber
+    comes from their axes.
+  - **Hay** is mown in summer from the hay meadows and pasture.
+  - **Winter:** mixed herds share one pasture and one hayrick. Each winter
+    the beasts need hay for the part of their keep that stubble and frosted
+    grass can't give. A place short of hay buys it in autumn (hay is traded
+    like any good) or loses beasts.
+- **Fences.**
+  - Every worked field is fenced where it meets waste, another village's land,
+    or ground put to a different use (corn against pasture, to keep the
+    beasts out of the crop).
+  - No fence runs between the open-field strips of one village.
+  - Fences are dry-stone walls where the ground is stony or stone is cheaper
+    than timber, and post-and-rail otherwise.
+- **Farm tracks.** No lord or crown keeps them. Each village's tracks run
+  from its edge out to every one of its fields along the bounds between
+  holdings, never across anyone's corn, and step round water and steep banks.
+  Where a track runs, the fences stand back on either side of the lane. Click
+  a track to see it.
 - **Stone.**
   - **Quarries:** a place with crag, scree or steep hillside nearby opens a
     quarry once towns within reach want stone.
