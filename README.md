@@ -90,7 +90,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 |---|---|
 | drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
 | click | inspect anything: settlements, buildings, armies, caravans, the dragon, walls, roads, streets, rivers, land parcels (tenure, lord, crop, state) |
-| `Space` | pause · `1–4` speeds (up to 30 sim-days/sec) |
+| `Space` | pause · `L` life pace (a day a minute) · `1–5` speeds (half a day to a year per second) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
 | `M` | parchment map (click to fly) · `Esc` closes it |
