@@ -276,6 +276,21 @@ itself; you rule one lord's domain:
     waterfront rather than sailing up the high street.
   - Click a ship to see where it's from, what it brought and what it's
     loading.
+- **Property.** Land is held at two scales that fit together with no gaps
+  between them.
+  - **Furlongs** (the fields, commons and waste) tile the whole realm. Land
+    is unowned only until someone expands into it; a hole of unclaimed
+    ground enclosed on three sides by claimed land is claimed too.
+  - **Town ground:** the furlongs a town's houses stand on belong to that
+    town and follow its lord. A siege, a sale or a grant never splits a
+    town's own ground from the town.
+  - **Lots:** in the towns, each building's lot is its share of the ground
+    nearer to it than to its neighbours (weighted by size). It runs back until
+    it meets a neighbour's lot, a street, a place, the town wall or a castle,
+    so neighbouring lots and back lanes close up.
+  - **Subdivision:** when houses are built on farmland they take their lots
+    out of the furlong, and the furlong's ploughland shrinks to match.
+  - The land card shows a town's ground as such.
 - **Homes and households.** Every occupied house has a named household: a
   married man's, a widow's or an unwed adult's. Unmarried children live with
   their mother. Tradesmen live over their shops; a family keeps its house from

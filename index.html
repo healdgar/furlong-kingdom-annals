@@ -259,7 +259,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 20:56 UTC · after 28a11cb</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 21:38 UTC · after 869b0ce</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -3551,18 +3551,28 @@ function rebuildDetails(){
       if(da<=0)out.push(a);if(da*db<0){const t=da/(da-db);out.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t,e:a.e});}}return out;};
     const edges=new Map();
     for(const b of G.bldList){if(b.state==='gone'||b.removed||!b.s)continue;
-      const S=b.s,R=(S.kind==='village'?13:18)+b._r; // a croft and its toft; a burgage plot runs further back
-      const cr=Math.cos(b.rot||0),sr=Math.sin(b.rot||0);let P=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v],k)=>({x:b.x+(u*cr+v*sr)*R,z:b.z+(v*cr-u*sr)*R,e:-1-k})); // squared to the house // e: which line made each edge (≥0 a neighbour, -1..-4 the bound, -9 public ground)
+      const S=b.s,R=(S.kind==='village'?13:18)+b._r,Rx=R+(S.kind==='village'?45:70); // a croft and its toft; a burgage plot runs further back
+      const cr=Math.cos(b.rot||0),sr=Math.sin(b.rot||0);const nb=[],hs=[R,R,R,R],nrm=[[-sr,-cr],[cr,-sr],[sr,cr],[-cr,sr]]; // each side of the plot runs on out to Rx where a neighbour, a street, a place, the wall or a castle bounds it there: no strip of ground is left between lots
+      const open=(dx,dz)=>{const d=Math.hypot(dx,dz)||1;for(let k=0;k<4;k++)if(dx*nrm[k][0]+dz*nrm[k][1]>0.38*d)hs[k]=Rx;};
+      for(const o of bh.near(b.x,b.z,Rx*1.5))if(o!==b&&o.state!=='gone'&&!o.removed){const dx=o.x-b.x,dz=o.z-b.z,D=Math.hypot(dx,dz);if(D<=0.1)continue;
+        const h=(D*D-o._r*o._r+b._r*b._r)/(2*D);nb.push([h,o]);if(h>R*0.7&&h<=Rx&&D-h<=Rx)open(dx,dz);}
+      const stq=[];for(const g of sh.near(b.x,b.z,Rx)){const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,t=clamp(((b.x-g.a.x)*dx+(b.z-g.a.z)*dz)/L2,0,1),qx=g.a.x+dx*t,qz=g.a.z+dz*t,d=Math.hypot(qx-b.x,qz-b.z); // the street edges near it, found once
+        if(d<0.5||d>Rx*1.3)continue;stq.push({g,qx,qz});if(d-g.hw>R*0.7)open(qx-b.x,qz-b.z);}
+      for(const pl of S.places||[]){const dx=pl.x-b.x,dz=pl.z-b.z,d=Math.hypot(dx,dz)-Math.max(...(pl.r||[8]))-1;if(d>R*0.7&&d<Rx)open(dx,dz);}
+      if(S.wallRad){const a=Math.atan2(b.z-S.pos.z,b.x-S.pos.x),wr=wallRadAt(S,a),dw=dist2d(b.x,b.z,S.pos.x,S.pos.z),gp=Math.abs(wr-dw);
+        if(wallKindAt(S,a)!==1&&gp>R*0.7&&gp<Rx*1.2){const sg=dw<wr?1:-1;open(Math.cos(a)*sg,Math.sin(a)*sg);}}
+      for(const C of castleKeepOut(S)){const dx=C.x-b.x,dz=C.z-b.z,d=Math.hypot(dx,dz)-C.r;if(d>R*0.7&&d<Rx)open(dx,dz);}
+      let P=[[-hs[3],-hs[0]],[hs[1],-hs[0]],[hs[1],hs[2]],[-hs[3],hs[2]]].map(([U,V],k)=>({x:b.x+U*cr+V*sr,z:b.z+V*cr-U*sr,e:-1-k})); // squared to the house // e: which line made each edge (≥0 a neighbour, -1..-4 the bound, -9 public ground)
       const cut=(nx,nz,c,e)=>{const L=Math.hypot(nx,nz)||1,Q=clip(P,nx/L,nz/L,c/L);if(Q.length<3)return false;
         for(let k=0;k<Q.length;k++){const a=Q[k],q=Q[(k+1)%Q.length];if(Math.abs(a.x*nx/L+a.z*nz/L-c/L)<1e-6&&Math.abs(q.x*nx/L+q.z*nz/L-c/L)<1e-6)a.e=e;}P=Q;return true;};
-      const nb=[];for(const o of bh.near(b.x,b.z,R*2))if(o!==b&&o.state!=='gone'&&!o.removed){const D=dist2d(b.x,b.z,o.x,o.z);if(D>0.1)nb.push([(D*D-o._r*o._r+b._r*b._r)/(2*D),o]);}
-      nb.sort((p,q)=>p[0]-q[0]);let far=R*1.42; // nearest first: the cell shrinks fast, and a line beyond its farthest corner cuts nothing
+      
+      nb.sort((p,q)=>p[0]-q[0]);let far=Math.max(...hs)*1.42; // nearest first: the cell shrinks fast, and a line beyond its farthest corner cuts nothing
       for(const[h,o]of nb){if(h>far)break;
         if(cut(o.x-b.x,o.z-b.z,((o.x*o.x+o.z*o.z)-(b.x*b.x+b.z*b.z)-o._r*o._r+b._r*b._r)/2,o.idx)){far=0;for(const q of P)far=Math.max(far,dist2d(b.x,b.z,q.x,q.z));}} // the power bisector
-      for(const g of sh.near(b.x,b.z,R)){const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,t=clamp(((b.x-g.a.x)*dx+(b.z-g.a.z)*dz)/L2,0,1),qx=g.a.x+dx*t,qz=g.a.z+dz*t;
-        let nx=qx-b.x,nz=qz-b.z;const d=Math.hypot(nx,nz);if(d<0.5||d>R*1.3)continue;nx/=d;nz/=d;
+      for(const{g,qx,qz}of stq){
+        let nx=qx-b.x,nz=qz-b.z;const d=Math.hypot(nx,nz);if(d<0.5||d>Rx*1.3)continue;nx/=d;nz/=d;
         cut(nx,nz,nx*qx+nz*qz-g.hw-0.8,-9);}
-      for(const pl of S.places||[]){const pr=Math.max(...(pl.r||[8]))+1,nx=pl.x-b.x,nz=pl.z-b.z,d=Math.hypot(nx,nz);if(d>pr+2&&d<R+pr)cut(nx/d,nz/d,(nx*pl.x+nz*pl.z)/d-pr,-9);}
+      for(const pl of S.places||[]){const pr=Math.max(...(pl.r||[8]))+1,nx=pl.x-b.x,nz=pl.z-b.z,d=Math.hypot(nx,nz);if(d>pr+2&&d<Rx+pr)cut(nx/d,nz/d,(nx*pl.x+nz*pl.z)/d-pr,-9);}
       if(S.wallRad){const a=Math.atan2(b.z-S.pos.z,b.x-S.pos.x),wr=wallRadAt(S,a),d=dist2d(b.x,b.z,S.pos.x,S.pos.z);
         if(wallKindAt(S,a)!==1){const nx=Math.cos(a),nz=Math.sin(a),c=nx*S.pos.x+nz*S.pos.z;if(d<wr-2)cut(nx,nz,c+wr-1.6,-9);else if(d>wr+2)cut(-nx,-nz,-(c+wr+1.6),-9);}} // a lot runs up to the wall and takes it for its bound (no fence along it)
       b._inCastle=false;
@@ -3912,6 +3922,7 @@ function markBuilt(x,z,r){ // houses, yards and walls: no ploughland here
   for(let cz=Math.max(0,r0);cz<=Math.min(GRID-1,r1);cz++)for(let cx=Math.max(0,c0);cx<=Math.min(GRID-1,c1);cx++)
     if(dist2d(cellX(cx),cellZ(cz),x,z)<r+CELL*0.5)m[cIdx(cx,cz)*4+2]=255;
   if(G.land.maskTex)G.land.maskTex.needsUpdate=true;
+  if(G.land.seedTex)for(const[dx,dz]of[[0,0],[r,0],[-r,0],[0,r],[0,-r]])furlongAt(x+dx,z+dz).dirt=1; // the furlong under a new house is measured again at the next reckoning
 }
 function markSettlementBuilt(s){
   for(const b of s.buildings)markBuilt(b.x,b.z,Math.hypot(b.w,b.d)/2+8);
@@ -3964,19 +3975,27 @@ function genLand(){
   for(let j=0;j<FN;j++)for(let i=0;i<FN;i++){
     const jx=Math.round(rr()*255)/255,jz=Math.round(rr()*255)/255;
     F.push({k:F.length,i,j,jx,jz,x:(i+0.15+0.7*jx)*FG-SIZE/2,z:(j+0.15+0.7*jz)*FG-SIZE/2,
-      dom:-1,lord:-1,held:false,kind:0,state:0,gf:0,th:0,w:14,n:0,ar:0,fo:0,fl:0,vi:0,fa:0,area:0,trees:[],since:0,until:0,hash:rr()});
+      dom:-1,lord:-1,core:-1,af:0,held:false,kind:0,state:0,gf:0,th:0,w:14,n:0,ar:0,fo:0,fl:0,vi:0,fa:0,area:0,trees:[],since:0,until:0,hash:rr()});
   }
   G.land={F};
   computeDomains();computeMask();
   const m=G.land.mask,votes=F.map(()=>new Map());
   for(let z=-SIZE/2+7.5;z<SIZE/2;z+=15)for(let x=-SIZE/2+7.5;x<SIZE/2;x+=15){ // survey the ground every 15 m
     const f=furlongAt(x,z),c=cIdx(toCell(x),toCell(z)),bio=W.biome[c];f.n++;
-    if(m[c*4]){f.ar++;if(bio===B.FOREST||bio===B.PINE)f.fo++;if(bio===B.FARM)f.fa++;}
+    if(m[c*4]){f.ar++;if(!m[c*4+2])f.af++;if(bio===B.FOREST||bio===B.PINE)f.fo++;if(bio===B.FARM)f.fa++;}
     if(G.land.flood[c])f.fl++;if(m[c*4+1])f.vi++;
     if(W.dom[c]>=0)votes[f.k].set(W.dom[c],(votes[f.k].get(W.dom[c])||0)+1);
   }
-  for(const f of F){f.area=f.ar*225;let bd=-1,bc=0;for(const[d,c]of votes[f.k])if(c>bc){bc=c;bd=d;}
+  for(const f of F){f.area=f.af*225;let bd=-1,bc=0;for(const[d,c]of votes[f.k])if(c>bc){bc=c;bd=d;}
     if(bd>=0&&bc>=f.n*0.4)claimFurlong(f,bd,false);}
+  for(let pass=0;pass<2;pass++)for(const f of F){ // a hole in the realm: unclaimed ground with owned land on three sides belongs to the realm (waste, but claimed)
+    if(f.dom>=0)continue;
+    const nb=[];if(f.i>0)nb.push(F[f.k-1]);if(f.i<FN-1)nb.push(F[f.k+1]);if(f.j>0)nb.push(F[f.k-FN]);if(f.j<FN-1)nb.push(F[f.k+FN]);
+    const cn=new Map();let tot=0,bd=-1,bc=0;for(const g of nb)if(g.dom>=0){cn.set(g.dom,(cn.get(g.dom)||0)+1);tot++;}
+    for(const[d,c]of cn)if(c>bc){bc=c;bd=d;}
+    if(tot<3)continue;
+    claimFurlong(f,bd,false);shapeFurlong(f,W.settlements[bd],LK.NONE);f.state=LS.WILD;}
+  settleCores();
   // vines only on a town's few best slopes; the rest of those hillsides are ploughed or left to grazing
   for(const s of W.settlements){const v=(s.furl||[]).filter(f=>f.kind===LK.VINE).sort((a,b)=>b.vi/b.n-a.vi/a.n);
     for(const f of v.slice(s.kind==='capital'?5:3)){const k=f.ar<f.n*0.25?LK.NONE:LK.FIELD;shapeFurlong(f,s,k);f.state=f.fo>f.ar*0.5?LS.WOOD:LS.WILD;}}
@@ -3997,6 +4016,28 @@ function genLand(){
   for(const t of[G.land.seedTex,G.land.dataTex,G.land.lordTex]){t.magFilter=t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;}
   G.land.maskTex.magFilter=G.land.maskTex.minFilter=THREE.LinearFilter;G.land.maskTex.generateMipmaps=false;G.land.maskTex.needsUpdate=true;
   for(const f of F){writeFurlong(f);writeLord(f);}
+}
+function coreOf(f){ // the place whose houses stand in this furlong (its centre within the built-up edge)
+  let best=-1,bd=0;
+  for(let si=0;si<W.settlements.length;si++){const s=W.settlements[si],d=dist2d(f.x,f.z,s.pos.x,s.pos.z)-((s.extentR||s.radius||80)+FG*0.3);if(d<bd){bd=d;best=si;}}
+  return best;
+}
+function settleCores(){ // a furlong that holds a place's houses belongs to that place and follows its lord: no lord's border runs through a town, and no town stands on ground that is another's
+  if(!G.land)return;
+  for(const f of G.land.F){
+    const c=coreOf(f);f.core=c;if(c<0)continue;
+    const s=W.settlements[c];let ch=false;
+    if(f.dom<0){claimFurlong(f,c,false);ch=true;}
+    else if(f.dom!==c){const o=W.settlements[f.dom];if(o&&o.furl)o.furl=o.furl.filter(g=>g!==f);(s.furl||(s.furl=[])).push(f);f.dom=c;shapeFurlong(f,s,f.kind);ch=true;}
+    if(f.lord!==(s.owner??0)){f.lord=s.owner??0;f.held=false;f.bought=false;ch=true;}
+    if(ch&&G.land.seedTex){writeFurlong(f);writeLord(f);}
+  }
+}
+function refreshArea(f){ // the ploughland a furlong has left once houses, yards and walls have taken their ground (the same 15 m survey as genLand)
+  const m=G.land.mask,x0=Math.ceil((f.x-FG*1.1+SIZE/2-7.5)/15),x1=Math.floor((f.x+FG*1.1+SIZE/2-7.5)/15),z0=Math.ceil((f.z-FG*1.1+SIZE/2-7.5)/15),z1=Math.floor((f.z+FG*1.1+SIZE/2-7.5)/15);let n=0;
+  for(let j=Math.max(0,z0);j<=z1&&j<SIZE/15;j++)for(let i=Math.max(0,x0);i<=x1&&i<SIZE/15;i++){const x=-SIZE/2+7.5+i*15,z=-SIZE/2+7.5+j*15;
+    if(furlongAt(x,z)!==f)continue;const c=cIdx(toCell(x),toCell(z));if(m[c*4]&&!m[c*4+2])n++;}
+  f.af=n;f.area=n*225;
 }
 function writeFurlong(f){
   const sd=G.land.seedTex.image.data,dd=G.land.dataTex.image.data,o=f.k*4;
@@ -4375,7 +4416,7 @@ function writeLord(f){
 }
 function setLord(f,hi,held){
   const was=f.lord;f.lord=hi;f.held=!!held;writeLord(f);
-  if(was!==hi&&f.dom>=0){ // within reach of one of the new lord's own places, it becomes theirs to work
+  if(was!==hi&&f.dom>=0&&!(f.core>=0&&f.dom===f.core)){ // within reach of one of the new lord's own places, it becomes theirs to work
     const own=f.dom>=0?W.settlements[f.dom]:null;
     if(!own||own.owner!==hi){
       let best=-1,bd=1e9;W.settlements.forEach((s,si)=>{if(s.owner!==hi||!s.furl)return;const d=dist2d(f.x,f.z,s.pos.x,s.pos.z);if(d<fieldReach(s)*1.25&&d<bd){bd=d;best=si;}});
@@ -4435,7 +4476,7 @@ function armyLand(a){ // occupation, foraging and supply, once a day
     if(!chance('sim',a.state==='siege'?0.12:0.2))continue;
     if(f.state===LS.TILLED){a.supply=Math.min(100,a.supply+2.5); // they live off the enemy's corn, and burn what they can't carry
       if(chance('sim',cruel?0.6:0.3)){f.until=Math.ceil((day()+1)/360)*360+20;setFurlong(f,LS.BURNT);}}
-    const was=f.lord;setLord(f,a.house,true);a.taken=(a.taken||0)+1;
+    const was=f.lord;if(!(f.core>=0&&W.settlements[f.core].owner===f.lord))setLord(f,a.house,true);a.taken=(a.taken||0)+1;
     if(!a._landNote&&a.taken>=6){a._landNote=true;emit('war',5,{x:f.x,z:f.z},((o,p)=>vary('overrun',[()=>`${a.name} overruns the fields of ${o} about ${p}; the villagers flee before it.`,()=>`The fields of ${o} about ${p} are overrun by ${a.name.replace(/^Host/,'the host')}; the villagers flee before it.`,()=>`${a.name} overruns the fields about ${p}, which belong to ${o}; the villagers flee before it.`,()=>`About ${p} the villagers flee before ${a.name.replace(/^Host/,'the host')}, which overruns the fields of ${o}.`,()=>`The villagers about ${p} flee as ${a.name} overruns the fields of ${o}.`,()=>`${cmd?`${cmd.name} leads ${a.name.replace(/^Host/,'the host')} over the fields of ${o} about ${p}`:`${a.name} overruns the fields of ${o} about ${p}`}; the villagers flee before it.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} overruns the fields of ${o} about ${p}; the villagers flee before it.`]))(W.houses[was]?W.houses[was].name:'the enemy',nearestPlaceName(f.x,f.z)));}
   }
 }
@@ -4490,6 +4531,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   for(const s of W.settlements)if(s.owner===0&&!s.siegeBy){const need=s.pop*0.04*(s.walls>0?1.5:1)+10;if(s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}} // the crown's garrisons too
   if(day()%(360*3)===20)lordsRoads();
   for(const s of W.settlements)syncOwner(s);
+  if(day()%360===20)settleCores();
   ensureHosts();
   // land held only by the sword goes back to its people once no host guards it and no place of its lord is near
   for(const f of G.land.F){
@@ -4663,6 +4705,7 @@ function tickLand(){ // monthly: the countryside follows the people
   if(!G.land||day()%30!==15)return;
   if(G.fenceDirty&&!W.prehistory)setTimeout(()=>{buildTracks();rebuildFences();},0); // after the month's claims and ploughing: the lanes first, then the fences along them
   const now=day(),spring=Math.ceil((now+1)/360)*360+20,F=G.land.F,ph=G.land.perHead;
+  {let nd=0;for(const f of F)if(f.dirt&&nd<14){f.dirt=0;refreshArea(f);nd++;}}
   W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]);
     let tilled=0,bearing=0;
     for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
@@ -4933,7 +4976,7 @@ function settleLand(s){ // a new village takes up the waste nearest it, laid out
   }
   markSettlementBuilt(s);
   tillTo(s,s.pop*landWt(s)*G.land.perHead);
-  for(const f of s.furl){writeFurlong(f);for(const t of f.trees)showTree(t,!treeGone(f,t));}
+  settleCores();for(const f of s.furl){writeFurlong(f);for(const t of f.trees)showTree(t,!treeGone(f,t));}
 }
 
 function addBuildingLive(s){ // growth: empty houses fill first, then the next open frontage; when there is none the town reaches further out
@@ -5917,7 +5960,7 @@ function showInspect(pk){
     else if(lord)h+=row('Lord',esc(lord.name));
     if(s)h+=row('Worked from',`${esc(s.name)} (${(dist2d(f.x,f.z,s.pos.x,s.pos.z)/1000).toFixed(1)} km)`);
     if(f.lord>0)h+=row('Price to the crown',`${landPrice(f).toLocaleString()} gold (Buy land decree)`);else if(f.bought)h+=row('Bought','by the crown; its rent goes to the treasury');
-    h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);
+    h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);if(f.core>=0&&W.settlements[f.core])h+=row('Town ground',`the ground of ${esc(W.settlements[f.core].name)}: its houses and yards stand here`);
     if(f.w>1&&f.state===LS.TILLED&&f.kind!==LK.VINE)h+=row('Strips',`${Math.round(f.w)} m wide, running ${f.kind===LK.HUFE?'back from the village street':'down the slope for drainage'}`);
     if(f.kind===LK.FIELD)h+=row('Great field',['the first','the second','the third'][f.gf]+' of three, in rotation');
     h+=row('Ground',`${bio}, ${Math.round(W.h[c])} m, ${slopeAt(toCell(pk.x),toCell(pk.z))>0.22?'steep':slopeAt(toCell(pk.x),toCell(pk.z))>0.08?'sloping':'level'}`);
@@ -7933,7 +7976,7 @@ function persuade(req){ // req: {hi, title, text, value (what it costs him, in g
   const h=W.houses[req.hi];if(!h||h.exiled)return false;
   const v=Math.max(50,req.value),loyal=(h.loyalty-50)/120,debt=(h.gold||0)<0?0.3:0,war=atWar(0,req.hi)?-1:0;
   const own=W.settlements.filter(o=>o.owner===req.hi),dues=Math.round(own.reduce((t,o)=>t+o.pop*0.0016*(MOD.tax/12)*(o.prosperity/60),0)*360*5);
-  const crownLand=G.land?G.land.F.filter(f=>f.lord===0&&f.dom>=0&&W.settlements[f.dom]&&W.settlements[f.dom].owner===0&&own.some(o=>dist2d(f.x,f.z,o.pos.x,o.pos.z)<1800)).sort((a,b)=>landValue(b)-landValue(a)):[];
+  const crownLand=G.land?G.land.F.filter(f=>f.lord===0&&!(f.core>=0)&&f.dom>=0&&W.settlements[f.dom]&&W.settlements[f.dom].owner===0&&own.some(o=>dist2d(f.x,f.z,o.pos.x,o.pos.z)<1800)).sort((a,b)=>landValue(b)-landValue(a)):[];
   const give=[];let landVal=0;for(const f of crownLand){if(landVal>=v*1.3)break;give.push(f);landVal+=landPrice(f);}
   const hungry=own.some(o=>o.landShort)?0.25:0,host=royalHost(),hs=lordHost(req.hi),odds=o=>Math.round(clamp(o,0.03,0.97)*100)+'%';
   const grant=Math.round(v*1.4/10)*10;
@@ -8061,6 +8104,7 @@ function paveRoad(r,payer){
 function landPrice(f){return Math.round(120+landValue(f)*55);}
 function buyLand(f){
   if(!f||f.lord<0){return false;}
+  if(f.core>=0){emit('crown',2,{x:f.x,z:f.z},'That is the ground of a town, and goes with the town; its lord will not sell it.');return false;}
   if(f.lord===0){emit('crown',2,{x:f.x,z:f.z},'That land is the crown\'s already.');return false;}
   const hi=f.lord,h=W.houses[hi],price=landPrice(f);
   if(atWar(0,hi)){emit('crown',3,{x:f.x,z:f.z},`${h.name} will sell nothing to the crown while they are at war.`);return false;}
