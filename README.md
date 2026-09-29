@@ -111,7 +111,7 @@ Acts are sealed while you rule; the crown's own levers take their place:
   a storm weighed against that defence (hunger cuts it); a failed storm costs
   the besiegers dearly and either renews the siege or breaks it. A host
   fighting before its own gates takes heart from them: at even numbers it wins
-  about 3 fights in 5 behind a mere palisade, 4 in 5 behind a typical circuit,
+  about 7 fights in 10 behind a palisade, 4 in 5 behind a typical circuit,
   9 in 10 behind the strongest. The town card shows the multiplier and its
   causes.
   Zoomed out, hosts, camps and the dragon show as heraldic badges.
