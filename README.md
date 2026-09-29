@@ -55,6 +55,12 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
   Travellers are drawn on the roads; click one to see who they are and where
   they're going. The towns they're heading for already count them.
+- **Life pace (🚶, or L).** A day takes a real minute: carts roll at about 8 m/s
+  on screen, hosts march, the flocks graze, and the townsfolk live their day
+  in step with the sun (out at sunrise, market at noon, home at dusk). The
+  simulation runs whole days just the same, only slower. At ▶ and faster
+  the townsfolk hold a still daytime scene rather than flickering between
+  home and work, and on pause everything stands still.
 - **One scale.**
   - **Travel between places:** the map's distances stand for a realm about 40
     times larger (6 km of map for ~240 km), so every traveller moves at its

@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 22:56 UTC · after 4aeddc9</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:08 UTC · after a9fd62b</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -275,7 +275,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
-    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
+    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day a minute — the folk keep their day, the carts roll at a walking pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
 <div id="watchdate">—</div>
@@ -322,7 +322,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 <button id="uiback" title="Show the controls again (Esc)">✕ controls</button>
 <div id="placehint">Click the map to place — Esc to cancel</div>
 <div id="petition"></div>
-<div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
+<div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · L life pace · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -376,7 +376,8 @@ const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8,wool:4,sh
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
 const CART_MPD=500,BARGE_MPD=700,COG_MPD=2800,MARCH_MPD=400,FIELD_MPD=250; /* one scale for every traveller: the map's distances stand for a realm ~40x larger (6 km of map ~ 240 km), so each moves at its real pace in km a day divided by 40 — ox-cart 20 km, host 16 on the road and 10 across country, barge 28, cog 110, great ship 140, envoy 60, dragon 320. Towns and houses are drawn true size, so the townsfolk keep true time: a walk across town is half an hour. */ // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
-const SPEEDS=[0,0.5,2,8,30,360]; // days per second; the last reels a year a second, to watch growth
+const SPEEDS=[0,0.5,2,8,30,360,1/60]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day a minute, to watch the folk and the carts
+const LIFE=6,isLife=()=>speedIdx===LIFE||speedIdx===0&&lastSpeed===LIFE; // at life pace (or paused from it) the little world is shown as it goes
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
 
 /* archetype: [w,d,h, roofKind(0 gable,1 flat,2 spire), name] */
@@ -2611,7 +2612,7 @@ function renderTravellers(){
     for(const m of[G.travMesh,G.travKit]){for(let i=0;i<400;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.count=0;scene.add(m);}}
   const T=W.travellers||[],now=day()+(W.clock.frac||0),t2=performance.now()/1000;let k=0;G.travIdx=[];
   if(cam.cur.dist<1800)for(const t of T){if(k>=400)break;const f=clamp((now-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1),p=polyPos(t.poly,f);if(!p)continue;
-    const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
+    const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx===LIFE?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
     setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:0x5a6a7a));G.travIdx[k]=t;k++;}
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
 function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
@@ -4892,9 +4893,9 @@ function animateHerds(force){ // each frame near the herds: the flocks drift acr
     const tx=fl.c0.x+Math.sin(now*0.9+fl.seed)*22+Math.sin(now*0.37+fl.seed*2)*14,tz=fl.c0.z+Math.cos(now*0.7+fl.seed*1.3)*22+Math.cos(now*0.29+fl.seed)*14; // a slow wander, a few hundred metres a day
     if((!fl.P||inPolyXZ(fl.P,tx,tz))&&!W.water[cIdx(toCell(tx),toCell(tz))]){fl.cx+=(tx-fl.cx)*0.2;fl.cz+=(tz-fl.cz)*0.2;} // it turns back at the fence
     for(const a of fl.mem){if(cnt[fl.k]>=D.cap)break;
-      let x=fl.cx+a.ox+Math.sin(vt*0.3+a.ph)*1.2,z=fl.cz+a.oz+Math.cos(vt*0.23+a.ph)*1.2;
+      const sw=isLife()?1.2:0,T1=now*60;let x=fl.cx+a.ox+Math.sin(T1*0.3+a.ph)*sw,z=fl.cz+a.oz+Math.cos(T1*0.23+a.ph)*sw; // grazing steps in game time: still when paused
       if(fl.P&&!inPolyXZ(fl.P,x,z)){x=fl.cx+a.ox*0.3;z=fl.cz+a.oz*0.3;} // no beast through the fence
-      const i=cnt[fl.k]++;setInst(m,i,x,hAt(x,z),z,a.rot+Math.sin(vt*0.1+a.ph)*0.6,1,1,1);G.herdOwner[fl.k][i]=fl.si;pos.push(x,hAt(x,z)+1,z,BEASTS.indexOf(fl.k),fl.si);}}
+      const i=cnt[fl.k]++;setInst(m,i,x,hAt(x,z),z,a.rot+Math.sin(now*6+a.ph)*0.6*(sw?1:0),1,1,1);G.herdOwner[fl.k][i]=fl.si;pos.push(x,hAt(x,z)+1,z,BEASTS.indexOf(fl.k),fl.si);}}
   for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;}G.herdPos=pos;}
 
 const BEAST_TEXT={sheep:['A flock of sheep','Wool for the looms (spun at home, or sold to the weavers and fullers of the towns), mutton and milk. Each drawn beast stands for about eight head.'],
@@ -5724,6 +5725,7 @@ function initInput(){
       case ' ':e.preventDefault();sovPausedFrom=0;setSpeed(speedIdx===0?lastSpeed||2:0);break;
       case '1':setSpeed(1);break;case '2':setSpeed(2);break;case '3':setSpeed(3);break;case '4':setSpeed(4);break;case '5':setSpeed(5);break;
       case 'h':case 'H':document.body.classList.toggle('hideui');break;
+      case 'l':case 'L':setSpeed(LIFE);break;
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
       case 'p':case 'P':perfToggle();break;
@@ -9204,6 +9206,7 @@ function spawnFlame(x,y,z){
 }
 let dayCycleOn=false; // steady daylight by default — the cycle strobes at high sim speeds
 function currentDayF(){
+  if(isLife()){const f=W.clock.frac||0;return f<0.25?f+1:f;} // at life pace the sun keeps the calendar's day: the folk go out at sunrise and home at dusk
   if(!dayCycleOn)return 0.42; // pleasant late morning
   // compress night to ~20% of the cycle so the documentary stays watchable
   const t=(W.visT||0)%1;
@@ -9356,7 +9359,7 @@ function animateWorld(dt,now){
       const pool=c.sea?G.cogs:G.barges,k=c.sea?cogI++:bargeI++;
       if(k<pool.length){const g=pool[k];g.visible=true;g.position.set(p.x,y-0.3+Math.sin(now*1.3+k)*0.15,p.z);g.rotation.set(Math.sin(now*0.9+k)*0.03,-(p.dir||0),0);g.scale.setScalar(Math.min(unitScale,c.river?2:3));}
     }else if(ci<TRAFFIC_CAP){
-      const bob=Math.abs(Math.sin(now*6+t.len+t.d*0.4))*0.12; // wheels on ruts
+      const bob=speedIdx&&!t.cons.halted?Math.abs(Math.sin(now*6+t.len+t.d*0.4))*0.12:0; // wheels on ruts (still when paused or held at the siege lines)
       setInst(G.caravans,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
       setInst(G.cartCovers,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
       G.cartCovers.setColorAt(ci,C1.setHex(CARGOCOL[c.good]||0xe6d8a8));ci++;
@@ -9513,7 +9516,7 @@ function animateWorld(dt,now){
           G.citList.push({s,p,home:{x:h.x,z:h.z},work,what,mk:{x:mk.x+(H*5%1-0.5)*20,z:mk.z+(H*11%1-0.5)*20},j:(H-0.5)*0.08,
             col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3)});}
       }
-      const fast=(SPEEDS[speedIdx]||0)>=30,fr=fast?0.5:((W.clock.frac||0)+1)%1;let k=0;G.citIdx=[];
+      const life=isLife(),fr=life?((W.clock.frac||0)+1)%1:0.45,T0=day()+(W.clock.frac||0);let k=0;G.citIdx=[]; // faster than life pace the day would flicker past: show the working day, still
       const lerpP=(A,Bp,u)=>({x:A.x+(Bp.x-A.x)*u,z:A.z+(Bp.z-A.z)*u});
       for(const c of G.citList){
         const t=fr-c.j,T=0.03; // a walk: some forty minutes of the day
@@ -9527,9 +9530,9 @@ function animateWorld(dt,now){
         else if(t<0.74){pos=c.work;c.doing=c.what;}
         else if(t<0.74+T){pos=lerpP(c.work,c.home,(t-0.74)/T);walk=true;c.doing='on the way home';}
         else{pos={x:c.home.x+Math.cos(c.p.id)*5,z:c.home.z+Math.sin(c.p.id)*5};c.doing='at the door of home';}
-        const idle=walk?0:1.6,x=pos.x+Math.sin(now*0.4+c.p.id)*idle,z=pos.z+Math.cos(now*0.33+c.p.id*1.7)*idle; // they mill about where they are
+        const idle=walk||!life?0:1.6,x=pos.x+Math.sin(T0*70+c.p.id)*idle,z=pos.z+Math.cos(T0*55+c.p.id*1.7)*idle; // they mill about where they are, in game time (still when paused)
         const ry=walk?-Math.atan2(c.work.z-c.home.z,c.work.x-c.home.x)+Math.PI/2:c.p.id%6;
-        const bob=walk&&speedIdx?Math.abs(Math.sin(now*7+k*2))*0.06:0,yz=surfY(x,z)+0.28+bob;
+        const bob=walk&&speedIdx===LIFE?Math.abs(Math.sin(now*7+k*2))*0.06:0,yz=surfY(x,z)+0.28+bob;
         setInst(G.citizens,k,x,yz,z,ry,1,1,1);setInst(G.citKit,k,x,yz,z,ry,1,1,1);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=140)break;}
       G.citizens.count=G.citKit.count=k;
       G.citizens.instanceMatrix.needsUpdate=true;G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
