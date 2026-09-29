@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:08 UTC · after a9fd62b</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:16 UTC · after cea5bc9</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2615,6 +2615,65 @@ function renderTravellers(){
     const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx===LIFE?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
     setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:0x5a6a7a));G.travIdx[k]=t;k++;}
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
+/* ---------------- the town's streets as a walking graph, and the walkers who use it ---------------- */
+function streetGraph(s){ // nodes at the street points; streets that meet (or nearly) are joined
+  const key=(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0),0);
+  if(s._sg&&s._sg.key===key)return s._sg;
+  const N=[],adj=[],H=new Map(),cell=6,hk=(x,z)=>Math.floor(x/cell)+','+Math.floor(z/cell);
+  const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4)return i;}
+    const i=N.length;N.push({x,z,st});adj.push([]);const h=hk(x,z);(H.get(h)||H.set(h,[]).get(h)).push(i);return i;};
+  const link=(a,b)=>{if(a===b)return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
+  const ends=[];
+  for(const st of s.streets||[]){if(st.hidden||!st.pts||st.pts.length<2)continue;const P=resample(st.pts,7);let prev=-1;
+    for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}
+  for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
+  return s._sg={key,N,adj};}
+function nearestNode(g,x,z){let b=-1,bd=1e18;for(let i=0;i<g.N.length;i++){const d=dist2d(g.N[i].x,g.N[i].z,x,z);if(d<bd){bd=d;b=i;}}return b;}
+function streetPath(g,a,b){ // shortest way along the streets (A*)
+  if(a<0||b<0)return null;if(a===b)return [a];const n=g.N.length,gs=new Float64Array(n).fill(Infinity),from=new Int32Array(n).fill(-1),open=[[0,a]],T=g.N[b];gs[a]=0;
+  const pop=()=>{let m=0;for(let i=1;i<open.length;i++)if(open[i][0]<open[m][0])m=i;const t=open[m];open[m]=open[open.length-1];open.pop();return t;};
+  let guard=0;while(open.length&&guard++<6000){const[,v]=pop();if(v===b)break;for(const[w,d]of g.adj[v]){const ng=gs[v]+d;if(ng<gs[w]){gs[w]=ng;from[w]=v;open.push([ng+dist2d(g.N[w].x,g.N[w].z,T.x,T.z),w]);}}}
+  if(from[b]<0)return null;const out=[];for(let v=b;v!==-1;v=from[v]){out.push(v);if(v===a)break;}return out.reverse();}
+function townsfolkFor(s){ // who is about in this town, and where each goes
+  if(s._hhY!==year())houseFolk(s);const g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
+  const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
+  const fx=cam.cur.focus.x,fz=cam.cur.focus.z,cand=s.folk.filter(p=>ageYrs(p)>=6&&!awayNow(p)&&householdHead(p).bh&&!householdHead(p).bh.removed);
+  cand.sort((a,b)=>dist2d(householdHead(a).bh.x,householdHead(a).bh.z,fx,fz)-dist2d(householdHead(b).bh.x,householdHead(b).bh.z,fx,fz));
+  const out=[];
+  for(const p of cand.slice(0,160)){const h=householdHead(p).bh,a=ageYrs(p),H=(p.id*2654435761>>>0)/4294967296;
+    let work=null,what='about the town',inside=false;const wa=TRADE_ARCH[p.tr];
+    if(a>=14&&wa&&byArch[wa]){let bd=1e18;for(const b of byArch[wa]){const d=dist2d(b.x,b.z,h.x,h.z);if(d<bd){bd=d;work=b;}}what=`at work in the ${ARCH[wa][4]}`;inside=true;}
+    else if(a>=14&&(TILLERS.has(p.tr)||p.tr==='woodcutter')){const an=Math.atan2(h.z-s.pos.z,h.x-s.pos.x)+(H-0.5)*0.6;work={x:s.pos.x+Math.cos(an)*(R+30),z:s.pos.z+Math.sin(an)*(R+30)};what=p.tr==='woodcutter'?'at work in the wood':'at work in the fields';}
+    else if(a<14){work={x:h.x+(H-0.5)*40,z:h.z+(H*7%1-0.5)*40};what='at play in the lanes';}
+    else{work=h;what=p.tr?`at work at home, ${p.tr}`:'about the house';inside=true;}
+    const pace=a<14?1.5:a>60?0.9:1.15+0.12*clamp(trait(p,GV),-2,2)+0.05*clamp(trait(p,GS),-2,2); // metres a second, as they are made
+    out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
+      pace,sc:a<14?0.75:1,col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3),
+      x:h.x,z:h.z,ry:0,t:H*50,state:'home',until:H*25,route:null,ri:0,out:false,walking:false,goal:'home',doing:'at home'});}
+  return out;}
+function planWalk(c,to,goal){ // the way: out of the door to the nearest street, along the streets, and in at the other end
+  const g=c.g,a=nearestNode(g,c.x,c.z),b=nearestNode(g,to.x,to.z),P=streetPath(g,a,b),pts=[{x:c.x,z:c.z}];
+  if(P)for(const i of P)pts.push({x:g.N[i].x,z:g.N[i].z});pts.push({x:to.x,z:to.z});
+  const side=(c.p.id%2?1:-1)*1.2; // keep to one side of the way
+  c.route=pts.map((q,k)=>{const r=pts[Math.min(pts.length-1,k+1)],o=pts[Math.max(0,k-1)],dx=r.x-o.x,dz=r.z-o.z,L=Math.hypot(dx,dz)||1;return k&&k<pts.length-1?{x:q.x-dz/L*side,z:q.z+dx/L*side}:q;});
+  c.ri=0;c.state='walk';c.goal=goal;c.walking=true;c.out=true;
+  const st=P&&P.length>1?g.N[P[Math.floor(P.length/2)]].st:null;c.via=st?(st.name||STREET_NAME[st.kind]||'the street'):'';
+  c.doing=`walking ${goal==='home'?'home':goal==='market'?'to market':'to work'}${c.via?' by '+c.via.toLowerCase():''}`;}
+function stepWalker(c,dt,night){
+  c.t+=dt;if(!dt)return;
+  if(c.state==='walk'){let m=c.pace*dt;
+    while(m>0&&c.ri<c.route.length-1){const a={x:c.x,z:c.z},b=c.route[c.ri+1],d=dist2d(a.x,a.z,b.x,b.z);
+      if(d<=m){c.x=b.x;c.z=b.z;c.ri++;m-=d;}else{c.x+=(b.x-a.x)/d*m;c.z+=(b.z-a.z)/d*m;c.ry=-Math.atan2(b.z-a.z,b.x-a.x)+Math.PI/2;m=0;}}
+    if(c.ri>=c.route.length-1){c.walking=false;const H=(c.p.id*7919%1000)/1000;
+      if(c.goal==='home'){c.state='home';c.out=false;c.doing='at home';c.until=c.t+(night?1e9:25+H*40);}
+      else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+20+H*30;}
+      else{c.state='work';c.out=!c.workIn;c.doing=c.what;c.until=c.t+45+H*60;}}
+    return;}
+  if(c.state!=='home'&&night){planWalk(c,c.home,'home');return;} // nightfall: home
+  if(c.t<c.until)return;
+  if(c.state==='home'){if(night){c.until=c.t+30;return;}planWalk(c,c.work,'work');}
+  else if(c.state==='work'){if(c.p.id%3===0&&ageYrs(c.p)>=14)planWalk(c,c.mk,'market');else planWalk(c,c.home,'home');}
+  else if(c.state==='market')planWalk(c,c.p.id%2?c.home:c.work,c.p.id%2?'home':'work');}
 function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
   const t=(W.travellers||[]).find(x=>x.p.id===id);if(t)return {p:t.p,s:W.settlements[t.to],t};return null;}
 function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
@@ -9491,49 +9550,20 @@ function animateWorld(dt,now){
       if(Math.random()<dt*0.6)spawnSmoke(d.lair.x,d.lair.y+6,d.lair.z+12,true); // it breathes in its sleep
     }else G.dragonMesh.visible=false;
   }else if(G.dragonMesh)G.dragonMesh.visible=false;
-  /* --- the townsfolk: real people off the town's roll, keeping the day. Night at home; at dawn out to the forge, the
-     shop or the fields; the market about noon; home at dusk. The town is drawn true size, so a walk across it is a matter
-     of half an hour and passes in a blink at the faster settings: what shows is the day's rhythm. Click one to meet them. --- */
+  /* --- the townsfolk: real people off the town's roll, walking the town's own streets at their own pace. The town is drawn
+     true size, so they walk in true time (a stroll across town takes minutes), apart from the calendar, as city-builders do;
+     pause stops them. Each goes from their door by the streets to their work, perhaps the market, and home; indoors they
+     are not seen. At life pace, night sends them home. Click one to meet them. --- */
   {
     let nearest=null,nd=1e18;
     for(const s of W.settlements){const dd=dist2d(cam.cur.focus.x,cam.cur.focus.z,s.pos.x,s.pos.z);if(dd<nd){nd=dd;nearest=s;}}
-    if(nearest&&cam.cur.dist<260&&nd<(nearest.extentR||nearest.radius)+120&&nearest.folk&&nearest.folk.length){
-      const s=nearest,si=W.settlements.indexOf(s);
-      if(G.citList.length===0||G.citList[0].s!==s||G._citDay!==day()>>3){G._citDay=day()>>3;
-        G.citList=[];if(s._hhY!==year())houseFolk(s);
-        const R=(s.extentR||s.radius||120),fx=cam.cur.focus.x,fz=cam.cur.focus.z,mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z};
-        const cand=s.folk.filter(p=>ageYrs(p)>=6&&!awayNow(p)&&householdHead(p).bh&&!householdHead(p).bh.removed); // those away on the road are not in town
-        cand.sort((a,b)=>dist2d(householdHead(a).bh.x,householdHead(a).bh.z,fx,fz)-dist2d(householdHead(b).bh.x,householdHead(b).bh.z,fx,fz));
-        const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
-        for(const p of cand.slice(0,140)){const h=householdHead(p).bh,a=ageYrs(p),H=(p.id*2654435761>>>0)/4294967296;
-          let work=null,what='about the town';
-          const wa=TRADE_ARCH[p.tr];if(a>=14&&wa&&byArch[wa]){let bd=1e18;for(const b of byArch[wa]){const d=dist2d(b.x,b.z,h.x,h.z);if(d<bd){bd=d;work=b;}}what=`at work in the ${ARCH[wa][4]}`;}
-          else if(a>=14&&(TILLERS.has(p.tr)||p.tr==='woodcutter')){const an=Math.atan2(h.z-s.pos.z,h.x-s.pos.x)+(H-0.5)*0.6;work={x:s.pos.x+Math.cos(an)*(R+30),z:s.pos.z+Math.sin(an)*(R+30)};what=p.tr==='woodcutter'?'out in the wood':'out in the fields';}
-          else if(a<14){work={x:h.x+(H-0.5)*30,z:h.z+(H*7%1-0.5)*30};what='at play in the lane';}
-          else if(a>=14&&p.tr&&!(p.sx==='f'&&p.sp)){work={x:h.x+(H-0.5)*8,z:h.z+(H*3%1-0.5)*8};what=`at work at home, ${p.tr}`;} // most crafts were plied at home
-          else if(a>=14&&H<0.35){work={x:mk.x+(H-0.5)*24,z:mk.z+(H*13%1-0.5)*24};what='at the market';}
-          else{work={x:h.x+(H-0.5)*10,z:h.z+(H*3%1-0.5)*10};what='about the house and yard';}
-          G.citList.push({s,p,home:{x:h.x,z:h.z},work,what,mk:{x:mk.x+(H*5%1-0.5)*20,z:mk.z+(H*11%1-0.5)*20},j:(H-0.5)*0.08,
-            col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3)});}
-      }
-      const life=isLife(),fr=life?((W.clock.frac||0)+1)%1:0.45,T0=day()+(W.clock.frac||0);let k=0;G.citIdx=[]; // faster than life pace the day would flicker past: show the working day, still
-      const lerpP=(A,Bp,u)=>({x:A.x+(Bp.x-A.x)*u,z:A.z+(Bp.z-A.z)*u});
-      for(const c of G.citList){
-        const t=fr-c.j,T=0.03; // a walk: some forty minutes of the day
-        let pos=null,walk=false;c.doing='at home';
-        if(t<0.24||t>=0.88){continue;} // abed
-        else if(t<0.24+T){pos=lerpP(c.home,c.work,(t-0.24)/T);walk=true;c.doing='on the way out';}
-        else if(t<0.5){pos=c.work;c.doing=c.what;}
-        else if(t<0.5+T&&c.p.id%3===0){pos=lerpP(c.work,c.mk,(t-0.5)/T);walk=true;c.doing='going to market';}
-        else if(t<0.6&&c.p.id%3===0){pos=c.mk;c.doing='at the market';}
-        else if(t<0.6+T&&c.p.id%3===0){pos=lerpP(c.mk,c.work,(t-0.6)/T);walk=true;c.doing='back from market';}
-        else if(t<0.74){pos=c.work;c.doing=c.what;}
-        else if(t<0.74+T){pos=lerpP(c.work,c.home,(t-0.74)/T);walk=true;c.doing='on the way home';}
-        else{pos={x:c.home.x+Math.cos(c.p.id)*5,z:c.home.z+Math.sin(c.p.id)*5};c.doing='at the door of home';}
-        const idle=walk||!life?0:1.6,x=pos.x+Math.sin(T0*70+c.p.id)*idle,z=pos.z+Math.cos(T0*55+c.p.id*1.7)*idle; // they mill about where they are, in game time (still when paused)
-        const ry=walk?-Math.atan2(c.work.z-c.home.z,c.work.x-c.home.x)+Math.PI/2:c.p.id%6;
-        const bob=walk&&speedIdx===LIFE?Math.abs(Math.sin(now*7+k*2))*0.06:0,yz=surfY(x,z)+0.28+bob;
-        setInst(G.citizens,k,x,yz,z,ry,1,1,1);setInst(G.citKit,k,x,yz,z,ry,1,1,1);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=140)break;}
+    if(nearest&&cam.cur.dist<300&&nd<(nearest.extentR||nearest.radius)+120&&nearest.folk&&nearest.folk.length){
+      const s=nearest;
+      if(G.citList.length===0||G.citList[0].s!==s)G.citList=townsfolkFor(s);
+      const run=speedIdx>0?Math.min(dt,0.1):0,night=isLife()&&(()=>{const f=currentDayF();return f>0.77&&f<1.22;})();let k=0;G.citIdx=[];
+      for(const c of G.citList){stepWalker(c,run,night);if(!c.out)continue;
+        const x=c.x,z=c.z,bob=c.walking&&run?Math.abs(Math.sin(c.t*8.5))*0.06:0,yz=surfY(x,z)+0.28+bob;
+        setInst(G.citizens,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);setInst(G.citKit,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=160)break;}
       G.citizens.count=G.citKit.count=k;
       G.citizens.instanceMatrix.needsUpdate=true;G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
     }else if(G.citList.length){G.citList=[];G.citizens.count=G.citKit.count=0;}

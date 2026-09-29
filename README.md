@@ -38,14 +38,20 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 ## Reading the realm
 
 - **People on the streets are real.** Walk the camera into a town: the folk
-  you see are its residents, keeping the day.
-  - At night everyone is at home.
-  - At dawn the smith goes to his forge, the ploughman to the fields, the
-    potter to the bench at home, and the children to play in the lane.
-  - Some go to market at midday; at dusk everyone heads home.
-  - Click anyone for their card: age, trade, home, spouse, parents, children,
-    how their family came by its name, their nature and learning, and what
-    they're doing now. Names on house and person cards link to each other.
+  you see are its residents.
+  - **Their own route:** each walks their own way along the town's streets,
+    from their door to their work (the smithy, the shop, the fields), perhaps
+    to market, and home.
+  - **Their own pace:** children quick, the old slow, the hale brisker.
+  - **True time:** the town is drawn true size, so they walk in true time,
+    apart from the calendar (as city-builders do). Pause stops them, and at
+    life pace nightfall sends them home.
+  - **Where they're seen:** indoors at home or at a workshop they aren't
+    drawn.
+  - **Their card:** click anyone for age, trade, home, spouse, parents,
+    children, how their family came by its name, nature and learning, and
+    where they're walking and by which street. Names on house and person cards
+    link to each other.
 - **People on the road.** Journeys are real:
   - a bride walks to her husband's village, and emigrants walk from a failing
     town to a growing one, at about 30 km a day on the realm's scale;
@@ -58,9 +64,8 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 - **Life pace (🚶, or L).** A day takes a real minute: carts roll at about 8 m/s
   on screen, hosts march, the flocks graze, and the townsfolk live their day
   in step with the sun (out at sunrise, market at noon, home at dusk). The
-  simulation runs whole days just the same, only slower. At ▶ and faster
-  the townsfolk hold a still daytime scene rather than flickering between
-  home and work, and on pause everything stands still.
+  simulation runs whole days just the same, only slower. On pause
+  everything stands still.
 - **One scale.**
   - **Travel between places:** the map's distances stand for a realm about 40
     times larger (6 km of map for ~240 km), so every traveller moves at its
