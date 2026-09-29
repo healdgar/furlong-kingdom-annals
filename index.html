@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 22:24 UTC · after 22188e5</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 22:56 UTC · after 4aeddc9</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2346,7 +2346,7 @@ function mkPerson(s,si,o){
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   (s.folk||(s.folk=[])).push(p);return p;}
 function dropPerson(p){p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
-function removeAt(s,i){const a=s.folk,p=a[i];a[i]=a[a.length-1];a.pop();return p;}
+function removeAt(s,i){const a=s.folk;if(i<0||i>=a.length)return null;const p=a[i];a[i]=a[a.length-1];a.pop();return p;} // an index of -1 used to take the last soul on the roll instead
 function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
 /* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
 function eduPlace(s){
@@ -2450,7 +2450,7 @@ function yearOfFolk(s,si){ // deaths by age and frailty; schooling; weddings
     let best=null,bs=-1e9;for(let t=0;t<4;t++){const m=pool[Math.floor(frand()*pool.length)];if(m.sp||m.fam===w.fam)continue;
       const d=attraction(w,m)+attraction(m,w)-0.5*Math.abs(standing(m)-standing(w));if(d>bs){bs=d;best=m;}} // mutual liking, and families that match
     if(!best)continue;best.sp=w;w.sp=best;w.tr=best.tr;
-    if(far)moveTo(w,s,far,W.settlements.indexOf(far)); // the bride goes to her husband's village
+    if(far){const i=s.folk.indexOf(w);if(i>=0)removeAt(s,i);journey(w,si,W.settlements.indexOf(far),'bride');} // the bride walks to her husband's village
     const mi=men.indexOf(best);if(mi>=0)men.splice(mi,1);}
   for(const w of s.folk){ // affairs: the bold and the heedless stray; now and then a child comes of it
     if(w.sx!=='f'||w.dead||day()-w.lb<450)continue;const a=ageYrs(w);if(a<16||a>=40)continue;
@@ -2467,7 +2467,7 @@ function tickFolk(){
   const d=day();if(d%30!==7||!W.fams)return;
   const Ss=W.settlements,mon=(d/30|0)%12;
   Ss.forEach((s,si)=>{if(!s.folk)s.folk=[];if(si%12===mon)yearOfFolk(s,si);});
-  const diff=Ss.map(s=>Math.round(s.pop)-s.folk.length),need=diff.reduce((t,v)=>t+Math.max(0,v),0),spare=diff.reduce((t,v)=>t+Math.max(0,-v),0);
+  const inb=inboundOf(),diff=Ss.map((s,si)=>Math.round(s.pop)-s.folk.length-(inb.get(si)||0)),need=diff.reduce((t,v)=>t+Math.max(0,v),0),spare=diff.reduce((t,v)=>t+Math.max(0,-v),0);
   const mig=[];
   Ss.forEach((s,si)=>{ // too many souls for the place: to the host, down the road, or to the churchyard
     let k=-diff[si];if(k<=0)return;
@@ -2475,18 +2475,18 @@ function tickFolk(){
       for(const p of lv){removeAt(s,s.folk.indexOf(p));p.home=si;W.levies.push(p);}k-=lv.length;s._levy=Math.max(0,s._levy-lv.length);}
     const go=Math.round(k*clamp(need/Math.max(1,spare),0,1)*((s.unrest||0)>50||(s.prosperity||50)<35?0.8:0.5));
     const leave=pickK(s.folk,go,p=>{const a=ageYrs(p);return a>=16&&a<35?(p.sp?1:3):0.05;});
-    for(const p of leave){removeAt(s,s.folk.indexOf(p));mig.push(p);if(p.sp){const w=p.sp;if(w.si===si&&frand()<0.8){const j=s.folk.indexOf(w);if(j>=0){removeAt(s,j);mig.push(w);}}}}
+    for(const p of leave){const i0=s.folk.indexOf(p);if(i0<0)continue;removeAt(s,i0);mig.push(p);if(p.sp){const w=p.sp;if(w.si===si&&frand()<0.8){const j=s.folk.indexOf(w);if(j>=0){removeAt(s,j);mig.push(w);}}}} // a spouse already gone with their partner is not sent twice
     const die=pickK(s.folk,k-leave.length,p=>{const a=ageYrs(p);return (a<2?3:a>55?1+(a-55)/5:0.25)*Math.exp(-0.5*trait(p,GV));});
     for(const p of die){removeAt(s,s.folk.indexOf(p));dropPerson(p);}});
   Ss.forEach((s,si)=>{ // too few: the levies home, the newborn, the newcomers
-    let k=Math.round(s.pop)-s.folk.length;if(k<=0)return;
+    let k=Math.round(s.pop)-s.folk.length-(inb.get(si)||0);if(k<=0)return;
     for(let i=W.levies.length-1;i>=0&&k>0;i--)if(W.levies[i].home===si&&!W.levies[i].dead){const p=W.levies[i];W.levies.splice(i,1);p.si=si;s.folk.push(p);k--;}
     const mothers=s.folk.filter(p=>p.sx==='f'&&p.sp&&!p.sp.dead&&p.sp.si===si&&d-p.lb>450&&ageYrs(p)>=16&&ageYrs(p)<45);
     const pb=Math.min(0.09,k/Math.max(1,mothers.length)*1.2);
     for(const m of mothers){if(k<=0)break;if(frand()>=pb*Math.exp(0.35*trait(m,GF)))continue;
       const f=m.sp,ch=mkPerson(s,si,{ma:m,pa:f,fam:f.fam,tr:f.tr,avoid:[m.gn,f.gn,...(m.kn||[])]});m.lb=d;(m.kn||(m.kn=[])).push(ch.gn);k--;}
     if(k>0&&mig.length){mig.sort((a,b)=>dist2d(Ss[a.si].pos.x,Ss[a.si].pos.z,s.pos.x,s.pos.z)-dist2d(Ss[b.si].pos.x,Ss[b.si].pos.z,s.pos.x,s.pos.z));
-      while(k>0&&mig.length){const p=mig.shift();p.si=si;s.folk.push(p);k--;}}
+      while(k>0&&mig.length){const p=mig.shift();journey(p,p.si,si,'migrant');k--;}} // they take to the road for their new home
     while(k>0){k-=seedHousehold(s,si,true).length;}});
   for(const p of mig)dropPerson(p); // gone beyond the realm's borders
   const inArms=W.armies.reduce((t,a)=>t+(a.gone?0:a.strength),0); // a host that melts away took its levies with it
@@ -2582,6 +2582,40 @@ function musterSync(a){ // the roll follows the host's numbers: the released go 
   else if(k<0){const n0=a.men.length;levyMen(a,W.settlements[a.home],a.home,Math.round(-k*0.7));takeHorses(a,W.settlements[a.home],a.men.slice(n0));hireMen(a,Math.max(0,want-a.men.length));}
   if(dead.length&&a.horses){let r=0;for(const p of a.men)if(p.sk[KRi]>=0.45)r++;a.horses=Math.min(a.horses,r);} // horses fall with their riders
   return dead;}
+/* ---------------- people on the road: a bride walking to her husband's village, a family leaving a failing town for a
+   growing one, the carter with his cart, the master of a cog, the crown's riders. They walk at ~30 km a day on the
+   realm's scale (750 map metres), are away from home while they go, and can be met on the road. */
+const WALK_MPD=750;
+function journey(p,from,to,why){ // p leaves `from` (already off its roll) and joins `to` when it arrives
+  if(!W.settlements[from]||!W.settlements[to]){if(W.settlements[to]){p.si=to;W.settlements[to].folk.push(p);}return;}
+  const r=from>=0&&to>=0?route(from,to):null,A=W.settlements[from],Bt=W.settlements[to];
+  const poly=r?r.poly:[{x:A.pos.x,z:A.pos.z},{x:Bt.pos.x,z:Bt.pos.z}],len=r?r.len:dist2d(A.pos.x,A.pos.z,Bt.pos.x,Bt.pos.z);
+  p.si=-1;(W.travellers||(W.travellers=[])).push({p,from,to,why,poly,len,depart:day(),arrive:day()+Math.max(0.3,len/WALK_MPD)});}
+function inboundOf(){const m=new Map();for(const t of W.travellers||[])m.set(t.to,(m.get(t.to)||0)+1);return m;}
+function tickTravel(){ // arrivals: the traveller takes their place in the new town's roll
+  const T=W.travellers;if(!T||!T.length)return;const d=day();
+  for(let i=T.length-1;i>=0;i--){const t=T[i];if(t.p.dead){T.splice(i,1);continue;}
+    if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);}}}
+function awayNow(p){return p.away&&day()<p.away.until?p.away:null;}
+function crewFor(c){ // the carter from the town the goods leave, or the master of the boat
+  const o=W.settlements[c.origin];if(!o||!o.folk||!o.folk.length)return;
+  const want=c.sea?['boatman','fisher']:c.river?['boatman','carter']:['carter','merchant','herdsman'];let best=null,bs=-1e9;
+  for(let k=0;k<24;k++){const q=o.folk[Math.floor(frand()*o.folk.length)];if(!q||q.sx!=='m'||awayNow(q))continue;const a=ageYrs(q);if(a<16||a>60)continue;
+    const sc=(want.includes(q.tr)?3:0)+q.sk[c.sea||c.river?KC:KRi]+frand();if(sc>bs){bs=sc;best=q;}}
+  if(!best)return;const trip=Math.max(0.5,c.arriveDay-c.departDay),dest=W.settlements[c.dest];
+  best.away={until:c.arriveDay+trip,what:`${c.sea?'master of a cog':c.river?'on a barge':'carting'} ${c.good} to ${dest?dest.name:'market'}, and back`};c.crew=best;}
+function envoyRiders(e){const cap=W.capital;if(!cap||!cap.folk)return;const pool=cap.folk.filter(q=>q.sx==='m'&&!awayNow(q)&&ageYrs(q)>=18&&ageYrs(q)<50).sort((a,b)=>b.sk[KRi]-a.sk[KRi]).slice(0,2);
+  for(const q of pool)q.away={until:e.back,what:`riding with the crown's envoys to ${W.settlements[e.to]?.name||'a lord'}`};e.riders=pool;}
+function renderTravellers(){
+  if(!G.travMesh){const cp=personParts('citizen');G.travMesh=new THREE.InstancedMesh(cp.tint,agentMat(),400);G.travKit=new THREE.InstancedMesh(cp.fixed,agentMat(),400);
+    for(const m of[G.travMesh,G.travKit]){for(let i=0;i<400;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.count=0;scene.add(m);}}
+  const T=W.travellers||[],now=day()+(W.clock.frac||0),t2=performance.now()/1000;let k=0;G.travIdx=[];
+  if(cam.cur.dist<1800)for(const t of T){if(k>=400)break;const f=clamp((now-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1),p=polyPos(t.poly,f);if(!p)continue;
+    const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
+    setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:0x5a6a7a));G.travIdx[k]=t;k++;}
+  G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
+function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
+  const t=(W.travellers||[]).find(x=>x.p.id===id);if(t)return {p:t.p,s:W.settlements[t.to],t};return null;}
 function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
   return mkNotable(Object.assign({name:folkName(p),sex:p.sx,birthDay:p.b,age:Math.floor(ageYrs(p)),g:p.g,e:p.e,sk:p.sk,hair:p.hair,fed:p.fed,born:{fam:famName(p),tr:p.tr,si:p.si}},o));}
 function promoteFrom(s,score){ // the ablest of a town's folk, stepping out of the crowd into the annals
@@ -4826,20 +4860,43 @@ function buildHerdMeshes(){
   const mk=(k,w,h,d,c,cap)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(0,h/2+0.35,0);const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({color:c}),cap);m.count=0;m.castShadow=false;m.userData.beast=k;scene.add(m);return m;};
   G.herdMesh={sheep:mk('sheep',1.6,1.1,1,0xdcd6c8,3000),cattle:mk('cattle',2.6,1.5,1.1,0x7a5236,1600),horses:mk('horses',2.4,1.7,0.8,0x4a3426,700),swine:mk('swine',1.3,0.8,0.8,0xc99a8a,1400)};
   G.herdOwner={sheep:new Int16Array(3000),cattle:new Int16Array(1600),horses:new Int16Array(700),swine:new Int16Array(1400)};G.herdPos=[];}
-function renderHerds(){
-  if(!G.herdMesh)return;const mon=(day()/30|0),M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0};G.herdPos=[];
-  W.settlements.forEach((s,si)=>{if(!s.hm)return;const F=s.furl||[];
-    const grass=F.filter(f=>f.state===LS.PASTURE||f.state===LS.WILD||(seasonIdx()>=2&&f.state===LS.TILLED)),wood=F.filter(f=>f.state===LS.WOOD);
-    const r=nameRng(si*977+mon*31); // the flocks move from month to month
-    for(const k in HERDDRAW){const D=HERDDRAW[k],n=Math.round((s.stores[k]||0)/D.per);
-      const where=k==='swine'?(wood.length?wood:grass):k==='horses'?null:grass;
-      for(let i=0;i<n&&cnt[k]<D.cap;i++){let x,z;
-        if(where&&where.length){const f=where[Math.floor(r()*where.length)],rad=Math.sqrt(f.area/Math.PI)*0.7,a=r()*Math.PI*2,q=Math.sqrt(r())*rad;x=f.x+Math.cos(a)*q;z=f.z+Math.sin(a)*q;}
-        else{const a=r()*Math.PI*2,q=(s.radius||60)+15+r()*70;x=s.pos.x+Math.cos(a)*q;z=s.pos.z+Math.sin(a)*q;} // the paddock by the town
-        const c=cIdx(toCell(x),toCell(z));if(W.water[c])continue;const y=hAt(x,z);
-        G.herdOwner[k][cnt[k]]=si;G.herdPos.push(x,y+1,z,BEASTS.indexOf(k),si);
-        setInst(M[k],cnt[k]++,x,y,z,r()*6.28,1,1,1);}}});
-  for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;}}
+function inPolyXZ(P,x,z){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],q=P[j];if((a.z>z)!==(q.z>z)&&x<(q.x-a.x)*(z-a.z)/(q.z-a.z)+a.x)c=!c;}return c;}
+function insetPoly(P,d){ // the field's outline drawn in behind its fence
+  let cx=0,cz=0;for(const q of P){cx+=q.x;cz+=q.z;}cx/=P.length;cz/=P.length;
+  return P.map(q=>{const L=dist2d(q.x,q.z,cx,cz)||1;return {x:q.x+(cx-q.x)/L*d,z:q.z+(cz-q.z)/L*d};});}
+function grazeOK(x,z){const c=cIdx(toCell(x),toCell(z)),m=G.land.mask;return !W.water[c]&&!m[c*4+2]&&!(G.trackSet&&trackAt(x,z,3.5));}
+/* the herds on the map: each town's beasts in flocks of their own kind — sheep on the widest pasture, cattle near the
+   village, swine in the wood, horses in the paddock by the town, and after harvest the flocks go onto the stubble.
+   A flock keeps together and wanders its field as it grazes, inside the fence; click a beast to learn whose it is. */
+function renderHerds(){ // monthly: which flocks, in which fields
+  if(!G.herdMesh||!G.land)return;const mon=(day()/30|0),stub=seasonIdx()>=2;G.flocks=[];
+  W.settlements.forEach((s,si)=>{if(!s.hm)return;const F=(s.furl||[]).filter(f=>f.dom===si);
+    const past=F.filter(f=>f.state===LS.PASTURE||f.state===LS.WILD).sort((a,b)=>b.area-a.area),stubble=stub?F.filter(f=>f.state===LS.TILLED&&f.kind!==LK.VINE):[],wood=F.filter(f=>f.state===LS.WOOD);
+    const near=A=>[...A].sort((a,b)=>dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
+    const used=new Set(),r=nameRng(si*977+mon*31);
+    const take=(list)=>{for(const f of list)if(!used.has(f)){used.add(f);return f;}return list[0]||null;}; // a field to itself if one is free, else share
+    const plan={sheep:[...past,...stubble],cattle:[...near(past),...near(stubble)],swine:wood.length?wood:near(past),horses:near(past)};
+    for(const k of['horses','cattle','sheep','swine']){const D=HERDDRAW[k];let n=Math.round((s.stores[k]||0)/D.per);if(!n)continue;
+      while(n>0){const size=Math.min(n,k==='sheep'?30:k==='swine'?16:k==='cattle'?14:8);n-=size;const f=take(plan[k]);
+        let P=null;if(f){const fp=furlongPoly(f);P=insetPoly(fp,5);}
+        let c0=null;for(let t=0;t<40&&!c0;t++){const x=P?f.x+(r()-0.5)*FG*0.8:s.pos.x+(r()-0.5)*((s.radius||60)*2+120),z=P?f.z+(r()-0.5)*FG*0.8:s.pos.z+(r()-0.5)*((s.radius||60)*2+120);
+          if((!P||inPolyXZ(P,x,z))&&grazeOK(x,z)&&(P||dist2d(x,z,s.pos.x,s.pos.z)>(s.radius||60)+10))c0={x,z};}
+        if(!c0)continue;
+        const mem=[];for(let q=0;q<size;q++){const a=r()*6.283,d=Math.sqrt(r())*(3+Math.sqrt(size)*2.2);mem.push({ox:Math.cos(a)*d,oz:Math.sin(a)*d,ph:r()*6.283,rot:r()*6.283});}
+        G.flocks.push({k,si,P,c0,cx:c0.x,cz:c0.z,seed:r()*1000,mem});}}});
+  animateHerds(true);}
+function animateHerds(force){ // each frame near the herds: the flocks drift across their fields as they graze
+  if(!G.flocks||!G.herdMesh)return;if(!force&&cam.cur.dist>1600)return;
+  const now=day()+(W.clock.frac||0),vt=performance.now()/1000,M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0},pos=[];
+  for(const fl of G.flocks){const m=M[fl.k],D=HERDDRAW[fl.k];
+    const tx=fl.c0.x+Math.sin(now*0.9+fl.seed)*22+Math.sin(now*0.37+fl.seed*2)*14,tz=fl.c0.z+Math.cos(now*0.7+fl.seed*1.3)*22+Math.cos(now*0.29+fl.seed)*14; // a slow wander, a few hundred metres a day
+    if((!fl.P||inPolyXZ(fl.P,tx,tz))&&!W.water[cIdx(toCell(tx),toCell(tz))]){fl.cx+=(tx-fl.cx)*0.2;fl.cz+=(tz-fl.cz)*0.2;} // it turns back at the fence
+    for(const a of fl.mem){if(cnt[fl.k]>=D.cap)break;
+      let x=fl.cx+a.ox+Math.sin(vt*0.3+a.ph)*1.2,z=fl.cz+a.oz+Math.cos(vt*0.23+a.ph)*1.2;
+      if(fl.P&&!inPolyXZ(fl.P,x,z)){x=fl.cx+a.ox*0.3;z=fl.cz+a.oz*0.3;} // no beast through the fence
+      const i=cnt[fl.k]++;setInst(m,i,x,hAt(x,z),z,a.rot+Math.sin(vt*0.1+a.ph)*0.6,1,1,1);G.herdOwner[fl.k][i]=fl.si;pos.push(x,hAt(x,z)+1,z,BEASTS.indexOf(fl.k),fl.si);}}
+  for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;}G.herdPos=pos;}
+
 const BEAST_TEXT={sheep:['A flock of sheep','Wool for the looms (spun at home, or sold to the weavers and fullers of the towns), mutton and milk. Each drawn beast stands for about eight head.'],
   cattle:['Cattle','Oxen for the plough-teams, cows for milk and cheese, hides for the tanners, beef when they are old. Each drawn beast stands for about two head.'],
   horses:['Horses','Draught horses for the plough and the carts, and the riding horses of the lord and his men: a host has only as many horse as its riders can find. Each drawn beast is one or two.'],
@@ -5771,6 +5828,7 @@ function pickSmall(cx,cy,lim){ // small things by pixel proximity (a ~12 px halo
   if(W.dragon&&G.dragonMesh.visible){const p=G.dragonMesh.position;one(p.x,p.y+4,p.z,14*G.dragonMesh.scale.x,22,{type:'dragon'});}
   for(const e of W.envoys||[]){const m=G.envoyMeshes&&G.envoyMeshes.get(e.id);if(m)one(m.position.x,m.position.y+2*m.scale.x,m.position.z,4*m.scale.x,14,{type:'envoy',e});}
   for(const t of G.traffic||[])if(t.proxy){const p=t.proxy.position;one(p.x,p.y,p.z,12,13,{type:'caravan',c:t.info});}
+  if(G.travMesh&&G.travIdx)for(let i=0;i<G.travMesh.count;i++){G.travMesh.getMatrixAt(i,_pm);const e=_pm.elements,t=G.travIdx[i];if(t)one(e[12],e[13]+1,e[14],1,10,{type:'person',p:t.p,s:W.settlements[t.to],t});}
   if(G.citizens&&G.citIdx)for(let i=0;i<G.citizens.count;i++){G.citizens.getMatrixAt(i,_pm);const e=_pm.elements,c=G.citIdx[i];if(c)one(e[12],e[13]+1,e[14],1,9,{type:'person',p:c.p,s:c.s,c});}
   for(const m of G.shipMeshes||[])if(m.visible)one(m.position.x,m.position.y+4,m.position.z,10,14,{type:'ship',sh:m.userData.pick.sh});
   if(cam.cur.dist<1400&&G.herdPos){const P=G.herdPos;for(let i=0;i<P.length;i+=5)one(P[i],P[i+1],P[i+2],2,7,{type:'beast',k:BEASTS[P[i+3]],si:P[i+4]});} // even a sheep can be asked what it is
@@ -5785,6 +5843,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
   if(G.soldiers)targets.push(G.soldiers);
   if(G.herdMesh&&cam.cur.dist<1400)targets.push(...Object.values(G.herdMesh));
   if(G.citizens&&G.citizens.count)targets.push(G.citizens,G.citKit);
+  if(G.travMesh&&G.travMesh.count)targets.push(G.travMesh,G.travKit);
   if(G.shipMeshes)for(const m of G.shipMeshes)if(m.visible)targets.push(m);
   if(G.dragonMesh.visible)targets.push(G.dragonMesh);
   for(const t of G.traffic||[])if(t.proxy)targets.push(t.proxy);
@@ -5797,6 +5856,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
     if((h.object===G.bodies||h.object===G.roofs)&&h.instanceId!==undefined&&h.instanceId<G.bldList.length)pk={type:'building',b:G.bldList[h.instanceId]};
     if(h.object===G.cairnMesh&&h.instanceId!==undefined)pk={type:'cairn',text:G.cairnText[h.instanceId]};
     if(h.object===G.soldiers)pk=pickSoldier(h.point);
+    if((h.object===G.travMesh||h.object===G.travKit)&&h.instanceId!==undefined&&G.travIdx&&G.travIdx[h.instanceId]){const t=G.travIdx[h.instanceId];pk={type:'person',p:t.p,s:W.settlements[t.to],t};}
     if((h.object===G.citizens||h.object===G.citKit)&&h.instanceId!==undefined&&G.citIdx&&G.citIdx[h.instanceId]){const c=G.citIdx[h.instanceId];pk={type:'person',p:c.p,s:c.s,c};}
     if(h.object.userData.beast&&h.instanceId!==undefined)pk={type:'beast',k:h.object.userData.beast,si:G.herdOwner[h.object.userData.beast][h.instanceId]};
     if(!pk)continue;
@@ -5924,6 +5984,7 @@ function showInspect(pk){
     setHTML(title,`<img src="${sigURL(0)}">`+esc('Envoys of the crown'));
     sub.textContent=now<e.arrive?'riding to '+t.name:now<e.decide?'at '+t.name+', awaiting an answer':'riding home to '+W.capital.name;
     h+=row('About',esc(e.about));
+    if(e.riders&&e.riders.length)h+=row('Riders',e.riders.map(q=>`<a class="pp" data-pid="${q.id}">${esc(folkName(q))}</a>`).join(', '));
     h+=row(now<e.decide?'Answer expected':'Bearing the answer',now<e.decide?dateStr(e.decide):'to the crown');
   }else if(pk.type==='notable'){
     const n=pk.n;
@@ -5964,6 +6025,7 @@ function showInspect(pk){
     sub.textContent=W.settlements[c.origin].name+' → '+W.settlements[c.dest].name;
     h+=row('Cargo',c.good+' × '+Math.round(c.qty));
     h+=row('Value',Math.round(c.value)+' gold');
+    if(c.crew)h+=row(c.sea?'Master':c.river?'Bargeman':'Carter',`<a class="pp" data-pid="${c.crew.id}">${esc(folkName(c.crew))}</a> of ${esc(W.settlements[c.origin].name)}`);
     flyToBtn(fb,'Follow',()=>{markManual();cam.follow=c;cam.dist=140;});
   }else if(pk.type==='land'){
     const f=pk.f,s=f.dom>=0?W.settlements[f.dom]:null,lord=f.lord>=0?W.houses[f.lord]:null,c=cIdx(toCell(pk.x),toCell(pk.z));
@@ -6039,7 +6101,10 @@ function showInspect(pk){
   }else if(pk.type==='person'){
     const p=pk.p,s=pk.s,a=Math.floor(ageYrs(p)),hd=householdHead(p),home=hd.bh,fm=p.fam>=0?W.fams[p.fam]:null,pl=q=>`<a class="pp" data-pid="${q.id}">${esc(folkName(q))}</a>`;
     setHTML(title,esc(folkName(p)));sub.textContent=`${a}, ${p.sex==='f'||p.sx==='f'?(p.sp?'wife':'woman'):p.sp?'husband':'man'}${p.tr&&a>=14?' · '+p.tr:''} · ${s.name}`;
-    if(pk.c&&pk.c.doing)h+=row('Now',esc(pk.c.doing));
+    {const aw=awayNow(p),t=pk.t||(W.travellers||[]).find(x=>x.p===p);
+      if(t)h+=row('Now',`on the road from ${esc(W.settlements[t.from]?.name||'?')} to ${esc(W.settlements[t.to]?.name||'?')} — ${t.why==='bride'?'a bride going to her husband\'s house':'leaving for a new home'}; there ${dateStr(Math.ceil(t.arrive))}`);
+      else if(aw)h+=row('Now',esc(aw.what)+`; home by ${dateStr(Math.ceil(aw.until))}`);
+      else if(pk.c&&pk.c.doing)h+=row('Now',esc(pk.c.doing));}
     if(home)h+=row('Home',`${esc(buildingName(home)||((TIERNAME[home.tier]||'')+' '+ARCH[home.arch][4]))} in the ${esc(home.district||'')} quarter`);
     if(p.sp&&!p.sp.dead)h+=row(p.sx==='f'?'Husband':'Wife',pl(p.sp));
     if(p.ma)h+=row('Mother',p.ma.dead?esc(folkName(p.ma))+' †':pl(p.ma));
@@ -6300,7 +6365,7 @@ function tickEconomy(){
       }
     }
   }
-  for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);}
+  for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);if(!W.prehistory)crewFor(c);}
   // arrivals
   const besieged=W.settlements.filter(t=>t.siegeBy);
   for(let i=W.caravans.length-1;i>=0;i--){
@@ -7641,7 +7706,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -7696,7 +7761,7 @@ function goName(code){ // fly to it and open its card
   if(t==='s'){const s=W.settlements[v];if(s){flyTo(s.pos.x,s.pos.z,420);showInspect({type:'settlement',s});}}
   else if(t==='h'){const h=W.houses[v],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(s)flyTo(s.pos.x,s.pos.z,520);if(n)showInspect({type:'notable',n});else if(s)showInspect({type:'settlement',s});}
   else if(t==='n'){const n=notableById(v);if(n){const h=houseOf(n),s=n.house===0?W.capital:W.settlements[h&&h.seat];if(s)flyTo(s.pos.x,s.pos.z,420);showInspect({type:'notable',n});}}}
-document.addEventListener('click',e=>{const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();const id=+q.dataset.pid;for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p){showInspect({type:'person',p,s});break;}}return;}
+document.addEventListener('click',e=>{const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();const f=findPerson(+q.dataset.pid);if(f)showInspect({type:'person',p:f.p,s:f.s,t:f.t});return;}
   const a=e.target.closest&&e.target.closest('a.nm');if(!a)return;e.stopPropagation();e.preventDefault();goName(a.dataset.nm);},true);
 function chronicleAdd(ev){
   allLines.push('['+dateStr(ev.day)+'] '+ev.text);
@@ -8028,7 +8093,7 @@ function orderRoad(ai,bi,payer,P0){
    royal host, or plain asking. The envoys ride; he answers weeks later, by his purse, his pride and his fear. */
 function sendEnvoy(toSi,decide,about){ // riders from the capital to a lord's seat: they wait on his answer, and ride back with it
   const t=W.settlements[toSi];if(!t)return;const r=route(0,toSi),poly=r?r.poly:[{x:W.capital.pos.x,z:W.capital.pos.z},{x:t.pos.x,z:t.pos.z}],len=polyLen(poly)||1,travel=Math.max(0.5,len/1500);
-  (W.envoys=W.envoys||[]).push({poly,depart:day(),arrive:day()+travel,decide:Math.max(decide,day()+travel+1),back:Math.max(decide,day()+travel+1)+travel,to:toSi,about,id:(W.envoyN=(W.envoyN||0)+1)});
+  const _e={poly,depart:day(),arrive:day()+travel,decide:Math.max(decide,day()+travel+1),back:Math.max(decide,day()+travel+1)+travel,to:toSi,about,id:(W.envoyN=(W.envoyN||0)+1)};(W.envoys=W.envoys||[]).push(_e);if(!W.prehistory)envoyRiders(_e);
 }
 function envoyPos(e,now){ // where the riders are, on the sim's own clock
   const P=e.poly;if(now<e.arrive)return polyPos(P,clamp((now-e.depart)/Math.max(0.01,e.arrive-e.depart),0,1));
@@ -9306,7 +9371,7 @@ function animateWorld(dt,now){
   G.caravans.count=G.cartCovers.count=ci;
   G.caravans.instanceMatrix.needsUpdate=true;G.cartCovers.instanceMatrix.needsUpdate=true;if(G.cartCovers.instanceColor)G.cartCovers.instanceColor.needsUpdate=true;
   for(let i=cogI;i<G.cogs.length;i++)G.cogs[i].visible=false;
-  renderShips();
+  renderShips();renderTravellers();if(G.flocks&&(!G._hAnim||performance.now()-G._hAnim>90)){G._hAnim=performance.now();animateHerds(false);} // the flocks graze on
   for(let i=bargeI;i<G.barges.length;i++)G.barges[i].visible=false;
   for(let i=dotI;i<G.caravanDots.length;i++)G.caravanDots[i].visible=false;
   G.caravans.instanceMatrix.needsUpdate=true;
@@ -9434,7 +9499,7 @@ function animateWorld(dt,now){
       if(G.citList.length===0||G.citList[0].s!==s||G._citDay!==day()>>3){G._citDay=day()>>3;
         G.citList=[];if(s._hhY!==year())houseFolk(s);
         const R=(s.extentR||s.radius||120),fx=cam.cur.focus.x,fz=cam.cur.focus.z,mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z};
-        const cand=s.folk.filter(p=>ageYrs(p)>=6&&householdHead(p).bh&&!householdHead(p).bh.removed);
+        const cand=s.folk.filter(p=>ageYrs(p)>=6&&!awayNow(p)&&householdHead(p).bh&&!householdHead(p).bh.removed); // those away on the road are not in town
         cand.sort((a,b)=>dist2d(householdHead(a).bh.x,householdHead(a).bh.z,fx,fz)-dist2d(householdHead(b).bh.x,householdHead(b).bh.z,fx,fz));
         const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
         for(const p of cand.slice(0,140)){const h=householdHead(p).bh,a=ageYrs(p),H=(p.id*2654435761>>>0)/4294967296;
@@ -9596,7 +9661,7 @@ async function boot(){
   simInit();
   if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
     W.prehistory=true;const yrs=START_AD-W.startAD;
-    for(let y=0;y<yrs;y++){for(let i=0;i<360;i++)simTick();
+    for(let y=0;y<yrs;y++){for(let i=0;i<360;i++){try{simTick();}catch(e){simErr(e);}} // a fault in the unseen centuries is reported, not a frozen loading screen
       if(y%3===0)await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*(y/yrs));}
     W.prehistory=false;buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
     for(const s of W.settlements)s.pop0=s.pop;

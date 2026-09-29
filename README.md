@@ -46,6 +46,15 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   - Click anyone for their card: age, trade, home, spouse, parents, children,
     how their family came by its name, their nature and learning, and what
     they're doing now. Names on house and person cards link to each other.
+- **People on the road.** Journeys are real:
+  - a bride walks to her husband's village, and emigrants walk from a failing
+    town to a growing one, at about 30 km a day on the realm's scale;
+  - each cart, barge and cog has a named carter or master from its home town,
+    who is away until the round trip is done;
+  - the crown's envoys are named riders from the capital.
+
+  Travellers are drawn on the roads; click one to see who they are and where
+  they're going. The towns they're heading for already count them.
 - **One scale.**
   - **Travel between places:** the map's distances stand for a realm about 40
     times larger (6 km of map for ~240 km), so every traveller moves at its
@@ -287,7 +296,11 @@ itself; you rule one lord's domain:
   - **Clickable:** click any beast, however small, to see whose it is, how many
     head the place keeps and wants, and the price there.
   - **On the map:** the herds are drawn from the real counts, one beast for
-    every few head, and move between pastures month by month. The town card
+    every few head, in flocks of their own kind: sheep on the widest pasture,
+    cattle on the pasture nearest the village, pigs in the wood, horses in the
+    paddock by the town, and after harvest the flocks go onto the stubble. A
+    flock keeps together and drifts across its field as it grazes, inside the
+    fence and clear of the tracks. The town card
     shows the herds, the grazing and whether the plough-teams are enough.
 - **Ports and the sea beyond.**
   - **Great ships** sail in from off the map: knarrs in the early centuries,
