@@ -35,6 +35,22 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   browser exposes a GPU timer, draw calls, triangles, memory and scene size.
   *Copy report* puts it on the clipboard.
 
+## Reading the realm
+
+- **Names are links.** Towns, great houses and living notables named in the
+  chronicle or in a petition are underlined. Click one to fly there and open
+  its card (a house opens its head's card).
+- **Territory overlay:** each lordship is shown in a colour picked to stand
+  apart from its neighbours, over greyed ground, with borders thick enough to
+  see from any height. House names sit over the heart of their lands, and a
+  legend lists each house with its places and hectares (click one to go
+  there).
+- **Land & property value overlay:** every town lot is coloured by its own
+  worth, fence to fence, and every furlong by its yield and how near its
+  buyers are. A house's card gives its rent and lot size.
+- **Acts** that can't be done just now are greyed out and say why (no dragon
+  in this realm, already at war).
+
 ## Controls
 
 | Input | Action |

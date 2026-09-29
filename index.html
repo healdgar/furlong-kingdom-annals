@@ -219,6 +219,10 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
   #petition{top:100px;}
   #placehint{white-space:normal;width:calc(100vw - 40px);text-align:center;}
 }
+a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text-underline-offset:2px;cursor:pointer;}a.nm:hover{color:var(--red);}
+#terrlegend{position:absolute;right:360px;bottom:14px;z-index:15;background:var(--parch);border:1px solid var(--edge);border-radius:6px;padding:8px 10px;font-size:13px;color:var(--ink);max-height:50vh;overflow-y:auto;box-shadow:0 2px 10px rgba(0,0,0,.25);}
+#terrlegend .li{display:flex;align-items:center;gap:7px;margin:3px 0;cursor:pointer;}#terrlegend i{width:16px;height:12px;border-radius:2px;display:inline-block;border:1px solid rgba(0,0,0,.35);}
+@media (max-width:760px){#terrlegend{right:8px;bottom:auto;top:110px;max-height:30vh;font-size:12px;}}
 /* ---- readability and small screens (a pass over the whole UI) ---- */
 #insp{width:340px;max-height:calc(100% - 70px);overflow-y:auto;scrollbar-width:thin;}
 #insp h3{font-size:19px;}#insp .sub{font-size:12.5px;}
@@ -259,7 +263,7 @@ body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hid
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 21:38 UTC · after 869b0ce</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 21:46 UTC · after 82c4d8c</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -4293,10 +4297,11 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
     float l1=floor(L1.r*255.+0.5),l2=floor(L2.r*255.+0.5);vec3 hc=vec3(0.5);
     for(int i=0;i<12;i++)if(abs(float(i)-l1)<0.5)hc=uHouse[i];
     if(l1>0.5){
-      if(uTerr>0.5&&uTerr<1.5)diffuseColor.rgb=mix(diffuseColor.rgb,hc,0.38);
+      if(uTerr>0.5&&uTerr<1.5){float gy=dot(diffuseColor.rgb,vec3(0.3,0.59,0.11));diffuseColor.rgb=mix(vec3(gy)*0.9+0.08,hc,0.62);} // the ground greyed, the lordship in its colour
       if(L1.g>0.5)diffuseColor.rgb=mix(diffuseColor.rgb,hc,0.45*step(fract((wp.x+wp.y)/11.),0.2));
       if(abs(l1-l2)>0.5){float eb2=abs(dot(fp-(s1+s2)*0.5,normalize(s2-s1)))*uFG;
-        diffuseColor.rgb=mix(diffuseColor.rgb,hc*0.9,(1.-smoothstep(1.2,4.5,eb2))*(0.75+0.25*min(uTerr,1.)));}
+        float bw=(uTerr>0.5&&uTerr<1.5)?max(4.5,distance(vWP,cameraPosition)*0.006):4.5; // a border stays a line you can see from any height
+        diffuseColor.rgb=mix(diffuseColor.rgb,(uTerr>0.5&&uTerr<1.5)?hc*0.45:hc*0.9,(1.-smoothstep(bw*0.3,bw,eb2))*(0.75+0.25*min(uTerr,1.)));}
     }
   }
 }`);
@@ -5354,7 +5359,7 @@ function fxState(s,dt){ // lasting conditions show while they last
   if((s.hunger||0)>0.3&&R()<dt*4)fxParticle(0,x+(R()-0.5)*rad*2,y+3,z+(R()-0.5)*rad*2,1.5,0.4,1,6,0xbfae80);
 }
 function updateFx(dt,now){
-  if(G.land&&G.land.uni)W.houses.forEach((h,i)=>{if(i<11)G.land.uni.uHouse.value[i+1].setHex(h.sigilHue[0]);});
+  houseTints();
   if(!G.fxList)return;
   const pace=SPEEDS[speedIdx]||0,live=speedIdx>0?pace/2:0.25; // scenes last in game time: full length at ▶▶, twice as long at ▶, a moment at ⏩
   for(let i=G.fxList.length-1;i>=0;i--){const e=G.fxList[i];e.t+=dt*live;if(e.t>=e.dur){G.fxList.splice(i,1);continue;}if(fxNear(e.x,e.z))fxScene(e,dt,now);}
@@ -5435,6 +5440,8 @@ function setOverlay(mode){
   if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);G.overlay=null;}
   document.querySelectorAll('.ovbtn').forEach(b=>b.classList.toggle('on',b.dataset.o===overlayMode));
   if(G.land&&G.land.uni)G.land.uni.uTerr.value=0;
+  if(overlayMode!=='territory'){const tl=document.getElementById('terrlegend');if(tl)tl.remove();}
+  houseTints();
   if(!overlayMode)return;
   refreshOverlayNow(); // the player chose it: at once
 }
@@ -5456,7 +5463,15 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
       pos.push(p.x+nx,y,p.z+nz,p.x-nx,y,p.z-nz);if(k)idx.push(k*2-2,k*2-1,k*2,k*2-1,k*2+1,k*2);});
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
     const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op,depthWrite:false,side:THREE.DoubleSide}));m.renderOrder=3;grp.add(m);};
-  if(overlayMode==='territory'){}
+  if(overlayMode==='territory'){ // each house's name over the heart of its lands, and a legend
+    const L=[];W.houses.forEach((h,hi)=>{if(h.exiled||h.extinct)return;const F=G.land?G.land.F.filter(f=>f.lord===hi):[];const towns=W.settlements.filter(s=>s.owner===hi);if(!F.length&&!towns.length)return;
+      let x=0,z=0,a=0;for(const f of F){x+=f.x*(f.area+1);z+=f.z*(f.area+1);a+=f.area+1;}if(!a){x=towns[0].pos.x;z=towns[0].pos.z;a=1;}x/=a;z/=a;
+      const c=new THREE.Color();if(G.land&&G.land.uni)c.copy(G.land.uni.uHouse.value[hi+1]);else c.setHex(h.sigilHue[0]);
+      const sp=makeTextSprite(h.name.replace(/^House /,''),1,'#'+c.clone().offsetHSL(0,0,0.18).getHexString());sp.material.sizeAttenuation=false;sp.scale.set(sp.userData.w*0.0011,sp.userData.h*0.0011,1);
+      sp.position.set(x,hAt(x,z)+60,z);sp.renderOrder=7;grp.add(sp);L.push({h,hi,c,towns:towns.length,ha:F.reduce((t,f)=>t+f.area,0)/10000});});
+    let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
+    el.innerHTML='<b>Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small></div>`).join('');
+    el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));}
   else if(overlayMode==='trade'){ // the realm's traffic: each road as wide as its share of all journeys between places; sea lanes and river barges in blue
     const T=roadTraffic();
     W.roads.forEach((r,ri)=>{const t=Math.sqrt(T[ri]||0);ribbon(r.path,5+t*20,new THREE.Color().setHSL(0.15-t*0.15,0.9,0.5).getHex(),0.6+t*0.35);});
@@ -5469,6 +5484,11 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
     G.bldList.forEach((b,i)=>{if(b.idx===undefined||!pv[i])return;const c=heatColor(pv[i]/top);G.bodies.setColorAt(b.idx,c);G.roofs.setColorAt(b.idx,c);});
     if(G.bodies.instanceColor)G.bodies.instanceColor.needsUpdate=true;if(G.roofs.instanceColor)G.roofs.instanceColor.needsUpdate=true;
     if(G.land){const F=G.land.F,lv=F.map(landValue),mx=Math.max(1e-6,...lv),d=G.land.lordTex.image.data;F.forEach((f,k)=>d[f.k*4+2]=Math.round(clamp(lv[k]/mx,0,1)*255));G.land.lordTex.needsUpdate=true;}
+    { // each town lot washed in its own worth, fenced line to fenced line
+      const pos=[],col=[];G.bldList.forEach((b,i)=>{if(!b.lot||b.lot.length<3||!pv[i])return;const c=heatColor(pv[i]/top),P=b.lot,y=q=>hAt(q.x,q.z)+0.7;
+        for(let k=1;k<P.length-1;k++)for(const q of[P[0],P[k],P[k+1]]){pos.push(q.x,y(q),q.z);col.push(c.r,c.g,c.b);}});
+      if(pos.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+        const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:0.5,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));m.renderOrder=3;grp.add(m);}}
   }else if(overlayMode==='production'){ // what each place brings forth in a year, and what it holds in store
     const P=W.settlements.map(prodOf),mx={};for(const g of GOODS)mx[g]=Math.max(1e-6,...P.map(p=>p[g]));
     G.prodSprites=[];W.settlements.forEach((s,si)=>{const sp=prodSprite(P[si],mx,s);sp.position.set(s.pos.x,s.pos.y+(s.kind==='village'?70:110),s.pos.z);grp.add(sp);});
@@ -5883,6 +5903,7 @@ function showInspect(pk){
       else for(const hd of H.slice(0,4)){const m=householdOf(b.s,hd),a=Math.floor(ageYrs(hd)),sp=hd.sp&&!hd.sp.dead?hd.sp:null,kids=m.filter(x=>x!==hd&&x!==sp);
         h+=row(H.length>1?'Household':'Lives here',`${esc(folkName(hd))}, ${a}${hd.tr?', '+esc(hd.tr):''}${sp?`; ${hd.sx==='m'?'wife':'husband'} ${esc(sp.gn)}${sp.si!==hd.si||!(W.settlements[sp.si]?.folk||[]).includes(sp)?' (away)':''}`:''}${kids.length?`; ${kids.length>5?kids.length+' children':kids.map(k=>esc(k.gn)).join(', ')}`:''}`);}
       if(H.length>4)h+=row('Lodgers',`${H.length-4} more households`);}
+    if(b.state==='sound'&&RESID.has(b.arch))h+=row('Worth',`${propValue(b).toFixed(1)} g a year in rent${b.lot?`, on a lot of ${Math.round((()=>{let a=0;const P=b.lot;for(let i=0,j=P.length-1;i<P.length;j=i++)a+=(P[j].x+P[i].x)*(P[j].z-P[i].z);return Math.abs(a/2);})())} m²`:''}`);
     if(b.wallhouse)h+=row('Built','into the old town wall, of its stone');
     if(b.home0&&b.why&&b.why.since)h+=row('Opened',`AD ${b.why.since}, in what was a ${ARCH[b.home0][4]}`);
     h+=row('State',b.state);
@@ -7474,6 +7495,15 @@ function tickGrowth(){
 }
 
 /* ============================ ACTS (triggers) ============================ */
+const TERR_PAL=[0xd4a017,0x4e79a7,0xe15759,0x59a14f,0xb07aa1,0xf28e2b,0x76b7b2,0x9c755f,0xff9da7,0x1f3a93,0x8cd17d,0x6b4c9a]; // twelve colours no two alike, for the territory map
+function houseTints(){ // the land edged in each lord's own colour; the territory map uses colours chosen to be told apart at a glance
+  if(!(G.land&&G.land.uni))return;const terr=overlayMode==='territory';
+  W.houses.forEach((h,i)=>{if(i<11){const c=G.land.uni.uHouse.value[i+1];if(terr)c.setHex(TERR_PAL[i%TERR_PAL.length]);else c.setHex(h.sigilHue[0]);}});}
+function actBlocked(k){ // why an act cannot be done just now (the button says so, instead of failing when pressed)
+  if(k==='dragon'){const d=W.dragon;return !d||d.dead?'no wyrm lairs on the high peak in this realm':d.state!=='sleeping'?'the dragon is already aloft':'';}
+  if(k==='contest')return W.war?'the realm is already at war':'';
+  if(k==='assassinate')return W.monarch&&W.monarch.alive?'':'there is no monarch to strike';
+  return '';}
 function doAct(act,p,opt){
   const nearS=()=>{let b=W.settlements[0],bd=1e18;for(const s of W.settlements){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;b=s;}}return b;};
   switch(act){
@@ -7633,11 +7663,25 @@ function emit(cat,pri,pos,text,opts){
   fxEvent(ev);
   return ev;
 }
+function nameLinker(){ // every town, house and living notable the annals name, longest first
+  const k=W.settlements.length+'|'+W.houses.map(h=>h.name).join()+'|'+W.notables.length+'|'+Math.floor(day()/60);
+  if(G._nl&&G._nl.k===k)return G._nl;const map=new Map();
+  W.settlements.forEach((s,i)=>map.set(s.name,'s'+i));W.houses.forEach((h,i)=>{if(h.name&&!h.extinct)map.set(h.name,'h'+i);});
+  for(const n of W.notables)if(n.alive)map.set(fullTitle(n),'n'+n.id);
+  const names=[...map.keys()].filter(x=>x&&x.length>2).sort((a,b)=>b.length-a.length).map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  return G._nl={k,map,re:names.length?new RegExp('(?<![\\wÀ-ÿ])('+names.join('|')+')(?![\\wÀ-ÿ])','g'):null};}
+function linkNames(html){const L=nameLinker();return L.re?html.replace(L.re,m=>`<a class="nm" data-nm="${L.map.get(m)}">${m}</a>`):html;}
+function goName(code){ // fly to it and open its card
+  const t=code[0],v=+code.slice(1);markManual();
+  if(t==='s'){const s=W.settlements[v];if(s){flyTo(s.pos.x,s.pos.z,420);showInspect({type:'settlement',s});}}
+  else if(t==='h'){const h=W.houses[v],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(s)flyTo(s.pos.x,s.pos.z,520);if(n)showInspect({type:'notable',n});else if(s)showInspect({type:'settlement',s});}
+  else if(t==='n'){const n=notableById(v);if(n){const h=houseOf(n),s=n.house===0?W.capital:W.settlements[h&&h.seat];if(s)flyTo(s.pos.x,s.pos.z,420);showInspect({type:'notable',n});}}}
+document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a.nm');if(!a)return;e.stopPropagation();e.preventDefault();goName(a.dataset.nm);},true);
 function chronicleAdd(ev){
   allLines.push('['+dateStr(ev.day)+'] '+ev.text);
   const el=document.createElement('div');
   el.className='centry';el.dataset.cat=ev.cat;
-  el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+ev.text.replace(/</g,'&lt;');
+  el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(ev.text.replace(/</g,'&lt;')); // names in the entry fly to what they name
   if(ev.pos)el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();});
   if(chronFilter!=='all'&&ev.cat!==chronFilter)el.style.display='none';
   const list=chronList();
@@ -7800,7 +7844,7 @@ function renderPetition(){
   const el=document.getElementById('petition'),p=W.petitions[0];
   if(!p||!sovOn()){el.style.display='none';el._h='';return;}
   const more=W.petitions.length-1;
-  setHTML(el,`<h4><span>${esc(p.title)}</span>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${esc(p.text)}</div>`+petitionContext(p)+
+  setHTML(el,`<h4><span>${esc(p.title)}</span>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${linkNames(esc(p.text))}</div>`+petitionContext(p)+
     p.opts.map((o,i)=>`<button class="cbtn" data-pi="${i}" ${o.cost&&purse(p.to|0)<o.cost?'disabled':''}><span>${esc(o.label)}</span>`+
       `<span class="cost">${o.cost?o.cost.toLocaleString()+' gold':''}</span></button>`).join('')+
     `<div class="pf">If you are silent, ${(p.to|0)>0?'your steward':'the council'} decides on ${dateStr(p.due)}${more?` · ${more} more petition${more>1?'s':''} waiting`:''}.</div>`);
@@ -8676,8 +8720,8 @@ function buildDrawer(tab){
   }else if(tab==='acts'){
     if(sealed)body.insertAdjacentHTML('beforeend','<div class="note">Acts of Providence are withheld while you rule — lay down the crown to wield them again.</div>');
     for(const[key,label,place]of ACTS){
-      const b=document.createElement('button');b.className='actbtn';b.disabled=sealed;if(sealed)b.style.opacity=.45;
-      b.innerHTML=label+(place?'<span class="tg">⌖</span>':'');
+      const why=actBlocked(key),b=document.createElement('button');b.className='actbtn';b.disabled=sealed||!!why;if(sealed||why)b.style.opacity=.5;
+      b.innerHTML=label+(place?'<span class="tg">⌖</span>':'')+(why?`<small style="display:block;font-style:italic">${esc(why)}</small>`:'');
       b.addEventListener('click',()=>{
         if(sovOn())return;
         if(place)setPlaceMode(key,null,label+': click the map — Esc to cancel');
