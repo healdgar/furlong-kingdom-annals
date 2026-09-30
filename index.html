@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-29 23:43 UTC · after d12b4b0</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-30 15:40 UTC · after 7f5898c</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -370,12 +370,23 @@ function fbm(n2,x,y,oct,lac,gain){
 }
 
 /* ---------------- constants --------------------------------------------- */
-const SIZE=6000, GRID=220, CELL=SIZE/GRID, SEA=0;
+/* the map: MAPKM km of ground drawn true size (9 by default, or #km=4..15 in the link), standing for a realm ~40x larger.
+   Cells stay ~27 m whatever the size, so a bigger map is more ground at the same grain, not the same ground stretched. */
+const MAPKM=(()=>{const m=/[#&]km=(\d+)/.exec(location.hash);return m?Math.max(4,Math.min(15,+m[1])):9;})();
+const SIZE=MAPKM*1000, GRID=Math.round(SIZE*220/6000), CELL=SIZE/GRID, SEA=0;
+const MAPK=SIZE/6000; // how much wider than the first (6 km) map: counts and reaches that belong to the whole map scale by it
+/* a prebuilt map of a real region can stand in for the generated terrain: REALMAPS[name]={w,h,hgt:(metres, row-major w*h),sea}
+   (a survey's heights, scaled down to fit the map); chosen by #map=name in the link. Rivers, soils and sites then follow it. */
+const REALMAPS={};
+const REALMAP=(()=>{const m=/[#&]map=([\w-]+)/.exec(location.hash);return m&&REALMAPS[m[1]]||null;})();
+function realmHeight(u,v){ // bilinear sample of the real map at (u,v) in -0.5..0.5
+  const M=REALMAP,x=clamp((u+0.5)*(M.w-1),0,M.w-1.001),y=clamp((v+0.5)*(M.h-1),0,M.h-1.001),i=Math.floor(x),j=Math.floor(y),fx=x-i,fy=y-j,H=M.hgt,w=M.w;
+  return (H[j*w+i]*(1-fx)+H[j*w+i+1]*fx)*(1-fy)+(H[(j+1)*w+i]*(1-fx)+H[(j+1)*w+i+1]*fx)*fy-(M.sea||0);}
 const GOODS=['grain','fish','timber','ore','tools','cloth','wine','wool','sheep','cattle','horses','swine','spice','silk','stone','hay'];
 const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8,wool:4,sheep:3,cattle:12,horses:25,swine:4,spice:40,silk:30,stone:2.5,hay:1.2}; // spice and silk come only by the great ships; beasts are goods like any other: driven to market along the roads
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
-const CART_MPD=500,BARGE_MPD=700,COG_MPD=2800,MARCH_MPD=400,FIELD_MPD=250; /* one scale for every traveller: the map's distances stand for a realm ~40x larger (6 km of map ~ 240 km), so each moves at its real pace in km a day divided by 40 — ox-cart 20 km, host 16 on the road and 10 across country, barge 28, cog 110, great ship 140, envoy 60, dragon 320. Towns and houses are drawn true size, so the townsfolk keep true time: a walk across town is half an hour. */ // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
+const CART_MPD=500,BARGE_MPD=700,COG_MPD=2800,MARCH_MPD=400,FIELD_MPD=250; /* one scale for every traveller: the map's distances stand for a realm ~40x larger (9 km of map ~ 360 km), so each moves at its real pace in km a day divided by 40 — ox-cart 20 km, host 16 on the road and 10 across country, barge 28, cog 110, great ship 140, envoy 60, dragon 320. Towns and houses are drawn true size, so the townsfolk keep true time: a walk across town is half an hour. */ // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
 const SPEEDS=[0,0.5,2,8,30,360,1/600]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day in ten minutes: folk walk, carts roll and ships sail at near their true pace
 const LIFE=6,isLife=()=>speedIdx===LIFE||speedIdx===0&&lastSpeed===LIFE; // at life pace (or paused from it) the little world is shown as it goes
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
@@ -853,30 +864,31 @@ async function generateWorld(seed,progress){
   const coastal=COAST_PREF==='sea'?true:COAST_PREF==='land'?false:coastRoll; // the draw is always taken, so the rest of the world is the same seed either way
   const ca=Math.cos(spineA),sa=Math.sin(spineA);
   for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
-    const u=cx/GRID-0.5,v=cz/GRID-0.5;
-    const wx=fbm(n3,u*3+9,v*3,3,2,.5)-.5, wz=fbm(n3,u*3,v*3+7,3,2,.5)-.5; // domain warp
-    let e=fbm(n1,(u+wx*.35)*4,(v+wz*.35)*4,5,2,.5);
+    const u=cx/GRID-0.5,v=cz/GRID-0.5,us=u*MAPK,vs=v*MAPK; // us,vs: the noise keeps its grain in metres, so a wider map has more hills, not bigger ones
+    if(REALMAP){W.h[cIdx(cx,cz)]=realmHeight(u,v);W.moist[cIdx(cx,cz)]=fbm(nMoist,us*5+3,vs*5+11,4,2,.5);continue;}
+    const wx=fbm(n3,us*3+9,vs*3,3,2,.5)-.5, wz=fbm(n3,us*3,vs*3+7,3,2,.5)-.5; // domain warp
+    let e=fbm(n1,(us+wx*.35)*4,(vs+wz*.35)*4,5,2,.5);
     e=Math.pow(e,1.35);
     // mountain spine along a line through the map
-    const d=Math.abs((u*ca+v*sa)-spineOff);
-    const ridge=Math.exp(-d*d/(2*0.055*0.055))*(0.55+0.45*fbm(n2,u*7,v*7,4,2,.5));
+    const d=Math.abs((u*ca+v*sa)-spineOff)*MAPK;
+    const ridge=Math.exp(-d*d/(2*0.055*0.055))*(0.55+0.45*fbm(n2,us*7,vs*7,4,2,.5));
     e=e*0.55+ridge*0.6;
     // gentle falloff at map rim so the world reads as an island of relevance
     const rim=Math.max(Math.abs(u),Math.abs(v))*2;
     e*=1-Math.pow(Math.max(0,rim-0.82)/0.18,2)*0.85;
     let hgt=e*760-20;
     // rolling lowland hills (the lowlands were near-flat, so no town ever had rising ground to hold)
-    hgt+=(fbm(n2,u*7+31,v*7+17,3,2,.5)-0.5)*34*clamp(1-e*1.8,0,1);
+    hgt+=(fbm(n2,us*7+31,vs*7+17,3,2,.5)-0.5)*34*clamp(1-e*1.8,0,1);
     if(coastal){
       const t=[v+0.5,0.5-u,0.5-v,u+0.5][coastEdge]; // distance from coast edge 0..1
       hgt-=Math.pow(Math.max(0,0.30-t)/0.30,1.6)*240;
     }
     W.h[cIdx(cx,cz)]=hgt;
-    W.moist[cIdx(cx,cz)]=fbm(nMoist,u*5+3,v*5+11,4,2,.5);
+    W.moist[cIdx(cx,cz)]=fbm(nMoist,us*5+3,vs*5+11,4,2,.5);
   }
   // normalize: ensure some land above sea
   let maxh=-1e9;for(let i=0;i<W.h.length;i++)maxh=Math.max(maxh,W.h[i]);
-  if(maxh<400)for(let i=0;i<W.h.length;i++)W.h[i]*=400/maxh;
+  if(maxh<400&&!REALMAP)for(let i=0;i<W.h.length;i++)W.h[i]*=400/maxh;
 
   await progress('Carving the rivers…',0.2);
   /* --- hydrology: fill depressions, then flow accumulation, carve rivers --
@@ -1013,7 +1025,7 @@ async function generateWorld(seed,progress){
     for(let k=0;k<8;k++){const a=k*Math.PI/4,x2=clamp(Math.round(c.cx+Math.cos(a)*7),0,GRID-1),z2=clamp(Math.round(c.cz+Math.sin(a)*7),0,GRID-1);ring+=W.h[cIdx(x2,z2)];}
     c.f={riv,sea,farm,forest,rock,prom:W.h[cIdx(c.cx,c.cz)]-ring/8};
   }
-  const nTowns=2+randi('gen',2), nVill=3+randi('gen',3);
+  const nTowns=Math.round((2+randi('gen',2))*MAPK*MAPK*0.8), nVill=Math.round((3+randi('gen',3))*MAPK*MAPK*0.8); // more ground, more places founded on it
   // each settlement exists for a reason, and the reason chooses the site
   const townRoles=[];if(coastal)townRoles.push('port');townRoles.push('crossing');
   if(nTowns>=3||!coastal)townRoles.push('border'); // a fortress on the marches (Metz)
@@ -1023,7 +1035,8 @@ async function generateWorld(seed,progress){
   const PS=0.35; // a thinly peopled land at the founding
   const wanted=[{kind:'capital',role:'seat',pop:Math.round((2200+randi('gen',700))*PS),minD:0},
     ...Array.from({length:nTowns},(_,k)=>({kind:'town',role:townRoles[k],pop:Math.round((420+randi('gen',760))*PS),minD:850})),
-    ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k],pop:Math.max(40,Math.round((70+randi('gen',220))*(PS*1.3))),minD:520}))];
+    ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k%vilRoles.length],pop:Math.max(40,Math.round((70+randi('gen',220))*(PS*1.3))),minD:520}))];
+  wanted.forEach(w=>{if(!w.role)w.role=w.kind==='village'?'farm':'market';});
   const roleScore=(role,c)=>{const f=c.f;switch(role){
     case 'seat':return c.s+Math.max(0,f.prom)*0.8+(f.riv?12:0)+f.farm*0.4;
     case 'port':case 'fishing':return f.sea?c.s+40:-1e9;
@@ -2114,7 +2127,10 @@ function layoutSettlement(s){
   };
   const extend=()=>{ // the town outgrows its reach: the highways are built up further out and new lanes are laid off them
     if(Rmax>=R0*2)return false;
-    Rmax=Math.min(R0*2,Rmax*1.12);
+    let room=R0*2;W.settlements.forEach((o,oi)=>{if(oi===idx||metroOf(o)===metroOf(s)||o.owner===s.owner||o.pop<s.pop*0.67)return; // a lesser place, or one of the same lord, is taken in; a rival lord's town as great is not, so the town stops short of it
+      room=Math.min(room,dist2d(o.pos.x,o.pos.z,C.x,C.z)*0.5);});
+    if(Rmax>=room)return false;
+    Rmax=Math.min(room,R0*2,Rmax*1.12);
     W.roads.forEach((r,ri)=>{const sp=s.roadSpoke[ri];if(!sp||r.a!==idx&&r.b!==idx)return;
       const path=r.a===idx?r.open||r.path:[...(r.open||r.path)].reverse(),last=sp[sp.length-1];
       let k0=0,bd=1e9;path.forEach((p,k)=>{const d=dist2d(p.x,p.z,last.x,last.z);if(d<bd){bd=d;k0=k;}});
@@ -3367,7 +3383,7 @@ function buildTrees(){
     (m<0.03?spots.dec:spots.small).push({x,z,s:0.75+nj(cx-4,cz+4)*0.7,v:nj(cx*2,cz*3)});
   }
   // thin evenly to the instance budget (capping in scan order used to plant only the northern forests)
-  for(const k of['dec','pine','small']){const a=spots[k],cap=k==='small'?3000:9000;if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
+  for(const k of['dec','pine','small']){const a=spots[k],cap=Math.round((k==='small'?3000:9000)*MAPK*MAPK);if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
   /* each species is cut into a 5×5 grid of chunks, each its own instanced mesh with its own bounds, so the renderer
      draws (and shadows) only the woods in view rather than every tree in the realm */
   G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138),small:crownMat(0x6f9444)};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
@@ -3966,7 +3982,7 @@ function rebuildWalls(){
    to take in or give up, where colonists go) are weighted, never certain.
    The terrain shader draws strips, headlands and hedges from small data
    textures, so a furlong going to grass or changing hands is one byte. */
-const FN=36,FG=SIZE/FN; // the furlong lattice
+const FN=Math.round(36*MAPK),FG=SIZE/FN; // the furlong lattice
 const LK={NONE:0,FIELD:1,HUFE:2,MEADOW:3,GARDEN:4,VINE:5,DEMESNE:6,CLOSE:7};
 const LS={WILD:0,WOOD:1,TILLED:2,PASTURE:3,SCRUB:4,BURNT:5};
 const ARABLE=new Set([LK.FIELD,LK.HUFE,LK.DEMESNE,LK.CLOSE]);
@@ -4427,7 +4443,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
    come up to it; steep → scree down the fall line; sloping ploughland →
    lynchet terraces; houses → yards and kitchen gardens; open ground →
    tussock and flower mottling. */
-const FR=1024,FPX=SIZE/FR,FMAX=63.75; // field resolution, metres per texel, farthest distance kept
+const FR=Math.round(1024*MAPK/64)*64,FPX=SIZE/FR,FMAX=63.75; // field resolution, metres per texel, farthest distance kept
 function featInit(){
   const N=FR*FR,F={src:[new Uint8Array(N),new Uint8Array(N),new Uint8Array(N),new Uint16Array(N),new Uint8Array(N)], // water, wall, road, wood (tree count), buildings
     E:[0,1,2].map(()=>new Uint8Array(N).fill(255)), // exact distance to the edge of a drawn line (water, wall, road) near it, (d+8)*4: keeps verges and ditches straight
@@ -4656,14 +4672,15 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   // the frontier: a lord holding a march far from his own places plants a fort to keep it
   W.houses.forEach((h,hi)=>{
     if(h.exiled||(h._fortT||0)>day())return;
-    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(held.length<6)return;
+    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(held.length<12||purse(hi)<1600)return; // a march worth a castle, and the silver to raise one
     const cx=held.reduce((t,f)=>t+f.x,0)/held.length,cz=held.reduce((t,f)=>t+f.z,0)/held.length;
     if(nearOwnPlace(hi,cx,cz,1100)||!chance('sim',0.5))return;
     const seat=W.settlements.find(s=>s.owner===hi);if(!seat)return;
     const n=W.settlements.length;
     for(let k=0;k<12&&W.settlements.length===n;k++){const a=k*2.4,r=k*40;
       doAct('village',{x:cx+Math.cos(a)*r,z:cz+Math.sin(a)*r},{from:seat,fort:true,owner:hi});}
-    h._fortT=day()+360*3;
+    if(W.settlements.length>n){spend(hi,900);book(h,'castles',-900);}
+    h._fortT=day()+360*10;
   });
   // the purse: rents and tolls in, hosts and castellans out; a house in debt sells its outlying lands
   W.houses.forEach((h,hi)=>{
@@ -4918,7 +4935,7 @@ function tickLivestock(){
     St.wool-=home+Math.max(0,spin);St.cloth+=home*0.5+Math.max(0,spin)*0.8;
     const teams=St.cattle*0.6+St.horses*0.4,need=g.till/6;s.ploughF=need>0?clamp(0.75+0.25*teams/need,0.75,1.05):1; // the plough wants its teams
   });
-  if(!W.prehistory&&G.herdMesh)renderHerds();}
+  if(!W.prehistory&&G.herdMesh)G.herdsDirty=true;} // the flocks are laid out again when someone is near enough to see them
 const grazed=f=>{const s=W.settlements[f.dom];if(s&&s.hm)return (s.hm.press||0)>0.25; // grass the beasts keep short does not go back to scrub
   return W.settlements.some(o=>dist2d(o.pos.x,o.pos.z,f.x,f.z)<(o.kind==='village'?800:1000));};
 function driveOffHerds(s,a){ // raiders take the beasts home with them
@@ -4940,9 +4957,10 @@ function grazeOK(x,z){const c=cIdx(toCell(x),toCell(z)),m=G.land.mask;return !W.
 /* the herds on the map: each town's beasts in flocks of their own kind — sheep on the widest pasture, cattle near the
    village, swine in the wood, horses in the paddock by the town, and after harvest the flocks go onto the stubble.
    A flock keeps together and wanders its field as it grazes, inside the fence; click a beast to learn whose it is. */
-function renderHerds(){ // monthly: which flocks, in which fields
-  if(!G.herdMesh||!G.land)return;const mon=(day()/30|0),stub=seasonIdx()>=2;G.flocks=[];
-  W.settlements.forEach((s,si)=>{if(!s.hm)return;const F=(s.furl||[]).filter(f=>f.dom===si);
+function renderHerds(){ // which flocks, in which fields: only the places about the eye, since a beast is too small to see from further off
+  if(!G.herdMesh||!G.land)return;const mon=(day()/30|0),stub=seasonIdx()>=2,fc=cam.cur.focus,RR=Math.max(1800,cam.cur.dist*2.5);G.flocks=[];
+  G.herdsDirty=false;G._hPlan={x:fc.x,z:fc.z,t:performance.now(),R:RR};
+  W.settlements.forEach((s,si)=>{if(!s.hm||dist2d(s.pos.x,s.pos.z,fc.x,fc.z)>RR+(s.radius||80)+FG*3)return;const F=(s.furl||[]).filter(f=>f.dom===si);
     const past=F.filter(f=>f.state===LS.PASTURE||f.state===LS.WILD).sort((a,b)=>b.area-a.area),stubble=stub?F.filter(f=>f.state===LS.TILLED&&f.kind!==LK.VINE):[],wood=F.filter(f=>f.state===LS.WOOD);
     const near=A=>[...A].sort((a,b)=>dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
     const used=new Set(),r=nameRng(si*977+mon*31);
@@ -5080,7 +5098,7 @@ function foundTown(){ // a lord founds a new market town, laid out in one stroke
 }
 function foundDaughter(s){
   const vill=W.settlements.filter(o=>o.kind==='village').length;
-  if(vill>=(W.villages0||0)+6||G.bldList.length+60>=G.bodies.instanceMatrix.count)return;
+  if(vill>=(W.villages0||0)+Math.round(6*MAPK*MAPK)||G.bldList.length+60>=G.bodies.instanceMatrix.count)return;
   const sites=[];
   for(let k=0;k<70;k++){
     const a=rand('sim')*Math.PI*2,r=520+rand('sim')*1100,x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;
@@ -5659,12 +5677,12 @@ const cam={
   mode:'free',follow:null,manualUntil:0,shake:0
 };
 function pitchForDist(d){ // curved altitude path: high = map-like, low = street-like
-  const t=clamp((Math.log(d)-Math.log(8))/(Math.log(4000)-Math.log(8)),0,1);
+  const t=clamp((Math.log(d)-Math.log(8))/(Math.log(4000*MAPK)-Math.log(8)),0,1);
   return lerp(0.14,1.22,Math.pow(t,0.8));
 }
 function flyTo(x,z,d,yaw){
   cam.focus.set(x,hAt(x,z),z);
-  if(d)cam.dist=clamp(d,6,4200);
+  if(d)cam.dist=clamp(d,6,4200*MAPK);
   if(yaw!==undefined)cam.yaw=yaw;
   cam.follow=null;cam.mode=cam.mode==='director'?'director':'free';
 }
@@ -5734,7 +5752,7 @@ function initInput(){
     cam.focus.x+=a.x-b.x;cam.focus.z+=a.z-b.z;clampFocus();cam.follow=null;syncCam();};
   const zoomAt=(cx,cy,f)=>{ // zoom toward the point under the cursor
     const g=grabStart(cx,cy),a=rayAt(cx,cy,g.y);
-    cam.dist=clamp(cam.dist*f,6,4200);
+    cam.dist=clamp(cam.dist*f,6,4200*MAPK);
     if(a){const k=1-f;cam.focus.x+=(a.x-cam.focus.x)*clamp(k,-1,0.9)*0.9;cam.focus.z+=(a.z-cam.focus.z)*clamp(k,-1,0.9)*0.9;clampFocus();}
   };
   el.addEventListener('contextmenu',e=>e.preventDefault());
@@ -5753,7 +5771,7 @@ function initInput(){
     if(pinch&&touches.size>=2){
       const[a,b]=[...touches.values()];
       markManual();
-      cam.dist=clamp(pinch.dist*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),6,4200);
+      cam.dist=clamp(pinch.dist*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),6,4200*MAPK);
       cam.yaw=pinch.yaw-(Math.atan2(b.y-a.y,b.x-a.x)-pinch.ang); // twist to turn
       return;
     }
@@ -6004,6 +6022,8 @@ function showInspect(pk){
       const kinds=[...new Set(s.furl.filter(f=>f.state===LS.TILLED).map(f=>KIND_NAME[f.kind]))].filter(Boolean).join(', ');
       h+=row('Land',`${ha(ar.filter(f=>f.state===LS.TILLED||f.state===LS.BURNT).reduce((t,f)=>t+f.area,0))} ha under the plough in ${n(LS.TILLED)+n(LS.BURNT)} furlongs${n(LS.BURNT)?` (${n(LS.BURNT)} burned)`:''}${n(LS.PASTURE)?`, ${n(LS.PASTURE)} gone to grass`:''}${n(LS.SCRUB)?`, ${n(LS.SCRUB)} to scrub`:''}${s.assarts?`; ${s.assarts} assarted from the wood`:''}${s.landShort?'; no land left':''}${kinds?` — ${kinds}`:''}`);}
     if(s.mother)h+=row('Daughter of',s.mother);
+    if(s.wardOf!=null){const b=W.settlements[s.wardOf];h+=row('Ward of',`${esc(b.name)} since ${s.wardSince}; one market, one lord`);}
+    {const wd=W.settlements.filter(o=>o.wardOf!=null&&W.settlements[o.wardOf]===s);if(wd.length)h+=row('Wards',`${wd.map(o=>esc(o.name)).join(', ')}; ${Math.round(s.pop+wd.reduce((t,o)=>t+o.pop,0)).toLocaleString()} souls in all`);}
     {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
     h+=row('Garrison',Math.round(s.garrison));
     if(s.harbor){const B=berthsOf(s),wf=B.filter(b=>!b.shore).length/2,sh=(W.ships||[]).filter(x=>x.port===W.settlements.indexOf(s));
@@ -6360,13 +6380,14 @@ function tickEconomy(){
     for(let attempt=0;attempt<3;attempt++){
       const oi=randi('sim',W.settlements.length),o=W.settlements[oi];
       if(closedToTrade(o))continue;
-      let best=null;
+      let best=null;const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?4:12):o.stores[g]>40),po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
+      if(!sell.length)continue;
       for(let di=0;di<W.settlements.length;di++){
-        if(di===oi)continue;const d=W.settlements[di];
+        if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
-        for(const g of GOODS){
-          const margin=price(d,g)-price(o,g);
-          if(margin>GOODBASE[g]*0.5&&(LU[g]!==undefined?spareOf(o,g)>(g==='horses'?4:12):o.stores[g]>40)){
+        for(const g of sell){
+          const margin=price(d,g)-po[g];
+          if(margin>GOODBASE[g]*0.5){
             const r=route(oi,di);if(!r)continue;
             const score=margin/Math.max(600,r.len);
             if(!best||score>best.score)best={score,di,g,r};
@@ -7403,7 +7424,9 @@ function tickBandits(dis){
     }
     // ambush caravans passing near (position computed in sim time, not render time)
     for(const c of W.caravans){
-      if(c.sea||c.river||c.robbed)continue; // barges are beyond the outlaws' reach
+      if(c.sea||c.river||c.robbed||!c.poly)continue; // barges are beyond the outlaws' reach
+      const bb=c.poly._bb||(c.poly._bb=c.poly.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
+      if(camp.x<bb[0]-320||camp.x>bb[2]+320||camp.z<bb[1]-320||camp.z>bb[3]+320)continue; // its road passes nowhere near the camp
       const f=(day()-c.departDay)/Math.max(0.01,c.arriveDay-c.departDay);
       const p=polyPos(c.poly,f);
       if(!p)continue;
@@ -7616,6 +7639,52 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     if(s.siegeBy)s._besieged=true;
   });
 }
+/* ---------------- towns that grow together: when the built-up edge of a lesser place meets a greater's, the greater takes
+   it in as a ward, as London took in Southwark and in time Westminster. The ward keeps its name, church and streets; its
+   market, lordship and defence become the town's. Across a lordship boundary the town's lord must buy the rights, or the
+   two grow on side by side in dispute until one can. */
+const metroOf=s=>s&&s.wardOf!=null?W.settlements[s.wardOf]:s;
+const POOLED=['grain','fish','timber','ore','tools','cloth','wine','wool','spice','silk','stone'];
+function builtReach(s){ // how far the built-up ground reaches now (nine houses in ten within it)
+  const C=s.pos,d=[];for(const b of s.buildings||[])if(!b.removed&&b.state!=='gone'&&b.state!=='ruin'&&!b.inst)d.push(dist2d(b.x,b.z,C.x,C.z));
+  if(d.length<4)return s.extentR||s.radius||80;d.sort((a,b)=>a-b);return d[Math.floor(d.length*0.9)]+12;}
+function wardPrice(a){return Math.round(400+a.pop*5+(a.prosperity||50)*6);}
+function incorporate(ai,bi,how){
+  const S=W.settlements,a=S[ai],b=S[bi];a.wardOf=bi;a.owner=b.owner;a.wardSince=AD();
+  for(const o of S)if(o.wardOf===ai)o.wardOf=bi; // its own wards come with it
+  b.wards=S.map((o,i)=>o.wardOf===bi?i:-1).filter(i=>i>=0);
+  if(G.labels)for(const sp of G.labels)if(sp.userData.s===a)sp.userData.ward=true;
+  refreshOverlay();
+  emit('trade',a.kind==='village'?4:6,a.pos,vary('ward',[()=>`${a.name} and ${b.name} have grown into one another; ${a.name} is taken in as a ward of ${b.name}${how?`, ${how}`:''}.`,
+    ()=>`The last fields between ${b.name} and ${a.name} are built over, and ${a.name} becomes a ward of the town${how?`, ${how}`:''}.`,
+    ()=>`${a.name} keeps its church and its name, but its market and its bailiffs are now ${b.name}'s${how?`, ${how}`:''}.`,
+    ()=>`No one can say any longer where ${b.name} ends and ${a.name} begins; the town takes the ${a.kind==='village'?'village':'borough'} in as a ward${how?`, ${how}`:''}.`]));}
+function tickMetro(){
+  const d=day(),S=W.settlements;
+  if(d%30===12)for(const a of S){if(a.wardOf==null)continue;const b=S[a.wardOf];if(!b)continue; // one market: the ward's stalls and the town's sell at one price
+    const wa=Math.max(1,a.pop),wb=Math.max(1,b.pop),fa=wa/(wa+wb);
+    for(const g of POOLED){const tot=(a.stores[g]||0)+(b.stores[g]||0);a.stores[g]=tot*fa;b.stores[g]=tot-a.stores[g];}
+    a.prosperity+=(b.prosperity-a.prosperity)*0.1;a.owner=b.owner;}
+  if(d%360!==200)return;
+  const R=S.map(builtReach);S.forEach((s,i)=>s.reachR=R[i]);
+  for(let ai=0;ai<S.length;ai++){const a=S[ai];if(a.wardOf!=null||a.kind==='capital'||a.pop<5)continue;
+    let bi=-1;
+    for(let j=0;j<S.length;j++){if(j===ai)continue;const b=S[j];if(b.wardOf!=null||b.pop<5)continue;
+      if(!(b.kind==='capital'||b.pop>a.pop||b.pop===a.pop&&j<ai))continue; // the greater takes in the lesser: two hamlets grown together become one village, a village grown to the town's gate its ward
+      if(dist2d(a.pos.x,a.pos.z,b.pos.x,b.pos.z)>R[ai]+R[j]+45)continue; // the built-up edges meet
+      if(bi<0||b.pop>S[bi].pop)bi=j;}
+    if(bi<0)continue;const b=S[bi];
+    if(a.owner===b.owner){incorporate(ai,bi,'');continue;}
+    const buyer=b.owner,seller=a.owner,price=wardPrice(a),sh=W.houses[seller],bh=W.houses[buyer];
+    const willing=!(houseAtWar(buyer)&&houseAtWar(seller))&&!(sh&&sh.grudges&&sh.grudges[buyer])&&!(bh&&bh.grudges&&bh.grudges[seller])&&!(buyer===plyH()||seller===plyH());
+    if(willing&&purse(buyer)>=price*1.3){spend(buyer,price);if(seller>0){sh.gold=(sh.gold||0)+price;book(sh,'sale of rights',price);}else W.treasury+=price;
+      if(buyer>0)book(bh,'wards bought',-price);
+      incorporate(ai,bi,`${houseName(buyer)} paying ${houseName(seller)} ${price.toLocaleString()} crowns for the rights`);}
+    else if(!a._wardDispute||year()-a._wardDispute>=12){a._wardDispute=year();
+      emit('trade',3,a.pos,vary('ward_dispute',[()=>`${a.name} has grown up against the walls of ${b.name}, but ${houseName(seller)} will not part with it; the bailiffs of the two quarrel over every stall.`,
+        ()=>`Tolls are taken twice between ${b.name} and ${a.name}, whose houses now touch: ${houseName(seller)} and ${houseName(buyer)} cannot agree a price.`,
+        ()=>`${b.name} would take ${a.name} in as a ward; ${houseName(seller)} holds out${purse(buyer)<price?`, and ${houseName(buyer)} has not the ${price.toLocaleString()} crowns to buy it`:''}.`]));}}}
+function houseName(hi){return hi>0&&W.houses[hi]?W.houses[hi].name:'the crown';}
 function tickGrowth(){
   if(day()%6!==0)return;
   for(const s of W.settlements){
@@ -7779,7 +7848,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickMetro();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -8912,7 +8981,7 @@ function buildDrawer(tab){
       const v=parseInt(document.getElementById('seedin').value,10);
       const cp=document.getElementById('ecoast').value;
       const fv=parseInt(document.getElementById('fatein').value,10); // blank: the same land lives a new history
-      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&f='+((isNaN(fv)?1+Math.floor(Math.random()*1e9):fv)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'');
+      location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&f='+((isNaN(fv)?1+Math.floor(Math.random()*1e9):fv)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'')+(MAPKM!==9?'&km='+MAPKM:'');
       location.reload();
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
@@ -9011,7 +9080,7 @@ function initUI(){
   G.labelsOn=true;
   setInterval(()=>{if(document.getElementById('housepanel')&&!uiBusy())refreshHousePanel();},4000);
   window.addEventListener('hashchange',()=>{const m=location.hash.match(/s=(\d+)/),c=location.hash.match(/c=(sea|land)/),f=location.hash.match(/f=(\d+)/);
-    if(m&&(parseInt(m[1],10)>>>0)!==SEED||(c?c[1]:null)!==COAST_PREF||f&&(parseInt(f[1],10)>>>0)!==FATE)location.reload();});
+    if(m&&(parseInt(m[1],10)>>>0)!==SEED||(c?c[1]:null)!==COAST_PREF||f&&(parseInt(f[1],10)>>>0)!==FATE||((/[#&]km=(\d+)/.exec(location.hash)||[])[1]||'9')!==String(MAPKM))location.reload();});
 }
 /* =========================================================================
    PARCHMENT MAP — the realm drawn as the chroniclers would draw it
@@ -9445,7 +9514,10 @@ function animateWorld(dt,now){
   G.caravans.count=G.cartCovers.count=ci;
   G.caravans.instanceMatrix.needsUpdate=true;G.cartCovers.instanceMatrix.needsUpdate=true;if(G.cartCovers.instanceColor)G.cartCovers.instanceColor.needsUpdate=true;
   for(let i=cogI;i<G.cogs.length;i++)G.cogs[i].visible=false;
-  renderShips();renderTravellers();if(G.flocks&&(!G._hAnim||performance.now()-G._hAnim>90)){G._hAnim=performance.now();animateHerds(false);} // the flocks graze on
+  renderShips();renderTravellers();
+  if(G.herdMesh&&!W.prehistory&&cam.cur.dist<=1600){const P=G._hPlan; // near enough to see beasts: lay the flocks out if the month turned or the eye moved on
+    if((G.herdsDirty||!P||dist2d(P.x,P.z,cam.cur.focus.x,cam.cur.focus.z)>P.R*0.35)&&(!P||performance.now()-P.t>700))renderHerds();}
+  if(G.flocks&&(!G._hAnim||performance.now()-G._hAnim>90)){G._hAnim=performance.now();animateHerds(false);} // the flocks graze on
   for(let i=bargeI;i<G.barges.length;i++)G.barges[i].visible=false;
   for(let i=dotI;i<G.caravanDots.length;i++)G.caravanDots[i].visible=false;
   G.caravans.instanceMatrix.needsUpdate=true;
@@ -9590,10 +9662,10 @@ function animateWorld(dt,now){
   /* --- labels: fade by distance --- */
   for(const sp of G.labels){
     const dd=camera.position.distanceTo(sp.position);
-    const vis=G.labelsOn&&cam.cur.dist>240;
+    const wd=sp.userData.s&&sp.userData.s.wardOf!=null,vis=G.labelsOn&&cam.cur.dist>240&&(!wd||cam.cur.dist<1400);
     sp.visible=vis;
     if(vis){
-      const sc=clamp(dd*0.0011,0.45,3.4);
+      const sc=clamp(dd*0.0011,0.45,3.4)*(wd?0.6:1); // a ward is named like a quarter of the town
       sp.scale.set(sp.userData.w*0.42*sc,sp.userData.h*0.42*sc,1);
       sp.material.opacity=clamp((dd-180)/300,0,1);
     }
@@ -9693,7 +9765,7 @@ async function boot(){
   const m=location.hash.match(/s=(\d+)/);
   const seed=m?parseInt(m[1],10)>>>0:Math.floor(Math.random()*1e9);
   const fm=location.hash.match(/f=(\d+)/);FATE=fm?parseInt(fm[1],10)>>>0:1+Math.floor(Math.random()*1e9); // a new history each time, unless the link names one
-  {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:''));}
+  {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:'')+(MAPKM!==9?'&km='+MAPKM:'')+(REALMAP?'&map='+/[#&]map=([\w-]+)/.exec(location.hash)[1]:''));}
   const line=document.getElementById('loadline'),bar=document.querySelector('#loadbar>div');
   const progress=(txt,f)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
     return new Promise(r=>setTimeout(r,30));};
@@ -9721,7 +9793,7 @@ async function boot(){
   // camera opening: establish over capital
   cam.focus.set(W.capital.pos.x,W.capital.pos.y,W.capital.pos.z);
   cam.cur.focus.copy(cam.focus);
-  cam.dist=3200;cam.cur.dist=4200;cam.yaw=rand('sim')*Math.PI*2;cam.cur.yaw=cam.yaw-0.4;
+  cam.dist=3200*MAPK;cam.cur.dist=4200*MAPK;cam.yaw=rand('sim')*Math.PI*2;cam.cur.yaw=cam.yaw-0.4;
   cam.mode='director';
   document.getElementById('loading').style.opacity='0';
   setTimeout(()=>document.getElementById('loading').remove(),900);

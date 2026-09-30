@@ -23,6 +23,13 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 # then open http://localhost:8080  (the browser fetches three.js from cdnjs)
 ```
 
+- **Map size**: 9 km of ground by default, standing for a realm about 360 km
+  across. `&km=4` to `&km=15` in the link sets another size (`&km=6` is the
+  older, lighter map for slow machines). The ground keeps its grain in metres
+  whatever the size, so a bigger map has more hills, rivers and places, not
+  bigger ones. The terrain can also come from a survey of a real region
+  (`&map=name`, once such maps are bundled): rivers, soils and sites then
+  follow the real ground.
 - **Land and fate**: the map seed (`#s=1234567`) fixes the land; the fate seed
   (`&f=…`) fixes the history lived on it. A new game rolls a fresh fate, so the
   same land runs a different history each time (Realm tab: *Reforge* with the
@@ -71,7 +78,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   everything stands still.
 - **One scale.**
   - **Travel between places:** the map's distances stand for a realm about 40
-    times larger (6 km of map for ~240 km), so every traveller moves at its
+    times larger (9 km of map for ~360 km), so every traveller moves at its
     real pace in km a day ÷ 40. That gives, in map metres a day: ox-cart 500,
     host on the road 400 and across country 250, a routed host 900, envoys
     1,500, barges 700, cogs 2,800, great ships 3,500, the dragon 8,000.
@@ -243,6 +250,18 @@ itself; you rule one lord's domain:
   a won private war, a village of your own, and the crown itself.
 
 ## How it works
+
+- **Towns grow together.** When the built-up edge of a lesser place meets a
+  greater's, the greater takes it in as a ward (as London took in Southwark).
+  - The ward keeps its name, church and streets; its market, stores, lord and
+    prices become the town's, and carts stop running between them.
+  - Across a lordship boundary the town's lord must buy the rights. If the
+    seller holds a grudge, the buyer is short of gold, or both are at war, the
+    two grow on side by side in dispute and try again later.
+  - A town stops growing short of a rival as great as itself that it can't
+    take in, meeting it halfway.
+  - A ward's name is shown smaller, like a quarter's; the town's card lists
+    its wards and the souls in all.
 
 - **Every soul.** Each town's population is a roll of real people, each
   with a name, a family, a trade and parents. The roll follows the town's
