@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 20:34 UTC · after 0e7bc1a</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 20:54 UTC · after 16ad447</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -444,9 +444,9 @@ const ARCH={
   tower:[7,7,14,1,'watchtower'], wall:[12,3,7,1,'wall'], keep:[20,24,18,1,'keep'],
   burgher:[13,6.5,6.8,0,'burgher house'], shed:[5,4.5,3,0,'outbuilding'], hall:[18,11,8,0,'town hall'],
   bakery:[8,9,5,0,'bakehouse'], inn:[15,11,7,0,'inn'], tannery:[15,8,4,0,'tannery'],
-  windmill:[6,6,8,1,'windmill'], bath:[12,10,5,0,'bathhouse'], hospital:[20,10,6,0,'hospital'], dyer:[13,8,5,0,'dyeworks'], toll:[6,6,5,0,'toll house'], guildhall:[16,11,8,0,'guildhall'], wharf:[7,30,0.5,1,'wharf'], quarry:[20,14,1.2,1,'quarry']
+  windmill:[6,6,8,1,'windmill'], bath:[12,10,5,0,'bathhouse'], hospital:[20,10,6,0,'hospital'], dyer:[13,8,5,0,'dyeworks'], toll:[6,6,5,0,'toll house'], guildhall:[16,11,8,0,'guildhall'], wharf:[7,30,0.5,1,'wharf'], quarry:[20,14,1.2,1,'quarry'], cot:[5,4.5,2.6,0,'cottar\'s hovel']
 };
-const TIERNAME=['hovel-built','timber-framed','stone-built'];
+const TIERNAME=['hovel-built','timber-framed','stone-built','four storeys, jettied over the street'];
 
 let W=null;               // the world
 /* the age the annals open in: the Dark Ages (motte-and-bailey, timber and thatch, no town walls) or the High
@@ -2291,6 +2291,14 @@ function layoutSettlement(s){
     friary(){if(friaryDone||!s.wallRad)return false;live=true;curE=E;friary(E);live=false;return friaryDone;},
     neustadt(){if(neuDone)return false;live=true;curE=E;neustadt(E);live=false;return neuDone;},
     backyards(){curE=E+1;backyards(E+1);curE=E;},
+    cut(a,b,dry){ // a new street cut straight through: what stands in its line comes down (never a church, castle, hall or the walls)
+      const pts=resample([{x:a.x,z:a.z},{x:b.x,z:b.z}],5);
+      for(const q of pts){if(!cellOK(q.x,q.z))return null;if(s.wallRad&&Math.abs(wallSide(q.x,q.z))<8)return null;}
+      const hit=[];for(const o of liveB())if(!o.removed){for(let k=1;k<pts.length;k++)if(segDist(o.x,o.z,pts[k-1],pts[k])<HW+Math.max(o.w,o.d)*0.45){hit.push(o);break;}}
+      if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse'].includes(o.arch)))return null;
+      if(dry)return {pts,hit};
+      live=true;curE=E;hit.forEach(unplace);const st=addStreet(pts,HW,'lane',{cut:AD()});live=false;return {pts,hit,st};},
+    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
   /* the town's own streets as a network: the way a cart goes from the market to any street end */
@@ -2618,7 +2626,7 @@ function houseFolk(s){
   const later=[];for(const h of heads){const b=h.bh;if(b&&cap.get(b)>0){cap.set(b,cap.get(b)-1);b.hh.push(h);}else later.push(h);}
   let rr=0;for(const h of later){const want=TRADE_ARCH[h.tr];let b=null;
     if(want)b=homes.find(x=>x.arch===want&&cap.get(x)>0);
-    if(!b)b=homes.find(x=>cap.get(x)>0&&(TILLERS.has(h.tr)?x.arch==='house'||x.arch==='longhouse':true))||homes.find(x=>cap.get(x)>0);
+    if(!b){const wk=workOf(h,s);let bs=-1e9;for(const x of homes){if(!(cap.get(x)>0))continue;const v=homeScore(h,s,x.x,x.z,x.st,wk)+(TILLERS.has(h.tr)&&(x.arch==='house'||x.arch==='longhouse'||x.arch==='cot')?0.4:0);if(v>bs){bs=v;b=x;}}} // the nearest to its work it can afford
     if(!b&&homes.length)b=homes[(rr++)%homes.length]; // no room left: they lodge with another household
     if(b){cap.set(b,(cap.get(b)||0)-1);b.hh.push(h);}h.bh=b;}
   s._hhY=year();}
@@ -5317,6 +5325,25 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
       if(G.feat)for(const st of s.streets)if(st.kind==='road')featStroke(2,st.pts,st.hw);
       if(!s.growSlots.length)return null;
     }
+    const bid=t===0?unhousedOf(s)[0]:null; // the household that wants a roof: the best-off of those without one chooses first
+    const fieldHome=(bid,arch)=>{ // a home lot carved out of the field the household works: the croft is taken from the ploughland, the toft fenced off
+      const F=(s.furl||[]).filter(f=>f.wk===bid.id||f.own===bid.id).sort((a,b)=>(b.own===bid.id)-(a.own===bid.id)||dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
+      for(const f of F.slice(0,3)){let P=null;try{P=insetPoly(furlongPoly(f),9);}catch(e){}if(!P||P.length<3)continue;
+        let q=P[0],qd=1e18;for(const v of P){const d=dist2d(v.x,v.z,s.pos.x,s.pos.z);if(d<qd){qd=d;q=v;}} // the corner nearest the village and its tracks
+        const hx=q.x+(f.x-q.x)*0.15,hz=q.z+(f.z-q.z)*0.15,b=L.live.hovel(hx,hz,Math.atan2(f.z-q.z,f.x-q.x),arch);if(!b)continue;
+        const R=arch==='cot'?11:15;clearLandAt(b.x,b.z,R);if(G.land){refreshArea(f);if(G.land.F)writeFurlong(f);} // the croft comes out of the field: less to plough
+        b.croftOf=f.k;f.crofts=(f.crofts||0)+1;b.grown=day();b.hh=[bid];bid.bh=b;b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);if(G.feat)featBuilding(b);
+        if(!W.prehistory&&arch!=='cot'&&frand()<0.2)emit('trade',2,b,`${folkName(bid)} of ${s.name} builds a farmstead out on his own land, a croft carved from the ${KIND_NAME[f.kind]||'field'}.`);
+        return b;}
+      return null;};
+    if(bid&&tills(bid,s)){ // a field hand who cannot afford the village puts up a hovel by his strips; a yeoman far from his land builds out on it
+      const poor=(bid.w||0)<3,ownsLand=(s.furl||[]).some(f=>f.own===bid.id),wk=workOf(bid,s),near=s.growSlots.slice(0,40).reduce((m,q)=>Math.min(m,dist2d(q.mx,q.mz,wk.x,wk.z)),1e9);
+      if(poor&&frand()<0.5||ownsLand&&near>300&&frand()<0.5||!s.growSlots.length&&ownsLand){const b=fieldHome(bid,poor?'cot':'house');if(b)return b;}}
+    if(bid){const wk=workOf(bid,s),pool=s.growSlots.slice(0,40);let c=null,bs=-1e9;for(const q of pool){const v=homeScore(bid,s,q.mx,q.mz,q.st,wk)+frand()*0.25;if(v>bs){bs=v;c=q;}}
+      if(c){s.growSlots.splice(s.growSlots.indexOf(c),1);const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));
+        if(b){b.grown=day();b.hh=[bid];bid.bh=b;if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);}
+          b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);return b;}
+        continue;}}
     // the likeliest lots are near the heart and on the busy streets, but people build where they can get a plot
     const pool=s.growSlots.slice(0,24),k0=pool[0].key;
     const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0),1);
@@ -6323,8 +6350,12 @@ function showInspect(pk){
     if(f.held&&lord)h+=row('Held',`<span style="color:#c0392b">by the sword</span>, by ${esc(lord.name)} — it goes back to its people unless a fort holds it`);
     else if(lord)h+=row('Lord',esc(lord.name));
     if(s)h+=row('Worked from',`${esc(s.name)} (${(dist2d(f.x,f.z,s.pos.x,s.pos.z)/1000).toFixed(1)} km)`);
+    if(f.ten){const PM=id=>id>=0?findPerson(id):null,o=PM(f.own),w=PM(f.wk),pl=q=>q?`<a class="pp" data-pid="${q.p.id}">${esc(folkName(q.p))}</a>`:'';
+      if(f.ten==='demesne')h+=row('Tenure',TEN_NAME.demesne);
+      else{h+=row('Held',f.own>=0&&o?`by ${pl(o)}${f.ten==='crop'?'':', '+TEN_NAME[f.ten]}`:`by the lord${f.ten==='lease'?', '+TEN_NAME.lease:''}`);
+        if(w&&f.wk!==f.own)h+=row('Worked',`by ${pl(w)}, ${TEN_NAME[f.ten]||''}`);}}
     if(f.lord>0)h+=row('Price to the crown',`${landPrice(f).toLocaleString()} gold (Buy land decree)`);else if(f.bought)h+=row('Bought','by the crown; its rent goes to the treasury');
-    h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);if(f.core>=0&&W.settlements[f.core])h+=row('Town ground',`the ground of ${esc(W.settlements[f.core].name)}: its houses and yards stand here`);
+    h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);if(f.crofts)h+=row('Crofts',`${f.crofts} home lot${f.crofts>1?'s':''} carved out of it, each house with its yard and garden`);if(f.core>=0&&W.settlements[f.core])h+=row('Town ground',`the ground of ${esc(W.settlements[f.core].name)}: its houses and yards stand here`);
     if(f.w>1&&f.state===LS.TILLED&&f.kind!==LK.VINE)h+=row('Strips',`${Math.round(f.w)} m wide, running ${f.kind===LK.HUFE?'back from the village street':'down the slope for drainage'}`);
     if(f.kind===LK.FIELD)h+=row('Great field',['the first','the second','the third'][f.gf]+' of three, in rotation');
     h+=row('Ground',`${bio}, ${Math.round(W.h[c])} m, ${slopeAt(toCell(pk.x),toCell(pk.z))>0.22?'steep':slopeAt(toCell(pk.x),toCell(pk.z))>0.08?'sloping':'level'}`);
@@ -6389,6 +6420,8 @@ function showInspect(pk){
     if(p.bast){const sire=p.sire&&notableById(p.sire);h+=row('Father',sire?esc(fullTitle(sire))+' (natural child)':p.pa?(p.pa.dead?esc(folkName(p.pa))+' †':pl(p.pa))+' (born out of wedlock)':'unknown');}
     else if(p.pa)h+=row('Father',p.pa.dead?esc(folkName(p.pa))+' †':pl(p.pa));
     const kids=(s.folk||[]).filter(q=>q.ma===p||q.pa===p);if(kids.length)h+=row('Children',kids.map(pl).join(', '));
+    {const hh=householdHead(p);if(hh.w!==undefined){const strips=(s.furl||[]).filter(f=>f.wk===hh.id),own=(s.furl||[]).filter(f=>f.own===hh.id),ha=strips.reduce((t,f)=>t+f.area,0)/1e4;
+      h+=row('Household',`${hh===p?'':'of '+esc(folkName(hh))+'; '}worth ${Math.round(hh.w)} crowns${hh.w<0?' (in debt)':''}${strips.length?`; works ${strips.length} strip${strips.length>1?'s':''} (${ha.toFixed(1)} ha)${strips.some(f=>f.ten==='crop'&&f.own!==hh.id)?', some as a sharecropper':''}`:tills(hh,s)?'; no land: a labourer for wages':''}${own.filter(f=>f.wk!==hh.id).length?`; lets ${own.filter(f=>f.wk!==hh.id).length} to sharecroppers`:''}`);}}
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
     h+=row('Nature',natureWords(p));h+=row('Learning',learningWords(p));
     if(!p.dead)flyToBtn(fb,'Find and follow',()=>goPerson(p,s)); // the card has one button: the living are found where they are
@@ -7781,7 +7814,7 @@ function tickOmens(myth,dis){
    and sustained prosperity upgrades buildings through the tiers
    (hovel-built → timber-framed → stone-built). */
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
-const RESID=new Set(['house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
+const RESID=new Set(['cot','house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
   for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
@@ -7888,6 +7921,110 @@ function tickMetro(){
         ()=>`Tolls are taken twice between ${b.name} and ${a.name}, whose houses now touch: ${houseName(seller)} and ${houseName(buyer)} cannot agree a price.`,
         ()=>`${b.name} would take ${a.name} in as a ward; ${houseName(seller)} holds out${purse(buyer)<price?`, and ${houseName(buyer)} has not the ${price.toLocaleString()} crowns to buy it`:''}.`]));}}}
 function houseName(hi){return hi>0&&W.houses[hi]?W.houses[hi].name:'the crown';}
+/* ---------------- holdings beneath the lords. Every strip has a holder and a worker: a villein who owes the lord labour, a free
+   tenant who owes him a small quit-rent, a leaseholder who pays money, a sharecropper who gives half the crop to whoever owns
+   the strip, or the lord's own demesne worked by hired hands. Each household keeps a purse: its share of the harvest, its
+   craft or its wages, less its keep and its rent. Indebted households sell their strips and stay on them as sharecroppers;
+   the well-off buy, and let what they cannot work; after the great plague the lords sell and lease their demesnes. A
+   holding passes to the eldest son, or is shared among the sons where the custom is partible (Welsh, German, Slav, Norse). */
+const PARTIBLE=new Set(['celtic','german','slavic','norse']);
+const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'freehold, for a small quit-rent',lease:'on lease, for a money rent',crop:'as a sharecropper, for half the crop',demesne:'the lord\'s demesne, worked by hired hands'};
+const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
+function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
+function folkIndex(){const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);return M;}
+function headsOf(s){const H=new Set();for(const p of s.folk||[])if(ageYrs(p)>=16)H.add(householdHead(p));return [...H];}
+const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
+const tills=(h,s)=>TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant';
+function heirOf(id,f,kids,spouse,si){
+  const ch=(kids.get(id)||[]).filter(p=>!p.dead&&ageYrs(p)>=14),sons=ch.filter(p=>p.sx==='m').sort((a,b)=>a.b-b.b),s=W.settlements[si];
+  if(sons.length)return PARTIBLE.has(s&&s.cult)?sons[f.k%sons.length]:sons[0]; // the eldest takes all, or the sons share strip by strip
+  if(ch.length)return ch[0]; // a daughter, and her husband with her
+  const w=spouse.get(id);return w&&!w.dead?w:null;} // the widow keeps it in her lifetime
+function settleTenure(s,si,heads){ // strips without a holder are given out: the lord keeps a home farm, the rest go to the households that plough
+  const all=tilledOf(s,si),F=all.filter(f=>!f.ten);if(!F.length)return;
+  const share=s.kind==='village'?0.2:0.3;let dem=all.filter(f=>f.ten==='demesne').length;const tillers=heads.filter(h=>tills(h,s));
+  F.sort((a,b)=>dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
+  for(const f of F){if(dem<all.length*share||!tillers.length){f.ten='demesne';f.own=-1;f.wk=-1;dem++;continue;}
+    let best=tillers[0];for(const h of tillers)if((h._strips||0)<(best._strips||0))best=h;best._strips=(best._strips||0)+1;
+    const tn=tenureNew();f.ten=tn;f.own=tn==='lease'?-1:best.id;f.wk=best.id;}}
+function tickTenure(){
+  if(day()%360!==215||!G.land)return;
+  const PM=folkIndex(),kids=new Map(),spouse=new Map();
+  for(const p of PM.values()){for(const par of[p.pa,p.ma])if(par){const L=kids.get(par.id)||[];L.push(p);kids.set(par.id,L);}if(p.sp)spouse.set(p.sp.id,p);}
+  const hf=(W.drought?0.4:1)*(MOD.harvest||1);let sales=0,bigBuyer=null;
+  W.settlements.forEach((s,si)=>{
+    const heads=headsOf(s),size=new Map();for(const p of s.folk||[]){const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
+    for(const h of heads){h._strips=0;h._crop=0;h._ha=0;h._owned=0;if(h.w===undefined)h.w=2+frand()*4+(TRADE_ARCH[h.tr]?3:0);}
+    const T=tilledOf(s,si);
+    for(const f of T){if(!f.ten)continue; // the dead and the gone: an heir takes their place, or the strip falls back to the lord
+      if(f.own>=0){const p=PM.get(f.own);if(!p||p.dead){const h=heirOf(f.own,f,kids,spouse,si);f.own=h?h.id:-1;}}
+      if(f.wk>=0){const p=PM.get(f.wk);if(!p||p.dead||p.si!==si){const h=heirOf(f.wk,f,kids,spouse,si);f.wk=h&&h.si===si?h.id:-1;}}
+      if(f.wk<0&&f.ten!=='demesne'){const ll=heads.filter(h=>tills(h,s)&&!(h._strips>0));const h=ll[Math.floor(frand()*ll.length)];
+        if(h){f.wk=h.id;h._strips=1;f.ten=f.own>=0&&f.own!==h.id?'crop':tenureNew();if(f.ten!=='crop'&&f.ten!=='lease')f.own=h.id;else if(f.ten==='lease')f.own=-1;}
+        else{f.ten='demesne';f.own=-1;}}}
+    settleTenure(s,si,heads);
+    for(const f of T){const w=PM.get(f.wk);if(w){w._strips++;w._ha+=f.area/1e4;if(f.ten==='crop')w._crop++;}const o=PM.get(f.own);if(o)o._owned++;}
+    // the year's account of every household
+    let lordTake=0,wages=0,urban=0;const landless=heads.filter(h=>tills(h,s)&&!h._strips);
+    for(const f of T){const gross=f.area/1e4*1.6*hf;
+      if(f.ten==='demesne'){lordTake+=gross*0.7;wages+=gross*0.3;continue;}
+      const w=PM.get(f.wk),sh=TEN_SHARE[f.ten]||0.6;if(w)w.w+=gross*sh;const rest=gross*(1-sh);
+      if(f.ten==='crop'&&f.own>=0&&PM.get(f.own)){PM.get(f.own).w+=rest*0.85;lordTake+=rest*0.15;}else lordTake+=rest;}
+    if(landless.length)for(const h of landless)h.w+=wages/landless.length+0.6;else lordTake+=wages; // day-labour at harvest
+    for(const h of heads){const b=h.bh&&!h.bh.removed?h.bh:null,n=size.get(h)||1;
+      if(TRADE_ARCH[h.tr]||h.tr==='merchant'||h.tr==='spicer')h.w+=2.5*(1+0.3*(b?b.tier:0))*clamp(s.prosperity/60,0.3,1.8)*(h.tr==='merchant'||h.tr==='spicer'?2:1);
+      else if(!tills(h,s))h.w+=1.6*clamp(s.prosperity/60,0.3,1.6); // carpenters, carters, masons: paid by the job
+      if(b&&s.kind!=='village'&&RESID.has(b.arch)){const r=propValue(b)*0.12/Math.max(1,(b.hh||[]).length);h.w-=r;urban+=r;}
+      h.w-=0.6+0.3*n;h.w=Math.max(-30,h.w);}
+    const L=W.houses[s.owner];if(urban>0){if(s.owner>0&&L){L.gold=(L.gold||0)+urban*0.5;book(L,'town rents',urban*0.5);}else W.treasury+=urban*0.5;} // the townsfolk's rents: half reach the lord, the rest go in repairs and his officers' pockets
+    // the market in land
+    for(const h of heads){if(h.w>=-4)continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
+      const f=mine[Math.floor(frand()*mine.length)],price=f.area/1e4*10;const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
+      if(buyer){buyer.w-=price;f.own=buyer.id;if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else f.own=-1;
+      h.w+=price;f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
+    if(AD()>=1349)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=f.area/1e4*12;if(h.w>price*2.5){h.w-=price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
+    for(const h of heads){const mine=T.filter(f=>f.wk===h.id&&f.own===h.id),can=Math.max(2,Math.ceil((size.get(h)||1)*0.8));if(mine.length<=can)continue; // more strips than the household can work: let to sharecroppers
+      const ll=heads.filter(o=>tills(o,s)&&!(o._strips>0));for(const f of mine.slice(can)){const t=ll.shift();if(!t)break;f.wk=t.id;f.ten='crop';t._strips=1;}}
+  });
+  if(!W.prehistory&&bigBuyer&&bigBuyer.n>=4&&frand()<0.3)emit('trade',2,bigBuyer.s.pos,vary('yeoman',[()=>`${folkName(bigBuyer.h)} of ${bigBuyer.s.name} buys another strip from a neighbour in debt; he holds ${bigBuyer.n} now, and lets them to sharecroppers.`,
+    ()=>`In a hard year at ${bigBuyer.s.name} the indebted sell their strips; ${folkName(bigBuyer.h)} buys, and they plough them still, for half the crop.`]));}
+/* where a household would live: near its work, within its means, and safe within the walls when the times are bad */
+function workOf(h,s){const si=W.settlements.indexOf(s);let x=0,z=0,n=0;
+  if(tills(h,s)){for(const f of s.furl||[])if(f.wk===h.id){x+=f.x;z+=f.z;n++;}if(!n)for(const f of s.furl||[])if(f.dom===si&&f.state===LS.TILLED){x+=f.x;z+=f.z;n++;}if(n)return {x:x/n,z:z/n};}
+  const want=TRADE_ARCH[h.tr];if(want){let best=null,bd=1e18;for(const b of s.buildings||[])if(b.arch===want&&b.state==='sound'){const d=dist2d(b.x,b.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=b;}}if(best)return {x:best.x,z:best.z};}
+  if(h.tr==='boatman'||h.tr==='fisher'||h.tr==='merchant'){const q=(s.streets||[]).find(t=>t.kind==='quay');if(q&&q.pts.length)return q.pts[Math.floor(q.pts.length/2)];}
+  const mk=(s.places||[]).find(p=>p.kind==='market');return mk?{x:mk.x,z:mk.z}:{x:s.pos.x,z:s.pos.z};}
+function inWalls(s,x,z){return !!s.wallRad&&dist2d(x,z,s.pos.x,s.pos.z)<wallRadAt(s,Math.atan2(z-s.pos.z,x-s.pos.x));}
+function lotRentAt(s,x,z,st){const R=Math.max(60,s.extentR||s.coreR||150),d=dist2d(x,z,s.pos.x,s.pos.z)/R;
+  const mk=(s.places||[]).some(p=>p.kind==='market'&&dist2d(x,z,p.x,p.z)<45)?1.35:1;
+  return Math.max(0.05,1.15-d)*(inWalls(s,x,z)?1.25:1)*mk*(st&&(st.kind==='road'||st.market)?1.2:1)*Math.pow(Math.max(20,s.pop),0.3)*0.12;}
+function homeScore(h,s,x,z,st,wk){ // what a lot is worth to this household: the walk to its work, the rent against its purse, the safety of the walls
+  const means=Math.max(0,h.w||0),fear=(s.raidedUntil>day()?1:0)+(s.siegeBy?1:0)+(W.war?0.4:0)+(s.walls>0?0.2:0);
+  return -dist2d(x,z,wk.x,wk.z)/80-lotRentAt(s,x,z,st)*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
+function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s).sort((a,b)=>(b.w||0)-(a.w||0));}
+/* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
+function tickStreets(){
+  if(day()%360!==230||W.prehistory)return;
+  for(const s of W.settlements){if(s.kind==='village'||s.pop<250||!s._lay||day()<(s._cutT||0)||s.siegeBy)continue;
+    const g=streetGraph(s);if(g.N.length<20)continue;const H=headsOf(s).filter(h=>h.bh&&!h.bh.removed);if(H.length<20)continue;
+    const acc=new Map();const mk=(s.places||[]).find(p=>p.kind==='market');
+    for(let k=0;k<Math.min(70,H.length);k++){const h=H[Math.floor(frand()*H.length)],from=h.bh;
+      for(const[to,per]of[[workOf(h,s),2],[mk||s.pos,0.5]]){const a=nearestNode(g,from.x,from.z),b=nearestNode(g,to.x,to.z);if(a<0||b<0||a===b)continue;
+        const P=streetPath(g,a,b);if(!P||P.length<3)continue;let len=0;for(let i=1;i<P.length;i++)len+=dist2d(g.N[P[i-1]].x,g.N[P[i-1]].z,g.N[P[i]].x,g.N[P[i]].z);
+        const st=dist2d(g.N[a].x,g.N[a].z,g.N[b].x,g.N[b].z);if(st<50||len<st*1.6)continue;
+        const key=Math.round(g.N[a].x/40)+','+Math.round(g.N[a].z/40)+'|'+Math.round(g.N[b].x/40)+','+Math.round(g.N[b].z/40);
+        const o=acc.get(key)||{a,b,w:0};o.w+=(len-st)*per;acc.set(key,o);}}
+    let worst=null;for(const o of acc.values())if(!worst||o.w>worst.w)worst=o;
+    if(!worst||worst.w<1500)continue; // the walks lost to going round add up to a good part of the town's day
+    const A=g.N[worst.a],B=g.N[worst.b],plan=s._lay.live.cut(A,B,true);if(!plan){s._cutT=day()+360*3;continue;}
+    const sound=plan.hit.filter(b=>b.state==='sound'),burnt=plan.hit.length-sound.length;if(sound.length>8){s._cutT=day()+360*5;continue;}
+    const cost=sound.reduce((t,b)=>t+propValue(b)*25,0)+60,payer=s.owner;if(purse(payer)<cost*1.5||s.prosperity<40){s._cutT=day()+360*2;continue;}
+    const done=s._lay.live.cut(A,B,false);if(!done)continue;spend(payer,cost);if(payer>0)book(W.houses[payer],'street works',-cost);
+    s._cutT=day()+360*15;s._hhY=-1;syncLive(s);if(G.citList&&G.citList[0]&&G.citList[0].s===s)G.citList=[];
+    const nm=['New Street','Broad Street','Newgate Street','Cross Street','Straight Street','King Street'][Math.floor(frand()*6)];done.st.name=nm;
+    (s.history||(s.history=[])).push({yr:year(),t:`${nm} was cut through${sound.length?`; ${sound.length} house${sound.length>1?'s were':' was'} pulled down and their owners paid`:''}${burnt?' over ground the fire had cleared':''}.`});
+    emit('trade',4,{x:(A.x+B.x)/2,z:(A.z+B.z)/2},vary('cut_street',[()=>`${s.name}: a new street, ${nm}, is cut straight through ${sound.length?`; ${sound.length} house${sound.length>1?'s are':' is'} pulled down, their owners paid ${Math.round(cost)} crowns`:' over the burnt ground'}. The carters bless it.`,
+      ()=>`The long way round is no more: ${nm} is driven through ${s.name}${sound.length?`, and ${sound.length} house${sound.length>1?'s come':' comes'} down for it`:''}.`]));}}
 function tickGrowth(){
   if(day()%6!==0)return;
   for(const s of W.settlements){
@@ -7897,14 +8034,15 @@ function tickGrowth(){
       for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b)got++;
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`,()=>`${s.name} grows: builders are busy in the ${b.district} quarter, and new roofs rise there.`,()=>`New roofs rise in the ${b.district} quarter of ${s.name}, which grows apace.`,()=>`The ${b.district} quarter of ${s.name} spreads: new roofs rise, and the town grows.`]));}
       if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
-        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.tier<Math.max(1,tierCap())).map(o=>[o,dist2d(o.x,o.z,s.pos.x,s.pos.z)]).sort((x,y)=>x[1]-y[1]).slice(0,30);
-        const pk=wpick(low,x=>-x[1]/120+(x[0].arch==='burgher'||x[0].arch==='shop'?0.5:0),1),b=pk&&pk[0];
+        const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0); // in a rich town's heart a fourth storey, jettied over the street
+        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.tier<capT).map(o=>[o,propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
+        const pk=wpick(low,x=>x[1]/Math.max(0.01,low[0][1])*3,1),b=pk&&pk[0]; // where the rent is dearest, it pays to build up
         if(b){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);
           if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}
       }
     }else if(s.pop<room*0.5&&chance('sim',0.15)){ // too few to fill the houses: the outermost stand empty and fall in
-      const out=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)).map(o=>[o,dist2d(o.x,o.z,s.pos.x,s.pos.z)]).sort((x,y)=>y[1]-x[1]).slice(0,20);
-      const pk=wpick(out,x=>x[1]/100-x[0].tier*0.8,1),b=pk&&pk[0]; // the poor outskirts empty first
+      const out=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)).map(o=>[o,propValue(o)]).sort((x,y)=>x[1]-y[1]).slice(0,20);
+      const pk=wpick(out,x=>-x[1]/Math.max(0.01,out[out.length-1][1])*3,1),b=pk&&pk[0]; // the cheapest houses empty first: the outskirts, the hovels, the back lanes
       if(b){b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}
     }
     // prosperity slowly rebuilds in better material
@@ -8056,7 +8194,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
