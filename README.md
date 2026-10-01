@@ -1,6 +1,8 @@
-# ANNALS — a living kingdom in a single file
+# Furlong: Medieval Kingdom Sim
 
-A procedurally generated fantasy kingdom rendered in real-time 3D that you can
+*A living medieval kingdom in a single file, from the strip of field to the crown.*
+
+A procedurally generated (or real-region) medieval kingdom rendered in real-time 3D that you can
 watch for five minutes or five hours. Zoom from a satellite view of the whole
 realm down to a market square. Time runs; harvests come in; caravans crawl the
 roads; a queen dies without a clear heir and the great houses raise banners;
