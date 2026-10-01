@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 19:33 UTC · after 427efe8</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 19:54 UTC · after 938ea50</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -305,7 +305,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
-    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in ten minutes — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
+    <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in half an hour — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
 <div id="watchdate">—</div>
@@ -432,7 +432,7 @@ const GOODBASE={grain:2,fish:2.5,timber:3,ore:5,tools:9,cloth:7,wine:8,wool:4,sh
 const SEASONS=['Spring','Summer','Autumn','Winter'];
 const SEASONGLYPH=['❀','☀','⚘','❄'];
 const CART_MPD=500,BARGE_MPD=700,COG_MPD=2800,MARCH_MPD=400,FIELD_MPD=250; /* one scale for every traveller: the map's distances stand for a realm ~40x larger (9 km of map ~ 360 km), so each moves at its real pace in km a day divided by 40 — ox-cart 20 km, host 16 on the road and 10 across country, barge 28, cog 110, great ship 140, envoy 60, dragon 320. Towns and houses are drawn true size, so the townsfolk keep true time: a walk across town is half an hour. */ // metres a day: carts on the road, barges, cogs, a host on the road and across country — one clock for all
-const SPEEDS=[0,0.5,2,8,30,360,1/600]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day in ten minutes: folk walk, carts roll and ships sail at near their true pace
+const SPEEDS=[0,0.5,2,8,30,360,1/1800]; // days per second; the fifth reels a year a second, to watch growth; the last (🚶 life) is a day in half an hour: folk walk, carts roll and ships sail at near their true pace
 const LIFE=6,isLife=()=>speedIdx===LIFE||speedIdx===0&&lastSpeed===LIFE; // at life pace (or paused from it) the little world is shown as it goes
 const B={WATER:0,MARSH:1,MEADOW:2,FARM:3,FOREST:4,PINE:5,ROCK:6,SNOW:7};
 
@@ -2422,6 +2422,7 @@ function tradesOf(s){
   if(s._trades&&s._tradeT>day())return s._trades;const t=[];
   for(const b of s.buildings||[])if(b.state!=='ruin'){const x=ARCH_TRADE[b.arch];if(x)t.push(...x);}
   for(let k=Math.round((s.res&&s.res.forest||0)/14);k>0;k--)t.push('woodcutter'); // the wood about the place wants axes
+  if(s.quarry)t.push('quarryman','quarryman','mason'); // an open quarry wants hewers
   const role={fishing:['fisher','boatman'],port:['boatman','roper','fisher'],timber:['forester','carpenter','woodcutter'],mining:['miner','smith'],crossing:['carter','boatman']}[s.role];if(role)t.push(...role,...role);
   t.push(...(s.kind==='village'?['ploughman','ploughman','ploughman','ploughman','ploughman','herdsman','shepherd','thatcher','carpenter']
     :['carpenter','mason','cooper','potter','weaver','butcher','carter','thatcher','roper','bowyer','fletcher','salter','wheelwright','hunter','cook','ploughman','ploughman','herdsman']));
@@ -2705,10 +2706,26 @@ function journey(p,from,to,why){ // p leaves `from` (already off its roll) and j
   const r=from>=0&&to>=0?route(from,to):null,A=W.settlements[from],Bt=W.settlements[to];
   const poly=r?r.poly:[{x:A.pos.x,z:A.pos.z},{x:Bt.pos.x,z:Bt.pos.z}],len=r?r.len:dist2d(A.pos.x,A.pos.z,Bt.pos.x,Bt.pos.z);
   p.si=-1;(W.travellers||(W.travellers=[])).push({p,from,to,why,poly,len,depart:day(),arrive:day()+Math.max(0.3,len/WALK_MPD)});}
-function inboundOf(){const m=new Map();for(const t of W.travellers||[])m.set(t.to,(m.get(t.to)||0)+1);return m;}
+function inboundOf(){const m=new Map();for(const t of W.travellers||[])if(!t.errand)m.set(t.to,(m.get(t.to)||0)+1);return m;}
+function errand(p,from,to,why,stay){ // a round trip: there, a stay, and home again; they stay on their own town's roll, but are away
+  if(from===to||awayNow(p))return false;const r=route(from,to);if(!r||r.len>2400)return false;
+  const go=Math.max(0.25,r.len/WALK_MPD),d0=day()+(W.clock.frac||0)+frand()*0.4,T=W.travellers||(W.travellers=[]);if(T.length>360)return false;
+  p.away={until:d0+go*2+stay,why,to};
+  T.push({p,from,to,why,poly:r.poly,len:r.len,depart:d0,arrive:d0+go,errand:true},{p,from:to,to:from,why,home:true,poly:[...r.poly].reverse(),len:r.len,depart:d0+go+stay,arrive:d0+go*2+stay,errand:true});
+  return true;}
+function tickErrands(){ // the roads between places: market days, kin at the feasts, pilgrims at Eastertide
+  if(W.prehistory)return;const S=W.settlements,d=day(),doy=d%360;
+  const adults=(s,f)=>(s.folk||[]).filter(p=>{const a=ageYrs(p);return a>=16&&a<62&&!awayNow(p)&&(!f||f(p));});
+  if(d%7===3)S.forEach((v,vi)=>{if(v.kind!=='village'||v.siegeBy||closedToTrade(v))return; // market day: a few go to the nearest market town with their eggs, wool and cheeses
+    let ti=-1,bd=1300;S.forEach((o,oi)=>{if(o.kind==='village'||metroOf(o)===metroOf(v)||closedToTrade(o))return;const dd=dist2d(v.pos.x,v.pos.z,o.pos.x,o.pos.z);if(dd<bd){bd=dd;ti=oi;}});
+    if(ti<0)return;const A=adults(v);for(let k=Math.min(3,Math.ceil(v.pop/70));k>0&&A.length;k--){const p=A.splice(Math.floor(frand()*A.length),1)[0];if(frand()<0.6)errand(p,vi,ti,'market',0.3+frand()*0.4);}});
+  if(d%30===11)S.forEach((s,si)=>{for(const p of adults(s,p=>p.sx==='f'&&p.sp&&p.ma&&!p.ma.dead&&p.ma.si>=0&&p.ma.si!==si))if(frand()<0.05)errand(p,si,p.ma.si,'kin',2+frand()*4);}); // a married daughter goes home to see her mother
+  if(doy>=20&&doy<50&&d%5===0){const shrines=S.map((s,i)=>i).filter(i=>S[i].kind==='capital'||S[i]._churchRebuilt&&S[i].kind!=='village');
+    if(shrines.length)S.forEach((s,si)=>{for(const p of adults(s,p=>trait(p,GWa)+0.3>frand()*3))if(frand()<0.004){const ti=shrines.reduce((b,i)=>dist2d(S[i].pos.x,S[i].pos.z,s.pos.x,s.pos.z)<dist2d(S[b].pos.x,S[b].pos.z,s.pos.x,s.pos.z)?i:b,shrines[0]);errand(p,si,ti,'pilgrim',1+frand()*2);}});}}
 function tickTravel(){ // arrivals: the traveller takes their place in the new town's roll
   const T=W.travellers;if(!T||!T.length)return;const d=day();
   for(let i=T.length-1;i>=0;i--){const t=T[i];if(t.p.dead){T.splice(i,1);continue;}
+    if(t.errand){if(d>=t.arrive)T.splice(i,1);continue;} // an errand ends where it began; they never left the roll
     if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);
       const o=W.settlements[t.from];if(o&&o.cult&&s.cult)speakers(s,o.cult,1);}}} // the incomer brings their own speech
 /* the tongues of a place: a mix of speakers that shifts as people come and go and as lords hold it; the majority is the place's tongue */
@@ -2738,9 +2755,9 @@ function renderTravellers(){
   if(!G.travMesh){const cp=personParts('citizen');G.travMesh=new THREE.InstancedMesh(cp.tint,agentMat(),400);G.travKit=new THREE.InstancedMesh(cp.fixed,agentMat(),400);
     for(const m of[G.travMesh,G.travKit]){for(let i=0;i<400;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.count=0;scene.add(m);}}
   const T=W.travellers||[],now=day()+(W.clock.frac||0),t2=performance.now()/1000;let k=0;G.travIdx=[];
-  if(cam.cur.dist<1800)for(const t of T){if(k>=400)break;const f=clamp((now-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1),p=polyPos(t.poly,f);if(!p)continue;
+  if(cam.cur.dist<1800)for(const t of T){if(k>=400)break;if(now<t.depart)continue;const f=clamp((now-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1),p=polyPos(t.poly,f);if(!p)continue;
     const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx===LIFE?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
-    setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:0x5a6a7a));G.travIdx[k]=t;k++;}
+    setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:t.why==='market'?0x8a7a3a:t.why==='kin'?0xa0708a:t.why==='pilgrim'?0xe8e0d0:0x5a6a7a));G.travIdx[k]=t;k++;}
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
 /* ---------------- the town's streets as a walking graph, and the walkers who use it ---------------- */
 function streetGraph(s){ // nodes at the street points; streets that meet (or nearly) are joined
@@ -2761,23 +2778,46 @@ function streetPath(g,a,b){ // shortest way along the streets (A*)
   const pop=()=>{let m=0;for(let i=1;i<open.length;i++)if(open[i][0]<open[m][0])m=i;const t=open[m];open[m]=open[open.length-1];open.pop();return t;};
   let guard=0;while(open.length&&guard++<6000){const[,v]=pop();if(v===b)break;for(const[w,d]of g.adj[v]){const ng=gs[v]+d;if(ng<gs[w]){gs[w]=ng;from[w]=v;open.push([ng+dist2d(g.N[w].x,g.N[w].z,T.x,T.z),w]);}}}
   if(from[b]<0)return null;const out=[];for(let v=b;v!==-1;v=from[v]){out.push(v);if(v===a)break;}return out.reverse();}
+function outWork(s,p,kind,H){ // a place out of doors to work, and a short beat to work it along: the household's strip, the lord's wood, the common, the shore
+  const si=W.settlements.indexOf(s),hh=householdHead(p),home=hh.bh||s.pos;
+  let F=(s.furl||[]).filter(f=>f.dom===si&&(kind==='field'?f.state===LS.TILLED&&ARABLE.has(f.kind):kind==='wood'?f.state===LS.WOOD:f.state===LS.PASTURE||f.state===LS.WILD));
+  if(!F.length)return null;F.sort((a,b)=>dist2d(a.x,a.z,home.x,home.z)-dist2d(b.x,b.z,home.x,home.z));F=F.slice(0,Math.max(3,Math.ceil(F.length*0.6)));
+  const f=F[(hh.id>>>0)%F.length]; // a family works its own strips together
+  let P=null;try{P=insetPoly(furlongPoly(f),6);}catch(e){}if(!P||P.length<3)P=null;
+  let sxx=0,szz=0,sxz=0;if(P)for(const q of P){const dx=q.x-f.x,dz=q.z-f.z;sxx+=dx*dx;szz+=dz*dz;sxz+=dx*dz;}
+  const ang=0.5*Math.atan2(2*sxz,sxx-szz),ux=Math.cos(ang),uz=Math.sin(ang),off=(H-0.5)*24;
+  let A={x:f.x-uz*off,z:f.z+ux*off};if(P&&!inPolyXZ(P,A.x,A.z))A={x:f.x,z:f.z};
+  let L=kind==='field'?34:16,B;for(;L>4;L*=0.7){B={x:A.x+ux*L,z:A.z+uz*L};if(!P||inPolyXZ(P,B.x,B.z))break;}
+  return {A,B:B||A,f};}
+const DAYSEC=1/SPEEDS[LIFE],WS=DAYSEC/600; // a walker's day, in seconds at life pace; WS scales the stays that were reckoned on a ten-minute day
 function warmWalkers(L){ // a town just come into view: play its folk's day forward to this hour at once, so each is already where they would be now
-  const fr=W.clock.frac||0,f0=0.2;if(fr<=f0||!L.length)return;const N=200,step=600*(fr-f0)/N;
+  const fr=W.clock.frac||0,f0=0.2;if(fr<=f0||!L.length)return;const N=240,step=DAYSEC*(fr-f0)/N;
   for(let i=1;i<=N;i++){const f=f0+(fr-f0)*i/N;for(const c of L)stepWalker(c,step,f);}}
 function townsfolkFor(s){ // who is about in this town, and where each goes
   if(s._hhY!==year())houseFolk(s);const ch=s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'),g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
   const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
   const fx=cam.cur.focus.x,fz=cam.cur.focus.z,cand=s.folk.filter(p=>ageYrs(p)>=6&&!awayNow(p)&&householdHead(p).bh&&!householdHead(p).bh.removed);
   cand.sort((a,b)=>dist2d(householdHead(a).bh.x,householdHead(a).bh.z,fx,fz)-dist2d(householdHead(b).bh.x,householdHead(b).bh.z,fx,fz));
-  const out=[];
+  const out=[],season=seasonIdx();
   for(const p of cand.slice(0,160)){const h=householdHead(p).bh,a=ageYrs(p),H=(p.id*2654435761>>>0)/4294967296;
-    let work=null,what='about the town',inside=false;const wa=TRADE_ARCH[p.tr];
+    let work=null,what='about the town',inside=false,fw=null;const wa=TRADE_ARCH[p.tr];
     if(a>=14&&wa&&byArch[wa]){let bd=1e18;for(const b of byArch[wa]){const d=dist2d(b.x,b.z,h.x,h.z);if(d<bd){bd=d;work=b;}}what=`at work in the ${ARCH[wa][4]}`;inside=true;}
-    else if(a>=14&&(TILLERS.has(p.tr)||p.tr==='woodcutter')){const an=Math.atan2(h.z-s.pos.z,h.x-s.pos.x)+(H-0.5)*0.6;work={x:s.pos.x+Math.cos(an)*(R+30),z:s.pos.z+Math.sin(an)*(R+30)};what=p.tr==='woodcutter'?'at work in the wood':'at work in the fields';}
+    else if(a>=14&&(p.tr==='quarryman'||p.tr==='miner')){const q=p.tr==='quarryman'&&s.quarry&&!s.quarry.removed?s.quarry:rockNear(s,h);
+      if(q){const an=H*6.283,r=4+H*6;work={x:q.x+Math.cos(an)*r,z:q.z+Math.sin(an)*r};fw={A:work,B:{x:q.x-Math.cos(an)*r,z:q.z-Math.sin(an)*r},flip:false};what=p.tr==='quarryman'?'cutting stone in the quarry':'digging ore at the mine-head';}
+      else{work=h;what=p.tr==='miner'?'sorting ore':'dressing stone';inside=true;}}
+    else if(a>=14&&(TILLERS.has(p.tr)||p.tr==='woodcutter'||p.tr==='forester'||p.tr==='hunter'||p.tr==='fisher'||p.tr==='boatman'||(p.sx==='f'&&s.kind==='village'&&(season===1||season===2)))){ // out of doors: to the household's strips, the wood, the common, the water
+      const kind=p.tr==='woodcutter'||p.tr==='forester'||p.tr==='hunter'?'wood':(p.tr==='shepherd'||p.tr==='herdsman')?'common':p.tr==='fisher'||p.tr==='boatman'?'water':'field';
+      if(kind==='field'&&season===3){work=h;what='threshing in the barn';inside=true;}
+      else if(kind==='water'){const w=waterNear(s,h);if(w){work=w;what=p.tr==='fisher'?'at the nets':'at the boats';}else{work=h;what='mending nets';inside=true;}}
+      else{const o=outWork(s,p,kind,H);
+        if(o){work=o.A;fw={A:o.A,B:o.B,flip:false};const kn=KIND_NAME[o.f.kind]||'field';
+          what=kind==='wood'?(p.tr==='hunter'?'hunting in the wood':p.tr==='forester'?'walking the wood for the lord':'felling timber in the wood'):kind==='common'?(p.tr==='shepherd'?'minding the sheep on the common':'minding the cattle on the common'):
+            p.sx==='f'?(season===2?`binding sheaves in the ${kn}`:`weeding in the ${kn}`):['ploughing and sowing in the ','weeding in the ','reaping in the ','threshing'][season]+(season<3?kn:'');}
+        else{const an=Math.atan2(h.z-s.pos.z,h.x-s.pos.x)+(H-0.5)*0.6;work={x:s.pos.x+Math.cos(an)*(R+30),z:s.pos.z+Math.sin(an)*(R+30)};what=kind==='wood'?'at work in the wood':'at work in the fields';}}}
     else if(a<14){work={x:h.x+(H-0.5)*40,z:h.z+(H*7%1-0.5)*40};what='at play in the lanes';}
     else{work=h;what=p.tr?`at work at home, ${p.tr}`:'about the house';inside=true;}
-    const pace=a<14?1.5:a>60?0.9:1.15+0.12*clamp(trait(p,GV),-2,2)+0.05*clamp(trait(p,GS),-2,2); // metres a second, as they are made
-    out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
+    const pace=2*(a<14?1.5:a>60?0.9:1.15+0.12*clamp(trait(p,GV),-2,2)+0.05*clamp(trait(p,GS),-2,2)); // metres a second, as they are made, and brisk: the day at life pace is half an hour, and the fields lie far
+    out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,fw,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
       church:ch?{x:ch.x,z:ch.z}:null,pace,sc:a<14?0.75:1,col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3),
       x:h.x,z:h.z,ry:0,t:0,state:'home',until:0,route:null,ri:0,out:false,walking:false,goal:'home',doing:'at home'});}
   return out;}
@@ -2797,9 +2837,9 @@ function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true 
       if(d<=m){c.x=b.x;c.z=b.z;c.ri++;m-=d;}else{c.x+=(b.x-a.x)/d*m;c.z+=(b.z-a.z)/d*m;c.ry=-Math.atan2(b.z-a.z,b.x-a.x)+Math.PI/2;m=0;}}
     if(c.ri>=c.route.length-1){c.walking=false;
       if(c.goal==='home'){c.state='home';c.out=false;c.doing='at home';}
-      else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+20+H*30;} // a while at the stalls
-      else if(c.goal==='church'||c.goal==='wedding'){c.state='church';c.out=false;c.doing=c.wedW?`at the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:'at mass';c.until=c.t+40+H*20;}
-      else if(c.goal==='visit'){c.state='visit';c.out=false;c.doing=`visiting ${c.p.sx==='f'?'her':'his'} mother, ${folkName(c.visitOf)}`;c.until=c.t+30+H*40;}
+      else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+(20+H*30)*WS;} // a while at the stalls
+      else if(c.goal==='church'||c.goal==='wedding'){c.state='church';c.out=false;c.doing=c.wedW?`at the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:'at mass';c.until=c.t+(40+H*20)*WS;}
+      else if(c.goal==='visit'){c.state='visit';c.out=false;c.doing=`visiting ${c.p.sx==='f'?'her':'his'} mother, ${folkName(c.visitOf)}`;c.until=c.t+(30+H*40)*WS;}
       else{c.state='work';c.out=!c.workIn;c.doing=c.what;}}
     return;}
   const sunday=day()%7===0,wed=c.church&&(c.s._weds||[]).find(w=>w.d===day()&&(w.a===c.p||w.b===c.p||householdHead(w.a)===householdHead(c.p)||householdHead(w.b)===householdHead(c.p)||w.a.ma===c.p||w.b.ma===c.p));
@@ -2813,7 +2853,17 @@ function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true 
   if(c.state==='home')return;
   if(fr>=home0||night){c.dayDone=day();planWalk(c,c.home,'home');return;} // home at dusk
   if(c.state==='work'&&fr>=mkt&&c.p.id%3===0&&ageYrs(c.p)>=14&&c.mktDay!==day()){c.mktDay=day();planWalk(c,c.mk,'market');return;}
-  if(c.state==='market'&&c.t>=c.until)planWalk(c,c.work,'work');}
+  if(c.state==='market'&&c.t>=c.until){planWalk(c,c.work,'work');return;}
+  if(c.state==='work'&&c.fw&&!c.workIn){const F=c.fw,T=F.flip?F.A:F.B,d=dist2d(c.x,c.z,T.x,T.z),m=c.pace*0.3*dt; // up the furrow and back, at the plough's pace; the woodman from tree to tree
+    if(d<=m){c.x=T.x;c.z=T.z;F.flip=!F.flip;}else{c.x+=(T.x-c.x)/d*m;c.z+=(T.z-c.z)/d*m;c.ry=-Math.atan2(T.z-c.z,T.x-c.x)+Math.PI/2;}c.walking=true;}}
+function rockNear(s,h){ // the nearest crag or steep hillside, where ore and stone are got
+  let best=null,bd=1e18;const cx=toCell(h.x),cz=toCell(h.z);
+  for(let dz=-18;dz<=18;dz++)for(let dx=-18;dx<=18;dx++){const x=cx+dx,z=cz+dz;if(!inB(x,z))continue;const c=cIdx(x,z);if(W.water[c]||!(W.biome[c]===B.ROCK||slopeAt(x,z)>0.4))continue;const d=dx*dx+dz*dz;if(d<bd){bd=d;best={x:cellX(x),z:cellZ(z)};}}
+  return best;}
+function waterNear(s,h){ // the nearest open water to a fisher's door: the shore or the river bank
+  let best=null,bd=1e18;const cx=toCell(h.x),cz=toCell(h.z);
+  for(let dz=-14;dz<=14;dz++)for(let dx=-14;dx<=14;dx++){const x=cx+dx,z=cz+dz;if(!inB(x,z)||!W.water[cIdx(x,z)])continue;const d=dx*dx+dz*dz;if(d<bd){bd=d;best={x:cellX(x)-Math.sign(dx)*CELL*0.6,z:cellZ(z)-Math.sign(dz)*CELL*0.6};}}
+  return best;}
 
 function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
   const t=(W.travellers||[]).find(x=>x.p.id===id);if(t)return {p:t.p,s:W.settlements[t.to],t};return null;}
@@ -6318,7 +6368,7 @@ function showInspect(pk){
     const p=pk.p,s=pk.s,a=Math.floor(ageYrs(p)),hd=householdHead(p),home=hd.bh,fm=p.fam>=0?W.fams[p.fam]:null,pl=q=>`<a class="pp" data-pid="${q.id}">${esc(folkName(q))}</a>`;
     setHTML(title,esc(folkName(p)));sub.textContent=`${a}, ${p.sex==='f'||p.sx==='f'?(p.sp?'wife':'woman'):p.sp?'husband':'man'}${p.tr&&a>=14?' · '+p.tr:''} · ${s.name}`;
     {const aw=awayNow(p),t=pk.t||(W.travellers||[]).find(x=>x.p===p);
-      if(t)h+=row('Now',`on the road from ${esc(W.settlements[t.from]?.name||'?')} to ${esc(W.settlements[t.to]?.name||'?')} — ${t.why==='bride'?'a bride going to her husband\'s house':'leaving for a new home'}; there ${dateStr(Math.ceil(t.arrive))}`);
+      if(t)h+=row('Now',`on the road from ${esc(W.settlements[t.from]?.name||'?')} to ${esc(W.settlements[t.to]?.name||'?')} — ${t.home?{market:'home from market',kin:'home from seeing her mother',pilgrim:'home from pilgrimage'}[t.why]||'coming home':{bride:'a bride going to her husband\'s house',migrant:'leaving for a new home',market:'to market, with eggs, cheeses and wool to sell',kin:'to see her mother',pilgrim:'on pilgrimage to the shrine'}[t.why]||'on the road'}; there ${dateStr(Math.ceil(t.arrive))}`);
       else if(aw)h+=row('Now',esc(aw.what)+`; home by ${dateStr(Math.ceil(aw.until))}`);
       else if(pk.c&&pk.c.doing)h+=row('Now',esc(pk.c.doing));}
     if(home)h+=row('Home',`${esc(buildingName(home)||((TIERNAME[home.tier]||'')+' '+ARCH[home.arch][4]))} in the ${esc(home.district||'')} quarter`);
@@ -7993,7 +8043,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickMetro();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);

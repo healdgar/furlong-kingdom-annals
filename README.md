@@ -77,6 +77,19 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
     children, how their family came by its name, nature and learning, and
     where they're walking and by which street. Names on house and person cards
     link to each other.
+- **Out at work.** Ploughmen go out to their own household's strips (a
+  family works its strips together) and work up and down them: ploughing and
+  sowing in spring, weeding in summer, reaping in autumn, threshing in the
+  barn in winter; village wives join the weeding and the harvest.
+  Woodcutters, foresters and hunters go to the place's wood, shepherds and
+  herdsmen to the common, fishers and boatmen to the shore or river bank,
+  quarrymen to the quarry and miners to the nearest crag. Villagers live in
+  the village (an open-field village is nucleated) and walk out.
+- **Errands between places.** Round trips, the traveller staying on their
+  own town's roll: on market day a few villagers walk to the nearest market
+  town and back; married daughters go home to see their mothers; at
+  Eastertide pilgrims walk to the great churches. Click one on the road to
+  see who they are and why they go.
 - **People on the road.** Journeys are real:
   - a bride walks to her husband's village, and emigrants walk from a failing
     town to a growing one, at about 30 km a day on the realm's scale;
@@ -86,7 +99,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
   Travellers are drawn on the roads; click one to see who they are and where
   they're going. The towns they're heading for already count them.
-- **Life pace (🚶, or L).** A day takes ten real minutes: carts roll slowly
+- **Life pace (🚶, or L).** A day takes half an hour: carts roll slowly
   on screen, hosts march, the flocks graze, and the townsfolk live their day
   in step with the sun (out at sunrise, market at noon, home at dusk). The
   simulation runs whole days just the same, only slower. On pause
@@ -133,7 +146,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 |---|---|
 | drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
 | click | inspect anything: settlements, buildings, armies, caravans, the dragon, walls, roads, streets, rivers, land parcels (tenure, lord, crop, state) |
-| `Space` | pause · `L` life pace (a day in ten minutes) · `1–5` speeds (half a day to a year per second) |
+| `Space` | pause · `L` life pace (a day in half an hour) · `1–5` speeds (half a day to a year per second) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
 | `M` | parchment map (click to fly) · `Esc` closes it |
