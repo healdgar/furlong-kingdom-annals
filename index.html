@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 21:33 UTC · after c1df5af</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 22:17 UTC · after 784c4b2</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -934,6 +934,8 @@ async function generateWorld(seed,progress){
       const t=[v+0.5,0.5-u,0.5-v,u+0.5][coastEdge]; // distance from coast edge 0..1
       hgt-=Math.pow(Math.max(0,0.30-t)/0.30,1.6)*240;
     }
+    { const ct=coastal?[v+0.5,0.5-u,0.5-v,u+0.5][coastEdge]:1; // inland edges stay land: the rim used to sink into a phantom sea all round
+      if(rim>0.9&&ct>0.3)hgt=Math.max(hgt,SEA+2.5+fbm(n2,us*9+5,vs*9+3,2,2,.5)*7*(rim-0.9)*10); }
     W.h[cIdx(cx,cz)]=hgt;
     W.moist[cIdx(cx,cz)]=fbm(nMoist,us*5+3,vs*5+11,4,2,.5);
   }
@@ -3133,7 +3135,9 @@ function riverStrips(){
   G.rivStrips=[];G.rivHash=makeHash(40);
   for(const path of W.riverPaths){
     let pts=resample(smoothPath(resample(path,10),6),6);
-    {const lim=SIZE/2-4,cut=pts.findIndex(p=>Math.abs(p.x)>lim||Math.abs(p.z)>lim);if(cut>=0)pts=pts.slice(0,Math.max(2,cut));} // the river leaves the known world at its edge, not in mid-air beyond it
+    {const lim=SIZE/2-4,cut=pts.findIndex(p=>Math.abs(p.x)>lim||Math.abs(p.z)>lim);if(cut>=0){pts=pts.slice(0,Math.max(2,cut));
+}
+} // the river leaves the known world at its edge, into the haze
     if(pts.length<2)continue;
     const hw0=pts.map((p,k)=>Math.max(4,(p.w||10)/2)*Math.min(1,0.35+k/14)), // springs start as a trickle
       ph=hash01(SEED%997+pts[0].x*0.013+pts[0].z*0.007)*6.28;
@@ -3362,7 +3366,7 @@ function buildApron(){
     const [dx,dz]=dirs[si],base=pos.length/3,n=E.length;
     const smooth=E.map((_,k)=>{let t=0,c=0;for(let d=-25;d<=25;d++){const j=E[clamp(k+d,0,n-1)];t+=W.h[j];c++;}return t/c;});
     E.forEach((vi,k)=>{const cx=vi%GRID,cz=(vi/GRID)|0,x=cellX(cx),z=cellZ(cz);
-      const raw=W.h[vi],tgt=Math.min(smooth[k],SEA+30)-25,hs=[raw,raw,(raw+smooth[k])/2,smooth[k],(smooth[k]+tgt)/2,tgt]; // level at first, then easing away
+      const raw=W.h[vi],tgt=raw<=SEA?Math.min(smooth[k],SEA)-25:Math.max(SEA+2,Math.min(smooth[k],SEA+60)-10),hs=[raw,raw,(raw+smooth[k])/2,smooth[k],(smooth[k]+tgt)/2,tgt]; // level at first, then easing away
       APRON.forEach((o,r)=>{const f=r/(APRON.length-1),h=hs[r];
         // spread the corners so the sides meet
         const ex=(k===0&&dirs[si][0]===0?-o:k===n-1&&dirs[si][0]===0?o:0),ez=(k===0&&dirs[si][1]===0?-o:k===n-1&&dirs[si][1]===0?o:0);
@@ -3370,6 +3374,8 @@ function buildApron(){
     const R=APRON.length;
     for(let k=0;k<n-1;k++)for(let r=0;r<R-1;r++){const a=base+k*R+r,b=a+1,c=a+R,d=c+1;idx.push(a,c,b,b,c,d);}
   });
+  for(let i=0;i<idx.length;i+=3){const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3,ux=pos[b]-pos[a],uz=pos[b+2]-pos[a+2],vx=pos[c]-pos[a],vz=pos[c+2]-pos[a+2];
+    if(uz*vx-ux*vz<0){const k=idx[i+1];idx[i+1]=idx[i+2];idx[i+2]=k;}} // y of (b-a)×(c-a): every face turned to the sky
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
   {const nn=new Float32Array(pos.length);for(let i=1;i<nn.length;i+=3)nn[i]=1;g.setAttribute('normal',new THREE.BufferAttribute(nn,3));} // lit flat: per-vertex normals streaked along the long quads
   g.setAttribute('color',new THREE.Float32BufferAttribute(new Float32Array(pos.length),3));
@@ -3380,14 +3386,15 @@ function buildApron(){
 float ah(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i),ah(i+vec2(1.,0.)),f.x),mix(ah(i+vec2(0.,1.)),ah(i+vec2(1.,1.)),f.x),f.y);}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
-  { float out_=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.;float t=smoothstep(0.,50.,out_);
+  { float out_=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.+(an(vAP.xz/300.)-0.5)*260.;float t=smoothstep(0.,120.,out_);
     float v=an(vAP.xz/420.)*0.6+an(vAP.xz/130.)*0.4;
     vec3 land=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.5,0.62,v))*(0.9+0.2*an(vAP.xz/40.));
-    if(vAP.y>${SEA}.+0.5)diffuseColor.rgb=mix(diffuseColor.rgb,mix(land,diffuseColor.rgb,0.35),t); }`)
+    if(vAP.y>${SEA}.+0.5)diffuseColor.rgb=mix(diffuseColor.rgb,land,0.8+0.15*t); }`)
       .replace('#include <fog_fragment>',`#include <fog_fragment>
   { float out2=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.; // unknown lands: gone into the haze within a few hundred paces of the map's edge
     #ifdef USE_FOG
-    gl_FragColor.rgb=mix(gl_FragColor.rgb,fogColor,smoothstep(0.,240.,out2));
+    out2+=(an(vAP.xz/350.)-0.5)*500.+(an(vAP.xz/90.)-0.5)*120.; // a ragged edge to the known world, not a ruled line
+    gl_FragColor.rgb=mix(gl_FragColor.rgb,fogColor,smoothstep(-200.,2600.,out2)*0.92+0.08*smoothstep(1200.,3400.,out2));
     #endif
   }`);
   };
@@ -4111,7 +4118,7 @@ function rebuildWalls(){
       }else inst.gate.push([q.x,hAt(q.x,q.z),q.z,ry,stone,H,gates.roads[gi2]?10:7]);
     });
   }
-  const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true}));
+  const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true,shadowSide:THREE.DoubleSide})); // every face in the shadow map: a thin wall seen edge-on by the sun cast a broken shadow
   mesh.castShadow=true;mesh.receiveShadow=true;grp.add(mesh);
   if(acc2.i.length){const m2=accMesh(acc2,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide}));m2.castShadow=true;m2.receiveShadow=true;grp.add(m2);}
   if(ditch.i.length){const m3=accMesh(ditch,new THREE.MeshLambertMaterial({vertexColors:true,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));m3.receiveShadow=true;grp.add(m3);}
@@ -4121,7 +4128,7 @@ function rebuildWalls(){
   const mk=(g,n)=>{const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({}),Math.max(1,n));m.castShadow=true;m.receiveShadow=true;grp.add(m);return m;};
   const mer=mk(bx,inst.merlon.length);mer.castShadow=false;
   inst.merlon.forEach((v,i)=>{setInst(mer,i,v[0],v[1],v[2],v[3],1.4,1.3,0.9);mer.setColorAt(i,C1.setHex(0xa39a8b));});
-  const sk=mk(new THREE.ConeGeometry(0.62,1,5).translate(0,0.5,0),inst.stake.length);sk.castShadow=false;
+  const sk=mk(new THREE.ConeGeometry(0.62,1,5).translate(0,0.5,0),inst.stake.length); // the stakes cast their row of shadow with the rampart
   inst.stake.forEach((v,i)=>{setInst(sk,i,v[0],v[1],v[2],v[3]*9,1,v[3]*1.3,1);sk.setColorAt(i,C1.setHex(0x7a5c3a).multiplyScalar(0.85+v[3]*0.2));});
   sk.instanceMatrix.needsUpdate=true;if(sk.instanceColor)sk.instanceColor.needsUpdate=true;
   const tw=mk(cy,inst.tower.length),tc=mk(cn,inst.tower.length);
@@ -4418,7 +4425,20 @@ function buildTracks(){
       pos.push(x0-uz*hw,y0,z0+ux*hw, x0+uz*hw,y0,z0-ux*hw, x1+uz*hw,y1,z1-ux*hw, x0-uz*hw,y0,z0+ux*hw, x1+uz*hw,y1,z1-ux*hw, x1-uz*hw,y1,z1+ux*hw);}}
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.computeVertexNormals();
   G.trackMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b7355,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
-  G.trackMesh.receiveShadow=true;G.trackMesh.renderOrder=2;scene.add(G.trackMesh);}
+  G.trackMesh.receiveShadow=true;G.trackMesh.renderOrder=2;scene.add(G.trackMesh);
+  /* where a lane crosses a stream: a plank bridge with a handrail, or, in a later and better-off parish, a little stone bridge with parapets */
+  for(const k of['trackBridgeW','trackBridgeS'])if(G[k]){scene.remove(G[k]);G[k].geometry.dispose();G[k]=null;}G.trackBridgeAt=[];
+  if(!G.rivHash)riverStrips();const wood=[],stone=[],U=new THREE.Vector3(0,1,0);
+  for(const k of used){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b],L=e.L;if(!L)continue;const ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L;
+    let t0=-1;for(let s=0;s<=L+0.5;s+=1){const x=A.x+ux*Math.min(s,L),z=A.z+uz*Math.min(s,L),wet=!!riverAt(x,z,0.6);
+      if(wet&&t0<0)t0=s;if((!wet||s>=L)&&t0>=0){const s0=Math.max(0,t0-2.5),s1=Math.min(L,s+2.5),span=s1-s0;t0=-1;if(span<3)continue;
+        const ax=A.x+ux*s0,az=A.z+uz*s0,bx=A.x+ux*s1,bz=A.z+uz*s1,mx=(ax+bx)/2,mz=(az+bz)/2,si=nearestSettlementIdx(mx,mz),st=W.settlements[si];
+        const isStone=AD()>=1200&&st&&(st.prosperity>55||(st.stores.stone||0)>=20)&&span<26,y=Math.max(hAt(ax,az),hAt(bx,bz))+(isStone?0.5:0.35);
+        const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),U,new THREE.Vector3(-uz,0,ux)).setPosition(mx,y,mz),P=isStone?stone:wood;(G.trackBridgeAt||(G.trackBridgeAt=[])).push({x:mx,z:mz,stone:isStone});
+        if(isStone){P.push([new THREE.BoxGeometry(span,1.1,3.6).translate(0,-0.45,0),M]);for(const sd of[-1,1])P.push([new THREE.BoxGeometry(span,0.7,0.4).translate(0,0.35,sd*1.6),M]);}
+        else{P.push([new THREE.BoxGeometry(span,0.22,2.6),M]);for(const sd of[-1,1]){P.push([new THREE.BoxGeometry(span,0.12,0.12).translate(0,0.85,sd*1.2),M]);
+          for(let q=0;q<=Math.ceil(span/3);q++)P.push([new THREE.BoxGeometry(0.16,0.95,0.16).translate(-span/2+q*span/Math.ceil(span/3),0.4,sd*1.2),M]);}}}}}
+  for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const m=new THREE.Mesh(mergeGeoms(P),new THREE.MeshLambertMaterial({color:col}));m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
 function trackAt(x,z,tol){if(!G.trackSet||!G.tg)return false;const T=G.tg;for(const k of G.trackSet){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b];if(segDist(x,z,A,Bp)<tol)return true;}return false;}
 function rebuildFences(){
   if(!G.land||!G.fenceWood)return;G.fenceDirty=false;
@@ -4598,6 +4618,9 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
     }
     diffuseColor.rgb=mix(c,diffuseColor.rgb,smoothstep(2400.,3200.,dcam));
   }
+  { float e=max(abs(wp.x),abs(wp.y))-uSize*0.5+(lnoise(wp*0.0033)-0.5)*260.+(lnoise(wp*0.011)-0.5)*120.; // the known world frays at its edge into the country beyond, not a ruled line
+      vec3 far=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.45,0.6,lnoise(wp*0.0024)))*(0.9+0.2*lnoise(wp*0.025));
+      if(e>-700.)diffuseColor.rgb=mix(diffuseColor.rgb,far,smoothstep(-700.,0.,e)*0.8); }
   { // lordship: each lord's land edged in his colours where it meets another's; land held by the sword hatched
     vec4 L1=texture2D(uLord,(c1+0.5)/uFN),L2=texture2D(uLord,(c2+0.5)/uFN);
     if(uTerr>1.5&&L1.b>0.004){float v=L1.b;vec3 hv=v<0.5?mix(vec3(0.18,0.35,0.75),vec3(0.95,0.85,0.3),v*2.):mix(vec3(0.95,0.85,0.3),vec3(0.85,0.18,0.12),v*2.-1.);
