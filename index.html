@@ -2307,7 +2307,7 @@ function layoutSettlement(s){
       if(hit.some(b=>b.inst&&!(b.arch==='hall'&&dist2d(b.x,b.z,R.x,R.z)<r-Math.hypot(b.w,b.d)/2-2)))return false;
       if(hit.filter(b=>!b.inst).length>24)return false; // not a whole quarter for it
       live=true;curE=E;hit.filter(b=>!b.inst).forEach(unplace);s.ward={...R,stone:!!stone};
-      hist(0,stone?'A curtain of stone with towers was raised about the keep and its yard; the houses within were pulled down.':'A ditch and palisade were thrown about the keep and its yard; the houses within were pulled down.');live=false;return true;},
+      live=false;return true;},
     outer(){ // a second, lower curtain beyond the first: what stands on its line and in the lists between is cleared
       const R=s.bailey||s.hillCastle||s.ward;if(!R||s.cas&&s.cas.outer)return false;const o=16,r=R.r+o;
       let bad=0;for(let k=0;k<32;k++){const a=k/32*6.2832,x=R.x+Math.cos(a)*r,z=R.z+Math.sin(a)*r;if(s.wallRad&&Math.abs(wallSide(x,z))<6||inPlace(x,z,1))bad++;}
@@ -2315,12 +2315,12 @@ function layoutSettlement(s){
       const hit=liveB().filter(b=>!b.removed&&dist2d(b.x,b.z,R.x,R.z)<r+Math.hypot(b.w,b.d)/2+2&&dist2d(b.x,b.z,R.x,R.z)>R.r-2&&!(s.motte&&dist2d(b.x,b.z,s.motte.x,s.motte.z)<s.motte.r+2));
       if(hit.some(b=>b.inst&&b.arch!=='shed')||hit.length>36)return false;
       live=true;curE=E;hit.forEach(unplace);(s.cas||(s.cas={towers:4,round:false,gate:0,outer:0,tried:{}})).outer=o;
-      hist(0,`An outer curtain was built about the castle, ${o} m beyond the old${hit.length>2?`; ${hit.length} houses were pulled down for it and the lists between`:''}.`);live=false;return true;},
+      s._outerCleared=hit.length;live=false;return true;},
     chapel(){const R=s.bailey||s.hillCastle||s.ward;if(!R)return false; // a chapel in the castle yard
       for(let k=0;k<16;k++){const a=k/16*6.2832+0.3,d0=R.r*0.5,x=R.x+Math.cos(a)*d0,z=R.z+Math.sin(a)*d0,f={x,z,w:6,d:10,rot:-a};
         if(!probe(f).every(q=>cellOK(q.x,q.z)&&dist2d(q.x,q.z,R.x,R.z)<R.r-2.5&&!nearStreet(q.x,q.z,0.5)))continue;
         const F={...f,w:8,d:12};if([...new Set(placed.near(x,z,12))].some(o=>!o.removed&&obbOverlap(F,o)))continue;
-        live=true;curE=E;place('temple',2,f,'keep',0.75,{inst:true,castle:true});hist(0,'A chapel was built in the castle yard.');live=false;return true;}
+        live=true;curE=E;place('temple',2,f,'keep',0.75,{inst:true,castle:true});live=false;return true;}
       return false;},
     grow(b,w,d,shift){ // rebuilt larger on its own ground, keeping its name and fabric: the houses in the way are bought out and pulled down
       for(const sh of shift?[shift,0]:[0]){const[x,z]=sh?locW(b,0,sh):[b.x,b.z],f={x,z,w,d,rot:b.rot},P=probe(f);
@@ -3797,10 +3797,11 @@ function orientCh(b){const ch=b.ch,c=Math.cos(b.rot),sn=Math.sin(b.rot);let bd=1
 function chOf(b){
   if(b.ch)return b.ch;
   const s=b.s,ad=AD(),cath=!!b.cathedral,area=b.w*b.d,town=s.kind!=='village';
-  const ch=b.ch={stone:b.tier>=2&&(ad>=1000||town||cath),gothic:ad>=1190&&b.tier>=2,aisles:cath?2:area>320?(ad>=1080?2:1):0,
-    tower:b.castle?1:cath&&b.w>=18?3:town||ad>=1050&&area>140?2:1,spire:0,trans:cath&&b.w>=20,ctower:false,porch:false,fund:0,cong:0};
+  const ch=b.ch={stone:b.tier>=2&&(ad>=1000||town||cath),gothic:ad>=1190&&b.tier>=2,aisles:cath&&b.w>=14||area>320?(ad>=1080?2:1):0,
+    tower:b.castle?1:cath&&b.w>=18?3:town||ad>=1050&&area>140?2:1,spire:0,trans:cath&&b.w>=20,ctower:false,porch:false,fund:0,cong:0,
+    taste:hash01(Math.round(b.x*3.1+b.z*7.7))}; // a parish's own leaning: some build spires, some keep a plain tower
   if(ch.tower===3&&ch.aisles<2)ch.tower=2;
-  if(ch.tower>=2&&ad>=1150&&town)ch.spire=ad>=1260&&cath?2:1;
+  if(ch.tower>=2&&ad>=1150&&town&&ch.taste>0.4)ch.spire=ad>=1260&&cath?2:1;
   if(!ch.stone){ch.tower=Math.min(ch.tower,1);ch.aisles=0;ch.trans=false;ch.gothic=false;}
   orientCh(b);ch.porch=ad>=1150&&ch.door!=='W'&&ch.room>1.4;
   return ch;}
@@ -3841,8 +3842,8 @@ function drawChurch(b,put){
       const[X,Z]=locW(b,x0+sd*(pd+0.12),z);put('box',X,y-0.2,Z,b.rot,0.3,2.8,1.8,dark);}
     else{const[X,Z]=locW(b,x0+sd*0.12,z);put('box',X,y-0.2,Z,b.rot,0.3,2.8,1.5,dark);}}
   if(ch.gothic)for(const sd of[-1,1]){const out=outX(sd),hh=sides.includes(sd)?h*0.5:h*0.85,n=Math.max(2,Math.round(L.nl/5)); // buttresses
-    for(let k=0;k<=n;k++)B(out+sd*0.5,L.Wz*(L.navePlus-k*L.nl/n),1,fh+hh,1.1,wall);
-    const n2=Math.max(1,Math.round(L.cbl/5));for(let k=0;k<=n2;k++)B(L.nx+sd*(L.cw/2+0.5),L.cbZ+L.Wz*(L.cbl/2-k*L.cbl/n2),1,fh+h*0.7,1.1,wall);}
+    for(let k=0;k<=n;k++)B(out+sd*0.45,L.Wz*(L.navePlus-k*L.nl/n),0.9,fh+hh*0.8,1,0xb3ab98);
+    const n2=Math.max(1,Math.round(L.cbl/5));for(let k=0;k<=n2;k++)B(L.nx+sd*(L.cw/2+0.45),L.cbZ+L.Wz*(L.cbl/2-k*L.cbl/n2),0.9,fh+h*0.6,1,0xb3ab98);}
 }
 /* ---------------- a castle grows by parts, as its lord can pay ----------------
    A lone tower keep is given a curtain about its yard; a palisade becomes stone; the curtain gains towers
@@ -3863,18 +3864,21 @@ function casDesc(s){const R=casRing(s),c=casOf(s),k=casKeep(s),p=[];
     if(c.chapel)p.push('a chapel in the yard');const hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);if(hall)p.push(hall.tier>=2?'a great hall of stone':'a timber hall');}
   else if(k)p.push('no curtain yet: the tower stands alone');
   return p.join('; ');}
-function casNext(s,ad){const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-25);
-  const great=s.kind==='capital'||s.role==='border'||s.role==='seat'||s.role==='fort',hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
-  if(!R&&k&&!k.motte&&ad>=1000&&ok('ward'))return{k:'ward',cr:ad>=1150?900:400,st:ad>=1150?120:0,t:ad>=1150?'a curtain of stone about the keep':'a palisade about the keep'};
+function casLvl(s){ // what the place is worth fortifying: a village's tower, a town's castle, a seat, the crown's own
+  const seat=s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].seat===W.settlements.indexOf(s);
+  return s.kind==='capital'?3:seat||s.role==='seat'||s.kind!=='village'&&s.role==='border'?2:s.kind!=='village'||s.role==='border'||s.role==='fort'?1:0;}
+function casNext(s,ad){const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-25),lv=casLvl(s);
+  const great=lv>=2,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
+  if(!R&&k&&!k.motte&&ad>=1000&&lv>=1&&ok('ward'))return{k:'ward',cr:ad>=1150?900:400,st:ad>=1150?120:0,t:ad>=1150?'a curtain of stone about the keep':'a palisade about the keep'};
   if(!R)return null;
-  if(R===s.ward&&!R.stone&&ad>=1150)return{k:'wardStone',cr:700,st:120,t:'the palisade rebuilt in stone'};
-  if(st&&c.towers<(great?8:6)&&ad>=1100)return{k:'towers',cr:350,st:40,t:'two more towers on the curtain'};
-  if(st&&c.gate===0&&ad>=1150)return{k:'gate',cr:500,st:60,t:'a gatehouse'};
+  if(R===s.ward&&!R.stone&&ad>=1150&&lv>=1)return{k:'wardStone',cr:700,st:120,t:'the palisade rebuilt in stone'};
+  if(st&&c.towers<[4,4,6,8][lv]&&ad>=1100)return{k:'towers',cr:350,st:40,t:'two more towers on the curtain'};
+  if(st&&c.gate===0&&ad>=1150&&lv>=1)return{k:'gate',cr:500,st:60,t:'a gatehouse'};
   if(hall&&hall.tier<2&&ad>=1100)return{k:'hall',cr:300,st:40,t:'a hall of stone'};
-  if(!c.chapel&&ad>=1050&&ok('chapel'))return{k:'chapel',cr:250,st:20,t:'a chapel in the yard'};
-  if(st&&!c.round&&ad>=1220&&c.towers>=6)return{k:'round',cr:400,st:50,t:'the towers rebuilt round'};
-  if(st&&c.gate===1&&ad>=1230&&great)return{k:'barb',cr:450,st:50,t:'a barbican'};
-  if(st&&c.towers>=6&&c.gate>=1&&!c.outer&&ad>=1270&&great&&s.pop>900&&ok('outer'))return{k:'outer',cr:2200,st:220,t:'an outer curtain'};
+  if(!c.chapel&&ad>=1050&&lv>=1&&ok('chapel'))return{k:'chapel',cr:250,st:20,t:'a chapel in the yard'};
+  if(st&&!c.round&&ad>=1220&&c.towers>=6&&great)return{k:'round',cr:400,st:50,t:'the towers rebuilt round'};
+  if(st&&c.gate===1&&ad>=1230&&(lv>=3||great&&s.role==='border'))return{k:'barb',cr:450,st:50,t:'a barbican'};
+  if(st&&c.towers>=8&&c.gate>=1&&!c.outer&&ad>=1270&&lv>=3&&s.pop>900&&ok('outer'))return{k:'outer',cr:2200,st:220,t:'an outer curtain'};
   return null;}
 function tickCastles(){
   const ad=AD();
@@ -3883,7 +3887,8 @@ function tickCastles(){
     const hi=s.owner,Lh=hi>0?W.houses[hi]:null;if(Lh&&Lh.exiled)return;
     const c=casOf(s),n=casNext(s,ad);c.next=n;if(!n)return;
     const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=Math.round(n.cr+(n.st-useS)*3); // a lord pays dear for stone carted from afar
-    if(purse(hi)<cost*2.2||!chance('sim',0.5))return; // built from the surplus, not the war chest
+    const threat=(s.role==='border'?1:0)+(houseAtWar(hi)?1:0)+(s.raidedUntil>day()-360*4?0.6:0)+(s.siegeBy?1:0);
+    if(purse(hi)<cost*(hi>0?3:6)||!chance('sim',0.05+0.12*threat))return; // built from the surplus, not the war chest; most of all when there is a threat
     let ok=true,sync=false;const L=s._lay.live,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);
     if(n.k==='ward'){ok=L.ward(ad>=1150);sync=true;}else if(n.k==='outer'){ok=L.outer();sync=true;}else if(n.k==='chapel'){ok=L.chapel();sync=true;if(ok)c.chapel=true;}
     else if(n.k==='wardStone')s.ward.stone=true;else if(n.k==='towers'){c.towers+=2;if(ad>=1200)c.round=true;}else if(n.k==='gate')c.gate=1;else if(n.k==='barb')c.gate=2;
@@ -3894,7 +3899,7 @@ function tickCastles(){
     const t={ward:`${who} throws ${n.t} at ${s.name}; the houses within the yard are pulled down.`,wardStone:`The palisade about ${cn} is rebuilt in stone.`,towers:`Two towers are added to the curtain of ${cn}.`,
       gate:`A gatehouse of two towers is built at ${cn}, its passage closed by a portcullis.`,hall:`A great hall of stone is raised in the yard of ${cn}.`,chapel:`A chapel is built in the yard of ${cn}.`,
       round:`The old square towers of ${cn} are rebuilt round, the better to turn the stones of a siege engine.`,barb:`A barbican is built before the gate of ${cn}.`,
-      outer:`An outer curtain is thrown about ${cn}: a concentric castle now, ward within ward.`}[n.k];
+      outer:`An outer curtain is thrown about ${cn}: a concentric castle now, ward within ward${s._outerCleared>2?`; ${s._outerCleared} houses are pulled down for it`:''}.`}[n.k];
     s.history.push({yr:year(),t});c.next=casNext(s,ad);
     if(sync)syncLive(s);else{rebuildWalls();G.detDirty=true;}
     emit(hi>0?'house':'trade',n.k==='outer'||n.k==='ward'||n.k==='gate'?3:1,kn||casRing(s),t);
@@ -3921,23 +3926,23 @@ function chNext(s,b,ch,ad){
   if(ch.tower===0)return{k:'bell',cr:3,st:0,t:'a bellcote'};
   if(ch.stone&&ch.tower===1&&!b.castle&&ad>=1000&&ch.cong>=110)return{k:'tower',cr:40,st:50,t:'a west tower'};
   if(ch.stone&&ch.door!=='W'&&!ch.porch&&ad>=1120&&ch.room>1.4)return{k:'porch',cr:6,st:6,t:'a porch'};
-  if(ch.stone&&!ch.gothic&&ad>=1190&&(rich||b.cathedral||town))return{k:'gothic',cr:50+A*0.08,st:60+A*0.1,t:'rebuilding in the new style'};
-  if(ch.tower>=2&&!ch.spire&&ad>=1120)return{k:'spire',cr:20,st:8,t:'a spire'};
-  if(ch.tower===2&&ch.aisles===2&&(b.cathedral||ch.cong>1000)&&ad>=1120)return{k:'twin',cr:120,st:120,t:'twin west towers'};
+  if(ch.stone&&!ch.gothic&&ad>=1190&&(b.cathedral||town&&rich||rich&&ch.taste>0.5&&ch.cong>150))return{k:'gothic',cr:50+A*0.08,st:60+A*0.1,t:'rebuilding in the new style'};
+  if(ch.tower>=2&&!ch.spire&&ad>=1120&&ch.taste>0.4)return{k:'spire',cr:20,st:8,t:'a spire'};
+  if(ch.tower===2&&ch.aisles===2&&b.w>=16&&(b.cathedral||ch.cong>1000)&&ad>=1120)return{k:'twin',cr:120,st:120,t:'twin west towers'};
   if(ch.trans&&!ch.ctower&&ad>=1100)return{k:'ctower',cr:80,st:90,t:'a crossing tower'};
-  if(ch.spire===1&&ad>=1230&&(rich||b.cathedral))return{k:'spire2',cr:60,st:60,t:'a spire of stone'};
+  if(ch.spire===1&&ad>=1230&&(b.cathedral||rich&&ch.taste>0.7&&ch.cong>250))return{k:'spire2',cr:60,st:60,t:'a spire of stone'};
   return null;}
 function tickChurches(){
   const ad=AD();
   W.settlements.forEach((s,si)=>{if(day()%360!==(si*47+150)%360||!s._lay||!s._lay.live)return;
     const T=s.buildings.filter(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed);if(!T.length)return;
     const wt=b=>b.castle?0.15:b.friary?0.4:b.cathedral?1.6:1,tot=T.reduce((t,b)=>t+wt(b),0),Lh=s.owner>0?W.houses[s.owner]:null;
-    let gifts=0;for(const p of s.folk||[])if(p.w>40){const g=(p.w-40)*0.015;p.w-=g;gifts+=g;} // the well-to-do give to the fabric, and leave it money in their wills
+    let gifts=0;const gcap=s.pop*0.01;for(const p of s.folk||[])if(p.w>40&&gifts<gcap){const g=Math.min(0.6,(p.w-40)*0.015,gcap-gifts);p.w-=g;gifts+=g;} // the well-to-do give to the fabric, and leave it money in their wills
     let synced=false;
     for(const b of T){const ch=chOf(b);ch.cong=Math.round(s.pop*wt(b)/tot);
       ch.fund+=ch.cong*0.006*clamp(s.prosperity/50,0.3,2)+gifts*wt(b)/tot+(b.cathedral?8:0);
       if((Lh?!Lh.exiled&&(Lh.gold||0)>3000:W.treasury>15000)&&(b.castle||b.cathedral||chance('sim',0.15))){const g=Math.min(20,purse(s.owner)*0.002);if(spend(s.owner,g)){if(Lh)book(Lh,'church works',-g);ch.fund+=g;}}
-      const n=chNext(s,b,ch,ad);ch.next=n;if(!n)continue;
+      const n=chNext(s,b,ch,ad);ch.next=n;if(!n){ch.fund=Math.min(ch.fund,60);continue;} // nothing wanted: the surplus goes to the poor and the vestments
       const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=n.cr+(n.st-useS)*0.6; // stone the yards lack is carted in
       if(ch.fund<cost)continue;
       let grew=0;
@@ -3948,7 +3953,7 @@ function tickChurches(){
       if(n.k==='aisle')ch.aisles++;else if(n.k==='trans')ch.trans=true;else if(n.k==='stone'){ch.stone=true;b.tier=2;b.h=ARCH.temple[2]*1.3*(s.kind==='village'?0.75:1);}
       else if(n.k==='bell')ch.tower=1;else if(n.k==='tower'){ch.tower=2;orientCh(b);}else if(n.k==='porch')ch.porch=true;else if(n.k==='gothic')ch.gothic=true;
       else if(n.k==='spire')ch.spire=1;else if(n.k==='twin')ch.tower=3;else if(n.k==='ctower')ch.ctower=true;else if(n.k==='spire2')ch.spire=2;
-      const nm=buildingName(b)||'the church',t={long:`The nave of ${nm} at ${s.name} is lengthened: the parish no longer fits.`,aisle:`${nm} at ${s.name} is given ${n.t}, for its crowded nave.`,
+      const nm=buildingName(b)||'the church';let t={long:`The nave of ${nm} at ${s.name} is lengthened: the parish no longer fits.`,aisle:`${nm} at ${s.name} is given ${n.t}, for its crowded nave.`,
         trans:`Transepts are built across ${nm} at ${s.name}.`,stone:`${nm} at ${s.name}, long of timber, is rebuilt in stone.`,bell:`A bellcote is set on the gable of ${nm} at ${s.name}.`,
         tower:`${nm} at ${s.name} raises a west tower; its bells carry across the fields.`,porch:`A porch is built over the door of ${nm} at ${s.name}.`,
         gothic:`${nm} at ${s.name} is rebuilt in the new style: pointed arches, buttresses, a loftier nave and a square east end.`,spire:`A shingled spire is raised on the tower of ${nm} at ${s.name}.`,
