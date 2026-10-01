@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 19:54 UTC · after 938ea50</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 20:05 UTC · after 4d166c4</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2814,10 +2814,13 @@ function townsfolkFor(s){ // who is about in this town, and where each goes
           what=kind==='wood'?(p.tr==='hunter'?'hunting in the wood':p.tr==='forester'?'walking the wood for the lord':'felling timber in the wood'):kind==='common'?(p.tr==='shepherd'?'minding the sheep on the common':'minding the cattle on the common'):
             p.sx==='f'?(season===2?`binding sheaves in the ${kn}`:`weeding in the ${kn}`):['ploughing and sowing in the ','weeding in the ','reaping in the ','threshing'][season]+(season<3?kn:'');}
         else{const an=Math.atan2(h.z-s.pos.z,h.x-s.pos.x)+(H-0.5)*0.6;work={x:s.pos.x+Math.cos(an)*(R+30),z:s.pos.z+Math.sin(an)*(R+30)};what=kind==='wood'?'at work in the wood':'at work in the fields';}}}
-    else if(a<14){work={x:h.x+(H-0.5)*40,z:h.z+(H*7%1-0.5)*40};what='at play in the lanes';}
+    else if(a<14){work={x:h.x+(H-0.5)*30,z:h.z+(H*7%1-0.5)*30};const an=H*6.283;fw={A:work,B:{x:work.x+Math.cos(an)*12,z:work.z+Math.sin(an)*12},flip:false,run:true};
+      what=a<6?'at play by the door':a<10?'at play in the lanes':['fetching water','minding the geese','running errands for the household','at play in the lanes'][Math.floor(H*4)];}
     else{work=h;what=p.tr?`at work at home, ${p.tr}`:'about the house';inside=true;}
+    const chores=inside&&work===h; // those who work at home go out on the day's errands: the well, the baker's, the market, a neighbour's
+    const door=inside&&!chores&&work?{x:work.x,z:work.z}:null; // a craftsman works at his doorstep part of the day
     const pace=2*(a<14?1.5:a>60?0.9:1.15+0.12*clamp(trait(p,GV),-2,2)+0.05*clamp(trait(p,GS),-2,2)); // metres a second, as they are made, and brisk: the day at life pace is half an hour, and the fields lie far
-    out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,fw,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
+    out.push({s,p,g,home:{x:h.x,z:h.z},work:{x:work.x,z:work.z},workIn:inside,what,fw,chores,door,shops:chores?['bakery','shop','tavern','smithy','dyer'].flatMap(k=>byArch[k]||[]).slice(0,8):null,mk:{x:mk.x+(H*5%1-0.5)*22,z:mk.z+(H*11%1-0.5)*22},
       church:ch?{x:ch.x,z:ch.z}:null,pace,sc:a<14?0.75:1,col:new THREE.Color([0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98][p.id%9]).multiplyScalar(0.85+H*0.3),
       x:h.x,z:h.z,ry:0,t:0,state:'home',until:0,route:null,ri:0,out:false,walking:false,goal:'home',doing:'at home'});}
   return out;}
@@ -2839,6 +2842,7 @@ function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true 
       if(c.goal==='home'){c.state='home';c.out=false;c.doing='at home';}
       else if(c.goal==='market'){c.state='market';c.out=true;c.doing='at the market';c.until=c.t+(20+H*30)*WS;} // a while at the stalls
       else if(c.goal==='church'||c.goal==='wedding'){c.state='church';c.out=false;c.doing=c.wedW?`at the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:'at mass';c.until=c.t+(40+H*20)*WS;}
+      else if(c.goal==='errand'){c.state='errand';c.out=true;c.doing=c.errWhat;c.until=c.t+(6+H*10)*WS;}
       else if(c.goal==='visit'){c.state='visit';c.out=false;c.doing=`visiting ${c.p.sx==='f'?'her':'his'} mother, ${folkName(c.visitOf)}`;c.until=c.t+(30+H*40)*WS;}
       else{c.state='work';c.out=!c.workIn;c.doing=c.what;}}
     return;}
@@ -2854,7 +2858,13 @@ function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true 
   if(fr>=home0||night){c.dayDone=day();planWalk(c,c.home,'home');return;} // home at dusk
   if(c.state==='work'&&fr>=mkt&&c.p.id%3===0&&ageYrs(c.p)>=14&&c.mktDay!==day()){c.mktDay=day();planWalk(c,c.mk,'market');return;}
   if(c.state==='market'&&c.t>=c.until){planWalk(c,c.work,'work');return;}
+  if(c.state==='errand'&&c.t>=c.until){planWalk(c,c.work,'work');return;}
+  if(c.state==='work'&&c.chores&&c.t>=(c.nextChore||0)){ // the round of chores: out every couple of hours on some errand, and home again
+    const first=!c.nextChore;c.nextChore=c.t+(DAYSEC/12)*(0.6+H*0.8)*(first?H:1);if(!first){const B=c.shops&&c.shops.length&&H*7%1<0.6?c.shops[Math.floor((c.t*0.013+H*5)%c.shops.length)]:null;
+      const to=B?{x:B.x,z:B.z}:c.mk;c.errWhat=B?`at the ${ARCH[B.arch]?ARCH[B.arch][4]:B.arch}`:'at the market';planWalk(c,to,'errand');return;}}
+  if(c.state==='work'&&c.door)c.out=((c.t/(DAYSEC/16)+H)%1)<0.4; // at the doorstep, then back to the bench
   if(c.state==='work'&&c.fw&&!c.workIn){const F=c.fw,T=F.flip?F.A:F.B,d=dist2d(c.x,c.z,T.x,T.z),m=c.pace*0.3*dt; // up the furrow and back, at the plough's pace; the woodman from tree to tree
+    if(F.run&&d>m){const m2=c.pace*0.6*dt;c.x+=(T.x-c.x)/d*Math.min(d,m2);c.z+=(T.z-c.z)/d*Math.min(d,m2);c.ry=-Math.atan2(T.z-c.z,T.x-c.x)+Math.PI/2;if(Math.min(d,m2)===d)F.flip=!F.flip;c.walking=true;return;}
     if(d<=m){c.x=T.x;c.z=T.z;F.flip=!F.flip;}else{c.x+=(T.x-c.x)/d*m;c.z+=(T.z-c.z)/d*m;c.ry=-Math.atan2(T.z-c.z,T.x-c.x)+Math.PI/2;}c.walking=true;}}
 function rockNear(s,h){ // the nearest crag or steep hillside, where ore and stone are got
   let best=null,bd=1e18;const cx=toCell(h.x),cz=toCell(h.z);
@@ -6366,7 +6376,7 @@ function showInspect(pk){
     flyToBtn(fb,'Follow',()=>{markManual();cam.follow=d;cam.dist=300;});
   }else if(pk.type==='person'){
     const p=pk.p,s=pk.s,a=Math.floor(ageYrs(p)),hd=householdHead(p),home=hd.bh,fm=p.fam>=0?W.fams[p.fam]:null,pl=q=>`<a class="pp" data-pid="${q.id}">${esc(folkName(q))}</a>`;
-    setHTML(title,esc(folkName(p)));sub.textContent=`${a}, ${p.sex==='f'||p.sx==='f'?(p.sp?'wife':'woman'):p.sp?'husband':'man'}${p.tr&&a>=14?' · '+p.tr:''} · ${s.name}`;
+    setHTML(title,esc(folkName(p)));{const fem=p.sex==='f'||p.sx==='f';sub.textContent=`${a}, ${a<14?(fem?'girl':'boy'):a<18?(fem?'young woman':'young man'):fem?(p.sp?'wife':'woman'):p.sp?'husband':'man'}${p.tr&&a>=14?' · '+p.tr:''} · ${s.name}`;}
     {const aw=awayNow(p),t=pk.t||(W.travellers||[]).find(x=>x.p===p);
       if(t)h+=row('Now',`on the road from ${esc(W.settlements[t.from]?.name||'?')} to ${esc(W.settlements[t.to]?.name||'?')} — ${t.home?{market:'home from market',kin:'home from seeing her mother',pilgrim:'home from pilgrimage'}[t.why]||'coming home':{bride:'a bride going to her husband\'s house',migrant:'leaving for a new home',market:'to market, with eggs, cheeses and wool to sell',kin:'to see her mother',pilgrim:'on pilgrimage to the shrine'}[t.why]||'on the road'}; there ${dateStr(Math.ceil(t.arrive))}`);
       else if(aw)h+=row('Now',esc(aw.what)+`; home by ${dateStr(Math.ceil(aw.until))}`);
