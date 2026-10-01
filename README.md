@@ -108,6 +108,19 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   see from any height. House names sit over the heart of their lands, and a
   legend lists each house with its places and hectares (click one to go
   there).
+- **Tongues overlay:** every field coloured by the tongue of the place that
+  farms it, each tongue named over its heartland, and a legend of places and
+  souls with the towns where two tongues are spoken. Tongues move as the map
+  develops:
+  - each place keeps a mix of speakers; incomers (brides, emigrants) bring
+    their own;
+  - a town held for generations by a lord of another tongue takes on the
+    court's speech (slowly; villages slower still);
+  - when another tongue becomes the majority, the place changes its speech
+    and the annals say so;
+  - a great house seated among another people takes up their tongue within
+    a generation or two (its children are named in it), and a cadet branch
+    planted in a fief of another tongue often takes it at once.
 - **Land & property value overlay:** every town lot is coloured by its own
   worth, fence to fence, and every furlong by its yield and how near its
   buyers are. A house's card gives its rent and lot size.

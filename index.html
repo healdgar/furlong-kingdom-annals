@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 19:08 UTC · after 7d90c31</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 19:33 UTC · after 427efe8</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2709,7 +2709,21 @@ function inboundOf(){const m=new Map();for(const t of W.travellers||[])m.set(t.t
 function tickTravel(){ // arrivals: the traveller takes their place in the new town's roll
   const T=W.travellers;if(!T||!T.length)return;const d=day();
   for(let i=T.length-1;i>=0;i--){const t=T[i];if(t.p.dead){T.splice(i,1);continue;}
-    if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);}}}
+    if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);
+      const o=W.settlements[t.from];if(o&&o.cult&&s.cult)speakers(s,o.cult,1);}}} // the incomer brings their own speech
+/* the tongues of a place: a mix of speakers that shifts as people come and go and as lords hold it; the majority is the place's tongue */
+function tongueMix(s){if(!s.tg){s.tg={};if(s.cult)s.tg[s.cult]=1;}return s.tg;}
+function speakers(s,c,n){const M=tongueMix(s),f=n/Math.max(30,s.pop);for(const k in M)M[k]*=1-f;M[c]=(M[c]||0)+f;}
+function tickTongues(){ // yearly: the court's speech seeps into a town its lord has long held; a new majority changes the place's tongue
+  for(const s of W.settlements){const M=tongueMix(s),h=W.houses[s.owner];
+    if(h&&h.cult&&h.cult!==s.cult&&CULT[h.cult])speakers(s,h.cult,s.pop*(s.kind==="village"?0.002:0.004)); // clerks, bailiffs and the castle's household: more in a town than in the fields
+    let top=s.cult,tv=M[s.cult]||0;for(const k in M)if(M[k]>tv+0.02&&CULT[k]){top=k;tv=M[k];}
+    if(top!==s.cult){const was=s.cult;s.cult=top;if(overlayMode==='tongue')refreshTongues();
+      if(!W.prehistory)emit('fates',3,s.pos,vary('tongue_shift',[()=>`In ${s.name} the ${CULT[top].name} tongue is now heard more than the ${CULT[was].name}; the priest preaches in it.`,
+        ()=>`${s.name} speaks ${CULT[top].name} now; only the old wives keep the ${CULT[was].name} of their mothers.`,
+        ()=>`The market of ${s.name} haggles in ${CULT[top].name} these days, where it once spoke ${CULT[was].name}.`]));}}}
+const TONGUE_IDS=Object.keys(CULT),TONGUE_PAL={anglo:0xc0392b,french:0x2e5aac,german:0xe0a526,norse:0x3a9a8c,italian:0x5aa02c,slavic:0x8e44ad,celtic:0x2f7d32,iberian:0xd35400};
+function refreshTongues(){if(!G.land||!G.land.F)return;for(const f of G.land.F)writeLord(f);houseTints();}
 function awayNow(p){return p.away&&day()<p.away.until?p.away:null;}
 function crewFor(c){ // the carter from the town the goods leave, or the master of the boat
   const o=W.settlements[c.origin];if(!o||!o.folk||!o.folk.length)return;
@@ -2747,6 +2761,9 @@ function streetPath(g,a,b){ // shortest way along the streets (A*)
   const pop=()=>{let m=0;for(let i=1;i<open.length;i++)if(open[i][0]<open[m][0])m=i;const t=open[m];open[m]=open[open.length-1];open.pop();return t;};
   let guard=0;while(open.length&&guard++<6000){const[,v]=pop();if(v===b)break;for(const[w,d]of g.adj[v]){const ng=gs[v]+d;if(ng<gs[w]){gs[w]=ng;from[w]=v;open.push([ng+dist2d(g.N[w].x,g.N[w].z,T.x,T.z),w]);}}}
   if(from[b]<0)return null;const out=[];for(let v=b;v!==-1;v=from[v]){out.push(v);if(v===a)break;}return out.reverse();}
+function warmWalkers(L){ // a town just come into view: play its folk's day forward to this hour at once, so each is already where they would be now
+  const fr=W.clock.frac||0,f0=0.2;if(fr<=f0||!L.length)return;const N=200,step=600*(fr-f0)/N;
+  for(let i=1;i<=N;i++){const f=f0+(fr-f0)*i/N;for(const c of L)stepWalker(c,step,f);}}
 function townsfolkFor(s){ // who is about in this town, and where each goes
   if(s._hhY!==year())houseFolk(s);const ch=s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'),g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
   const byArch={};for(const b of s.buildings)if(b.state==='sound'){(byArch[b.arch]||(byArch[b.arch]=[])).push(b);}
@@ -2821,7 +2838,7 @@ function makeHousesAndCast(){
       sigilHue:HOUSEHUES[hi],charge:pick('gen',CHARGES),seat,loyalty:52+randi('gen',30),might:0.6+rand('gen')*0.8,wealth:0.7+rand('gen')*0.6,exiled:false,grudges:{},crown:false});
   }
   W.houses.forEach((h,hi)=>{ // each house takes its name in its own tongue, mostly from its seat
-    const C=CULT[h.cult=W.houseCult[hi]||W.crownCult],r=nameRng(500+hi),seat=W.settlements[h.seat]||W.capital;
+    const seat=W.settlements[h.seat]||W.capital,C=CULT[h.cult=seat.cult||W.houseCult[hi]||W.crownCult],r=nameRng(500+hi); // a house speaks its own seat's tongue (it used to take the next house's by an off-by-one)
     h.name='';h.name=uniqueHouseName(C,seat.name.replace(/^(the |Burg |Château |Castello )/,''),r,h);
   });
   // settlement ownership: nearest house seat (capital→crown)
@@ -4635,7 +4652,8 @@ function inRebellion(a,b){return !!W.war&&(a.house===0||inRevolt(a.house))&&(b==
 function lordColor(hi){const h=W.houses[hi];return h?h.sigilHue[0]:0x888888;}
 function writeLord(f){
   if(!G.land||!G.land.lordTex)return;const d=G.land.lordTex.image.data,o=f.k*4;
-  d[o]=f.lord+1;d[o+1]=f.held?255:0;G.land.lordTex.needsUpdate=true;
+  if(overlayMode==='tongue'){const s=f.dom>=0?W.settlements[f.dom]:null;d[o]=s&&s.cult?TONGUE_IDS.indexOf(s.cult)+1:0;d[o+1]=0;}
+  else{d[o]=f.lord+1;d[o+1]=f.held?255:0;}G.land.lordTex.needsUpdate=true;
 }
 function setLord(f,hi,held){
   const was=f.lord;f.lord=hi;f.held=!!held;writeLord(f);
@@ -5683,7 +5701,8 @@ function setOverlay(mode){
   if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);G.overlay=null;}
   document.querySelectorAll('.ovbtn').forEach(b=>b.classList.toggle('on',b.dataset.o===overlayMode));
   if(G.land&&G.land.uni)G.land.uni.uTerr.value=0;
-  if(overlayMode!=='territory'){const tl=document.getElementById('terrlegend');if(tl)tl.remove();}
+  if(overlayMode!=='territory'&&overlayMode!=='tongue'){const tl=document.getElementById('terrlegend');if(tl)tl.remove();}
+  if((was==='tongue')!==(overlayMode==='tongue'))refreshTongues(); // the field texture carries tongues in that view, lords otherwise
   houseTints();
   if(!overlayMode)return;
   refreshOverlayNow(); // the player chose it: at once
@@ -5699,7 +5718,7 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
     m.rotation.x=-Math.PI/2;m.position.set(s.pos.x,s.pos.y+4+(s.radius*0.01),s.pos.z);
     grp.add(m);
   };
-  if(G.land&&G.land.uni)G.land.uni.uTerr.value=overlayMode==='territory'?1:overlayMode==='value'?2:0; // the land itself is coloured by its lord, or by its worth
+  if(G.land&&G.land.uni)G.land.uni.uTerr.value=overlayMode==='territory'||overlayMode==='tongue'?1:overlayMode==='value'?2:0; // the land itself is coloured by its lord, or by its worth
   const ribbon=(pts,w,col,op,lift)=>{ // a flat band laid on the ground (lines are one pixel wide in WebGL)
     const q=resample(pts,12);if(q.length<2)return;const pos=[],idx=[];
     q.forEach((p,k)=>{const a=q[Math.max(0,k-1)],b=q[Math.min(q.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1,nx=-(b.z-a.z)/L*w,nz=(b.x-a.x)/L*w,y=(lift==null?surfY(p.x,p.z)+2.5:lift);
@@ -5715,6 +5734,14 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
     let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
     el.innerHTML='<b>Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small></div>`).join('');
     el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));}
+  else if(overlayMode==='tongue'){ // who speaks what: each place's fields in its tongue; the legend gives places and souls, and the mixed towns
+    const by={};for(const s of W.settlements){if(!s.cult)continue;const o=by[s.cult]||(by[s.cult]={n:0,pop:0,x:0,z:0});o.n++;o.pop+=s.pop;o.x+=s.pos.x*s.pop;o.z+=s.pos.z*s.pop;}
+    for(const k in by){const o=by[k];const x=o.x/Math.max(1,o.pop),z=o.z/Math.max(1,o.pop),col='#'+new THREE.Color(TONGUE_PAL[k]||0x888888).offsetHSL(0,0,0.15).getHexString();
+      const sp=makeTextSprite(CULT[k].name,1,col);sp.material.sizeAttenuation=false;sp.scale.set(sp.userData.w*0.0012,sp.userData.h*0.0012,1);sp.position.set(x,hAt(x,z)+70,z);sp.renderOrder=7;grp.add(sp);}
+    const mixed=W.settlements.filter(s=>{const M=tongueMix(s);return Object.keys(M).filter(k=>M[k]>0.2).length>1;});
+    let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
+    el.innerHTML='<b>Tongues</b>'+Object.entries(by).sort((p,q)=>q[1].pop-p[1].pop).map(([k,o])=>`<div class="li"><i style="background:#${new THREE.Color(TONGUE_PAL[k]||0x888888).getHexString()}"></i>${CULT[k].name} <small>· ${o.n} place${o.n===1?'':'s'}, ${Math.round(o.pop).toLocaleString()} souls</small></div>`).join('')
+      +(mixed.length?`<div style="margin-top:6px;font-size:12px"><b>Two tongues</b>: ${mixed.slice(0,6).map(s=>{const M=tongueMix(s);return esc(s.name)+' ('+Object.keys(M).filter(k=>M[k]>0.2).map(k=>CULT[k].name+' '+Math.round(M[k]*100)+'%').join(', ')+')';}).join('; ')}</div>`:'');}
   else if(overlayMode==='trade'){ // the realm's traffic: each road as wide as its share of all journeys between places; sea lanes and river barges in blue
     const T=roadTraffic();
     W.roads.forEach((r,ri)=>{const t=Math.sqrt(T[ri]||0);ribbon(r.path,5+t*20,new THREE.Color().setHSL(0.15-t*0.15,0.9,0.5).getHex(),0.6+t*0.35);});
@@ -6863,8 +6890,9 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
   const give=own.filter(s=>s!==seat).sort((a,b)=>dist2d(b.pos.x,b.pos.z,seat.pos.x,seat.pos.z)-dist2d(a.pos.x,a.pos.z,seat.pos.x,seat.pos.z)).slice(0,Math.floor(own.length/3));
   if(!give.length)return;
   const name='House '+give[0].name.replace(/(mere|holt|ford|caster|wyck|march|fell|combe|worth|bridge|haven|moor|dale|garth|stead|port|field|burn|cester|ham|by)$/,'')+pick('sim',['ing','mont','ric','wald','hurst']);
-  const cC=CULT[h.cult]||CULT.anglo,cr=nameRng(day()+hi*101),cname=uniqueHouseName(cC,give[0].name,cr,null);
-  const nh={name:[cname,cname+' the Younger',cname+' of the March',cname+' the Cadet'].find(n=>!W.houses.some(o=>o.name===n))||name, /* a cadet takes its name from its fief, in its own tongue */cult:h.cult,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
+  const kc=give[0].cult&&give[0].cult!==h.cult&&chance('sim',0.5)?give[0].cult:h.cult; // a branch planted among another people often takes their tongue
+  const cC=CULT[kc]||CULT.anglo,cr=nameRng(day()+hi*101),cname=uniqueHouseName(cC,give[0].name,cr,null);
+  const nh={name:[cname,cname+' the Younger',cname+' of the March',cname+' the Cadet'].find(n=>!W.houses.some(o=>o.name===n))||name, /* a cadet takes its name from its fief, in its own tongue */cult:kc,sigilHue:hue,charge:pick('sim',CHARGES),seat:W.settlements.indexOf(give[0]),loyalty:60,might:(h.might||1)*0.8,wealth:(h.wealth||1)*0.7,exiled:false,grudges:{[hi]:true},crown:false,cadetOf:hi};
   {const share=Math.max(0,h.gold||0)*0.3;h.gold=(h.gold||0)-share; // the cadet starts with its share of the strongroom, and none of an old name's debts
     Object.assign(nh,{gold:share,led:{},hostageUntil:0,_grantT:undefined,_fortT:undefined,dues:undefined,_debtAsk:false,_summoned:0,extinct:false});}
   if(ci<0){if(W.houses.length>=11)return;W.houses.push(nh);ci=W.houses.length-1;}else{Object.assign(W.houses[ci],nh);delete W.houses[ci]._url;}
@@ -7770,6 +7798,14 @@ function tickMetro(){
     a.prosperity+=(b.prosperity-a.prosperity)*0.1;a.owner=b.owner;}
   if(d%360!==200)return;
   if(W.seaLanes&&year()%5===0)linkLands(); // new ports open new crossings
+  tickTongues();
+  W.houses.forEach((h,hi)=>{ // a house seated among another people takes up their tongue within a generation or two: its children are named in it
+    if(hi===0||h.exiled||h.extinct)return;const st=W.settlements[h.seat];if(!st||!st.cult||st.cult===h.cult||!CULT[st.cult])return;
+    const own=S.filter(s=>s.owner===hi),share=own.filter(s=>s.cult===st.cult).reduce((t,s)=>t+s.pop,0)/Math.max(1,own.reduce((t,s)=>t+s.pop,0));
+    if(share<0.5||!chance('sim',0.02))return;const was=CULT[h.cult]?CULT[h.cult].name:'its old';h.cult=st.cult;
+    if(!W.prehistory)emit('crown',3,st.pos,vary('assimilate',[()=>`${h.name} now speaks ${CULT[h.cult].name} at table; the ${was} of its forebears is heard only in its songs.`,
+      ()=>`The children of ${h.name} are christened with ${CULT[h.cult].name} names now, as befits the lords of ${st.name}.`,
+      ()=>`At ${st.name} the household of ${h.name} has forgotten its ${was}; it is ${CULT[h.cult].name} in all but its name.`]));});
   const R=S.map(builtReach);S.forEach((s,i)=>s.reachR=R[i]);
   for(let ai=0;ai<S.length;ai++){const a=S[ai];if(a.wardOf!=null||a.kind==='capital'||a.pop<5)continue;
     let bi=-1;
@@ -7829,6 +7865,7 @@ function tickGrowth(){
 const TERR_PAL=[0xd4a017,0x4e79a7,0xe15759,0x59a14f,0xb07aa1,0xf28e2b,0x76b7b2,0x9c755f,0xff9da7,0x1f3a93,0x8cd17d,0x6b4c9a]; // twelve colours no two alike, for the territory map
 function houseTints(){ // the land edged in each lord's own colour; the territory map uses colours chosen to be told apart at a glance
   if(!(G.land&&G.land.uni))return;const terr=overlayMode==='territory';
+  if(overlayMode==='tongue'){TONGUE_IDS.forEach((k,i)=>{if(i<11)G.land.uni.uHouse.value[i+1].setHex(TONGUE_PAL[k]||0x888888);});return;}
   W.houses.forEach((h,i)=>{if(i<11){const c=G.land.uni.uHouse.value[i+1];if(terr)c.setHex(TERR_PAL[i%TERR_PAL.length]);else c.setHex(h.sigilHue[0]);}});}
 function actBlocked(k){ // why an act cannot be done just now (the button says so, instead of failing when pressed)
   if(k==='dragon'){const d=W.dragon;return !d||d.dead?'no wyrm lairs on the high peak in this realm':d.state!=='sleeping'?'the dragon is already aloft':'';}
@@ -9019,7 +9056,7 @@ const ACTS=[
   ['bless','Bless the harvest',0],['comet','Send a comet',0],['village','Found a village',1],
   ['gold','Grant 5,000 gold',0],['raze','Raze building',1]
 ];
-const OVERLAYS=[['territory','Territories'],['trade','Trade network'],['value','Land & property value'],['production','Production & stores'],['prosperity','Prosperity'],['plague','Plague'],['unrest','Unrest']];
+const OVERLAYS=[['territory','Territories'],['tongue','Tongues'],['trade','Trade network'],['value','Land & property value'],['production','Production & stores'],['prosperity','Prosperity'],['plague','Plague'],['unrest','Unrest']];
 let drawerTab='rates';
 function selectTab(t){
   document.querySelectorAll('#dtabs .t').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
@@ -9757,13 +9794,13 @@ function animateWorld(dt,now){
   {
     let nearest=null,nd=1e18;
     for(const s of W.settlements){const dd=dist2d(cam.cur.focus.x,cam.cur.focus.z,s.pos.x,s.pos.z);if(dd<nd){nd=dd;nearest=s;}}
-    if(nearest&&cam.cur.dist<300&&nd<(nearest.extentR||nearest.radius)+120&&nearest.folk&&nearest.folk.length){
+    if(nearest&&cam.cur.dist<700&&nd<(nearest.extentR||nearest.radius)+160&&nearest.folk&&nearest.folk.length){ // seen from a fair height, not only from the street
       const s=nearest;
-      if(G.citList.length===0||G.citList[0].s!==s)G.citList=townsfolkFor(s);
-      const run=speedIdx>0?Math.min(dt,0.1)*(SPEEDS[speedIdx]||0)/SPEEDS[LIFE]:0,fr=W.clock.frac||0;let k=0;G.citIdx=[]; // the walkers' seconds are the calendar's, at life pace a true second
+      if(G.citList.length===0||G.citList[0].s!==s){G.citList=townsfolkFor(s);warmWalkers(G.citList);}
+      const run=speedIdx>0?Math.min(dt,0.1)*(SPEEDS[speedIdx]||0)/SPEEDS[LIFE]:0,fr=W.clock.frac||0,vs=clamp(cam.cur.dist/220,1,2.6);let k=0;G.citIdx=[]; // drawn a little larger from higher up, so a body still reads // the walkers' seconds are the calendar's, at life pace a true second
       for(const c of G.citList){stepWalker(c,run,fr);if(!c.out)continue;
         const x=c.x,z=c.z,bob=c.walking&&speedIdx===LIFE?Math.abs(Math.sin(c.t*8.5))*0.06:0,yz=surfY(x,z)+0.28+bob;
-        setInst(G.citizens,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);setInst(G.citKit,k,x,yz,z,c.ry,c.sc,c.sc,c.sc);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=160)break;}
+        setInst(G.citizens,k,x,yz,z,c.ry,c.sc*vs,c.sc*vs,c.sc*vs);setInst(G.citKit,k,x,yz,z,c.ry,c.sc*vs,c.sc*vs,c.sc*vs);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=160)break;}
       G.citizens.count=G.citKit.count=k;
       G.citizens.instanceMatrix.needsUpdate=true;G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
     }else if(G.citList.length){G.citList=[];G.citizens.count=G.citKit.count=0;}
