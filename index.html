@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 21:12 UTC · after d7767bc</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 21:33 UTC · after c1df5af</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2996,6 +2996,8 @@ function surfY(x,z){ // the walking surface: the ground, or a bridge deck where 
   return g;
 }
 const E1=new THREE.Euler();
+function setInstTilt(im,i,x,y,z,ry,px,pz,sx,sy,sz){ // as setInst, pitched to lie along a slope: px about its own x (a length along z), pz about its own z (a length along x)
+  Q1.setFromEuler(E1.set(px||0,ry||0,pz||0,'YXZ'));M4.compose(V1.set(x,y,z),Q1,V2.set(sx||1,sy||1,sz||1));im.setMatrixAt(i,M4);E1.order='XYZ';}
 function setInst(im,i,x,y,z,ry,sx,sy,sz){
   Q1.setFromEuler(E1.set(0,ry||0,0));
   M4.compose(V1.set(x,y,z),Q1,V2.set(sx||1,sy||1,sz||1));
@@ -3780,6 +3782,7 @@ function rebuildDetails(){
   G.detDirty=false;
   const cnt={box:0,fence:0,cyl:0,cone:0,pyr:0};
   const put=(k,x,y,z,ry,sx,sy,sz,col)=>{const m=G.det[k];if(cnt[k]>=m.instanceMatrix.count)return;setInst(m,cnt[k],x,y,z,ry,sx,sy,sz);m.setColorAt(cnt[k]++,C1.setHex(col));};
+  const putTilt=(k,x,y,z,ry,px,sx,sy,sz,col)=>{const m=G.det[k];if(cnt[k]>=m.instanceMatrix.count)return;setInstTilt(m,cnt[k],x,y,z,ry,px,0,sx,sy,sz);m.setColorAt(cnt[k]++,C1.setHex(col));};
   const at=(b,ox,oz)=>{const c=Math.cos(b.rot),sn=Math.sin(b.rot);return[b.x+ox*c+oz*sn,b.z-ox*sn+oz*c];};
   const sails=[];
   for(const b of G.bldList){
@@ -3892,10 +3895,11 @@ function rebuildDetails(){
     }
     const col=t=>t===2?0x9a9182:t===1?0x8a7453:0x7d6647;
     for(const[,[a,c,b,e]]of edges){const L=Math.hypot(c.x-a.x,c.z-a.z);if(L<1.5||b._inCastle||e>=0&&G.bldList[e]&&G.bldList[e]._inCastle)continue; // no garden fences inside the castle's own ring
-      const t=b.arch==='temple'||b.arch==='keep'?2:(b.tier||0),n=Math.max(1,Math.round(L/8)),ry=Math.atan2(c.x-a.x,c.z-a.z);
-      for(let k=0;k<n;k++){const x=a.x+(c.x-a.x)*(k+0.5)/n,z=a.z+(c.z-a.z)*(k+0.5)/n; // short lengths, each set on its own ground
+      const t=b.arch==='temple'||b.arch==='keep'?2:(b.tier||0),n=Math.max(1,Math.round(L/4)),ry=Math.atan2(c.x-a.x,c.z-a.z),sl=L/n;
+      for(let k=0;k<n;k++){const x=a.x+(c.x-a.x)*(k+0.5)/n,z=a.z+(c.z-a.z)*(k+0.5)/n; // short lengths, each laid along its own ground
         let inB=false;for(const o of bh.near(x,z,4))if(o.state!=='gone'&&!o.removed&&dist2d(x,z,o.x,o.z)<Math.min(o.w,o.d)*0.5){inB=true;break;} // under a house the line is its party wall
-        if(!inB)put('fence',x,hAt(x,z)-0.25,z,ry,t===2?0.45:0.2,t===2?1.35:1.05,L/n+0.1,col(t));}}
+        if(inB)continue;const y0=hAt(a.x+(c.x-a.x)*k/n,a.z+(c.z-a.z)*k/n),y1=hAt(a.x+(c.x-a.x)*(k+1)/n,a.z+(c.z-a.z)*(k+1)/n);
+        putTilt('fence',x,(y0+y1)/2-0.25,z,ry,-Math.atan2(y1-y0,sl),t===2?0.45:0.2,t===2?1.35:1.05,Math.hypot(sl,y1-y0)+0.1,col(t));}}
     G.lotMs=performance.now()-T0;
   }
   if(G.sails)for(const g of G.sails){scene.remove(g);disposeTree(g);}
@@ -4427,9 +4431,10 @@ function rebuildFences(){
         if(g&&worked(g)&&g.k<f.k)continue;} // a shared fence is drawn once; along a lane each side fences its own
       let ax=a.x,az=a.z,bx=b.x,bz=b.z;
       if(lane){const L0=dist2d(a.x,a.z,b.x,b.z)||1,nx=-(b.z-a.z)/L0,nz=(b.x-a.x)/L0,sg=(f.x-a.x)*nx+(f.z-a.z)*nz>0?1:-1;ax+=nx*sg*2;az+=nz*sg*2;bx+=nx*sg*2;bz+=nz*sg*2;} // the fence stands back from the lane
-      const L=dist2d(ax,az,bx,bz);if(L<1)continue;const n=Math.ceil(L/9),rot=-Math.atan2(bz-az,bx-ax);
+      const L=dist2d(ax,az,bx,bz);if(L<1)continue;const n=Math.ceil(L/4.5),rot=-Math.atan2(bz-az,bx-ax),sl=L/n;
       for(let q=0;q<n;q++){const t=(q+0.5)/n,x=ax+(bx-ax)*t,z=az+(bz-az)*t,c=cIdx(toCell(x),toCell(z));if(W.water[c]||!mask[c*4]||mask[c*4+2])continue; // only where there is field to fence, not across a wood, a street or a yard
-        if(stone){if(ns>=M.instanceMatrix.count)break;setInst(M,ns++,x,hAt(x,z)-0.1,z,rot,L/n,1,1);}else{if(nw>=M.instanceMatrix.count)break;const px=x-(bx-ax)/n/2,pz=z-(bz-az)/n/2;setInst(G.fencePost,nw,px,hAt(px,pz)-0.05,pz,rot,1,1,1);setInst(M,nw++,x,hAt(x,z)-0.05,z,rot,L/n,1,1);}}}}
+        const x0=ax+(bx-ax)*q/n,z0=az+(bz-az)*q/n,x1=ax+(bx-ax)*(q+1)/n,z1=az+(bz-az)*(q+1)/n,y0=hAt(x0,z0),y1=hAt(x1,z1),pt=Math.atan2(y1-y0,sl),sx=Math.hypot(sl,y1-y0); // the rails run with the ground, not in steps
+        if(stone){if(ns>=M.instanceMatrix.count)break;setInstTilt(M,ns++,x,(y0+y1)/2-0.1,z,rot,0,pt,sx,1,1);}else{if(nw>=M.instanceMatrix.count)break;setInst(G.fencePost,nw,x0,y0-0.05,z0,rot,1,1,1);setInstTilt(M,nw++,x,(y0+y1)/2-0.05,z,rot,0,pt,sx,1,1);}}}}
   G.fenceWood.count=G.fencePost.count=nw;G.fenceStone.count=ns;G.fenceWood.instanceMatrix.needsUpdate=G.fenceStone.instanceMatrix.needsUpdate=G.fencePost.instanceMatrix.needsUpdate=true;}
 function setFurlong(f,state){
   const was=f.state;f.state=state;f.since=day();writeFurlong(f);if(was!==state)G.fenceDirty=true;
@@ -4491,7 +4496,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
 {
   vec2 wp=vWP.xz;float fieldA=0.;
   float nz=lnoise(wp*0.09);
-  vec2 fp=(wp+uSize*0.5)/uFG+(vec2(lnoise(wp*0.03),lnoise(wp*0.03+17.3))-0.5)*0.1; // hedges wander
+  vec2 fp=(wp+uSize*0.5)/uFG; // the field edges drawn exactly where the fences, tracks and the survey put them (a wander here parted the hedge from its fence)
   vec2 fc=floor(fp);float d1=1e9,d2=1e9;vec2 s1=vec2(0.),s2=vec2(0.),c1=vec2(0.),c2=vec2(0.);
   for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){
     vec2 c=fc+vec2(float(i),float(j)),cc=clamp(c,0.,uFN-1.);
