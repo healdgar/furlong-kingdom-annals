@@ -187,6 +187,24 @@ Acts are sealed while you rule; the crown's own levers take their place:
   his dues, the royal host at his gates (he yields or rises), or plain
   asking. Lords build roads of their own where a long way round carries
   much traffic.
+- **Plan with the brush** (as the crown in its towns, or as a great house in
+  its own): choose a brush and paint on the map.
+  - *Street*: drag a line; its ends join the streets they meet. *Square*: drag
+    a loop; it becomes a market place (with a charter) or a square. *Wall*:
+    drag a loop about the town's heart; the circuit follows it, along the
+    bank where it meets water. *New quarter*: drag a loop; the surveyors lay
+    it out as straight streets a burgage plot apart, aligned to the nearest
+    street and tied in to the old ones.
+  - The price is what the ground holds: every house under the brush is bought
+    at 25 years' rent (so the dear heart of a town costs far more than its
+    edge), field and meadow at their worth, then labour, timber and stone
+    (stone the yards lack is carted in). Churches, castles, halls and the
+    like cannot be painted over: the brush must go round them.
+  - Commissioned, the line is pegged out on the map and reserved (no one
+    builds on it); the householders are bought out one by one, then the works
+    go forward as the purse allows, halting when it is empty. When done, the
+    street, square, wall or quarter opens and the town's own growth fills its
+    frontage. The brush bar lists the works in hand.
 - **The great houses**: honour them, take a hostage (they are far less likely
   to rise for two years), arrange a royal match, or attaint them for
   treason — seize their lands on success, civil war on failure.
@@ -350,6 +368,13 @@ itself; you rule one lord's domain:
   goes depends on what the place is worth (a village fort, a town, a seat,
   the capital); each work waits on the lord's surplus and comes sooner on a
   border or in war. Each part adds to the defence a siege must overcome.
+- **Courtyard houses.** From the mid-1100s, in the dearest fifth of a town,
+  the richest household (a spicer, a merchant) buys out its neighbours along
+  the street (paying them their houses' worth) and rebuilds the run of plots
+  as one stone house about a small paved court: a range on the street with a
+  carriage arch, wings down the sides, a range at the back (Field House,
+  Hôtel Marchand, Palazzo Neri…). With the extra storeys of the dearest
+  streets, this is how a crowded town packs more onto its best ground.
 - **Towns grow together.** When the built-up edge of a lesser place meets a
   greater's, the greater takes it in as a ward (as London took in Southwark).
   - The ward keeps its name, church and streets; its market, stores, lord and

@@ -183,6 +183,18 @@ body.watch #uiback,body.hideui #uiback{display:block;}
 #perfbox{position:absolute;left:10px;bottom:36px;z-index:35;display:none;background:rgba(20,16,12,.82);color:#e9dcc3;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
   padding:7px 9px;border-radius:4px;max-width:min(430px,calc(100vw - 20px));pointer-events:auto;}
 #perfbox button{margin-top:4px;font:inherit;background:#e9dcc3;color:#2b2320;border:0;border-radius:3px;padding:2px 8px;cursor:pointer;}
+#planbar{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:31;display:none;max-width:min(560px,calc(100vw - 24px));
+  background:rgba(32,26,18,.92);color:var(--parch);padding:8px 12px;border-radius:6px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.4);}
+#planbar .pbrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:3px 0;}
+#planbar .pbfund{opacity:.75;font-size:12px;margin-left:auto;}
+#planbar .pbb{background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;padding:4px 10px;cursor:pointer;font:inherit;}
+#planbar .pbb.on{background:#c4a24a;color:#201a12;border-color:#e0c070;}
+#planbar .pbb.go{background:#5b7a3a;border-color:#8ab060;}
+#planbar .pbb:disabled{opacity:.45;cursor:default;}
+#planbar .pbhint{opacity:.7;font-size:11.5px;}
+#planbar .pbcard{margin-top:6px;padding-top:6px;border-top:1px solid rgba(224,192,112,.3);line-height:1.45;}
+#planbar .pbworks{margin-top:5px;font-size:11.5px;opacity:.85;line-height:1.45;}
+#planbar .pbno{color:#e08a7a;}
 #placehint{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:30;display:none;
   background:var(--red);color:var(--parch);padding:5px 16px;border-radius:4px;font-size:13px;white-space:nowrap;}
 body.watch #drawertoggle,body.hideui #drawertoggle,body.watch #petition,body.hideui #petition{display:none !important;}
@@ -351,6 +363,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 <div id="perfbox"></div>
 <button id="uiback" title="Show the controls again (Esc)">✕ controls</button>
 <div id="placehint">Click the map to place — Esc to cancel</div>
+<div id="planbar"></div>
 <div id="petition"></div>
 <div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · L life pace · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
 
@@ -444,7 +457,7 @@ const ARCH={
   tower:[7,7,14,1,'watchtower'], wall:[12,3,7,1,'wall'], keep:[20,24,18,1,'keep'],
   burgher:[13,6.5,6.8,0,'burgher house'], shed:[5,4.5,3,0,'outbuilding'], hall:[18,11,8,0,'town hall'],
   bakery:[8,9,5,0,'bakehouse'], inn:[15,11,7,0,'inn'], tannery:[15,8,4,0,'tannery'],
-  windmill:[6,6,8,1,'windmill'], bath:[12,10,5,0,'bathhouse'], hospital:[20,10,6,0,'hospital'], dyer:[13,8,5,0,'dyeworks'], toll:[6,6,5,0,'toll house'], guildhall:[16,11,8,0,'guildhall'], wharf:[7,30,0.5,1,'wharf'], quarry:[20,14,1.2,1,'quarry'], cot:[5,4.5,2.6,0,'cottar\'s hovel']
+  windmill:[6,6,8,1,'windmill'], bath:[12,10,5,0,'bathhouse'], hospital:[20,10,6,0,'hospital'], dyer:[13,8,5,0,'dyeworks'], toll:[6,6,5,0,'toll house'], guildhall:[16,11,8,0,'guildhall'],court:[16,16,7.5,0,'courtyard house'], wharf:[7,30,0.5,1,'wharf'], quarry:[20,14,1.2,1,'quarry'], cot:[5,4.5,2.6,0,'cottar\'s hovel']
 };
 const TIERNAME=['hovel-built','timber-framed','stone-built','four storeys, jettied over the street'];
 
@@ -1860,6 +1873,7 @@ function layoutSettlement(s){
 
   /* ---- frontage: the lots along each street, and who builds there ---- */
   const candsOf=st=>{
+    if(st.planQ)return []; // a planned street is not built along until it is opened
     if(st.cands)return st.cands;
     const out=[];const pts=st.pts;
     for(let i=0;i<pts.length-1;i++){
@@ -2335,9 +2349,23 @@ function layoutSettlement(s){
       const pts=resample([{x:a.x,z:a.z},{x:b.x,z:b.z}],5);
       for(const q of pts){if(!cellOK(q.x,q.z))return null;if(s.wallRad&&Math.abs(wallSide(q.x,q.z))<8)return null;}
       const hit=[];for(const o of liveB())if(!o.removed){for(let k=1;k<pts.length;k++)if(segDist(o.x,o.z,pts[k-1],pts[k])<HW+Math.max(o.w,o.d)*0.45){hit.push(o);break;}}
-      if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse'].includes(o.arch)))return null;
+      if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse','court'].includes(o.arch)))return null;
       if(dry)return {pts,hit};
       live=true;curE=E;hit.forEach(unplace);const st=addStreet(pts,HW,'lane',{cut:AD()});live=false;return {pts,hit,st};},
+    planStreet(pts,hid){live=true;curE=E;const st=addStreet(pts.map(p=>({x:p.x,z:p.z})),HW,'lane',{planned:AD(),hidden:!!hid,planQ:!!hid,straight:true});live=false;return st;}, // reserved while the works go on
+    planOpen(st){if(!st)return;st.hidden=false;st.planQ=false;st.cands=null;live=true;curE=E; // opened: what was built on its line since comes down
+      for(const o of liveB().filter(o=>!o.inst&&!o.removed))for(let k=1;k<st.pts.length;k++)if(segDist(o.x,o.z,st.pts[k-1],st.pts[k])<st.hw+Math.max(o.w,o.d)*0.45){unplace(o);break;}live=false;},
+    planSquare(P,mk){live=true;curE=E;const p={x:P.x,z:P.z,r:P.r.slice()};
+      for(const o of liveB().filter(o=>!o.inst&&!o.removed&&placeHit(p,o.x,o.z,1)))unplace(o);addPlace(p,mk?'market':'green');
+      if(mk){(s.works||(s.works={})).market=day();s.prosperity=clamp(s.prosperity+3,0,100);}live=false;},
+    planWall(rad,stone){live=true;curE=E;const kind=new Uint8Array(WALLN);let nat=0; // the circuit as drawn: water along it is a bank, not a wall
+      for(let k=0;k<WALLN;k++){const a=k/WALLN*Math.PI*2,x=C.x+Math.cos(a)*rad[k],z=C.z+Math.sin(a)*rad[k];if(W.water[cIdx(toCell(x),toCell(z))]===1||riverAt(x,z,2)){kind[k]=2;nat++;}}
+      if(s.wallRad)s.oldWalls.push(Array.from(s.wallRad));
+      s.wallRad=Float32Array.from(rad);s.wallKind=kind;s.natDef=nat/WALLN;s.wallR=Math.max(...rad);s.walls=stone?Math.max(2,s.walls||0):Math.max(1,s.walls||0);s.wallKept=null;
+      clearWallLine(s).forEach(unplace);live=false;},
+    court(take,f){ // a run of plots rebuilt as one house about a courtyard
+      take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
+      live=true;curE=E;take.forEach(unplace);const nb=place('court',2,f,take[0].district||'residential',1);live=false;return nb;},
     hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
@@ -3912,6 +3940,202 @@ function tickCastles(){
     if(sync)syncLive(s);else{rebuildWalls();G.detDirty=true;}
     emit(hi>0?'house':'trade',n.k==='outer'||n.k==='ward'||n.k==='gate'?3:1,kn||casRing(s),t);
   });}
+/* ---------------- courtyard houses: where the rent is dearest, the richest households buy out their neighbours ----------------
+   and rebuild the whole run of plots as one house of stone about a small court (a merchant's hall-house, an hôtel,
+   a palazzo): a range on the street with a carriage arch, wings down the sides, a range at the back. The neighbours
+   are paid for their houses and find homes elsewhere. */
+function courtPlan(s,b){
+  let bd=1e9,nx=0,nz=1;
+  for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,
+    t=clamp(((b.x-a.x)*dx+(b.z-a.z)*dz)/L2,0,1),px=a.x+dx*t,pz=a.z+dz*t,d=Math.hypot(px-b.x,pz-b.z);if(d<bd&&d>0.5){bd=d;nx=(px-b.x)/d;nz=(pz-b.z)/d;}}
+  if(bd>22)return null; // only a house on a street front
+  const tx=nz,tz=-nx,A=(x,z)=>(x-b.x)*tx+(z-b.z)*tz,N=(x,z)=>(x-b.x)*nx+(z-b.z)*nz;
+  const cand=s.buildings.filter(o=>o!==b&&!o.removed&&o.state==='sound'&&!o.inst&&RESID.has(o.arch)&&o.arch!=='court'&&o.arch!=='cot'&&o.arch!=='hospital'
+    &&dist2d(o.x,o.z,b.x,b.z)<Math.max(b.w,b.d)+Math.max(o.w,o.d)+3&&Math.abs(N(o.x,o.z))<4).sort((p,q)=>Math.abs(A(p.x,p.z))-Math.abs(A(q.x,q.z)));
+  const take=[b];let a0=1e9,a1=-1e9,e0=1e9,e1=-1e9;
+  const add=o=>{for(const c of obbCorners(o.x,o.z,o.w,o.d,o.rot)){const a=A(c.x,c.z),e=N(c.x,c.z);a0=Math.min(a0,a);a1=Math.max(a1,a);e0=Math.min(e0,e);e1=Math.max(e1,e);}};
+  add(b);for(const o of cand){if(a1-a0>=15||take.length>=4)break;const a=A(o.x,o.z);if(a<a0-12||a>a1+12)continue;take.push(o);add(o);}
+  if(a1-a0<13||take.length<2)return null;
+  return{take,tx,tz,nx,nz,a0,a1,e0,e1,rot:Math.atan2(nx,nz)};}
+function courtName(s,fam){const C=cultOf(s);
+  return C===CULT.french?`Hôtel ${fam}`:C===CULT.italian?`Palazzo ${fam}`:C===CULT.iberian?`Casa ${fam}`:C===CULT.german?`${fam}hof`:C===CULT.norse?`${fam}gården`:C===CULT.slavic?`Dům ${fam}`:`${fam} House`;}
+function tickCourts(){
+  if(day()%360!==240)return;const ad=AD();if(ad<1150)return;
+  for(const s of W.settlements){if(s.kind==='village'||s.pop<350||!s._lay||!s._lay.live||s.siegeBy||!chance('sim',0.5))continue;
+    if(s._hhY!==year())houseFolk(s);
+    const homes=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&RESID.has(b.arch)&&b.arch!=='cot'&&b.arch!=='court');if(homes.length<30)continue;
+    const vals=homes.map(propValue).sort((x,y)=>x-y),cut=vals[Math.floor(vals.length*0.8)]; // the dearest fifth of the town
+    let best=null,bv=0;
+    for(const b of homes){if(propValue(b)<cut||b.tier<1)continue;for(const h of b.hh||[])if((h.w||0)>60&&h.w>bv){bv=h.w;best={b,h};}}
+    if(!best)continue;const{b,h}=best,P=courtPlan(s,b);if(!P)continue;
+    const buy=P.take.slice(1).reduce((t,o)=>t+propValue(o)*12,0),D=clamp(Math.max(P.e1-P.e0,16),12,22),build=(P.a1-P.a0)*D*0.07,cost=buy+build;
+    if(h.w<cost*1.3)continue;
+    let nb=null;for(const dd of[D,14,Math.max(11,P.e1-P.e0)]){const e0=P.e1-dd,ca=(P.a0+P.a1)/2,ce=(e0+P.e1)/2;
+      const f={x:b.x+P.tx*ca+P.nx*ce,z:b.z+P.tz*ca+P.nz*ce,w:P.a1-P.a0,d:dd,rot:P.rot};nb=s._lay.live.court(P.take,f);if(nb)break;}
+    if(!nb)continue;
+    for(const o of P.take.slice(1))for(const hh of o.hh||[]){if(hh!==h)hh.w=(hh.w||0)+propValue(o)*12/Math.max(1,(o.hh||[]).length);} // the neighbours are paid
+    h.w-=cost;h.bh=nb;nb.fam=famName(h)||h.gn;nb.nm=courtName(s,nb.fam);s._hhY=-1;
+    syncLive(s);
+    const t=`${folkName(h)}${h.tr?', '+h.tr+',':''} buys out ${P.take.length-1} neighbour${P.take.length>2?'s':''} and rebuilds the plots as one house of stone about a courtyard: ${nb.nm}.`;
+    s.history.push({yr:year(),t});emit('trade',2,nb,`${s.name}: ${t}`);}}
+function drawCourt(b,put){
+  const y=b.y,y0=b.y0??b.y-0.5,fh=y-y0,h=b.h,w=b.w,d=b.d,R=Math.PI/2,fr=Math.min(6,d*0.36),br=Math.min(5,d*0.3),sw=Math.min(4.5,w*0.24),Ls=Math.max(1,d-fr-br),zc=(-d/2+br+d/2-fr)/2;
+  const wall=0xc6b89d,hue=b.hue??0.5,roof=ROOFS[2][Math.floor(hue*3)%3]; // the same roof as the street range
+  const B=(x,z,sx,hh,sz,col,yb)=>{const[X,Z]=locW(b,x,z);put('box',X,yb??y0,Z,b.rot,sx,hh,sz,col);};
+  const GB=(x,z,yb,along,cross,rise,alongZ)=>{const[X,Z]=locW(b,x,z);put('gab',X,yb,Z,alongZ?b.rot+R:b.rot,along,rise,cross,roof);};
+  B(0,-d/2+br/2,w,fh+h*0.9,br,wall);GB(0,-d/2+br/2,y+h*0.9,w*1.03,br*1.15,br*0.6,false); // the back range
+  for(const sd of[-1,1]){const x=sd*(w/2-sw/2);B(x,zc,sw,fh+h*0.82,Ls,wall);GB(x,zc,y+h*0.82,Ls+0.2,sw*1.15,sw*0.6,true);} // the wings
+  B(0,zc,w-2*sw,fh+0.05,Ls,0x9d9686); // the paved court
+  B(0,d/2+0.12,3.2,fh+3.8,0.3,0x2a221c); // the carriage arch
+  for(const sd of[-1,1]){const[X,Z]=locW(b,sd*w*0.3,-d/2+br*0.5);put('box',X,y+h*0.6,Z,b.rot,1.2,h*0.4+br*0.6+1.2,1.2,0x857a6c);}} // chimneys
+/* ---------------- the lord's brush: plans painted on the ground, fulfilled by the town ----------------
+   Choose a brush and paint: a street (a line), a square (a loop), a wall (a loop about the town) or a new
+   quarter (a loop, laid out as a grid of plots). The surveyors price it by what the ground holds: every house
+   on the line is bought at so many years' rent (so a plan through the dear heart of a town costs far more than
+   one across its edge), field and meadow at their worth, then the labour and the stone. Once commissioned it
+   goes forward as the purse allows: the householders bought out one by one, then the works; when it is done
+   the town's own growth fills the new frontage. */
+const PLAN_YP=25; // years' purchase of a house's rent
+let planUI=null;
+const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'}};
+function planOpen(payer){planUI={payer,brush:null,stroke:null,draft:null};const el=document.getElementById('planbar');el.style.display='block';planBarHTML();setPlaceMode(null);}
+function planClose(){if(!planUI)return;planClear();planUI=null;document.getElementById('planbar').style.display='none';}
+function planBarHTML(){const P=planUI;if(!P)return;const who=P.payer>0?W.houses[P.payer].name:'The crown',fund=Math.round(purse(P.payer));
+  let x=`<div class="pbrow"><b>Plan with the brush</b> <span class="pbfund">${esc(who)} · ${fund.toLocaleString()} gold</span></div><div class="pbrow">`;
+  for(const k in PLANB)x+=`<button class="pbb${P.brush===k?' on':''}" data-pb="${k}">${PLANB[k].n}</button>`;
+  x+=`<button class="pbb" data-pb="x">Done</button></div>`;
+  x+=`<div class="pbhint">${P.brush?(PLANB[P.brush].loop?'Drag a loop on the map':'Drag a line on the map')+' · click the brush again to pan':'Choose a brush, then drag on the map'}</div>`;
+  const mine=(W.projects||[]).filter(q=>q.type==='plan'&&q.payer===P.payer);
+  if(mine.length)x+=`<div class="pbworks">${mine.map(q=>`${esc(q.title)} — ${q.stalled?'<span class="pbno">halted</span>':q.stage==='buy'?`buying out (${q.hit.filter(b=>b.removed).length}/${q.hit.length})`:`building ${Math.round(q.done*100)}%`}`).join('<br>')}</div>`;
+  const D=P.draft;
+  if(D){x+=`<div class="pbcard">${D.ok?`<b>${esc(D.title)}</b><br>${D.lines.map(esc).join('<br>')}<br><b>${D.total.toLocaleString()} gold</b> over about ${D.days} days, paid as the works go`
+      +`<div class="pbrow"><button class="pbb go" data-pb="go"${purse(P.payer)<D.first?' disabled':''}>Commission</button><button class="pbb" data-pb="no">Discard</button></div>`:`<span class="pbno">${esc(D.why)}</span>`}</div>`;}
+  setHTML(document.getElementById('planbar'),x);}
+function planCmd(k){const P=planUI;if(!P)return;
+  if(k==='x'){planClose();return;}
+  if(k==='no'){P.draft=null;planClear();planBarHTML();return;}
+  if(k==='go'){if(P.draft&&P.draft.ok)planCommit(P.draft);P.draft=null;planClear();planBarHTML();return;}
+  P.brush=P.brush===k?null:k;P.draft=null;planClear();planBarHTML();}
+function planClear(){if(planUI&&planUI.line){scene.remove(planUI.line);planUI.line.geometry.dispose();planUI.line=null;}if(planUI)planUI.stroke=null;}
+function planDraw(){const P=planUI;if(!P||!P.stroke||P.stroke.length<2)return;if(P.line){scene.remove(P.line);P.line.geometry.dispose();}
+  const pts=P.stroke.map(p=>new THREE.Vector3(p.x,surfY(p.x,p.z)+2.5,p.z));if(PLANB[P.brush].loop)pts.push(pts[0].clone());
+  const g=new THREE.BufferGeometry().setFromPoints(pts),m=new THREE.Line(g,new THREE.LineBasicMaterial({color:PLANB[P.brush].c,depthTest:false,transparent:true,opacity:0.95}));
+  m.renderOrder=9;P.line=m;scene.add(m);}
+function planDown(e){const p=groundPoint(e);if(!p)return false;planClear();planUI.draft=null;planUI.stroke=[{x:p.x,z:p.z}];planUI.painting=true;return true;}
+function planMove(e){const p=groundPoint(e),S=planUI.stroke;if(!p||!S)return;const l=S[S.length-1];if(dist2d(l.x,l.z,p.x,p.z)<3)return;S.push({x:p.x,z:p.z});planDraw();}
+function planUp(){const P=planUI;P.painting=false;if(!P.stroke||P.stroke.length<3){planClear();return;}planDraw();P.draft=planDraft(P.brush,P.stroke,P.payer);planBarHTML();}
+function rayPolyR(poly,cx,cz,a){const dx=Math.cos(a),dz=Math.sin(a);let best=0; // the farthest crossing of a ray from (cx,cz) with a closed loop
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){const p=poly[j],q=poly[i],ex=q.x-p.x,ez=q.z-p.z,den=dx*ez-dz*ex;if(Math.abs(den)<1e-9)continue;
+    const t=((p.x-cx)*ez-(p.z-cz)*ex)/den,u=((p.x-cx)*dz-(p.z-cz)*dx)/den;if(t>0&&u>=0&&u<=1)best=Math.max(best,t);}return best;}
+function polyArea(P){let a=0;for(let i=0,j=P.length-1;i<P.length;j=i++)a+=(P[j].x+P[i].x)*(P[j].z-P[i].z);return Math.abs(a/2);}
+function planComp(b){return b.state!=='sound'?4:Math.round(propValue(b)*PLAN_YP*(RESID.has(b.arch)?1:1.5));}
+function planLand(pts,width){let c=0,n=0;for(const q of pts){const f=G.land&&furlongAt(q.x,q.z);if(!f||f.dom<0&&f.kind===LK.NONE)continue;if(nearestBuildingDist(q.x,q.z)<14)continue;
+  c+=landPrice(f)/Math.max(2000,f.area||20000)*width;n++;}return{c:Math.round(c),n};}
+function nearestBuildingDist(x,z){let bd=1e9;for(const s of W.settlements){if(dist2d(x,z,s.pos.x,s.pos.z)>(s.radius||90)+200)continue;for(const b of s.buildings)if(!b.removed){const d=dist2d(x,z,b.x,b.z);if(d<bd)bd=d;}}return bd;}
+function planGrid(s,poly){ // a new quarter: straight streets a burgage plot apart, aligned to the nearest street, clipped to the loop
+  let cx=0,cz=0;for(const p of poly){cx+=p.x;cz+=p.z;}cx/=poly.length;cz/=poly.length;
+  let ang=0,bd=1e9;for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const d=segDist(cx,cz,st.pts[k-1],st.pts[k]);if(d<bd){bd=d;ang=Math.atan2(st.pts[k].z-st.pts[k-1].z,st.pts[k].x-st.pts[k-1].x);}}
+  const ux=Math.cos(ang),uz=Math.sin(ang),vx=-uz,vz=ux,R=Math.max(...poly.map(p=>dist2d(p.x,p.z,cx,cz)))+10,lines=[];
+  const ok=(x,z)=>inPoly(poly,x,z)&&cellOK(x,z)&&!riverAt(x,z,3);
+  const runs=(ax,az,bx,bz)=>{let run=[];for(const q of resample([{x:ax,z:az},{x:bx,z:bz}],6)){if(ok(q.x,q.z))run.push(q);else{if(run.length>=4)lines.push(run);run=[];}}if(run.length>=4)lines.push(run);};
+  for(let o=-R;o<=R;o+=36)runs(cx-ux*R+vx*o,cz-uz*R+vz*o,cx+ux*R+vx*o,cz+uz*R+vz*o); // the long streets, a plot's depth apart on each side
+  for(let o=-R;o<=R;o+=96)runs(cx-vx*R+ux*o,cz-vz*R+uz*o,cx+vx*R+ux*o,cz+vz*R+uz*o); // cross lanes
+  if(lines.length&&bd<120){let best=null,bq=1e9;for(const L of lines)for(const q of[L[0],L[L.length-1]]){const d=nearestStreetPt(s,q.x,q.z);if(d&&d.d<bq){bq=d.d;best=[q,d];}} // tied in to the old streets
+    if(best&&bq<90)lines.push(resample([{x:best[0].x,z:best[0].z},{x:best[1].x,z:best[1].z}],6));}
+  return lines;}
+function nearestStreetPt(s,x,z){let b=null;for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L2,0,1),px=a.x+dx*t,pz=a.z+dz*t,d=Math.hypot(px-x,pz-z);if(!b||d<b.d)b={x:px,z:pz,d};}return b;}
+function planDraft(kind,stroke,payer){
+  const no=why=>({ok:false,why});
+  let cx=0,cz=0;for(const p of stroke){cx+=p.x;cz+=p.z;}cx/=stroke.length;cz/=stroke.length;
+  const si=nearestSettlementIdx(cx,cz),s=W.settlements[si],reach=(s.radius||90)*(kind==='quarter'?2.6:kind==='wall'?2.2:1.7);
+  if(dist2d(cx,cz,s.pos.x,s.pos.z)>reach)return no('That is too far from any town: a plan is made for a place.');
+  if(s.owner!==payer)return no(`${s.name} is ${s.owner>0?W.houses[s.owner].name+'’s':'the crown’s'}: its streets are not yours to plan.`);
+  if(!s._lay||!s._lay.live)return no('The surveyors cannot read the ground there.');
+  if((W.projects||[]).some(q=>q.type==='plan'&&q.si===si&&q.kind===kind&&kind!=='street'))return no(`A ${PLANB[kind].n.toLowerCase()} is already being made at ${s.name}.`);
+  const live=b=>!b.removed&&b.state!=='gone',blocks=b=>b.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','court'].includes(b.arch);
+  const named=b=>buildingName(b)||ARCH[b.arch][4];
+  if(kind==='street'){
+    let pts=resample(smoothPath(resample(stroke,6),3),6);const L=polyLen(pts);if(L<30)return no('Too short for a street.');
+    for(const e of[0,pts.length-1]){const n=nearestStreetPt(s,pts[e].x,pts[e].z);if(n&&n.d<14)pts[e]={x:n.x,z:n.z};} // joined to the streets it meets
+    if(pts.some(q=>!cellOK(q.x,q.z)&&!riverAt(q.x,q.z,0)))return no('The line runs over water or a cliff.');
+    const rivers=pts.filter((q,k)=>k&&riverAt(q.x,q.z,0)&&!riverAt(pts[k-1].x,pts[k-1].z,0)).length;
+    const hit=s.buildings.filter(b=>live(b)&&pts.some((q,k)=>k&&segDist(b.x,b.z,pts[k-1],q)<4.5+Math.max(b.w,b.d)*0.45));
+    const bad=hit.find(blocks);if(bad)return no(`The line runs through ${named(bad)}; the brush must go round it.`);
+    const comp=hit.reduce((t,b)=>t+planComp(b),0),land=planLand(resample(pts,10),10*10),works=Math.round(L*0.6+rivers*120),gate=s.wallRad&&pts.some((q,k)=>k&&Math.sign(dist2d(q.x,q.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(q.z-s.pos.z,q.x-s.pos.x)))!==Math.sign(dist2d(pts[k-1].x,pts[k-1].z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(pts[k-1].z-s.pos.z,pts[k-1].x-s.pos.x))))?150:0;
+    const total=comp+land.c+works+gate;
+    return{ok:true,kind,si,pts,hit,comp,land:land.c,works:works+gate,total,first:Math.min(total,land.c+(hit[0]?planComp(hit[0]):0)),days:Math.round(20+L/4+hit.length*5),
+      title:`A street of ${Math.round(L)} m at ${s.name}`,lines:[`${hit.length} house${hit.length===1?'':'s'} bought out: ${comp.toLocaleString()} gold`,land.n?`field and meadow: ${land.c.toLocaleString()}`:'',`labour${rivers?' and a bridge':''}${gate?' and a new gate':''}: ${(works+gate).toLocaleString()}`].filter(Boolean)};}
+  const poly=resample(stroke,5);if(poly.length<8)return no('Draw a closed loop.');
+  if(dist2d(poly[0].x,poly[0].z,poly[poly.length-1].x,poly[poly.length-1].z)>Math.max(40,polyLen(poly)*0.25))return no('Close the loop: end near where you began.');
+  const area=polyArea(poly),per=polyLen(poly);
+  if(kind==='square'){
+    if(area<150)return no('Too small for a square.');if(area>6000)return no('Too great for a square: a field, not a market.');
+    let px=0,pz=0;for(const p of poly){px+=p.x;pz+=p.z;}px/=poly.length;pz/=poly.length;
+    if(!inPoly(poly,px,pz))return no('Draw the square as a plain loop.');
+    const r=[];for(let k=0;k<PLN;k++)r.push(Math.max(4,rayPolyR(poly,px,pz,k/PLN*Math.PI*2)));
+    const hit=s.buildings.filter(b=>live(b)&&(inPoly(poly,b.x,b.z)||obbCorners(b.x,b.z,b.w,b.d,b.rot).some(c=>inPoly(poly,c.x,c.z))));
+    const bad=hit.find(blocks);if(bad)return no(`${named(bad)} stands in it; the square must go round it.`);
+    if(poly.some(q=>!cellOK(q.x,q.z)))return no('The square runs over water or a cliff.');
+    const mk=!(s.places||[]).some(p=>p.kind==='market'),comp=hit.reduce((t,b)=>t+planComp(b),0),works=Math.round(area*0.04+40),total=comp+works;
+    return{ok:true,kind,si,place:{x:px,z:pz,r},mk,hit,comp,works,land:0,total,first:Math.min(total,hit[0]?planComp(hit[0]):works),days:Math.round(30+area/60+hit.length*5),
+      title:`${mk?'A market place':'A square'} of ${Math.round(area)} m² at ${s.name}`,lines:[`${hit.length} house${hit.length===1?'':'s'} bought out: ${comp.toLocaleString()} gold`,`paving, a cross${mk?' and a market charter':''}: ${works.toLocaleString()}`]};}
+  if(kind==='wall'){
+    if(!inPoly(poly,s.pos.x,s.pos.z))return no(`The wall must go round the heart of ${s.name}.`);
+    const rad=[];for(let k=0;k<WALLN;k++)rad.push(Math.max(30,rayPolyR(poly,s.pos.x,s.pos.z,k/WALLN*Math.PI*2)));
+    const at=a=>{const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN,t=f-Math.floor(f);return lerp(rad[i],rad[(i+1)%WALLN],t);};
+    const hit=s.buildings.filter(b=>{if(!live(b)||b.inst)return false;let inn=0,out=0,near=false;
+      for(const c of obbCorners(b.x,b.z,b.w,b.d,b.rot)){const wd=dist2d(c.x,c.z,s.pos.x,s.pos.z)-at(Math.atan2(c.z-s.pos.z,c.x-s.pos.x));if(Math.abs(wd)<7)near=true;if(wd<0)inn++;else out++;}return near||inn&&out;});
+    const bad=s.buildings.find(b=>live(b)&&b.inst&&!b.hill&&Math.abs(dist2d(b.x,b.z,s.pos.x,s.pos.z)-at(Math.atan2(b.z-s.pos.z,b.x-s.pos.x)))<Math.hypot(b.w,b.d)/2+5);
+    if(bad)return no(`The wall would run through ${named(bad)}; take it round.`);
+    const stone=AD()>=1150,need=stone?Math.round(per*0.25):0,have=Math.min(need,s.stores.stone||0),carted=Math.round((need-have)*0.6);
+    const comp=hit.reduce((t,b)=>t+planComp(b),0),works=Math.round(per*(stone?2.4:0.8)),land=planLand(resample(poly,12),12*14).c,total=comp+works+carted+land;
+    const inside=s.buildings.filter(b=>live(b)&&RESID.has(b.arch)&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<at(Math.atan2(b.z-s.pos.z,b.x-s.pos.x))).length,all=s.buildings.filter(b=>live(b)&&RESID.has(b.arch)).length;
+    return{ok:true,kind,si,rad,stone,need,hit,comp,works:works+carted,land,total,first:Math.min(total,land+(hit[0]?planComp(hit[0]):0)),days:Math.round(120+per/2),
+      title:`A ${stone?'stone wall':'palisade and ditch'} of ${(per/1000).toFixed(2)} km about ${s.name}`,lines:[`it takes in ${inside} of ${all} houses`,`${hit.length} house${hit.length===1?'':'s'} on its line bought out: ${comp.toLocaleString()} gold`,land?`ground for the ditch: ${land.toLocaleString()}`:'',`${stone?'masons and stone'+(carted?' (some carted in)':''):'labour and timber'}: ${(works+carted).toLocaleString()}`].filter(Boolean)};}
+  if(kind==='quarter'){
+    if(area<4000)return no('Too small for a quarter: paint a square instead.');if(area>160000)return no('Too great for one quarter.');
+    const lines=planGrid(s,poly);if(!lines.length)return no('There is no buildable ground in the loop.');
+    const hit=s.buildings.filter(b=>live(b)&&lines.some(L=>L.some((q,k)=>k&&segDist(b.x,b.z,L[k-1],q)<4.5+Math.max(b.w,b.d)*0.45)));
+    const bad=hit.find(blocks);if(bad)return no(`A street of the new quarter would run through ${named(bad)}.`);
+    const len=lines.reduce((t,L)=>t+polyLen(L),0);
+    const ins=[];{let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of poly){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);z0=Math.min(z0,p.z);z1=Math.max(z1,p.z);}for(let x=x0;x<=x1;x+=25)for(let z=z0;z<=z1;z+=25)if(inPoly(poly,x,z))ins.push({x,z});}
+    const land=planLand(ins,25*25),comp=hit.reduce((t,b)=>t+planComp(b),0),works=Math.round(len*0.6),total=land.c+comp+works;
+    return{ok:true,kind,si,lines,hit,comp,land:land.c,works,total,first:Math.min(total,land.c),days:Math.round(60+len/6),
+      title:`A new quarter at ${s.name}: ${lines.length} streets, ${Math.round(len)} m`,lines:[`ground bought: ${land.c.toLocaleString()} gold`,hit.length?`${hit.length} house${hit.length===1?'':'s'} in the way: ${comp.toLocaleString()}`:'',`surveying and laying the streets: ${works.toLocaleString()}`,'plots to be taken up by settlers as the town grows'].filter(Boolean)};}
+  return no('Unknown brush.');}
+function planCommit(D){const s=W.settlements[D.si],L=s._lay.live;
+  const q={type:'plan',kind:D.kind,si:D.si,payer:planUI?planUI.payer:s.owner,title:D.title,hit:D.hit.slice(),comp:D.comp,land:D.land,works:D.works,total:D.total,days:D.days,
+    paid:0,done:0,stage:'buy',next:day()+3,landPaid:!D.land,start:day()};
+  if(D.kind==='street')q.st=L.planStreet(D.pts,true);
+  else if(D.kind==='quarter')q.sts=D.lines.map(P=>L.planStreet(P,true));
+  else if(D.kind==='square'){q.place=D.place;q.mk=D.mk;}
+  else if(D.kind==='wall'){q.rad=D.rad;q.stone=D.stone;q.need=D.need;}
+  q.hit.sort((a,b)=>dist2d(a.x,a.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z)-dist2d(b.x,b.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z));
+  (W.projects=W.projects||[]).push(q);G.ordersDirty=true;
+  emit(q.payer>0?'house':'crown',5,s.pos,`${q.payer>0?W.houses[q.payer].name:'The crown'} commissions ${D.title.charAt(0).toLowerCase()+D.title.slice(1)}; surveyors peg out the line${D.hit.length?`, and ${D.hit.length} household${D.hit.length===1?' is':'s are'} told to treat for their houses`:''}.`);}
+function tickPlan(q){ // one day of a commissioned plan: the householders bought out one by one, then the works, as the purse allows
+  const s=W.settlements[q.si];if(!s||!s._lay||s.owner!==q.payer){q.dead=true;emit('crown',3,s?s.pos:null,`The plan for ${s?s.name:'a lost town'} lapses: it is no longer ${q.payer>0?'the house’s':'the crown’s'} to build.`);return;}
+  const who=q.payer>0?W.houses[q.payer]:null,stall=why=>{if(!q.stalled){q.stalled=true;emit(who?'house':'crown',3,s.pos,`Work on ${q.title.charAt(0).toLowerCase()+q.title.slice(1)} halts: ${why}.`);}};
+  const pay=c=>{if(purse(q.payer)<c)return false;spend(q.payer,c);if(who)book(who,'works',-c);q.paid+=c;return true;};
+  if(q.stage==='buy'){
+    if(!q.landPaid){if(!pay(q.land)){stall('the purse cannot buy the ground');return;}q.landPaid=true;q.stalled=false;}
+    if(day()<q.next)return;q.next=day()+3+randi('sim',5);
+    const b=q.hit.find(b=>!b.removed&&b.state!=='gone');
+    if(b){const c=planComp(b);if(!pay(c)){stall('the householders will not go without their money');return;}q.stalled=false;
+      for(const h of b.hh||[])h.w=(h.w||0)+c/Math.max(1,(b.hh||[]).length);s.unrest=clamp(s.unrest+0.5,0,100);
+      b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;s._hhY=-1;return;}
+    q.stage='build';G.ordersDirty=true;return;}
+  const share=q.works/q.days;if(q.kind==='wall'&&q.stone){const need=q.need/q.days;if((s.stores.stone||0)>=need)s.stores.stone-=need;}
+  if(!pay(share)){stall('the purse is empty');return;}q.stalled=false;
+  const was=Math.floor(q.done*10);q.done=Math.min(1,q.done+1/q.days);if(Math.floor(q.done*10)!==was)G.ordersDirty=true;
+  if(q.done<1)return;
+  q.dead=true;const L=s._lay.live;let t='';
+  if(q.kind==='street'){L.planOpen(q.st);const nm=['New Street','Broad Street','Lord Street','Bridge Street','High Cross','Sheep Street','Castle Street','Church Lane'][randi('sim',8)];q.st.name=nm;t=`${nm} is open at ${s.name}; the plots along it are taken up`;}
+  else if(q.kind==='quarter'){for(const st of q.sts)L.planOpen(st);t=`The new quarter at ${s.name} is laid out: ${q.sts.length} streets of plots for settlers`;}
+  else if(q.kind==='square'){L.planSquare(q.place,q.mk);t=`${q.mk?'A market place':'A new square'} is opened at ${s.name}${q.mk?', with a cross and a weekly market':''}`;}
+  else if(q.kind==='wall'){L.planWall(q.rad,q.stone);t=`The ${q.stone?'new wall':'palisade'} about ${s.name} is finished, as it was planned`;}
+  syncLive(s);s.history.push({yr:year(),t:t.replace(` at ${s.name}`,'').replace(` about ${s.name}`,'')+'.'});
+  emit(who?'house':'crown',6,s.pos,t+(who?`, at the charge of ${who.name}`:', at the crown’s charge')+'.');}
 function chFabric(b){const ch=chOf(b),L=chLay(b),p=[];
   p.push(ch.stone?(ch.gothic?'stone, in the new pointed style':'stone, round-arched'):'timber');
   p.push(`a nave ${Math.round(L.nl)} m by ${Math.round(L.nw)}${ch.aisles?` with ${ch.aisles===2?'two aisles':'an aisle'}`:''}`);
@@ -3992,6 +4216,7 @@ function updateBuildingInstance(b){
     if(b.arch==='inn')roofCol=ROOFS[Math.min(2,b.tier+1)][Math.floor(hue*3)%3];}
   const y0=b.y0??b.y-0.5,tL=b.arch==='temple'&&b.state!=='ruin'&&b.state!=='rubble'?chLay(b):null; // a church: the body is its nave, the rest are parts
   if(tL){const[X,Z]=locW(b,tL.nx,tL.naveZ);h=tL.h;setInst(G.bodies,i,X,y0,Z,b.rot,tL.nw,(b.y-y0)+h,tL.nl);if(!tL.ch.stone&&b.state==='sound'){col=0x7a6248;roofCol=0xa88f58;}}
+  else if(b.arch==='court'&&b.state!=='ruin'&&b.state!=='rubble'){const fr=Math.min(6,b.d*0.36),[X,Z]=locW(b,0,b.d/2-fr/2);setInst(G.bodies,i,X,y0,Z,b.rot,b.w,(b.y-y0)+h,fr);} // the street range; the rest are parts
   else setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
   { // how its walls are built, and what its street front is for
     const A=G.bodies.geometry.attributes,a=b.arch;
@@ -4003,7 +4228,8 @@ function updateBuildingInstance(b){
   C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
   G.bodies.setColorAt(i,C1);
   const ruined=b.state==='ruin'||b.state==='rubble';
-  if(tL&&!ruined){const[X,Z]=locW(b,tL.nx,tL.naveZ);setInst(G.roofs,i,X,b.y+h,Z,b.rot+Math.PI/2,tL.nl*1.03,tL.nw*0.62,tL.nw*1.12);}
+  if(b.arch==='court'&&!ruined){const fr=Math.min(6,b.d*0.36),[X,Z]=locW(b,0,b.d/2-fr/2);setInst(G.roofs,i,X,b.y+h,Z,b.rot,b.w*1.03,fr*0.6,fr*1.15);}
+  else if(tL&&!ruined){const[X,Z]=locW(b,tL.nx,tL.naveZ);setInst(G.roofs,i,X,b.y+h,Z,b.rot+Math.PI/2,tL.nl*1.03,tL.nw*0.62,tL.nw*1.12);}
   else if(b.roof===0&&!ruined){
     setInst(G.roofs,i,b.x,b.y+h,b.z,b.rot,b.w*1.1,h*0.62,b.d*1.16);
   }else if(b.roof===2&&!ruined){
@@ -4037,6 +4263,7 @@ function rebuildDetails(){
       const[x,z]=at(b,b.w*(hu>0.5?0.3:-0.3),b.d*0.16);
       const base=b.y+h*0.6,top=b.y+h+h*0.62*0.72+1.1,sz=b.arch==='smithy'||b.arch==='bakery'?1.8:1.1; // forge and oven want a big stack
       put('box',x,base,z,b.rot,sz,top-base,sz,b.arch==='smithy'?0x4d4640:(b.tier===0?0x857a6c:0x7a5a48));
+    }else if(b.arch==='court'){drawCourt(b,put);
     }else if(b.arch==='temple'){drawChurch(b,put); // nave, aisles, chancel, towers and the rest, as built
     }else if(b.arch==='keep'&&b.motte){ // a timber tower: a steep shingled roof and a fighting gallery
       const[x,z]=at(b,0,0);put('box',x,b.y+h*0.78,z,b.rot,b.w*1.25,1.2,b.d*1.25,0x5f4630);put('pyr',x,b.y+h,z,b.rot,b.w*1.3,h*0.55,b.d*1.3,0x4a3a2a);
@@ -6256,6 +6483,8 @@ function initInput(){
   el.addEventListener('pointerdown',e=>{
     touches.set(e.pointerId,{x:e.clientX,y:e.clientY});
     el.setPointerCapture(e.pointerId);
+    if(planUI&&planUI.painting&&touches.size>1){planUI.painting=false;planClear();} // a second finger: pinch, not paint
+    else if(planUI&&planUI.brush&&e.button===0&&touches.size===1&&!e.shiftKey&&!e.altKey&&planDown(e)){drag=null;return;}
     if(touches.size===2){
       const[a,b]=[...touches.values()];
       pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist,ang:Math.atan2(b.y-a.y,b.x-a.x),yaw:cam.yaw};drag=null;return;
@@ -6272,6 +6501,7 @@ function initInput(){
       cam.yaw=pinch.yaw-(Math.atan2(b.y-a.y,b.x-a.x)-pinch.ang); // twist to turn
       return;
     }
+    if(planUI&&planUI.painting){planMove(e);return;}
     if(!drag)return;
     const dx=e.clientX-drag.x,dy=e.clientY-drag.y;
     if(!drag.moved&&Math.abs(dx)+Math.abs(dy)<=4)return;
@@ -6285,6 +6515,7 @@ function initInput(){
   });
   const endPtr=e=>{touches.delete(e.pointerId);if(touches.size<2)pinch=null;drag=null;};
   el.addEventListener('pointerup',e=>{
+    if(planUI&&planUI.painting){planUp(e);endPtr(e);return;}
     if(drag&&!drag.moved&&e.button===0)onClick(e);
     endPtr(e);
   });
@@ -6321,6 +6552,7 @@ function initInput(){
         else if(document.body.classList.contains('hideui'))document.body.classList.remove('hideui');
         else if(document.getElementById('mapview'))toggleMap();
         else if(placeMode)setPlaceMode(null);
+        else if(planUI)planClose();
         else{hideInspect();cam.follow=null;}
         break;
     }
@@ -8108,7 +8340,7 @@ function tickOmens(myth,dis){
    and sustained prosperity upgrades buildings through the tiers
    (hovel-built → timber-framed → stone-built). */
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
-const RESID=new Set(['cot','house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
+const RESID=new Set(['court','cot','house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
   for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
@@ -8326,7 +8558,7 @@ function tickGrowth(){
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`,()=>`${s.name} grows: builders are busy in the ${b.district} quarter, and new roofs rise there.`,()=>`New roofs rise in the ${b.district} quarter of ${s.name}, which grows apace.`,()=>`The ${b.district} quarter of ${s.name} spreads: new roofs rise, and the town grows.`]));}
       if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
         const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0); // in a rich town's heart a fourth storey, jettied over the street
-        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.tier<capT).map(o=>[o,propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
+        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.arch!=='court'&&o.tier<capT).map(o=>[o,propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
         const pk=wpick(low,x=>x[1]/Math.max(0.01,low[0][1])*3,1),b=pk&&pk[0]; // where the rent is dearest, it pays to build up
         if(b){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);
           if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}
@@ -8485,7 +8717,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -8837,6 +9069,7 @@ const DECREES=[
   {k:'road',label:'Lay a road',cost:0,desc:'pick two places · priced by the ground between',place:'road1',hint:'Click the place the road starts from — Esc to cancel'},
   {k:'pave',label:'Pave a road',cost:0,desc:'click a road · carts a third faster',place:'pave',hint:'Click the road to pave — Esc to cancel'},
   {k:'buyland',label:'Buy land',cost:0,desc:'click a lord\'s furlong · it pays rent to the crown',place:'buyland',hint:'Click the furlong to buy — Esc to cancel'},
+  {k:'plan',label:'Plan works with the brush',cost:0,desc:'paint streets, squares, a wall or a new quarter in a crown town · priced by the houses and ground under the brush',place:'plan'},
   {k:'clear',label:'Clear a district',cost:0,cd:90,desc:'crown towns: condemned, cleared, laid out anew · a lord\'s town: offer him a grant',place:'clear',hint:'Click the quarter to pull down — Esc to cancel'},
   {k:'host',label:'Raise the royal host',cost:1000,cd:45,ok:()=>!!W.war||'only in war',desc:'a fresh crown army musters at the capital',
     run(){const a=raiseArmy(0,0,W.capital.pop*0.08+200,'crown');
@@ -8956,6 +9189,10 @@ function refreshOrders(){ // a mark on everything an order is still working on: 
     else if(q.type==='buy')ring(q.f.x,q.f.z,FG*0.55,0x3e5f8a);
     else if(q.type==='clear')ring(q.x,q.z,q.r+4,q.stalled?0x5a2020:0xc0392b);
     else if(q.type==='persuade')ring(q.x,q.z,(q.r||30)+4,0xc4a24a);
+    else if(q.type==='plan'){const c=q.stalled?0x8a2f22:PLANB[q.kind].c,s=W.settlements[q.si]; // the brush's line, pegged out until it is built
+      if(q.kind==='street')band(q.st.pts,4,c);else if(q.kind==='quarter')for(const st of q.sts)band(st.pts,3.5,c);
+      else if(q.kind==='square'){const P=[];for(let k=0;k<=PLN;k++){const a=k/PLN*Math.PI*2;P.push({x:q.place.x+Math.cos(a)*q.place.r[k%PLN],z:q.place.z+Math.sin(a)*q.place.r[k%PLN]});}band(P,2.5,c);}
+      else if(q.kind==='wall'){const P=[];for(let k=0;k<=WALLN;k+=2){const a=k/WALLN*Math.PI*2,r=q.rad[k%WALLN];P.push({x:s.pos.x+Math.cos(a)*r,z:s.pos.z+Math.sin(a)*r});}band(P,3,c);}}
   }
   scene.add(grp);
 }
@@ -8987,6 +9224,7 @@ function tickProjects(){ // daily: the works go forward as far as they are paid 
       W.treasury-=q.price;h.gold=(h.gold||0)+q.price;setLord(f,0,false);f.bought=true;refreshOverlay();
       emit('crown',4,{x:f.x,z:f.z},`${h.name} sells the crown a furlong near ${nearestPlaceName(f.x,f.z)} for ${q.price.toLocaleString()} gold; its rent now comes to the treasury.`);
     }else if(q.type==='persuade'){if(day()<q.decide)continue;L.splice(i,1);answerPersuade(q);
+    }else if(q.type==='plan'){tickPlan(q);if(q.dead){L.splice(i,1);G.ordersDirty=true;}if(planUI&&day()%5===0&&!planUI.painting)planBarHTML();
     }else if(q.type==='clear'){
       const s=W.settlements[q.si];if(!s||!s._lay){L.splice(i,1);continue;}
       if(day()<q.next)continue;q.next=day()+10+randi('sim',12); // a household at a time, as leases run out
@@ -9083,6 +9321,7 @@ function runDecree(k){
   const d=DECREES.find(x=>x.k===k);if(!d)return;
   const [why,c]=decreeBlock(d);if(why)return;
   if(d.place===true){setPlaceMode('charter',c,'Choose the ground for the new village — Esc to cancel');return;}
+  if(d.place==='plan'){planOpen(0);return;}
   if(d.place){setPlaceMode(d.place,d.k,d.hint);return;}
   W.treasury-=c;if(d.cd)setCd('d_'+d.k,d.cd);
   d.run(c);
@@ -9333,6 +9572,7 @@ function lordPanelHTML(){
   if(hosts.some(a=>!a.standing))x+=cbtn('lord','dismiss','Send the levies home',0,'','they go back to their fields');
   x+=cbtn('lord','road','Lay a road… (click your town, then another)',0,'','surveyed and paid for month by month');
   x+=cbtn('lord','pave','Pave a road… (click a road to your town)',0,'','carts go a third faster');
+  x+=cbtn('lord','plan','Plan works with the brush…',0,'','streets, squares, a wall, a new quarter in your towns');
   x+=cbtn('lord','village','Found a village… (click open ground)',1200,cd('l_vil'),'on your own land or unclaimed waste');
   x+=cbtn('lord','gift','Send gifts to court',400,cd('l_gift'),'+8 standing with the crown');
   const nb=lordNeighbours(hi);
@@ -9370,6 +9610,7 @@ function lordCmd(cmd,arg){
       emit('war',4,seat.pos,`${h.name} calls out its tenants: ${Math.round(a.strength)} men muster at ${seat.name}.`);break;}
     case 'dismiss':{let n=0;for(const a of [...W.armies])if(a.house===hi&&!a.standing&&!a.gone&&a.state!=='battle'&&!inRevolt(hi)){disbandArmy(a);n++;}
       if(n)emit('war',3,seat.pos,`${h.name} sends its levies home to their fields.`);break;}
+    case 'plan':planOpen(hi);break;
     case 'road':setPlaceMode('lroad1',null,'Click one of your towns to begin the road — Esc to cancel');break;
     case 'pave':setPlaceMode('lpave',null,'Click a road that runs to one of your towns — Esc to cancel');break;
     case 'village':if(!cdLeft('l_vil')&&purse(hi)>=1200)setPlaceMode('lvillage',null,'Click open ground on your land for the new village — Esc to cancel');break;
@@ -9694,6 +9935,7 @@ function initUI(){
     MOD.tax=+e.target.value;const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=Math.round(MOD.tax)+'%';
   });
   document.addEventListener('pointerdown',e=>{if(!e.target.closest('#gl'))uiDownAt=performance.now();},true);
+  document.addEventListener('click',e=>{const b=e.target.closest('[data-pb]');if(b&&!b.disabled){planCmd(b.dataset.pb);e.stopPropagation();}});
   document.addEventListener('pointerup',()=>{setTimeout(()=>{uiDownAt=0;},0);},true);
   document.getElementById('petition').addEventListener('click',e=>{
     const b=e.target.closest('[data-pi]');if(b&&!b.disabled){answerPetition(+b.dataset.pi);return;}
