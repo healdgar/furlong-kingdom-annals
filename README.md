@@ -292,6 +292,37 @@ itself; you rule one lord's domain:
 
 ## How it works
 
+- **Holdings beneath the lords.** Every strip has a holder and a worker: a
+  villein (owing labour), a free tenant (a small quit-rent), a leaseholder
+  (money rent), a sharecropper (half the crop to whoever owns it), or the
+  lord's demesne worked by hired hands. Tenures follow the age: villeinage
+  early, leases after the great plague, when lords sell off their home farms.
+  - Each household keeps a purse: its share of the harvest, its craft or its
+    wages, less its keep and its rent.
+  - Only a freehold can be sold: in hard years the indebted sell to the
+    better-off and stay on as sharecroppers; a yeoman with more strips than
+    his household can work lets them to the landless.
+  - A holding passes to the eldest son, or is shared strip by strip among the
+    sons where the custom is partible (Welsh, German, Slav, Norse); else to a
+    daughter or the widow, else back to the lord.
+  - Field and person cards show who holds, who works, on what terms, and
+    what each household is worth.
+- **Where people live.** A household without a roof chooses its lot by the
+  walk to its work (its strips, its workshop, the market or quay), the rent
+  against its purse, and the safety of the walls (worth more after raids and
+  sieges); the best-off choose first. A poor field hand may put up a hovel by
+  the strips he works, and a yeoman far from his land builds out on it: the
+  home lot is carved out of the field, which loses that much ploughland.
+- **Rent shapes the town.** Where rents are dearest, houses rise a storey
+  (after 1250 a fourth, jettied over the street) and take lodgers; the
+  cheapest houses stand empty first in bad times; half the townsfolk's rents
+  reach the lord.
+- **Streets cut through.** Each year a town's households' walks to work and
+  market are traced along its streets; where the way round costs the town a
+  great deal, and the lord can pay, a new street is cut straight through and
+  the houses in its line are pulled down and their owners paid (never a
+  church, castle, hall or the walls), more cheaply over ground a fire has
+  cleared. The annals and the town's history record it.
 - **Towns grow together.** When the built-up edge of a lesser place meets a
   greater's, the greater takes it in as a ward (as London took in Southwark).
   - The ward keeps its name, church and streets; its market, stores, lord and
