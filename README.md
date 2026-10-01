@@ -323,6 +323,33 @@ itself; you rule one lord's domain:
   the houses in its line are pulled down and their owners paid (never a
   church, castle, hall or the walls), more cheaply over ground a fire has
   cleared. The annals and the town's history record it.
+- **Churches are built in parts.** A church's nave is sized to its parish
+  (two souls to the square metre, half the parish at a mass); the parts are
+  paid for one by one from a fabric fund (a share of the tithe, the alms and
+  bequests of the well-to-do, a bishop's revenues, a rich lord's gift), with
+  stone from the town's yards or carted in at a price.
+  - Crowded: the nave is lengthened eastward, then given aisles, then (a
+    great church) transepts; the houses in the way are bought out. Hemmed in,
+    the parish saves for other works.
+  - Timber gives way to stone; a bellcote on the west gable to a west tower
+    built onto the west end; then a shingled spire, a stone one; a minster
+    gets twin west towers and a crossing tower. Each parish has its own
+    leaning: some build spires, some keep a plain tower with pinnacles.
+  - A rounded apse in the old style; after c.1190 the new style: a square
+    east end, buttresses, a loftier nave.
+  - The west front and its door face the street or square when the church
+    stands end-on to it; otherwise the altar is to the east and a porch opens
+    on the street side.
+  - Click a church: its fabric, its congregation and room, its fund and what
+    it is saving for.
+- **Castles grow by parts.** A lone tower keep is given a palisade, then a
+  stone curtain, about its yard (the houses within are pulled down); curtains
+  gain towers (square, then round after c.1200), a gatehouse of two towers,
+  then a barbican; the yard a chapel and a hall of stone; the crown's own
+  castle at last an outer curtain, making it concentric. How far a castle
+  goes depends on what the place is worth (a village fort, a town, a seat,
+  the capital); each work waits on the lord's surplus and comes sooner on a
+  border or in war. Each part adds to the defence a siege must overcome.
 - **Towns grow together.** When the built-up edge of a lesser place meets a
   greater's, the greater takes it in as a ward (as London took in Southwark).
   - The ward keeps its name, church and streets; its market, stores, lord and
