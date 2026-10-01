@@ -4003,6 +4003,7 @@ function drawCourt(b,put){
    one across its edge), field and meadow at their worth, then the labour and the stone. Once commissioned it
    goes forward as the purse allows: the householders bought out one by one, then the works; when it is done
    the town's own growth fills the new frontage. */
+const planCellOK=(x,z)=>{const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj))return false;const i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;}; // the same test the town's own builders use
 const PLAN_YP=25; // years' purchase of a house's rent
 let planUI=null;
 const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'}};
@@ -4044,7 +4045,7 @@ function planGrid(s,poly){ // a new quarter: straight streets a burgage plot apa
   let cx=0,cz=0;for(const p of poly){cx+=p.x;cz+=p.z;}cx/=poly.length;cz/=poly.length;
   let ang=0,bd=1e9;for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const d=segDist(cx,cz,st.pts[k-1],st.pts[k]);if(d<bd){bd=d;ang=Math.atan2(st.pts[k].z-st.pts[k-1].z,st.pts[k].x-st.pts[k-1].x);}}
   const ux=Math.cos(ang),uz=Math.sin(ang),vx=-uz,vz=ux,R=Math.max(...poly.map(p=>dist2d(p.x,p.z,cx,cz)))+10,lines=[];
-  const ok=(x,z)=>inPoly(poly,x,z)&&cellOK(x,z)&&!riverAt(x,z,3);
+  const ok=(x,z)=>inPoly(poly,x,z)&&planCellOK(x,z)&&!riverAt(x,z,3);
   const runs=(ax,az,bx,bz)=>{let run=[];for(const q of resample([{x:ax,z:az},{x:bx,z:bz}],6)){if(ok(q.x,q.z))run.push(q);else{if(run.length>=4)lines.push(run);run=[];}}if(run.length>=4)lines.push(run);};
   for(let o=-R;o<=R;o+=36)runs(cx-ux*R+vx*o,cz-uz*R+vz*o,cx+ux*R+vx*o,cz+uz*R+vz*o); // the long streets, a plot's depth apart on each side
   for(let o=-R;o<=R;o+=96)runs(cx-vx*R+ux*o,cz-vz*R+uz*o,cx+vx*R+ux*o,cz+vz*R+uz*o); // cross lanes
@@ -4065,7 +4066,7 @@ function planDraft(kind,stroke,payer){
   if(kind==='street'){
     let pts=resample(smoothPath(resample(stroke,6),3),6);const L=polyLen(pts);if(L<30)return no('Too short for a street.');
     for(const e of[0,pts.length-1]){const n=nearestStreetPt(s,pts[e].x,pts[e].z);if(n&&n.d<14)pts[e]={x:n.x,z:n.z};} // joined to the streets it meets
-    if(pts.some(q=>!cellOK(q.x,q.z)&&!riverAt(q.x,q.z,0)))return no('The line runs over water or a cliff.');
+    if(pts.some(q=>!planCellOK(q.x,q.z)&&!riverAt(q.x,q.z,0)))return no('The line runs over water or a cliff.');
     const rivers=pts.filter((q,k)=>k&&riverAt(q.x,q.z,0)&&!riverAt(pts[k-1].x,pts[k-1].z,0)).length;
     const hit=s.buildings.filter(b=>live(b)&&pts.some((q,k)=>k&&segDist(b.x,b.z,pts[k-1],q)<4.5+Math.max(b.w,b.d)*0.45));
     const bad=hit.find(blocks);if(bad)return no(`The line runs through ${named(bad)}; the brush must go round it.`);
@@ -4083,7 +4084,7 @@ function planDraft(kind,stroke,payer){
     const r=[];for(let k=0;k<PLN;k++)r.push(Math.max(4,rayPolyR(poly,px,pz,k/PLN*Math.PI*2)));
     const hit=s.buildings.filter(b=>live(b)&&(inPoly(poly,b.x,b.z)||obbCorners(b.x,b.z,b.w,b.d,b.rot).some(c=>inPoly(poly,c.x,c.z))));
     const bad=hit.find(blocks);if(bad)return no(`${named(bad)} stands in it; the square must go round it.`);
-    if(poly.some(q=>!cellOK(q.x,q.z)))return no('The square runs over water or a cliff.');
+    if(poly.some(q=>!planCellOK(q.x,q.z)))return no('The square runs over water or a cliff.');
     const mk=!(s.places||[]).some(p=>p.kind==='market'),comp=hit.reduce((t,b)=>t+planComp(b),0),works=Math.round(area*0.04+40),total=comp+works;
     return{ok:true,kind,si,place:{x:px,z:pz,r},mk,hit,comp,works,land:0,total,first:Math.min(total,hit[0]?planComp(hit[0]):works),days:Math.round(30+area/60+hit.length*5),
       title:`${mk?'A market place':'A square'} of ${Math.round(area)} m² at ${s.name}`,lines:[`${hit.length} house${hit.length===1?'':'s'} bought out: ${comp.toLocaleString()} gold`,`paving, a cross${mk?' and a market charter':''}: ${works.toLocaleString()}`]};}
@@ -4385,7 +4386,7 @@ function rebuildDetails(){
       b._inCastle=false;
       for(const C of castleKeepOut(S)){const d=dist2d(b.x,b.z,C.x,C.z); // the castle is its own round parcel, ditch and palisade its bounds: lots outside stop short of it
         if(d<C.r+1)b._inCastle=true;else{const nx=(b.x-C.x)/d,nz=(b.z-C.z)/d;cut(-nx,-nz,-(nx*C.x+nz*C.z+C.r+(C.motte?0.3:0.9)),-9);}} // up to the palisade or the ditch's lip, which bound it
-      b.lot=P;
+      b.lot=P;if(G.land&&!b._inCastle)markLot(P);
       for(let k=0;k<P.length;k++){const a=P[k],c=P[(k+1)%P.length],e=a.e;if(e===-9||e===undefined)continue;
         if(e>=0){const key=Math.min(e,b.idx)+'_'+Math.max(e,b.idx);if(edges.has(key))continue;edges.set(key,[a,c,b,e]);}
         else edges.set('b'+b.idx+'_'+k,[a,c,b,-1]);}
@@ -4397,7 +4398,7 @@ function rebuildDetails(){
         let inB=false;for(const o of bh.near(x,z,4))if(o.state!=='gone'&&!o.removed&&dist2d(x,z,o.x,o.z)<Math.min(o.w,o.d)*0.5){inB=true;break;} // under a house the line is its party wall
         if(inB)continue;const y0=hAt(a.x+(c.x-a.x)*k/n,a.z+(c.z-a.z)*k/n),y1=hAt(a.x+(c.x-a.x)*(k+1)/n,a.z+(c.z-a.z)*(k+1)/n);
         putTilt('fence',x,(y0+y1)/2-0.25,z,ry,-Math.atan2(y1-y0,sl),t===2?0.45:0.2,t===2?1.35:1.05,Math.hypot(sl,y1-y0)+0.1,col(t));}}
-    G.lotMs=performance.now()-T0;
+    featLots();G.lotMs=performance.now()-T0;
   }
   if(G.sails)for(const g of G.sails){scene.remove(g);disposeTree(g);}
   G.sails=sails.map(b=>{ // a cross of four sails on the windward face, turning about the hub
@@ -4756,6 +4757,10 @@ function markBuilt(x,z,r){ // houses, yards and walls: no ploughland here
   if(G.land.maskTex)G.land.maskTex.needsUpdate=true;
   if(G.land.seedTex)for(const[dx,dz]of[[0,0],[r,0],[-r,0],[0,r],[0,-r]])furlongAt(x+dx,z+dz).dirt=1; // the furlong under a new house is measured again at the next reckoning
 }
+function markLot(P){ // a house's yard is no longer ploughland: the strips stop at its fence
+  const m=G.land.mask;let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of P){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);z0=Math.min(z0,p.z);z1=Math.max(z1,p.z);}
+  let ch=false;for(let x=x0+3;x<x1;x+=6)for(let z=z0+3;z<z1;z+=6)if(inPoly(P,x,z)){const cx=toCell(x),cz=toCell(z);if(!inB(cx,cz))continue;const i=cIdx(cx,cz)*4+2;if(m[i]!==255){m[i]=255;ch=true;}}
+  if(ch&&G.land.maskTex)G.land.maskTex.needsUpdate=true;}
 function markSettlementBuilt(s){
   for(const b of s.buildings)markBuilt(b.x,b.z,Math.hypot(b.w,b.d)/2+8);
   if(s.wallRad){const R=Math.max(...s.wallRad)+80;
@@ -5075,7 +5080,8 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
         if(hedge)col=mix(uCol[9]*(0.75+0.5*nz),col,smoothstep(1.3,2.8,eb));   // hedgerow, or a parish bank
         else col=mix(uCol[3]*0.95,col,smoothstep(2.,4.,eb));                  // an unploughed headland
       }
-      ok*=smoothstep(10.,17.,texture2D(uFeat2,(wp+uSize*0.5)/uSize).r*63.75); // houses built on a furlong take their lots out of it
+      vec4 fb=texture2D(uFeat2,(wp+uSize*0.5)/uSize);
+      ok*=smoothstep(10.,17.,fb.r*63.75)*smoothstep(0.6,2.6,fb.g*63.75); // houses built on a furlong take their lots out of it: the strips stop at the yard fence
       diffuseColor.rgb=mix(diffuseColor.rgb,col,ok*(isCommon?0.4:0.94));fieldA=isCommon?0.:ok;
     }
   }
@@ -5168,7 +5174,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
    tussock and flower mottling. */
 const FR=Math.round(1024*MAPK/64)*64,FPX=SIZE/FR,FMAX=63.75; // field resolution, metres per texel, farthest distance kept
 function featInit(){
-  const N=FR*FR,F={src:[new Uint8Array(N),new Uint8Array(N),new Uint8Array(N),new Uint16Array(N),new Uint8Array(N)], // water, wall, road, wood (tree count), buildings
+  const N=FR*FR,F={src:[new Uint8Array(N),new Uint8Array(N),new Uint8Array(N),new Uint16Array(N),new Uint8Array(N),new Uint8Array(N)], // water, wall, road, wood (tree count), buildings, house yards
     E:[0,1,2].map(()=>new Uint8Array(N).fill(255)), // exact distance to the edge of a drawn line (water, wall, road) near it, (d+8)*4: keeps verges and ditches straight
     d1:new Uint8Array(N*4),d2:new Uint8Array(N*4),dirty:null,t:0};
   G.feat=F;
@@ -5213,6 +5219,19 @@ function featRoads(){
 function featTree(t,add){ // a wood, not clumps: each standing tree claims its whole ground cell
   const a=G.feat.src[3],cx=cellX(toCell(t.x)),cz=cellZ(toCell(t.z)),r=CELL/2+3;
   featRect(cx-r,cz-r,cx+r,cz+r,i=>{a[i]=Math.max(0,a[i]+add);});featDirty(cx-r,cz-r,cx+r,cz+r);}
+function featLots(){ // the yards as a field of their own: redrawn only where a lot has changed
+  const F=G.feat;if(!F||!F.src[5])return;const S=F.src[5];let x0=1e9,z0=1e9,x1=-1e9,z1=-1e9,any=false;
+  const grow=B=>{x0=Math.min(x0,B[0]);z0=Math.min(z0,B[1]);x1=Math.max(x1,B[2]);z1=Math.max(z1,B[3]);any=true;};
+  for(const b of G.bldList){const live=b.lot&&b.lot.length>2&&!b.removed&&b.state!=='gone'&&!b._inCastle;
+    if(!live){if(b._lotB){grow(b._lotB);b._lotB=null;b._lotK=null;}continue;}
+    const k=b.lot.map(p=>Math.round(p.x)+','+Math.round(p.z)).join(';');if(k===b._lotK)continue;
+    if(b._lotB)grow(b._lotB);let a0=1e9,c0=1e9,a1=-1e9,c1=-1e9;for(const p of b.lot){a0=Math.min(a0,p.x);c0=Math.min(c0,p.z);a1=Math.max(a1,p.x);c1=Math.max(c1,p.z);}
+    b._lotB=[a0,c0,a1,c1];b._lotK=k;grow(b._lotB);}
+  if(!any)return;
+  featRect(x0,z0,x1,z1,i=>{S[i]=0;});
+  for(const b of G.bldList){const B=b._lotB;if(!B||B[2]<x0||B[0]>x1||B[3]<z0||B[1]>z1)continue;const P=b.lot;
+    featRect(Math.max(B[0],x0),Math.max(B[1],z0),Math.min(B[2],x1),Math.min(B[3],z1),(i,x,z)=>{if(inPoly(P,x,z))S[i]=1;});}
+  featDirty(x0,z0,x1,z1);}
 function featBuilding(b){featDisc(4,b.x,b.z,Math.hypot(b.w,b.d)/2,1);}
 const FT=64; // the fields are kept current tile by tile (64 texels, some 380 m): a change dirties the tiles its halo can reach
 function featDirty(x0,z0,x1,z1){const F=G.feat;if(!F||!F.tex1||F.mute)return;F.tiles=F.tiles||new Set();
@@ -5221,7 +5240,7 @@ function featDirty(x0,z0,x1,z1){const F=G.feat;if(!F||!F.tex1||F.mute)return;F.t
 function featCompute(i0,j0,i1,j1){ // chamfer distance transform over a window (padded so nothing beyond FMAX is missed), written back inside it
   const F=G.feat,pad=Math.ceil(FMAX/FPX)+2,a0=Math.max(0,i0-pad),b0=Math.max(0,j0-pad),a1=Math.min(FR-1,i1+pad),b1=Math.min(FR-1,j1+pad);
   const w=a1-a0+1,h=b1-b0+1,D=new Float32Array(w*h),R2=Math.SQRT2*FPX;
-  for(let ch=0;ch<5;ch++){
+  for(let ch=0;ch<6;ch++){
     const S=F.src[ch];
     const E=F.E[ch];
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=(y+b0)*FR+x+a0;D[y*w+x]=E&&E[i]<255?Math.max(0,E[i]/4-8):S[i]?0:1e6;}
@@ -5229,7 +5248,7 @@ function featCompute(i0,j0,i1,j1){ // chamfer distance transform over a window (
       if(x>0)v=Math.min(v,D[k-1]+FPX);if(y>0){v=Math.min(v,D[k-w]+FPX);if(x>0)v=Math.min(v,D[k-w-1]+R2);if(x<w-1)v=Math.min(v,D[k-w+1]+R2);}D[k]=v;}
     for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){const k=y*w+x;let v=D[k];if(!v)continue;
       if(x<w-1)v=Math.min(v,D[k+1]+FPX);if(y<h-1){v=Math.min(v,D[k+w]+FPX);if(x<w-1)v=Math.min(v,D[k+w+1]+R2);if(x>0)v=Math.min(v,D[k+w-1]+R2);}D[k]=v;}
-    const out=ch<4?F.d1:F.d2,o=ch<4?ch:0;
+    const out=ch<4?F.d1:F.d2,o=ch<4?ch:ch-4;
     for(let y=Math.max(j0,b0);y<=Math.min(j1,b1);y++)for(let x=Math.max(i0,a0);x<=Math.min(i1,a1);x++)
       out[(y*FR+x)*4+o]=Math.min(255,Math.round(Math.min(FMAX,D[(y-b0)*w+x-a0])*4));
   }
