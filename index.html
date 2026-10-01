@@ -2363,6 +2363,14 @@ function layoutSettlement(s){
       if(s.wallRad)s.oldWalls.push(Array.from(s.wallRad));
       s.wallRad=Float32Array.from(rad);s.wallKind=kind;s.natDef=nat/WALLN;s.wallR=Math.max(...rad);s.walls=stone?Math.max(2,s.walls||0):Math.max(1,s.walls||0);s.wallKept=null;
       clearWallLine(s).forEach(unplace);live=false;},
+    infill(b,bx,bz){ // into the yard behind b (bx,bz: the way out of the back door): a cottage at the foot of the toft, else the house lengthened back
+      const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=bx*c-bz*sn,lz=bx*sn+bz*c,alongZ=Math.abs(lz)>=Math.abs(lx),half=alongZ?b.d/2:b.w/2;
+      for(const o of[half+5.5,half+8]){const f={x:b.x+bx*o,z:b.z+bz*o,w:alongZ?Math.min(b.w,6.5):4.8,d:alongZ?4.8:Math.min(b.d,6.5),rot:b.rot};
+        if(!fits(f,0.6))continue;live=true;curE=E;const nb=place(b.tier>=1?'house':'cot',Math.min(1,b.tier),f,'residential',0.85,{backOf:true});live=false;return nb;}
+      const add=3.5,f={x:b.x+bx*add/2,z:b.z+bz*add/2,w:alongZ?b.w:b.w+add,d:alongZ?b.d+add:b.d,rot:b.rot},F={...f,w:f.w+0.6,d:f.d+0.6}; // no room for a cottage: the house goes back
+      if([...new Set(placed.near(f.x,f.z,Math.hypot(f.w,f.d)/2+3))].some(o=>o!==b&&!o.removed&&obbOverlap(F,o)))return null;
+      if(!probe(f).every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.5)&&!inPlace(q.x,q.z,0.8)))return null;
+      b.x=f.x;b.z=f.z;b.w=f.w;b.d=f.d;groundBuilding(b);placed.add(b,Math.hypot(b.w,b.d)/2+1);if(b.idx!==undefined)updateBuildingInstance(b);return b;},
     court(take,f){ // a run of plots rebuilt as one house about a courtyard
       take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
       live=true;curE=E;take.forEach(unplace);const nb=place('court',2,f,take[0].district||'residential',1);live=false;return nb;},
@@ -4136,6 +4144,28 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
   else if(q.kind==='wall'){L.planWall(q.rad,q.stone);t=`The ${q.stone?'new wall':'palisade'} about ${s.name} is finished, as it was planned`;}
   syncLive(s);s.history.push({yr:year(),t:t.replace(` at ${s.name}`,'').replace(` about ${s.name}`,'')+'.'});
   emit(who?'house':'crown',6,s.pos,t+(who?`, at the charge of ${who.name}`:', at the crown’s charge')+'.');}
+/* ---------------- the yards fill: burgage repletion ----------------
+   Behind each town house lies its toft: a garden, a midden, a pig. Where the ground is dear, a yard is worth more
+   built on than dug: the householder lengthens the house back into it, or puts up a cottage at its foot to let
+   (reached by a passage beside the house). A rich household keeps its garden: it has no need of the rent.
+   Out at the edge, where rent is cheap, the yards stay green. */
+const YARD_WORTH=0.006; // what a square metre of garden is worth to a household in a year, in crowns
+function tickInfill(){
+  if(day()%360!==245||W.prehistory&&AD()<1100)return;if(AD()<1100)return;
+  for(const s of W.settlements){if(s.kind==='village'||s.pop<300||!s._lay||!s._lay.live||s.siegeBy)continue;
+    if(s._hhY!==year())houseFolk(s);
+    const homes=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&RESID.has(b.arch)&&b.arch!=='court'&&b.arch!=='cot'&&!b.backOf);
+    let n=Math.max(1,Math.round(s.pop/350)),done=0;
+    const cands=homes.map(b=>{const rent=lotRentAt(s,b.x,b.z,b.st)/56,area=b.lot&&b.lot.length>2?polyArea(b.lot)-b.w*b.d:80;return{b,rent,area};}).filter(c=>c.area>55&&c.rent>YARD_WORTH*1.5).sort((a,c)=>c.rent-a.rent);
+    for(const c of cands){if(done>=n)break;const b=c.b,h=(b.hh||[])[0],rich=h&&(h.w||0)>150;
+      if(rich&&c.rent<YARD_WORTH*5)continue; // a rich household keeps its garden
+      const sp=nearestStreetPt(s,b.x,b.z);if(!sp||sp.d<0.5)continue;const fx=(sp.x-b.x)/sp.d,fz=(sp.z-b.z)/sp.d; // the street side; the yard is behind
+      const cost=c.rent*40*30; // a cottage costs some years of what it will let for
+      if(h&&(h.w||0)<cost*0.6)continue;
+      const r=s._lay.live.infill(b,-fx,-fz);if(!r)continue;done++;if(h)h.w-=cost*0.5;
+      if(!s._infillNote){s._infillNote=1;s.history.push({yr:year(),t:'The yards behind the houses in the heart of the town began to fill: houses lengthened back into their tofts, cottages built at the foot of the gardens to let.'});
+        emit('trade',2,s.pos,`${s.name}: ground in the heart of the town is too dear for gardens; the yards behind the houses fill with cottages and workshops.`);}}
+    if(done)syncLive(s);}}
 function chFabric(b){const ch=chOf(b),L=chLay(b),p=[];
   p.push(ch.stone?(ch.gothic?'stone, in the new pointed style':'stone, round-arched'):'timber');
   p.push(`a nave ${Math.round(L.nl)} m by ${Math.round(L.nw)}${ch.aisles?` with ${ch.aisles===2?'two aisles':'an aisle'}`:''}`);
@@ -8717,7 +8747,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
