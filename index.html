@@ -293,7 +293,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 22:17 UTC · after 784c4b2</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 22:40 UTC · after 8c218af</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -3035,8 +3035,8 @@ function initGraphics(){
   G.sun=new THREE.DirectionalLight(0xfff2dc,1.15);
   G.sun.castShadow=true;
   G.sun.shadow.mapSize.set(2048,2048);
-  G.sun.shadow.camera.near=200;G.sun.shadow.camera.far=5200;
-  G.sun.shadow.bias=-0.0015;
+  G.sun.shadow.camera.near=1100;G.sun.shadow.camera.far=4100; // the sun stands 2600 m off the eye's focus: a depth range just wide enough for what it lights
+  G.sun.shadow.bias=-0.00012;G.sun.shadow.normalBias=0.6; // ~0.4 m of offset (the old -0.0015 over 5 km was 7.5 m: walls and houses cast only from their tops)
   scene.add(G.sun);scene.add(G.sun.target);
   G.hemi=new THREE.HemisphereLight(0xbcd2e8,0x5b5140,0.55);scene.add(G.hemi);
   G.amb=new THREE.AmbientLight(0x404a5a,0.25);scene.add(G.amb);
@@ -3729,11 +3729,14 @@ function buildBuildings(){
   rebuildWalls();
   // mill wheels turn on the building's side, aligned with it
   G.wheels=[];
+  if(!G.rivHash)riverStrips();const wetAt=(x,z)=>!!(riverAt(x,z,1)||W.water[cIdx(toCell(x),toCell(z))]);
   for(const s of W.settlements)if(s.mill){
-    const b=s.mill,grp=new THREE.Group();
+    const b=s.mill,grp=new THREE.Group();let bestK=0,bd=1e9; // the wheel goes on the side that faces the water: the river, the millpond or the lake
+    for(let k=0;k<4;k++){const th=b.rot+k*Math.PI/2,dx=Math.cos(th),dz=-Math.sin(th),half=(k%2?b.d:b.w)/2;let d=60;
+      for(let r=0;r<60;r+=2)if(wetAt(b.x+dx*(half+r),b.z+dz*(half+r))){d=r;break;}if(d<bd){bd=d;bestK=k;}}
     const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1.2,12),new THREE.MeshLambertMaterial({color:0x6e5636}));
-    wh.rotation.z=Math.PI/2;wh.position.set(b.w/2+0.9,3.2,0);grp.add(wh);
-    grp.position.set(b.x,b.y0,b.z);grp.rotation.y=b.rot;
+    wh.rotation.z=Math.PI/2;wh.position.set((bestK%2?b.d:b.w)/2+0.9,3.2,0);wh.castShadow=true;grp.add(wh);
+    grp.position.set(b.x,b.y0,b.z);grp.rotation.y=b.rot+bestK*Math.PI/2;
     scene.add(grp);G.wheels.push(wh);
   }
 }
