@@ -263,7 +263,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-09-30 15:40 UTC · after 7f5898c</div></div>
+<div id="loading"><h1 id="loadtitle">ANNALS</h1><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-01 05:09 UTC · after c2b71f8</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -1115,28 +1115,36 @@ async function generateWorld(seed,progress){
 }
 
 /* ---------------- roads: A* over slope/water cost field ------------------ */
-function seaRoute(ai,bi){ // cogs keep to the water: a search over sea cells from harbour to harbour (they used to sail straight over the land)
+/* the sea lanes: courses are planned on a coarse chart (3x3 cells a square), and one search from each harbour reaches every
+   other at once, so a coast with many ports costs one search a port, not one a pair */
+const SEAK=3,SG=Math.ceil(GRID/SEAK);
+function seaChart(){ // a square is sea if most of its cells are; the shallows cost more
+  if(G._seaChart)return G._seaChart;const sea=new Uint8Array(SG*SG),cost=new Float32Array(SG*SG);
+  for(let j=0;j<SG;j++)for(let i=0;i<SG;i++){let n=0,s=0,sh=0;for(let dz=0;dz<SEAK;dz++)for(let dx=0;dx<SEAK;dx++){const cx=i*SEAK+dx,cz=j*SEAK+dz;if(!inB(cx,cz))continue;n++;const c=cIdx(cx,cz);if(W.water[c]===1){s++;if(W.h[c]>SEA-4)sh++;}}
+    if(n&&s*2>n){sea[j*SG+i]=1;cost[j*SG+i]=sh*2>s?1.5:1;}}
+  return G._seaChart={sea,cost};}
+function seaSquareOf(s){ // the open-water square nearest the harbour
+  if(s._seaSq!==undefined)return s._seaSq;const C=seaChart(),i0=Math.floor(s.cx/SEAK),j0=Math.floor(s.cz/SEAK);let best=-1,bd=1e9;
+  for(let dj=-12;dj<=12;dj++)for(let di=-12;di<=12;di++){const i=i0+di,j=j0+dj;if(i<0||j<0||i>=SG||j>=SG||!C.sea[j*SG+i])continue;const d=di*di+dj*dj;if(d<bd){bd=d;best=j*SG+i;}}
+  return s._seaSq=best;}
+function seaField(si){ // Dijkstra from one harbour over the whole chart (binary heap on typed arrays)
+  const F=G._seaF||(G._seaF={});if(F[si])return F[si];const C=seaChart(),N=SG*SG,g=new Float32Array(N).fill(Infinity),from=new Int32Array(N).fill(-1);
+  const src=seaSquareOf(W.settlements[si]);if(src<0)return F[si]={g,from,src};
+  let hk=new Float32Array(1024),hv=new Int32Array(1024),hn=0;
+  const push=(k,v)=>{if(hn===hk.length){const k2=new Float32Array(hn*2),v2=new Int32Array(hn*2);k2.set(hk);v2.set(hv);hk=k2;hv=v2;}let i=hn++;while(i>0){const p=(i-1)>>1;if(hk[p]<=k)break;hk[i]=hk[p];hv[i]=hv[p];i=p;}hk[i]=k;hv[i]=v;};
+  const pop=()=>{const v=hv[0],k=hk[--hn],w=hv[hn];let i=0;for(;;){const l=2*i+1;if(l>=hn)break;const c=l+1<hn&&hk[l+1]<hk[l]?l+1:l;if(hk[c]>=k)break;hk[i]=hk[c];hv[i]=hv[c];i=c;}hk[i]=k;hv[i]=w;return v;};
+  g[src]=0;push(0,src);
+  while(hn){const kk=hk[0],c=pop();if(kk>g[c])continue;const ci=c%SG,cj=(c/SG)|0;
+    for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){if(!di&&!dj)continue;const ni=ci+di,nj=cj+dj;if(ni<0||nj<0||ni>=SG||nj>=SG)continue;const n=nj*SG+ni;if(!C.sea[n])continue;
+      const ng=g[c]+(di&&dj?1.414:1)*C.cost[n];if(ng<g[n]){g[n]=ng;from[n]=c;push(ng,n);}}}
+  return F[si]={g,from,src};}
+function seaRoute(ai,bi){ // cogs keep to the water, harbour to harbour
   W.seaRoutes=W.seaRoutes||{};const key=Math.min(ai,bi)+'_'+Math.max(ai,bi);
   if(key in W.seaRoutes){const r=W.seaRoutes[key];return r&&ai>bi?{poly:[...r.poly].reverse(),len:r.len}:r;}
-  const seaCell=s=>{if(s.seaCell!==undefined)return s.seaCell;let best=-1,bd=1e9;
-    for(let dz=-30;dz<=30;dz++)for(let dx=-30;dx<=30;dx++){const cx=s.cx+dx,cz=s.cz+dz;if(!inB(cx,cz))continue;const c=cIdx(cx,cz);
-      if(W.water[c]!==1)continue;let open=0;for(const[ex,ez]of[[1,0],[-1,0],[0,1],[0,-1]])if(inB(cx+ex,cz+ez)&&W.water[cIdx(cx+ex,cz+ez)]===1)open++;
-      const d=dx*dx+dz*dz;if(open===4&&d<bd){bd=d;best=c;}}
-    return s.seaCell=best;};
-  const A=W.settlements[Math.min(ai,bi)],Bs=W.settlements[Math.max(ai,bi)],sa=seaCell(A),sb=seaCell(Bs);
-  if(sa<0||sb<0){W.seaRoutes[key]=null;return null;}
-  const N=GRID*GRID,g=new Float32Array(N).fill(Infinity),from=new Int32Array(N).fill(-1),heap=[];
-  const push=(f,i)=>{heap.push([f,i]);let k=heap.length-1;while(k>0){const q=(k-1)>>1;if(heap[q][0]<=heap[k][0])break;[heap[q],heap[k]]=[heap[k],heap[q]];k=q;}};
-  const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let k=0;for(;;){const l=k*2+1,r=l+1;let m=k;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===k)break;[heap[m],heap[k]]=[heap[k],heap[m]];k=m;}}return top;};
-  const tx=sb%GRID,tz=(sb/GRID)|0,hx=i=>Math.hypot(i%GRID-tx,((i/GRID)|0)-tz);
-  g[sa]=0;push(hx(sa),sa);
-  while(heap.length){const[,c]=pop();if(c===sb)break;const cx=c%GRID,cz=(c/GRID)|0;
-    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz)continue;const nx=cx+dx,nz=cz+dz;if(!inB(nx,nz))continue;const n=cIdx(nx,nz);
-      if(W.water[n]!==1)continue;const shore=W.h[n]>SEA-4?1.5:1; // keep off the shallows
-      const ng=g[c]+(dx&&dz?1.414:1)*shore;if(ng<g[n]){g[n]=ng;from[n]=c;push(ng+hx(n),n);}}}
-  if(from[sb]<0){W.seaRoutes[key]=null;return null;}
-  const cells=[];for(let c=sb;c>=0;c=from[c]){cells.push(c);if(c===sa)break;}cells.reverse();
-  const pts=smoothPath(resample(cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)})),30),3);
+  const lo=Math.min(ai,bi),hi=Math.max(ai,bi),A=W.settlements[lo],Bs=W.settlements[hi],F=seaField(lo),tb=seaSquareOf(Bs);
+  if(F.src<0||tb<0||!isFinite(F.g[tb])){W.seaRoutes[key]=null;return null;}
+  const sq=[];for(let c=tb;c>=0;c=F.from[c]){sq.push(c);if(c===F.src)break;}sq.reverse();
+  const half=(SEAK-1)/2,pts=smoothPath(resample(sq.map(c=>({x:cellX((c%SG)*SEAK+half),z:cellZ(((c/SG)|0)*SEAK+half)})),30),3);
   const da=landingOf(A)||A.pos,db=landingOf(Bs)||Bs.pos,poly=[{x:da.x,z:da.z},...pts,{x:db.x,z:db.z}]; // alongside at the waterfront, not sailed up the high street
   const r=W.seaRoutes[key]={poly,len:polyLen(poly)};
   return ai>bi?{poly:[...poly].reverse(),len:r.len}:r;
@@ -1194,12 +1202,36 @@ function roadAstar(s,t){
     const path=[];let c=t;while(c>=0&&c!==s){path.push(c);c=from[c];}path.push(s);path.reverse();
     return path;
   }
+/* land and sea: each land mass gets its own roads; the masses are joined by sea lanes between their nearest ports,
+   which carts do not use (the cogs carry that trade) but hosts, envoys and the routed may, by ship */
+function landComp(){ // which land mass each cell is on (rivers are crossed; only the sea parts)
+  if(G._landComp&&G._landComp.n===GRID)return G._landComp.c;const N=GRID*GRID,C=new Int32Array(N).fill(-1);let id=0;
+  for(let s=0;s<N;s++){if(C[s]>=0||W.water[s]===1)continue;const q=[s];C[s]=id;
+    for(let h=0;h<q.length;h++){const c=q[h],cx=c%GRID,cz=(c/GRID)|0;for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=cx+dx,nz=cz+dz;if(!inB(nx,nz))continue;const n=cIdx(nx,nz);if(C[n]>=0||W.water[n]===1)continue;C[n]=id;q.push(n);}}id++;}
+  G._landComp={n:GRID,c:C};return C;}
+const compOf=s=>landComp()[cIdx(s.cx,s.cz)];
+function linkLands(){ // a sea lane from each land mass not yet reached to the nearest port of one that is
+  W.seaLanes=W.seaLanes||[];const S=W.settlements,cap=compOf(S[0]),joined=new Set([cap]);
+  for(const L of W.seaLanes){joined.add(compOf(S[L.a]));joined.add(compOf(S[L.b]));}
+  for(let guard=0;guard<20;guard++){let best=null;
+    for(let i=0;i<S.length;i++){const ci=compOf(S[i]);if(joined.has(ci)||seaSquareOf(S[i])<0)continue;
+      for(let j=0;j<S.length;j++){if(!joined.has(compOf(S[j]))||seaSquareOf(S[j])<0)continue;const d=dist2d(S[i].pos.x,S[i].pos.z,S[j].pos.x,S[j].pos.z);if(!best||d<best.d)best={i,j,d};}}
+    if(!best)break;const r=seaRoute(best.i,best.j);joined.add(compOf(S[best.i]));
+    if(r){W.seaLanes.push({a:best.i,b:best.j,poly:r.poly,len:r.len});W.routes={};}}
+  // more crossings: each port of note to the nearest port over the water, where no crossing yet serves either shore (Dover-Wissant, Southampton-Barfleur)
+  const ports=S.map((s,i)=>i).filter(i=>S[i].harbor&&S[i].pop>=40&&seaSquareOf(S[i])>=0).sort((a,b)=>S[b].pop-S[a].pop);
+  for(const i of ports){const ci=compOf(S[i]);let j=-1,bd=1e18;
+    for(const k of ports){if(compOf(S[k])===ci)continue;const d=dist2d(S[i].pos.x,S[i].pos.z,S[k].pos.x,S[k].pos.z);if(d<bd){bd=d;j=k;}}
+    if(j<0)continue;const cj=compOf(S[j]),pair=W.seaLanes.filter(L=>{const a=compOf(S[L.a]),b=compOf(S[L.b]);return a===ci&&b===cj||a===cj&&b===ci;});
+    if(pair.length>=4||pair.some(L=>[L.a,L.b].some(e=>dist2d(S[e].pos.x,S[e].pos.z,S[i].pos.x,S[i].pos.z)<1500)))continue;
+    const r=seaRoute(i,j);if(r){W.seaLanes.push({a:i,b:j,poly:r.poly,len:r.len});W.routes={};}}}
 function buildRoads(){
   const connected=[0];
   for(let i=1;i<W.settlements.length;i++){
     // connect to nearest connected settlement
-    let bj=-1,bd=1e18;
-    for(const j of connected){const d=dist2d(W.settlements[i].pos.x,W.settlements[i].pos.z,W.settlements[j].pos.x,W.settlements[j].pos.z);if(d<bd){bd=d;bj=j;}}
+    let bj=-1,bd=1e18;const ci=compOf(W.settlements[i]);
+    for(const j of connected){if(compOf(W.settlements[j])!==ci)continue;const d=dist2d(W.settlements[i].pos.x,W.settlements[i].pos.z,W.settlements[j].pos.x,W.settlements[j].pos.z);if(d<bd){bd=d;bj=j;}}
+    if(bj<0){connected.push(i);continue;} // the first place on its own land: the sea joins it to the rest
     const a=W.settlements[i],b=W.settlements[bj];
     const cells=roadAstar(cIdx(a.cx,a.cz),cIdx(b.cx,b.cz));
     if(cells){
@@ -1224,6 +1256,7 @@ function buildRoads(){
   // settlement-graph routing (BFS), route(a,b) => polyline
   W.adj={};W.settlements.forEach((s,i)=>W.adj[i]=[]);
   W.roads.forEach((r,ri)=>{W.adj[r.a].push({to:r.b,ri});W.adj[r.b].push({to:r.a,ri});});
+  W.seaLanes=[];linkLands();
 }
 function roadTraffic(){ // share of the realm's journeys (place to place, weighted by people) that pass along each road
   const key=W.roads.length+'_'+Math.floor(day()/360);if(W._trafK===key)return W._traf;
@@ -1236,27 +1269,37 @@ function roadTraffic(){ // share of the realm's journeys (place to place, weight
   }
   const mx=Math.max(1,...T);W._traf=T.map(v=>v/mx);W._trafK=key;return W._traf;
 }
-function route(ai,bi){
-  const key=ai+'_'+bi;
+const PORT_DELAY=1200; // a crossing costs the days of finding and loading the ships, in road-metres: some three days' march
+function route(ai,bi,sea){
+  const key=ai+'_'+bi+(sea?'s':'');
   if(W.routes[key])return W.routes[key];
-  // the quickest way by the roads (a paved road is quicker going); a new road the crown lays is used at once
-  const prev={},g={};prev[ai]=null;g[ai]=0;const open=[ai],done=new Set();
+  // the quickest way by the roads (a paved road is quicker going); a new road the crown lays is used at once; with sea, the lanes between lands too
+  const adj=c=>{const E=W.adj[c]||[];if(!sea||!W.seaLanes||!W.seaLanes.length)return E;const o=E.slice();W.seaLanes.forEach((L,li)=>{if(L.a===c)o.push({to:L.b,li});else if(L.b===c)o.push({to:L.a,li});});return o;};
+  const prev={},via={},g={};prev[ai]=null;g[ai]=0;const open=[ai],done=new Set();
   while(open.length){let mi=0;for(let k=1;k<open.length;k++)if(g[open[k]]<g[open[mi]])mi=k;const c=open.splice(mi,1)[0];if(done.has(c))continue;done.add(c);if(c===bi)break;
-    for(const e of W.adj[c]||[]){const r=W.roads[e.ri],w=(r.len||1)/(1+0.5*(r.grade||0)),nd=g[c]+w;if(!(e.to in g)||nd<g[e.to]){g[e.to]=nd;prev[e.to]=c;open.push(e.to);}}}
+    for(const e of adj(c)){const w=e.li!==undefined?W.seaLanes[e.li].len*MARCH_MPD/COG_MPD+PORT_DELAY:(r=>(r.len||1)/(1+0.5*(r.grade||0)))(W.roads[e.ri]),nd=g[c]+w;if(!(e.to in g)||nd<g[e.to]){g[e.to]=nd;prev[e.to]=c;via[e.to]=e;open.push(e.to);}}}
   if(!(bi in prev))return null;
-  const hops=[];let c=bi;while(prev[c]!==null){hops.push([prev[c],c]);c=prev[c];}hops.reverse();
-  let poly=[];
-  for(const[f,t]of hops){
-    const r=W.roads.find(r=>(r.a===f&&r.b===t)||(r.a===t&&r.b===f));
-    let seg=r.path.slice();
-    if(r.a!==f)seg.reverse();
+  const hops=[];let c=bi;while(prev[c]!==null){hops.push([prev[c],c,via[c]]);c=prev[c];}hops.reverse();
+  let poly=[],seaLen=0;
+  for(const[f,t,e]of hops){
+    let seg;
+    if(e&&e.li!==undefined){const L=W.seaLanes[e.li];seg=(L.a===f?L.poly:[...L.poly].reverse()).map(q=>({x:q.x,z:q.z,sea:true}));seaLen+=L.len;}
+    else{const r=W.roads.find(r=>(r.a===f&&r.b===t)||(r.a===t&&r.b===f));seg=r.path.slice();if(r.a!==f)seg.reverse();}
     if(poly.length)seg=seg.slice(1);
     poly=poly.concat(seg);
   }
   let len=0;for(let k=1;k<poly.length;k++)len+=dist2d(poly[k-1].x,poly[k-1].z,poly[k].x,poly[k].z);
-  const res={poly,len,time:g[bi]};W.routes[key]=res;
+  const res={poly,len,time:g[bi]};
+  if(seaLen){ // a journey part by ship: the time along it, so the host sails at a ship's pace and waits at the port
+    const tf=[0];let T=0;for(let k=1;k<poly.length;k++){const d=dist2d(poly[k-1].x,poly[k-1].z,poly[k].x,poly[k].z),s=poly[k].sea&&poly[k-1].sea;T+=s?d*MARCH_MPD/COG_MPD:d;if(poly[k].sea!==poly[k-1].sea)T+=PORT_DELAY/2;tf.push(T);}
+    res.tf=tf.map(v=>v/Math.max(1,T));res.tlen=T;res.sea=true;res.seaLen=seaLen;}
+  W.routes[key]=res;
   return res;
 }
+function timedPos(poly,tf,f){ // where along a mixed land-and-sea journey a host is, by the time it has been going
+  f=clamp(f,0,1);let k=1;while(k<tf.length-1&&tf[k]<f)k++;const a=poly[k-1],b=poly[k],u=tf[k]>tf[k-1]?(f-tf[k-1])/(tf[k]-tf[k-1]):1;
+  return {x:a.x+(b.x-a.x)*u,z:a.z+(b.z-a.z)*u,dir:Math.atan2(b.z-a.z,b.x-a.x),sea:!!(a.sea&&b.sea)};}
+const armyAt=(a,f)=>a.tf?timedPos(a.poly,a.tf,f):polyPos(a.poly,f);
 /* river barge routing: two settlements are river-linked if their drainage
    traces meet — same river, or tributary joining the main stem */
 function traceDown(ci){
@@ -6486,8 +6529,8 @@ function tickEconomy(){
   // arrivals
   const besieged=W.settlements.filter(t=>t.siegeBy);
   for(let i=W.caravans.length-1;i>=0;i--){
-    const c=W.caravans[i];
-    if(besieged.length&&!c.robbed&&!c.sea&&!c.river&&day()<c.arriveDay){c.halted=false; // at the siege lines the carts stop, and wait for the road to open
+    const c=W.caravans[i];c.halted=false; // free to go unless a siege line stands across its road today (the flag used to outlive the last siege, and the carts with it)
+    if(besieged.length&&!c.robbed&&!c.sea&&!c.river&&day()<c.arriveDay){ // at the siege lines the carts stop, and wait for the road to open
       const p=polyPos(c.poly,clamp((day()-c.departDay)/Math.max(0.01,c.arriveDay-c.departDay),0,1));
       if(p)for(const t of besieged){const A=t.siegeBy.army&&t.siegeBy.army.siegeArc,Rr=(A?A.R:90)+30,d=dist2d(p.x,p.z,t.pos.x,t.pos.z);
         if(d<Rr+45&&siegeBlocks(t,Math.atan2(p.z-t.pos.z,p.x-t.pos.x))){c.arriveDay+=1;c.departDay+=1;c.halted=true;break;}}}
@@ -6922,16 +6965,22 @@ function makeArmyFlag(a){
   scene.add(bn);a.flag=bn;
 }
 function marchArmy(a,toS){
+  if(a.field&&landComp()[cIdx(toCell(a.field.x),toCell(a.field.z))]!==compOf(W.settlements[toS])){a.at=nearestSettlementIdx(a.field.x,a.field.z);a.field=null;} // over the water: back to the nearest town and the ships
   if(a.field){ // encamped in the open: across country to the road's end
     const t=W.settlements[toS],from=a.field,L=dist2d(from.x,from.z,t.pos.x,t.pos.z);
-    a.field=null;a.target=toS;a.fieldTo=null;a.poly=[{x:from.x,z:from.z},{x:t.pos.x,z:t.pos.z}];a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';return;}
-  const r=route(a.at,toS);
+    a.field=null;a.target=toS;a.fieldTo=null;a.poly=[{x:from.x,z:from.z},{x:t.pos.x,z:t.pos.z}];a.tf=null;a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';return;}
+  const r=route(a.at,toS,true);
   if(!r){a.state='idle';return;}
-  a.target=toS;a.fieldTo=null;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/MARCH_MPD;a.state='march';
+  if(r.sea){ // the host must take ship: transports chartered at so much a man for each crossing
+    const cost=Math.round(80+a.strength*0.6*(r.seaLen/1500));
+    if(!spend(a.house,cost)){a.state='idle';if(!a._noShips||day()-a._noShips>90){a._noShips=day();emit('war',4,W.settlements[a.at].pos,`${a.name} lies at ${W.settlements[a.at].name}: ${houseName(a.house)} cannot pay for the ships to carry it over the water.`);}return;}
+    if(a.house>0)book(W.houses[a.house],'shipping',-cost);
+    if(!W.prehistory)emit('war',5,W.settlements[a.at].pos,vary('embark',[()=>`${a.name} takes ship for ${W.settlements[toS].name}; ${cost.toLocaleString()} crowns for the hire of the transports.`,()=>`Cogs are hired at ${cost.toLocaleString()} crowns to carry ${a.name} over the water toward ${W.settlements[toS].name}.`,()=>`${a.name} embarks, horses and all, for ${W.settlements[toS].name}.`]));}
+  a.target=toS;a.fieldTo=null;a.poly=r.poly;a.tf=r.tf||null;a.departDay=day();a.arriveDay=day()+(r.tlen||r.len)/MARCH_MPD;a.state='march';
 }
 function marchToPoint(a,x,z){ // a host sent to a place with no name: by road to the nearest town, then across country — or straight there
   const from=armySimPos(a),L=dist2d(from.x,from.z,x,z);
-  a.field=null;a.target=nearestSettlementIdx(x,z);a.fieldTo={x,z};a.poly=[{x:from.x,z:from.z},{x,z}];a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';}
+  a.field=null;a.target=nearestSettlementIdx(x,z);a.fieldTo={x,z};a.poly=[{x:from.x,z:from.z},{x,z}];a.tf=null;a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';}
 function startWar(hi,why){
   if(W.war)return;
   const h=W.houses[hi];
@@ -6968,7 +7017,7 @@ function armySimPos(a){ // authoritative position in sim time (render _rpos may 
   if(a.state==='battle'&&a.battlePos)return {x:a.battlePos.x,z:a.battlePos.z};
   if((a.state==='march'||a.state==='rout')&&a.poly){
     const f=clamp((day()-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay),0,1);
-    const p=polyPos(a.poly,f);
+    const p=armyAt(a,f);
     if(p)return p;
   }
   if(a.field)return {x:a.field.x,z:a.field.z};
@@ -6994,7 +7043,7 @@ function tickMilitary(){
       let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
       if(best>=0){marchArmy(a,best);if(chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);continue;}}
     if(a.state==='idle'&&!a.field&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
-      if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.state='march';a.departDay=a.arriveDay=now;}
+      if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.tf=null;a.state='march';a.departDay=a.arriveDay=now;}
       else{routHome(a);if(a.gone)continue;} // too few to try it: back to its own
     }
     if(a.state==='idle'&&!a.hold&&!a.field){const m=W.armies.find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
@@ -7069,6 +7118,7 @@ function tickMilitary(){
     if(!atWar(a.house,b.house)||a.state==='battle'||b.state==='battle'||a.state==='rout'||b.state==='rout')continue;
     const hides=(x,y)=>x.state==='idle'&&W.settlements[x.at]&&W.settlements[x.at].owner===x.house&&x.strength<y.strength*0.6;
     if(hides(a,b)||hides(b,a)||a.strength<5||b.strength<5)continue; // the weaker keeps within its gates and adds to the defence
+    if(armySimPos(a).sea||armySimPos(b).sea)continue; // hosts aboard ship do not fight
     const meet=closestApproach(a,b);
     if(meet.d<130){ // where their paths crossed; against a host keeping to its town, before the gates on the side the enemy came from
       a.atGates=b.atGates=null;
@@ -7172,8 +7222,8 @@ function routHome(a){
     W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
     if(best<0){disbandArmy(a);return;}a.home=best;
   }
-  const r=route(a.at,a.home);
-  if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.departDay=day();a.arriveDay=day()+r.len/900;}
+  const r=route(a.at,a.home,true);
+  if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.tf=r.tf||null;a.departDay=day();a.arriveDay=day()+(r.tlen||r.len)/900;}
   else{a.state='idle';a.at=a.home;}
 }
 function resumeAfterBattle(a){
@@ -7191,10 +7241,10 @@ function routFromField(a){
     const want=r.f*total,back=[];let acc=0;
     back.push(a.poly[0]);
     for(let i=1;i<a.poly.length;i++){acc+=dist2d(a.poly[i-1].x,a.poly[i-1].z,a.poly[i].x,a.poly[i].z);if(acc>=want)break;back.push(a.poly[i]);}
-    const here=a.battlePos||polyPos(a.poly,r.f);
+    const here=a.battlePos||armyAt(a,r.f);
     back.push({x:here.x,z:here.z});back.reverse();
     let len=0;for(let k=1;k<back.length;k++)len+=dist2d(back[k-1].x,back[k-1].z,back[k].x,back[k].z);
-    a.state='rout';a.target=a.at;a.poly=back;a.departDay=day();a.arriveDay=day()+Math.max(0.5,len/900);
+    a.state='rout';a.target=a.at;a.poly=back;a.tf=null;a.departDay=day();a.arriveDay=day()+Math.max(0.5,len/900);
   }else routHome(a);
 }
 function resolveClash(a,b){
@@ -7689,6 +7739,7 @@ function tickMetro(){
     for(const g of POOLED){const tot=(a.stores[g]||0)+(b.stores[g]||0);a.stores[g]=tot*fa;b.stores[g]=tot-a.stores[g];}
     a.prosperity+=(b.prosperity-a.prosperity)*0.1;a.owner=b.owner;}
   if(d%360!==200)return;
+  if(W.seaLanes&&year()%5===0)linkLands(); // new ports open new crossings
   const R=S.map(builtReach);S.forEach((s,i)=>s.reachR=R[i]);
   for(let ai=0;ai<S.length;ai++){const a=S[ai];if(a.wardOf!=null||a.kind==='capital'||a.pop<5)continue;
     let bi=-1;
@@ -7816,14 +7867,16 @@ function doAct(act,p,opt){
         res:{farm:6,forest:2,ore:0,fish:0}};
       W.settlements.push(s);
       const si=W.settlements.length-1;W.adj[si]=[];
-      let bj=0,bd=1e18;W.settlements.forEach((o,oi)=>{if(oi!==si){const d=dist2d(p.x,p.z,o.pos.x,o.pos.z);if(d<bd){bd=d;bj=oi;}}});
+      let bj=-1,bd=1e18;const myc=compOf(s);W.settlements.forEach((o,oi)=>{if(oi!==si&&compOf(o)===myc){const d=dist2d(p.x,p.z,o.pos.x,o.pos.z);if(d<bd){bd=d;bj=oi;}}});
+      if(bj<0){linkLands();} // alone on its land: only the sea reaches it
+      else{
       const tgt=W.settlements[bj].pos;
       let path=[];const cells=roadAstar(cIdx(ci,cj),cIdx(W.settlements[bj].cx,W.settlements[bj].cz)); // the track finds the easy ground, like the king's roads
       if(cells){path=resample(smoothPath(resample(cells.map(c=>({x:cellX(c%GRID),z:cellZ((c/GRID)|0)})),9),14),8);path[0]={x:p.x,z:p.z};path[path.length-1]={x:tgt.x,z:tgt.z};}
       else{const nseg=Math.max(2,Math.round(bd/25));for(let k=0;k<=nseg;k++)path.push({x:lerp(p.x,tgt.x,k/nseg),z:lerp(p.z,tgt.z,k/nseg)});path=resample(path,8);}
       for(const q of path){const rc=cIdx(toCell(q.x),toCell(q.z));if(!W.water[rc])W.roadCells[rc]=1;}
       W.roads.push({a:si,b:bj,path,len:polyLen(path)});W.routes={};
-      W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});
+      W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});}
       // lay the village out like any other: square, lanes, frontages
       s.pop=opt&&opt.planned?220:60;s.role=opt&&opt.fort?'fort':opt&&opt.planned?'market':'farm';if(opt&&opt.planned){s.kind='town';s.planned=true;s.forceMode='planned';}if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
       if(opt&&opt.fort){s.walls=1;s.garrison=30;}
@@ -9509,7 +9562,7 @@ function animateWorld(dt,now){
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
   const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
   for(let i=T.length-1;i>=0;i--){const t=T[i];if(!t.cons.halted)t.d+=t.spd*(SPEEDS[speedIdx]||0)*dt; // metres a day, on the calendar's clock: the carts arrive when their goods do
-    if(t.d>=t.len||t.cons.robbed){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
+    if(t.d>=t.len||t.cons.robbed||t.cons.gone){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
   for(const t of T){
     if(t.d<0)continue; // still loading at the gate
     const c=t.info,p=polyPos(t.poly,t.d/t.len);
@@ -9563,11 +9616,12 @@ function animateWorld(dt,now){
   }
   /* --- armies --- */
   let si2=0;const activeBattles=new Set();G.battleSprites=G.battleSprites||new Map();
+  G.fleets=G.fleets||new Map();const afloat=new Set();
   for(const a of W.armies){
     let p;
     if(a.state==='march'||a.state==='rout'){
       const f=(simDay-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay);
-      p=polyPos(a.poly,f);
+      p=armyAt(a,f);
     }else if(a.state==='battle'&&a.battlePos){ // fight where the hosts met: two lines facing each other, surging together and falling back
       const bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=a.foe&&a.foe.id<a.id?-1:1,ux=Math.cos(ax),uz=Math.sin(ax);
       const surge=10-7*Math.max(0,Math.sin(now*1.6+(sd>0?0:0.4))); // the lines close, clash, and recoil
@@ -9583,8 +9637,13 @@ function animateWorld(dt,now){
     if(sieging){const r=A.R+30;p={x:st.pos.x+Math.cos(A.c)*r,z:st.pos.z+Math.sin(A.c)*r,dir:A.c+Math.PI};} // the banner at the middle of the lines
     const onWalls=a.state==='idle'&&!a.field&&st&&st.siegeBy&&a.house===st.owner; // besieged: its men are up on the walls
     if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
-    const y=surfY(p.x,p.z);
+    const y=p.sea?SEA:surfY(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
+    if(p.sea){afloat.add(a); // aboard the transports: a squadron of cogs in line ahead, a ship to every hundred and fifty men
+      let fl=G.fleets.get(a);const k=clamp(Math.ceil(a.strength/150),1,6);
+      if(!fl||fl.children.length!==k){if(fl){scene.remove(fl);}fl=new THREE.Group();const vc=new THREE.MeshLambertMaterial({vertexColors:true}),g=cogGeom();
+        for(let i=0;i<k;i++){const m=new THREE.Mesh(g,vc);m.position.set(-i*22,0,(i%2?6:-6));m.userData.pick={type:'army',a};fl.add(m);}scene.add(fl);G.fleets.set(a,fl);}
+      const us=clamp(cam.cur.dist*0.0025,1,4);fl.visible=true;fl.position.set(p.x,SEA-0.2+Math.sin(now*1.1+a.id)*0.2,p.z);fl.rotation.set(0,-(p.dir||0),0);fl.scale.setScalar(4*us);}
     placeMarker(a,houseMarker(a.house),p.x,y,p.z,a.standing?26:32);
     if(a.flag){
       const fs=clamp(cam.cur.dist*0.0019,0.45,4.5); // a real banner up close, a legible marker from on high
@@ -9598,7 +9657,7 @@ function animateWorld(dt,now){
       const H=W.houses[a.house],us=clamp(cam.cur.dist*0.0055,1.2,7);
       const cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};
       cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5)); // even a sable livery must read at a glance
-      const n=onWalls?0:Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
+      const n=onWalls||p.sea?0:Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
       const dir=p.dir||0,fx=Math.cos(dir),fz=Math.sin(dir),lx=-fz,lz=fx;
       for(let k=0;k<n&&si2<1500;k++){
         const col=k%per-(per-1)/2,row=Math.floor(k/per);
@@ -9617,6 +9676,7 @@ function animateWorld(dt,now){
       }
     }
   }
+  for(const[a,fl]of G.fleets)if(!afloat.has(a)){if(a.gone||!W.armies.includes(a)){scene.remove(fl);G.fleets.delete(a);}else fl.visible=false;} // ashore again: the transports are paid off
   for(const t of W.settlements){if(!t.siegeBy||si2>=1480)continue; // the besieged man their walls (or the castle's palisade, or barricades at the town's edge)
     const dcam=dist2d(camera.position.x,camera.position.z,t.pos.x,t.pos.z);if(dcam>2600)continue;
     const H=W.houses[t.owner]||W.houses[0],us=clamp(cam.cur.dist*0.0055,1.2,7),cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5));

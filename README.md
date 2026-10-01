@@ -28,8 +28,21 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   older, lighter map for slow machines). The ground keeps its grain in metres
   whatever the size, so a bigger map has more hills, rivers and places, not
   bigger ones. The terrain can also come from a survey of a real region
-  (`&map=name`, once such maps are bundled): rivers, soils and sites then
+  (`&map=name`, or *Land* on the Realm tab): rivers, soils and sites then
   follow the real ground.
+- **The Channel** (`&map=channel`): southern England and Normandy, London to
+  Paris, from public elevation data (sea floor included). Founders favour the
+  51 historic town sites and take their names; each place speaks the tongue
+  of the nearest historic town reachable over land, so the sea parts English
+  from French; the crown and each house speak their seat's. More regions:
+  `python3 tools/realmap.py tools/regions/<region>.json` (a box, the towns and
+  their tongues).
+- **Over the water.** Each land mass has its own roads; sea lanes join them
+  between their ports (more as ports grow). Carts never cross; the cogs carry
+  that trade. A host that must cross charters transports (about 0.6 crowns a
+  man per crossing, plus a fixed fee), waits some days at the port, sails at a
+  ship's pace and is drawn as a squadron of cogs under its banner; it cannot
+  fight at sea, and a lord who can't pay stays ashore.
 - **Land and fate**: the map seed (`#s=1234567`) fixes the land; the fate seed
   (`&f=…`) fixes the history lived on it. A new game rolls a fresh fate, so the
   same land runs a different history each time (Realm tab: *Reforge* with the
