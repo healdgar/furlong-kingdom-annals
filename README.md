@@ -160,6 +160,37 @@ Wake the dragon · Assassinate the monarch · Contest the succession…),
 **Overlays** (territories, trade, prosperity, plague, unrest), and **Realm**
 (seed, houses, succession — click a name to inspect them).
 
+## The game
+
+You play a dynasty, as the crown or as a great house (choose on the Crown
+tab; pick a campaign of 100, 200 or 400 years first). Every house, yours
+and its rivals, is measured each month on four paths; the Crown tab shows
+your bar on each, a red mark for the best rival, and what is missing.
+
+- **Conquest**: from the throne, rule three in five of the realm's people,
+  with no rival able to raise a third of the crown's host. A lord must take
+  the crown to finish it.
+- **Concord**: every house bound to you, by a marriage pact or (for the
+  crown) loyalty of 75, and a generation of peace.
+- **Wealth**: half the realm's trade (its people and prosperity, weighted
+  to towns), half its gold, and four chartered towns.
+- **Glory**: one great city with its people, a minster with a stone spire
+  or twin towers, stone walls, a castle ward within ward (or a citadel),
+  paved roads to every neighbour, and a guildhall.
+
+A path held long enough (five years for conquest and concord, three for
+wealth, one for glory) wins the realm: for you, or for a rival (the
+annals warn when one draws near). If no one wins before the end, the
+chronicler weighs every house: its four paths, and your deeds. You lose if
+your house dies out or is left landless, or if the throne passes from your
+line.
+
+**Deeds** are remembered in the game and across games in this browser:
+twenty-five of them, good (a spire for leagues, ward within ward, seven
+battles, wyrmslayer, a new town of your own planning…) and ill (sackcloth,
+hunger, the pestilence, the wrecker, routed…), each adding to or taking
+from your legacy. Only what you do after the game begins counts.
+
 ## Sovereign mode — rule it yourself
 
 Press **♛ Rule** (or `R`) to stop watching and govern. Providence's dials and
