@@ -6345,8 +6345,7 @@ function foundDaughter(s,press){
   }
   const best=wpick(sites,q=>q.sc,4);
   if(!best)return;
-  const n=W.settlements.length;
-  if(doAct('village',best,{from:s})&&W.settlements.length>n){const go=clamp((s.pop-s.pop/Math.max(1,press||1.1))*0.6,20,s.pop*0.3);s.pop=Math.max(30,s.pop-go);W.settlements[n].pop=Math.max(go,W.settlements[n].pop*0.5);} // the pioneers: as many as the parent could not feed
+  doAct('village',best,{from:s,pioneers:clamp((s.pop-s.pop/Math.max(1,press||1.1))*0.6,20,s.pop*0.3)}); // the pioneers: as many as the land-hungry send (they leave the mother village) // the pioneers: as many as the parent could not feed
 }
 
 function settleLand(s){ // a new village takes up the waste nearest it, laid out in Hufen
@@ -7583,7 +7582,7 @@ function showInspect(pk){
     else if(p.pa)h+=row('Father',p.pa.dead?esc(folkName(p.pa))+' †':pl(p.pa));
     const kids=(s.folk||[]).filter(q=>q.ma===p||q.pa===p);if(kids.length)h+=row('Children',kids.map(pl).join(', '));
     {const hh=householdHead(p);if(hh.w!==undefined){const strips=(s.furl||[]).filter(f=>f.wk===hh.id),own=(s.furl||[]).filter(f=>f.own===hh.id),ha=strips.reduce((t,f)=>t+f.area,0)/1e4;
-      h+=row('Household',`${hh===p?'':'of '+esc(folkName(hh))+'; '}worth ${Math.round(hh.w)} crowns${hh.w<0?' (in debt)':''}${strips.length?`; works ${strips.length} strip${strips.length>1?'s':''} (${ha.toFixed(1)} ha)${strips.some(f=>f.ten==='crop'&&f.own!==hh.id)?', some as a sharecropper':''}`:tills(hh,s)?'; no land: a labourer for wages':''}${own.filter(f=>f.wk!==hh.id).length?`; lets ${own.filter(f=>f.wk!==hh.id).length} to sharecroppers`:''}`);}}
+      h+=row('Household',`${hh===p?'':'of '+esc(folkName(hh))+'; '}worth ${Math.round(hh.w)} crowns${hh._debt>0.5?` (owing ${Math.round(hh._debt)})`:''}${strips.length?`; works ${strips.length} strip${strips.length>1?'s':''} (${ha.toFixed(1)} ha)${strips.some(f=>f.ten==='crop'&&f.own!==hh.id)?', some as a sharecropper':''}`:tills(hh,s)?'; no land: a labourer for wages':''}${own.filter(f=>f.wk!==hh.id).length?`; lets ${own.filter(f=>f.wk!==hh.id).length} to sharecroppers`:''}`);}}
     {const hh=householdHead(p);if(hh.w!==undefined){const inc=tradeIncome(s,hh.tr),rh=hh.bh&&hh.bh.rural?(hh.bh.ownerId===hh.id?'their own farmstead out on the land':'a farmstead on the land they work, let by its owner'):null;
       h+=row('Living',`${hh.tr?esc(hh.tr):'labouring'}: about ${Math.round(inc)} crowns a year here${hh.herd&&beastsWord(hh.herd)?`; ${beastsWord(hh.herd)}`:''}${rh?`; lives in ${rh}`:''}${p!==hh&&ageYrs(p)>=18&&!p.sp?(p.own?'; has set up house':'; still under the family roof'):''}`);}}
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
@@ -7781,7 +7780,7 @@ function marketFor(s,tr){ // the nearest place with this trade, and how much of 
   let bi=-1,bd=1e18;W.settlements.forEach((o,oi)=>{if(o===s||!(tradeCounts(o)[tr]>0))return;const d=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;bi=oi;}});
   return M[tr]=bi>=0?[bi,Math.exp(-bd/(1200*MAPK))]:null;}
 function craftWork(s,h,trs,v){ // a household pays for work done by a trade of the place; where the place has no one in it, the family does it themselves, and the want is noted
-  if(!(v>0)||!Number.isFinite(v)||!trs||!trs.length)return 0;let spent=0;const tc=tradeCounts(s),P=s._poolBy||(s._poolBy={}),U=s._unmet||(s._unmet={});
+  if(h&&h.gn!==undefined)v=Math.min(v,Math.max(0,h.w||0));if(!(v>0)||!Number.isFinite(v)||!trs||!trs.length)return 0;let spent=0;const tc=tradeCounts(s),P=s._poolBy||(s._poolBy={}),U=s._unmet||(s._unmet={});
   for(const tr of trs){const part=v/trs.length;if(tc[tr]>0){P[tr]=(P[tr]||0)+part;spent+=part;continue;}
     const mk=marketFor(s,tr);if(mk){const t=W.settlements[mk[0]],q=part*mk[1],P2=t._poolBy||(t._poolBy={});P2[tr]=(P2[tr]||0)+q;spent+=q;U[tr]=(U[tr]||0)+part-q;}else U[tr]=(U[tr]||0)+part;} // none here: bought at the market town that has the trade, the more of it the nearer it lies; the rest done at home
   if(spent>0){if(h.gn!==undefined)h.w=(h.w||0)-spent;else acct(h,-spent);}return spent;} // used up by the households that bought them
@@ -7842,6 +7841,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   s._fill=sn>0?sf/sn:1;s._wealth=heads.length?sw/heads.length:0; // how well the place lives, as others hear of it
   s._homeDay=homeFood/30; // what the families' own beasts put on the table each day
   if(pay2.length){const poor=heads.filter(h=>(h.w||0)<foodYr()*0.5).sort((a,b)=>(a.w||0)-(b.w||0));for(const[h,v]of pay2){const L=poor.filter(q=>q!==h).slice(0,4);if(L.length)payAmong(L,v,h,'wages');}} // the poorest go into service and take day-work
+  for(const h of heads)if(h._debt>0)repay(h,Math.max(0,(h.w||0)-foodYr()/12*(size.get(h)||1))); // debts paid out of what is left once the month's bread is put by
   {let lu=0;for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too
     if(lu>0){purchase(s,'hay',lordAcct(s),lu*10/12);Ld.hay=(Ld.hay||0)+purchase.got;}}
   // the crafts buy their stuff when the work pays
@@ -9339,10 +9339,10 @@ function tickTenure(){
         const to=s.taxBreakUntil>day()&&s.owner>0&&s.owner===s.taxBreakHouse?houseAcct(s.owner):'crown';transfer(h,to,tax);if(to===lordAcct(s))lordTake(s,tax);}}
     const L=W.houses[s.owner]; // (the town's rents have gone to the owners of its houses above)
     // the market in land
-    for(const h of heads){if(h.w>=-4)continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
+    for(const h of heads){if(!((h._debt||0)>Math.max(0,h.w||0)+4))continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
       const f=mine[Math.floor(frand()*mine.length)],price=Math.max(f.area/1e4*4,landValue(f)*10);const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
       if(buyer){buyer.w=(buyer.w||0)-price;f.own=buyer.id;life(buyer,`Bought a strip from ${folkName(h)}, in debt`);life(h,`Sold a strip to ${folkName(buyer)} to pay debts, and stayed on to work it for half the crop`);if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else if(means(lordAcct(s))>=price){f.own=-1;acct(lordAcct(s),-price);life(h,'Sold a strip back to the lord to pay debts');}else continue; // no neighbour can pay: the lord takes it back for the price
-      h.w=(h.w||0)+price;f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
+      h.w=(h.w||0)+price;repay(h,h.w);f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
     const tillHa=T.reduce((t2,f)=>t2+f.area,0)/1e4,hands=Math.max(1,heads.length),dear=tillHa/hands; // land per household: where hands are few, labour is dear and a home farm worked by hired men no longer pays
     if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){h.w=(h.w||0)-price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
     for(const h of heads){const mine=T.filter(f=>f.wk===h.id&&f.own===h.id),can=Math.max(2,Math.ceil((size.get(h)||1)*0.8));if(mine.length<=can)continue; // more strips than the household can work: let to sharecroppers
@@ -9365,7 +9365,15 @@ function acct(x,v){if(!Number.isFinite(v)){if(v===v)return;flow('!nan',1);return
   /* a dead man's dues go to his heir */if(x==='crown'){W.treasury+=v;if(v>0)W._crInc=(W._crInc||0)+v;return;}if(x.ch&&x.gn===undefined){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;if(v>0)x._inc=(x._inc||0)+v;}
 const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&W.houses.includes(x);
 function flow(k,v){const F=W._flow||(W._flow={});F[k]=(F[k]||0)+v;} // money that came into the realm or left it, by cause
-function transfer(from,to,v,why){if(!(v>0))return 0;if(to==='out')flow('>'+(why||'?'),v);else if(from==='out')flow('<'+(why||'?'),v);else if(!from)flow('<'+(why||'paid')+'*',v);acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
+function transfer(from,to,v,why){if(!(v>0))return 0;if(from&&from!=='out'){const m=means(from);if(!(m>0))return 0;if(v>m)v=m;} /* no one pays out what he has not got: what he owes stays owed (arrears), it is not coined */if(to==='out')flow('>'+(why||'?'),v);else if(from==='out')flow('<'+(why||'?'),v);else if(!from)flow('<'+(why||'paid')+'*',v);acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
+function borrow(s,h,amt){ // a household short of its bread borrows from whoever there has the silver to lend: the best-off neighbour, else the parish, else the lord; the debt is theirs to collect
+  if(!(amt>0.01)||!s)return 0;const fy=foodYr();let L=null,best=fy*HOUSEHOLD;for(const q of heads_(s,q=>q!==h&&(q.w||0)>amt+fy*HOUSEHOLD))if(q.w>best){best=q.w;L=q;}
+  if(!L){const c=parishOf(s);if(c&&means(c)>amt*3)L=c;}if(!L){const l=lordAcct(s);if(means(l)>amt*3)L=l;}if(!L)return 0;
+  const v=transfer(L,h,amt,'loans');if(v>0){h._debt=(h._debt||0)+v;(h._owe||(h._owe=[])).push([L,v]);}return v;}
+function repay(h,v){ // a debtor pays back what he can, the oldest debt first
+  if(!(h._debt>0)||!(v>0))return 0;let paid=0;const O=h._owe||[];while(O.length&&v>0.01){const e=O[0],x=Math.min(e[1],v),y=transfer(h,e[0],x,'loans'); /* a dead lender's due goes to his heir */if(!(y>0))break;e[1]-=y;v-=y;paid+=y;if(e[1]<=0.01)O.shift();}
+  h._debt=Math.max(0,O.reduce((t,e)=>t+e[1],0));return paid;}
+function inDebt(h){return (h._debt||0)>Math.max(0,h.w||0);} // owes more than his purse holds
 function parishOf(s){return s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed&&!b.castle&&!b.friary)||s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed)||null;}
 const LORD_ARCH=new Set(['keep','hall','mill','windmill','granary','warehouse','toll','quarry','barn']),CHURCH_ARCH=new Set(['temple','hospital','friary']),TOWN_ARCH=new Set(['guildhall','wharf','bath','market']);
 function ownerOf(b,s){ // who owns this building: decided once (lazily), then kept until it is sold, inherited or pulled down
@@ -9384,7 +9392,7 @@ function lard(s){return s._lard||(s._lard={grain:Math.min(s.stores.grain||0,s.po
 function avail(s,g,p){const L=mkt(s,g),R=s.rsv&&s.rsv[g];let a=0;for(const[w,v]of L)if(!(R&&R.get(w)>p))a+=v;return a;}
 function purchase(s,g,buyer,qty,p){ // the buyer takes from his own stock first, then from every seller content with the price, in proportion; returns what was paid (purchase.got: how much)
   purchase.got=0;if(!(qty>0))return 0;p=p??price(s,g);const L=mkt(s,g),R=s.rsv&&s.rsv[g],D=s._dem||(s._dem={});
-  const own0=buyer?L.get(buyer)||0:0;if(buyer&&buyer!=='out'&&p>0)qty=Math.min(qty,own0+Math.max(0,means(buyer)+(buyer.gn!==undefined?foodYr()*0.25:0))/p); // no one buys more than he can pay for
+  const own0=buyer?L.get(buyer)||0:0;if(buyer&&buyer!=='out'&&p>0){if(buyer.gn!==undefined&&(g==='grain'||g==='fish')){const short=Math.min(qty-own0,qty)*p-Math.max(0,buyer.w||0);if(short>0)borrow(s,buyer,Math.min(short,foodYr()*0.25-(buyer._debt||0)));} /* bread on the slate: a neighbour, the church or the lord lends, and is owed */qty=Math.min(qty,own0+Math.max(0,means(buyer))/p);} // no one buys more than he can pay for
   if(!(qty>0))return 0;D[g]=(D[g]||0)+qty;
   let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);if(own-got>1e-6)L.set(buyer,own-got);else L.delete(buyer);if(buyer.gn!==undefined)buyer._inc=(buyer._inc||0)+got*p;} // his own grain: worth to him what it would have fetched
   let have=0;for(const[w,v]of L)if(w!==buyer&&!(R&&R.get(w)>p))have+=v;
@@ -9393,7 +9401,9 @@ function purchase(s,g,buyer,qty,p){ // the buyer takes from his own stock first,
   got+=take;acct(buyer,-paid);if(buyer==='out')flow('<export '+g,paid);const S=s._sold||(s._sold={});S[g]=(S[g]||0)+got;purchase.got=got;return paid;}
 function clearMarket(s,g,orders,p){ // the month's buying of one good cleared at once: each buyer takes his own stock first, then all who want more share what is offered at the price, and all who offered it share the sale
   p=p??price(s,g);const L=mkt(s,g),R=s.rsv&&s.rsv[g],got=new Array(orders.length).fill(0),res=new Array(orders.length).fill(0);let Rt=0,Dt=0;
-  orders.forEach(([b,q],i)=>{if(!(q>0))return;Dt+=q;const own=b?L.get(b)||0:0;if(own>0){const t=Math.min(own,q);got[i]=t;if(own-t>1e-6)L.set(b,own-t);else L.delete(b);if(b.gn!==undefined)b._inc=(b._inc||0)+t*p;}res[i]=q-got[i];Rt+=res[i];});
+  orders.forEach(([b,q],i)=>{if(!(q>0))return;const own=b?L.get(b)||0:0;if(own>0){const t=Math.min(own,q);got[i]=t;if(own-t>1e-6)L.set(b,own-t);else L.delete(b);if(b.gn!==undefined)b._inc=(b._inc||0)+t*p;}res[i]=q-got[i];
+    if(res[i]>0&&b&&b!=='out'&&p>0){if(b.gn!==undefined&&(g==='grain'||g==='fish')){const short=res[i]*p-Math.max(0,b.w||0);if(short>0)borrow(s,b,Math.min(short,foodYr()*0.25-(b._debt||0)));}res[i]=Math.min(res[i],Math.max(0,means(b))/p);} /* he buys with what he has, and what a neighbour will lend him for bread */
+    Dt+=got[i]+res[i];Rt+=res[i];});
   let A=0;for(const[w,v]of L)if(!(R&&R.get(w)>p))A+=v;
   const fill=Rt>0&&A>0?Math.min(1,A/Rt):0,sf=A>0?Math.min(1,Rt/A):0;
   const lo=lordAcct(s);if(sf>0)for(const[w,v]of L){if(R&&R.get(w)>p)continue;const q=v*sf,r=v-q;if(w===lo)lordTake(s,q*p);if(w==='out')flow('>import '+g,q*p);if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);}
@@ -9413,9 +9423,10 @@ function soldiersPay(a,v,payer){ // a host's pay: to the households its men come
   if(!(v>0))return;if(payer){const can=Math.max(0,means(payer));if(can<v){a._arrears=(a._arrears||0)+(v-can);v=can;}else if(a._arrears>0){const back=Math.min(a._arrears,can-v);a._arrears-=back;v+=back;}if(!(v>0))return;}const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts');}}
 function inherit(p){ // the dead man's purse and beasts: to his widow, else his eldest grown child, else his lord
-  if(!(p.w)&&!p.herd)return;const s=W.settlements[p.si];let to=null;
+  if(!(p.w)&&!p.herd&&!(p._debt>0))return;const s=W.settlements[p.si];let to=null;
   if(p.sp&&!p.sp.dead)to=p.sp;else if(s&&s.folk){const kids=s.folk.filter(q=>!q.dead&&(q.pa===p||q.ma===p)).sort((a,c)=>ageYrs(c)-ageYrs(a));to=kids[0]||null;}
   if(to)p._heir=to;else if(s)p._heir=null;
+  if(to&&p._debt>0){to._debt=(to._debt||0)+p._debt;(to._owe||(to._owe=[])).push(...(p._owe||[]));p._debt=0;p._owe=null;} /* the purse comes with its debts */
   if(to){if((p.w||0)>1||p.herd)life(to,`Inherited ${Math.round(p.w||0)} crowns${p.herd&&beastsWord(p.herd)?' and '+beastsWord(p.herd):''} from ${folkName(p)}`);to.w=(to.w||0)+(p.w||0);if(p.herd){const H=herdOf(to);for(const k of BEASTS)H[k]=(H[k]||0)+(p.herd[k]||0);}
     if(s)for(const b of s.buildings)if(b.ownerId===p.id)b.ownerId=to.id;} // and his houses and shops
   else{acct(s?lordAcct(s):'crown',p.w||0);if(s)for(const b of s.buildings)if(b.ownerId===p.id)b.ownerId='lord';} // escheat: no heir, all goes to the lord
@@ -9517,7 +9528,7 @@ function tickHouseholds(){
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=0;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)
-      const rent=rentOfHome(s,h);if(rent>0&&h.bh&&h.bh.rural&&h.bh.ownerId&&h.bh.ownerId!==h.id){const L=W._pm&&W._pm.get(h.bh.ownerId);if(L){L.w=(L.w||0)+rent;h.w=(h.w||0)-rent;}}
+      const rent=rentOfHome(s,h);if(rent>0&&h.bh&&h.bh.rural&&h.bh.ownerId&&h.bh.ownerId!==h.id){const L=W._pm&&W._pm.get(h.bh.ownerId);if(L){const r2=Math.min(rent,Math.max(0,h.w||0));L.w=(L.w||0)+r2;h.w=(h.w||0)-r2;}}
       // what is left, as the family's temper takes it
       const spare=h.w-n*foodYr();if(spare>0){
         const merry=clamp(0.15+0.12*trait(h,GB)-0.1*trait(h,GD),0.02,0.45),fine=clamp(0.08+0.08*trait(h,GL),0,0.3);
@@ -9533,7 +9544,7 @@ function tickHouseholds(){
         const owned=BEASTS.reduce((t2,k)=>t2+(H[k]||0),0);
         const reeve=s.owner>0&&W.houses[s.owner]?s.owner:0,sellTo=(k,n2,pk)=>{const u=pk*0.8,m=Math.min(n2,Math.floor(Math.max(0,purse(reeve))/Math.max(1e-6,u)));if(!(m>=1))return 0;H[k]-=m;h.w=(h.w||0)+m*u;spend(reeve,m*u);return m;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers, as far as his purse goes
         for(const k of BEASTS){const pk=price(s,k),pool2=Math.max(0,(s.stores[k]||0)-famHerd[k]); // what is not a family's is the lord's, and can be bought
-          if(h.w<0&&(H[k]||0)>=1){const n2=sellTo(k,Math.min(H[k],Math.ceil(-h.w/Math.max(0.5,pk*0.8))),pk);if(n2)life(h,`Sold ${n2} ${k} to pay debts`);continue;} // a hard year: the beasts are sold to pay the debt
+          if(inDebt(h)&&(H[k]||0)>=1){const n2=sellTo(k,Math.min(H[k],Math.ceil((h._debt-Math.max(0,h.w||0))/Math.max(0.5,pk*0.8))),pk);if(n2){life(h,`Sold ${n2} ${k} to pay debts`);repay(h,h.w||0);}continue;} // a hard year: the beasts are sold to pay the debt
           if(worth(k)<0&&(H[k]||0)>=1){sellTo(k,Math.ceil(H[k]*0.5),pk);continue;} // they eat more than they bring in: half go to the drovers
           if(worth(k)>0&&pool2>=1&&h.w-n*foodYr()>pk*1.2&&owned<30){const n2=Math.min(pool2,Math.max(1,Math.floor((h.w-n*foodYr())/pk*0.5)),k==='sheep'?10:k==='swine'?4:2);purchase(s,k,h,n2,pk);H[k]=(H[k]||0)+purchase.got;if(purchase.got>=1)life(h,`Bought ${Math.round(purchase.got)} ${k}`);}} // bought from the drovers who brought them, else from the lord's herd
       }
@@ -9766,7 +9777,7 @@ function doAct(act,p,opt){
       W.roads.push({a:si,b:bj,path,len:polyLen(path)});W.routes={};
       W.adj[si].push({to:bj,ri:W.roads.length-1});W.adj[bj].push({to:si,ri:W.roads.length-1});}
       // lay the village out like any other: square, lanes, frontages
-      s.pop=opt&&opt.planned?220:60;s.role=opt&&opt.fort?'fort':opt&&opt.planned?'market':'farm';if(opt&&opt.planned){s.kind='town';s.planned=true;s.forceMode='planned';}if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
+      {const want=opt&&opt.pioneers!=null?opt.pioneers:opt&&opt.planned?220:60,src=opt&&opt.from&&opt.from.pos?opt.from:null;if(src){const go=Math.max(0,Math.min(want,src.pop-30));src.pop-=go;s.pop=Math.max(5,go);}else s.pop=want;} /* the settlers come from the lord's own place (strangers only to a charter with no mother town) */s.role=opt&&opt.fort?'fort':opt&&opt.planned?'market':'farm';if(opt&&opt.planned){s.kind='town';s.planned=true;s.forceMode='planned';}if(opt&&opt.owner!=null)s.owner=opt.owner;else if(opt&&opt.from)s.owner=opt.from.owner;
       if(opt&&opt.fort){s.walls=1;s.garrison=30;}
       { // named by its founders, in their tongue, for why it is here; a daughter village often after its mother
         const fr=opt&&opt.from,oc=opt&&opt.owner!=null?opt.owner:fr?fr.owner:s.owner;
