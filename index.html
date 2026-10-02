@@ -7578,16 +7578,27 @@ function price0(s,g){ // a first reckoning, before the market has traded
   return GOODBASE[g]*clamp(need*(g==='spice'||g==='silk'?(s.kind==='capital'?4:1)*(0.5+s.prosperity/80):1)/((s.stores[g]||0)+2),0.3,4); // the court and the rich towns pay most for the Levant's goods
 }
 /* a load goes on the road: a merchant of the place (or a stranger) buys it at the origin's price, and hires the carters */
+/* carriage: carters (by road) and boatmen (by water) are households whose living it is; a load goes only if one is free.
+   The freight is so much a load-mile at the place's going rate, which rises when loads wait for want of a driver and falls when drivers stand idle */
+function frtRate(o,mode){const F=o.frt||(o.frt={cart:1,boat:1});return F[mode]??1;}
+function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode);} // the beasts' keep and the driver's days
+function driverFor(o,mode,m){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
+  const L=heads_(o,h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62);return L.length?L[Math.floor(frand()*L.length)]:null;}
 function merchantFor(o,cost){const L=heads_(o,h=>(h.tr==='merchant'||h.tr==='carter'||h.tr==='boatman')&&(h.w||0)>cost*0.5).sort((a,c)=>(c.tr==='merchant')-(a.tr==='merchant')||(c.w||0)-(a.w||0));return L[0]||'out';}
-function ladeOut(c,o,hire){const m=merchantFor(o,c.qty*price(o,c.good)+hire),want=c.qty;c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
+function ladeOut(c,o){const mode=c.sea||c.river?'boat':'cart',want=c.qty,m=merchantFor(o,want*price(o,c.good)+freight(o,want,c.len,mode)),drv=driverFor(o,mode,m);
+  if(!drv){o.stores[c.good]+=want;const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman';U[tr]=(U[tr]||0)+freight(o,want,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;return null;} // no one free to drive it: the load waits, and the going rate will rise
+  c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
   o.stores[c.good]+=want-got;if(got<=0.5){o.stores[c.good]-=got;return null;} // nothing for sale at the price: no load (what was taken goes back)
-  c.qty=got;c.value*=got/want;hire*=got/want;c.hire=hire;
-  const crew=heads_(o,h=>h.tr===(c.sea||c.river?'boatman':'carter')&&h!==m);if(hire>0)payAmong(crew.length?crew:heads_(o,h=>!tills(h,o)).slice(0,3),hire,m,'carriage');return c;}
+  c.qty=got;c.value*=got/want;c.fee=freight(o,got,c.len,mode);c.drv=drv;c.crew=drv;if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-c.cost; // his outlay
+  const trip=Math.max(0.5,c.arriveDay-c.departDay),dest=W.settlements[c.dest];drv.away={until:c.arriveDay+trip,what:`${c.sea?'master of a cog':c.river?'on a barge':'carting'} ${c.good} to ${dest?dest.name:'market'}, and back`};
+  (o._loads||(o._loads={}))[mode]=(o._loads[mode]||0)+1;return c;}
 function ladeIn(c,d){let m=c.m||'out';if(m!=='out'&&m.dead)m=lordAcct(W.settlements[c.origin]); // a merchant who died on the road: his goods to his lord
-  const profit=c.value*0.35,lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;let dues=0;
-  if(lord){dues+=transfer(m,lord,profit*0.15*(d.works&&d.works.market?1.6:1),'markets');dues+=transfer(m,'crown',profit*(MOD.tax/100)*0.4);} // a lord's market takes its toll, the crown its aid, out of the merchant's margin
-  else dues+=transfer(m,'crown',profit*(MOD.tax/100));
-  offer(d,c.good,m,c.qty,((c.cost||0)+(c.hire||0)+dues)/Math.max(1e-6,c.qty));} // he sells in the market as the town buys, but not below what the load cost him
+  const val=c.qty*price(d,c.good),lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;let dues=0;
+  if(lord){dues+=transfer(m,lord,val*0.05*(d.works&&d.works.market?1.6:1),'markets');dues+=transfer(m,'crown',val*(MOD.tax/100)*0.14);} // the market toll and the crown's aid, on what is brought to sell
+  else dues+=transfer(m,'crown',val*(MOD.tax/100)*0.35);
+  const drv=c.drv&&!c.drv.dead?householdHead(c.drv):null;if(c.fee>0&&drv&&drv!==m)transfer(m,drv,c.fee,'freight'); // the carter is paid on delivery
+  if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-dues-(drv!==m?c.fee||0:0);
+  offer(d,c.good,m,c.qty,((c.cost||0)+(c.fee||0)+dues)/Math.max(1e-6,c.qty));} // he sells as the town buys, never below what the load cost him laid down here: the price, the freight, the tolls // he sells in the market as the town buys, but not below what the load cost him
 /* the crafts buy the stuff they work, and the town its tools and the rich their spices, from whoever offered it */
 /* =========================================================================
    THE MARKET, monthly. What was made this month is offered by those who made it (the harvest split by
@@ -7596,7 +7607,14 @@ function ladeIn(c,d){let m=c.m||'out';if(m!=='out'&&m.dead)m=lordAcct(W.settleme
    allow (what they cannot buy, they do not eat); the crafts buy their stuff when the work pays; and each
    price moves by how far what buyers wanted outran what was sold and what still stands unsold.
    ========================================================================= */
-const BOUGHT=['timber','cloth','tools','wine','spice','silk']; // used up by the households that bought them
+const BOUGHT=['timber','cloth','tools','wine','spice','silk'];
+const SHARE={timber:0.15,cloth:0.12,tools:0.06,spice:0.05,silk:0.05}; // the most of what is left after bread that a household will lay out on each
+const MARGIN={grain:['miller','baker'],fish:['salter'],timber:['carter'],cloth:['tailor'],tools:[],wine:['brewer'],spice:['spicer'],silk:['tailor']}; // whose work stands between the market and the table
+const SUNDRY={butcher:1,cook:0.8,cooper:0.6,potter:0.6,shoemaker:0.8,tanner:0.6,glover:0.4,chandler:0.6,roper:0.5,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,thatcher:0.4,carpenter:0.5},SUNDRY_W=Object.values(SUNDRY).reduce((a,b)=>a+b,0);
+function craftWork(s,h,trs,v){ // a household pays for work done by a trade of the place; where the place has no one in it, the family does it themselves, and the want is noted
+  if(!(v>0)||!trs||!trs.length)return 0;let spent=0;const tc=tradeCounts(s),P=s._poolBy||(s._poolBy={}),U=s._unmet||(s._unmet={});
+  for(const tr of trs){const part=v/trs.length;if(tc[tr]>0){P[tr]=(P[tr]||0)+part;spent+=part;}else U[tr]=(U[tr]||0)+part;}
+  if(spent>0){if(h.gn!==undefined)h.w-=spent;else acct(h,-spent);}return spent;} // used up by the households that bought them
 function shareOutput(s,si,PM,heads){const M=s._made||{};s._made={};
   const T=tilledOf(s,si),church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1,gp=price(s,'grain');
   let tA=0;for(const f of T)tA+=f.area;let wages=0;if(church)chOf(church);
@@ -7607,7 +7625,9 @@ function shareOutput(s,si,PM,heads){const M=s._made||{};s._made={};
     const o=PM.get(f.own);if(f.ten==='crop'&&o&&!o.dead){offer(s,'grain',o,rest*0.85);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}}
   if(wages>0)payAmong(heads.filter(h=>tills(h,s)&&!(h._strips>0)),wages,lordAcct(s),'harvest wages'); // day-labour on the home farm, paid by the lord
   const cost={tools:0.75*(price(s,'ore')+price(s,'timber')),cloth:price(s,'wool')/0.8}; // a craftsman will not sell below what his stuff cost him
-  for(const g of['fish','timber','ore','tools','cloth']){if(!(M[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,M[g]/L.length,cost[g]);else offer(s,g,lordAcct(s),M[g]);}
+  const MAKER={fish:'fisher',timber:'woodcutter',ore:'miner',tools:'smith',cloth:'weaver'};
+  for(const g of['fish','timber','ore','tools','cloth']){if(!(M[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,M[g]/L.length,cost[g]);
+    else{offer(s,g,lordAcct(s),M[g]);const U=s._unmet||(s._unmet={});U[MAKER[g]]=(U[MAKER[g]]||0)+M[g]*price(s,g)*0.5;}}
   if(M.wine>0){const V=(s.furl||[]).filter(f=>f.dom===si&&f.kind===LK.VINE&&f.state===LS.TILLED),vA=V.reduce((t,f)=>t+f.area,0);if(!vA)offer(s,'wine',lordAcct(s),M.wine);else for(const f of V){const w=PM.get(f.wk);offer(s,'wine',w&&!w.dead?w:lordAcct(s),M.wine*f.area/vA);}}
   if(M.hay>0){const Md=(s.furl||[]).filter(f=>f.dom===si&&f.kind===LK.MEADOW&&f.state===LS.TILLED),mA=Md.reduce((t,f)=>t+f.area,0);
     if(!mA)offer(s,'hay',lordAcct(s),M.hay);else for(const f of Md){const w=PM.get(f.wk);offer(s,'hay',w&&!w.dead?w:lordAcct(s),M.hay*f.area/mA);}}} // the hay, his who mows the meadow
@@ -7628,24 +7648,29 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
     const home=((H.cattle||0)*BEAST_YR.cattle()+(H.swine||0)*BEAST_YR.swine())/12/GOODBASE.grain,food=Math.max(0,n*(NEED.grain+NEED.fish)*30-home); // milk and bacon from his own beasts
     const want=[['grain',food*(1-fishSh),0.3],['fish',food*fishSh,0.25],['timber',n*NEED.timber*30,0.2],['cloth',n*NEED.cloth*30,0.4],['tools',n*NEED.tools*30,0]];
     if(h.gn!==undefined&&(h.w||0)>foodYr()*6)for(const g of['spice','silk'])want.push([g,n*NEED[g]*30*3,0]); // the rich keep a table
-    for(const[g,q,cut]of want){if(!(q>0))continue;const p=price(s,g),full=q*p/(1-cut),a=cash>=full?1:Math.max(0,cash)/full;if(a<=0)continue;
-      const paid=purchase(s,g,h,q*a,p),got=purchase.got,m=got*p*cut/(1-cut);if(h.gn!==undefined)h.w-=m;else acct(h,-m);pool+=m;cash-=paid+m;Ld[g]=(Ld[g]||0)+got;}} // the miller, baker, carter and tailor take their part
+    for(const[g,q,cut]of want){if(!(q>0))continue;const p=price(s,g),full=q*p/(1-cut),room=g==='grain'||g==='fish'?cash:cash*(SHARE[g]||0.1),a=room>=full?1:Math.max(0,room)/full;if(a<=0)continue; // bread before all else; fuel, cloth and tools only out of what is left, each in its measure
+      const paid=purchase(s,g,h,q*a,p),got=purchase.got;cash-=paid+craftWork(s,h,MARGIN[g],got*p*cut/(1-cut));Ld[g]=(Ld[g]||0)+got;} // the miller, baker, carter and tailor take their part
+    if(h.gn!==undefined&&cash>0){const sund=Math.min(cash*0.5,n*foodYr()*0.3/12);for(const tr in SUNDRY)craftWork(s,h,[tr],sund*SUNDRY[tr]/SUNDRY_W);}} // pots, shoes, candles, barrels, a hired hand
   // the crafts buy their stuff when the work pays
   const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30;
   if(cap>0&&price(s,'tools')*0.8>0.6*(price(s,'ore')+price(s,'timber'))){const sm=heads.filter(h=>h.tr==='smith'),by=sm.length?sm:[lordAcct(s)];
-    for(const h of by){purchase(s,'ore',h,cap*0.6/by.length);Ld.ore=(Ld.ore||0)+purchase.got;purchase(s,'timber',h,cap*0.6/by.length);Ld.char=(Ld.char||0)+purchase.got;}}
+    for(const h of by){let c=purchase(s,'ore',h,cap*0.6/by.length);Ld.ore=(Ld.ore||0)+purchase.got;c+=purchase(s,'timber',h,cap*0.6/by.length);Ld.char=(Ld.char||0)+purchase.got;if(h.gn!==undefined)h._inc=(h._inc||0)-c;}}
   const wcap=((s._dyers||0)*0.5+s.pop*0.0008)*30;
   if(wcap>0&&price(s,'cloth')*0.8>price(s,'wool')){const wv=heads.filter(h=>h.tr==='weaver'||h.tr==='dyer'),by=wv.length?wv:heads.length?heads:[lordAcct(s)];
-    for(const h of by){purchase(s,'wool',h,wcap/by.length);Ld.wool=(Ld.wool||0)+purchase.got;}}
-  s._poolCash=(s._poolCash||0)+pool;}
-function reprice(s){ // each price moves by the gap between what buyers wanted and what was sold or still stands for sale at that price (half a year's stock is no glut)
-  const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{};
-  for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p),z=Math.log((d+0.01)/((S[g]||0)+a/6+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));}
+    for(const h of by){const c=purchase(s,'wool',h,wcap/by.length);Ld.wool=(Ld.wool||0)+purchase.got;if(h.gn!==undefined&&wv.length)h._inc=(h._inc||0)-c;}}
+  }
+function reprice(s){ // each price rises when buyers wanted more than was sold, and moves against the stock for sale: above half a year of what is wanted it falls, below it rises
+  const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{},E=s._dAvg||(s._dAvg={});
+  for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25; // what is usually wanted in a month
+    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*6+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));}
   s._dem={};s._sold={};}
 function tickMarket(){
-  if(day()%30!==5)return;const PM=W._pm=folkIndex();
+  if(day()%30!==5)return;const PM=W._pm=folkIndex();let pl=0,pp=0;
   W.settlements.forEach((s,si)=>{const heads=heads_(s,()=>true),size=new Map();for(const p of s.folk||[]){if(p.dead)continue;const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
-    shareOutput(s,si,PM,heads);reconcile(s,heads);provision(s,heads,size);reprice(s);});}
+    shareOutput(s,si,PM,heads);reconcile(s,heads);provision(s,heads,size);reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
+    {const F=s.frt||(s.frt={cart:1,boat:1}),Wt=s._wait||{};for(const[mode,tr]of[['cart','carter'],['boat','boatman']]){const idle=heads.filter(h=>h.tr===tr&&!awayNow(h)).length,w=Wt[mode]||0;
+      F[mode]=Math.max(0.05,(F[mode]??1)*Math.exp(0.2*Math.tanh(Math.log((w+0.2)/(idle*0.5+0.2)))));}s._wait={};} // loads waiting for a driver raise the going rate; idle drivers lower it
+  });if(pp>0)W._pl=pl/pp;} // the price level: rents, taxes, fees and wages are reckoned in it
 function made(s,g,q){if(q>0){const M=s._made||(s._made={});M[g]=(M[g]||0)+q;}}
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
@@ -7674,8 +7699,7 @@ function tickEconomy(){
     // (the crown's tax is a hearth-penny paid by each household from its purse, once a year: tickTenure)
   }
   // caravans
-  const carters=Math.round((12+W.settlements.reduce((t2,x)=>t2+x.pop,0)/160)*MOD.trade); // as many carts on the roads as the realm has carters for
-  if(W.caravans.length<carters&&day()%2===0){
+  if(W.caravans.length<TRAFFIC_CAP/2&&day()%2===0){ // a load goes when a merchant finds the margin and a carter is free (the cap is only what can be drawn)
     for(let attempt=0;attempt<5;attempt++){
       const oi=randi('sim',W.settlements.length),o=W.settlements[oi];
       if(closedToTrade(o))continue;
@@ -7685,7 +7709,7 @@ function tickEconomy(){
         if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
         for(const g of sell){
-          const margin=price(d,g)-po[g],carry=0.12+GOODBASE[g]*0.04+dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z)/1000*0.08; // the carter's hire, tolls and loss on the way
+          const margin=price(d,g)-po[g],carry=freight(o,1,dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z)*1.2,'cart')+price(d,g)*(0.05+MOD.tax/100*0.14); // the freight at the going rate, the tolls, a little lost on the way
           if(margin>carry){
             const r=route(oi,di);if(!r)continue;
             const fear=(1-Math.min(1,o.infected/Math.max(1,o.pop)*5))*(1-Math.min(1,d.infected/Math.max(1,d.pop)*5)); // carters shun a town with the pestilence in it, the more the worse
@@ -7701,7 +7725,7 @@ function tickEconomy(){
         const c={origin:oi,dest:best.di,good:best.g,qty,value:qty*price(dd,best.g),
           poly:best.r.poly,len:best.r.len,departDay:day(),arriveDay:day()+(best.r.time??best.r.len)/CART_MPD,robbed:false,
           proxy:null,sea:false};
-        if(!ladeOut(c,o2,qty*(0.12+best.r.len/1000*0.08)*0.7))break; // the carters' hire, the oxen's keep
+        if(!ladeOut(c,o2))break;
         W.caravans.push(c);
         const rr=W.roads.find(r=>(r.a===oi&&r.b===best.di)||(r.a===best.di&&r.b===oi));
         if(rr)rr.vol=(rr.vol||0)+1;
@@ -7722,7 +7746,7 @@ function tickEconomy(){
         const qty=Math.min(o.stores[g]*0.3,70);o.stores[g]-=qty;
         const poly=downstream?pr.route.poly:[...pr.route.poly].reverse();
         {const c2=ladeOut({origin:oi,dest:di,good:g,qty,value:qty*price(d2,g),poly,len:pr.route.len,
-          departDay:day(),arriveDay:day()+pr.route.len/BARGE_MPD,robbed:false,sea:false,river:true,proxy:null},o,qty*pr.route.len/1000*0.03);if(c2)W.caravans.push(c2);}
+          departDay:day(),arriveDay:day()+pr.route.len/BARGE_MPD,robbed:false,sea:false,river:true,proxy:null},o);if(c2)W.caravans.push(c2);}
       }
     }
   }
@@ -7736,11 +7760,11 @@ function tickEconomy(){
       if(spareOf(a,g)>50&&!closedToTrade(a)&&!closedToTrade(b)){ // cogs used to sail into plague ports and sieges
         const qty=Math.min(a.stores[g]*0.4,90);a.stores[g]-=qty;
         const sr=seaRoute(ai,bi);if(!sr){a.stores[g]+=qty;}else{const poly=sr.poly,len=sr.len;
-        {const c2=ladeOut({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/COG_MPD,robbed:false,sea:true},a,qty*len/1000*0.02);if(c2)W.caravans.push(c2);}}
+        {const c2=ladeOut({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/COG_MPD,robbed:false,sea:true},a);if(c2)W.caravans.push(c2);}}
       }
     }
   }
-  for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);if(!W.prehistory)crewFor(c);}
+  for(const c of W.caravans)if(!c._carts){c._carts=true;spawnCarts(c);if(!c.crew&&!W.prehistory)crewFor(c);}
   // arrivals
   const besieged=W.settlements.filter(t=>t.siegeBy);
   for(let i=W.caravans.length-1;i>=0;i--){
@@ -8702,7 +8726,7 @@ function tickThreats(){
   // rebuilding: once the rubble is cleared, a burned house goes up again as soon as there are households wanting roofs and the means to pay the builders; while the town has empty houses, its ruins wait
   if(day()%10===0)for(const s of W.settlements){const dem=s.pop/Math.max(1,housing(s)),p=clamp((dem-0.85)*1.5,0,0.6)*clamp(s.prosperity/50,0.3,1.5);if(p<=0)continue;for(const b of s.buildings){
     if(b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120&&chance('sim',p)){
-      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8,own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // the owner rebuilds, and pays for it
+      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // the owner rebuilds, and pays for it
     }
   }}
   // lightning ignition
@@ -9098,13 +9122,15 @@ function tickTenure(){
     let wages=0,urban=0;const landless=heads.filter(h=>tills(h,s)&&!h._strips),gp=GOODBASE.grain,church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1;
     // (the harvest and the year's output are offered month by month, as they come in: tickMarket)
     for(const h of heads){const b=h.bh&&!h.bh.removed?h.bh:null,n=size.get(h)||1;
-      if(b&&RESID.has(b.arch)){const own=ownerAcct(b,s);if(own!==h){const r=propValue(b)*0.12/Math.max(1,(b.hh||[]).length);transfer(h,own,r,'rents');urban+=r;}} // rent to whoever owns the roof (the lord, a landlord neighbour, the church), none if it is the family's own
+      if(b&&RESID.has(b.arch)){const own=ownerAcct(b,s);if(own!==h){const r=propValue(b)*0.12*(W._pl||1)/Math.max(1,(b.hh||[]).length);transfer(h,own,r,'rents');urban+=r;}} // rent to whoever owns the roof (the lord, a landlord neighbour, the church), none if it is the family's own
       } // (the necessaries are bought in the household's own reckoning; a family in debt owes it, and sells beasts or land to pay)
     { // the crafts and trades share out what the town's families spent with them this past year, a better shop and a better hand taking more
       const C=heads.filter(h=>!tills(h,s)&&h.tr&&!PRODUCE[h.tr]),wt=h=>(TRADE_W[h.tr]||0.5)*(1+0.3*(h.bh&&!h.bh.removed?h.bh.tier:0))*(0.8+0.2*(h.sk?h.sk[KCr]||0:0));let tw=0;for(const h of C)tw+=wt(h);
-      const cash=s._poolCash||0;if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);s._poolCash=0;}}
+      let cash=s._poolCash||0;const P=s._poolBy||{};s._poolBy={};
+      for(const tr in P){const T2=C.filter(h=>h.tr===tr);let t2=0;for(const h of T2)t2+=wt(h);if(t2>0)for(const h of T2)acct(h,P[tr]*wt(h)/t2);else cash+=P[tr];} // what was paid for baking goes to the bakers, for shoes to the shoemakers
+      if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);}s._poolCash=0;}
     { // the crown's tax: a hearth-penny on every household, by its size; in a lord's town only the feudal aid
-      if(!inRevolt(s.owner))for(const h of heads){const n=size.get(h)||1,tax=n*0.58*(MOD.tax/12)*clamp(s.prosperity/60,0.3,1.6)*(s.owner>0?0.4:1);
+      if(!inRevolt(s.owner))for(const h of heads){const n=size.get(h)||1,tax=n*0.58*(W._pl||1)*(MOD.tax/12)*clamp(s.prosperity/60,0.3,1.6)*(s.owner>0?0.4:1);
         const to=s.taxBreakUntil>day()&&s.owner>0&&s.owner===s.taxBreakHouse?houseAcct(s.owner):'crown';transfer(h,to,tax);}}
     const L=W.houses[s.owner]; // (the town's rents have gone to the owners of its houses above)
     // the market in land
@@ -9128,7 +9154,7 @@ function tickTenure(){
    ========================================================================= */
 function lordAcct(s){return s&&s.owner>0&&W.houses[s.owner]&&!W.houses[s.owner].exiled?W.houses[s.owner]:'crown';}
 function houseAcct(hi){return hi>0&&W.houses[hi]&&!W.houses[hi].exiled?W.houses[hi]:'crown';}
-function acct(x,v){if(!v||!x||x==='out')return;if(x==='crown'){W.treasury+=v;return;}if(x.ch){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;return;}x.gold=(x.gold||0)+v;}
+function acct(x,v){if(!v||!x||x==='out')return;if(x==='crown'){W.treasury+=v;return;}if(x.ch){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;}
 const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&W.houses.includes(x);
 function transfer(from,to,v,why){if(!(v>0))return 0;acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
 function parishOf(s){return s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed&&!b.castle&&!b.friary)||s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed)||null;}
@@ -9145,11 +9171,11 @@ function ownerAcct(b,s){const o=ownerOf(b,s);if(o==='lord')return lordAcct(s||b.
 function mkt(s,g){const M=s.mkt||(s.mkt={});return M[g]||(M[g]=new Map());}
 function rsv(s,g){const R=s.rsv||(s.rsv={});return R[g]||(R[g]=new Map());} // the least each seller will take
 function offer(s,g,who,qty,res){if(!(qty>0)||!who)return;const L=mkt(s,g);L.set(who,(L.get(who)||0)+qty);if(res>0){const R=rsv(s,g);R.set(who,Math.max(R.get(who)||0,res));}}
-function lard(s){return s._lard||(s._lard={grain:s.stores.grain||0,fish:s.stores.fish||0});} // what households have bought and not yet eaten or used (at first, all there is)
+function lard(s){return s._lard||(s._lard={grain:Math.min(s.stores.grain||0,s.pop*NEED.grain*30),fish:Math.min(s.stores.fish||0,s.pop*NEED.fish*30)});} // what households have bought and not yet eaten or used (at first, a month's bread in the house; the rest is in the barns, for sale)
 function avail(s,g,p){const L=mkt(s,g),R=s.rsv&&s.rsv[g];let a=0;for(const[w,v]of L)if(!(R&&R.get(w)>p))a+=v;return a;}
 function purchase(s,g,buyer,qty,p){ // the buyer takes from his own stock first, then from every seller content with the price, in proportion; returns what was paid (purchase.got: how much)
   purchase.got=0;if(!(qty>0))return 0;p=p??price(s,g);const L=mkt(s,g),R=s.rsv&&s.rsv[g],D=s._dem||(s._dem={});D[g]=(D[g]||0)+qty;
-  let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);if(own-got>1e-6)L.set(buyer,own-got);else L.delete(buyer);}
+  let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);if(own-got>1e-6)L.set(buyer,own-got);else L.delete(buyer);if(buyer.gn!==undefined)buyer._inc=(buyer._inc||0)+got*p;} // his own grain: worth to him what it would have fetched
   let have=0;for(const[w,v]of L)if(w!==buyer&&!(R&&R.get(w)>p))have+=v;
   const take=Math.min(qty-got,have),f=have>0?take/have:0;let paid=0;
   if(take>0)for(const[w,v]of L){if(w===buyer||R&&R.get(w)>p)continue;const q=v*f,r=v-q;if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);paid+=q*p;}
@@ -9159,7 +9185,7 @@ function payAmong(list,v,payer,why){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(payer)transfer(payer,'out',v,why);return v;}const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
   if(!(cost>0)||!s)return;let B=heads_(s,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher'),C=heads_(s,h=>h.tr==='carter');
-  if(!B.length){const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>heads_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=heads_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=heads_(o,h=>h.tr==='carter');}}
+  if(!B.length){const U=s._unmet||(s._unmet={});U.mason=(U.mason||0)+cost*0.4;U.carpenter=(U.carpenter||0)+cost*0.35;const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>heads_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=heads_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=heads_(o,h=>h.tr==='carter');}}
   payAmong(B,cost*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,cost*0.25,payer,why);}
 function levy(s,v,to,why){ // a rate laid on the households by their means; returns what was gathered
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why);}return got;}
@@ -9189,9 +9215,13 @@ function inherit(p){ // the dead man's purse and beasts: to his widow, else his 
 const TRADE_W={baker:1.2,butcher:1,brewer:1.2,cook:0.8,miller:1,smith:1,carpenter:1.2,mason:0.9,thatcher:0.8,cooper:0.6,potter:0.6,weaver:1,dyer:0.6,tailor:0.8,shoemaker:0.8,tanner:0.6,glover:0.4,
   chandler:0.6,merchant:1.6,spicer:0.7,carter:1,boatman:0.8,roper:0.5,salter:0.4,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,woodcutter:0.9,forester:0.4,fisher:1,miner:0.8,quarryman:0.7,reeve:0.3}; // the share of what families spend that comes to each trade
 const PRODUCE={fisher:'fish',boatman:'fish',woodcutter:'timber',forester:'timber',miner:'ore',smith:'tools',weaver:'cloth',dyer:'cloth'}; // trades that live by selling what they make, not by a share of the town's spending
-const foodYr=()=>(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360;
+const foodYr=()=>(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360*((typeof W!=='undefined'&&W&&W._pl)||1); // a year's bread and fish at the realm's going prices
 function tradeCounts(s){if(s._tcY===year())return s._tc;const c={};for(const h of headsOf(s))if(h.tr)c[h.tr]=(c[h.tr]||0)+1;s._tc=c;s._tcY=year();return c;}
-function tradeIncome(s,tr){ // what a household in this trade may expect here in a year
+function jobYear(s){ // the year's reckoning of the trades: what those in each earned (net of their stuff), and what work went undone or to strangers for want of hands
+  const J={},H=heads_(s,()=>true);for(const h of H){const tr=h.tr||'labourer',e=J[tr]||(J[tr]={sum:0,n:0});e.sum+=h._inc||0;e.n++;h._inc=0;}
+  const U=s._unmet||{};for(const tr in U){const e=J[tr]||(J[tr]={sum:0,n:0});e.want=U[tr];}s._unmet={};s._job=J;s._jobY=year();}
+function tradeIncome(s,tr){ // what a household in this trade may expect here in a year: once the place has a year's record, what its people in that trade made, and the work that wanted hands, shared with one more
+  if(s._job&&tr){const e=s._job[tr];if(e)return (e.sum+(e.want||0))/(e.n+1);return 0;}
   if(!tr)return foodYr()*3;
   if(TILLERS.has(tr)){const land=(s._fed||s.pop)/Math.max(20,s.pop);return foodYr()*5*clamp(0.5+0.5*land,0.3,1.8)+(s.wasteHa>0?foodYr():0);} // the plough: as much as the land about will feed
   const tc=tradeCounts(s),pool=Math.min(s._poolLast||s.pop*foodYr()*0.5,s.pop*foodYr()*4),n=Math.max(1,(tc[tr]||0)); // (what families spend can never be more than they have: a cap against any runaway)
@@ -9252,7 +9282,7 @@ function tickHouseholds(){
           const g2=val(o)-here-foodYr()*(0.3+d/1000*0.15);if(g2>bg){bg=g2;best=j;}}
         if(best>=0&&frand()<clamp(bg/Math.max(1,here)*0.8,0,0.7)){const o=Ss[best],i=s.folk.indexOf(p);if(i>=0){removeAt(s,i);journey(p,si,best,'migrant');s.pop=Math.max(5,s.pop-1);o.pop+=1;s.migOut=(s.migOut||0)+1;o.migIn=(o.migIn||0)+1;
           if(!W.prehistory&&frand()<0.02)emit('trade',1,s.pos,`${folkName(p)} leaves ${s.name} for ${o.name}, to seek work and a ${p.sx==='f'?'husband':'wife'}.`);}}}}
-    const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);
+    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=foodYr()*2;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)
@@ -9261,7 +9291,7 @@ function tickHouseholds(){
       const spare=h.w-n*foodYr();if(spare>0){
         const merry=clamp(0.15+0.12*trait(h,GB)-0.1*trait(h,GD),0.02,0.45),fine=clamp(0.08+0.08*trait(h,GL),0,0.3);
         const drink=spare*merry,dress=spare*fine;
-        for(const[g,v,cut]of[['wine',drink,0.5],['cloth',dress,0.4]]){if(!(v>0))continue;const p=price(s,g),q=v*(1-cut)/Math.max(1e-6,p);purchase(s,g,h,q,p);const got=purchase.got,m=got*p*cut/(1-cut);h.w-=m;pool+=m;lard(s)[g]=(lard(s)[g]||0)+got;if(got<q)lux[g]=(lux[g]||0)+(q-got);} // the vintner or weaver for the stuff, the alewife, innkeeper and tailor for the rest
+        for(const[g,v,cut]of[['wine',drink,0.5],['cloth',dress,0.4]]){if(!(v>0))continue;const p=price(s,g),q=v*(1-cut)/Math.max(1e-6,p);purchase(s,g,h,q,p);const got=purchase.got;craftWork(s,h,g==='wine'?['brewer','cook']:['tailor'],got*p*cut/(1-cut));lard(s)[g]=(lard(s)[g]||0)+got;if(got<q)lux[g]=(lux[g]||0)+(q-got);} // the vintner or weaver for the stuff, the alewife, innkeeper and tailor for the rest
       }
       { // the family's beasts: what they bring in, what their winter keep costs, and whether to buy or sell
         const H=herdOf(h),hay=Math.max(0.3,price(s,'hay')),press=(s.hm&&s.hm.press)||0.8;
@@ -9280,13 +9310,13 @@ function tickHouseholds(){
     s._lux=lux; // what they wanted and could not get: the price rises, and the carters will hear of it
     s._poolLast=pool; // next year's living of the crafts
     // the young choose a trade; a man whose trade has failed him turns to another
-    const opts=[...new Set([...tradesOf(s),'ploughman'])],val=tr=>tradeIncome(s,tr);
+    const opts=[...new Set([...tradesOf(s),'ploughman',...Object.keys(s._job||{}).filter(tr=>tr!=='labourer')])],val=tr=>tradeIncome(s,tr); // the trades the place has, and those it lacked hands for
     for(const p of s.folk){if(p.dead||p.trChosen)continue;const a=ageYrs(p);if(a<14||a>=17)continue;const head=householdHead(p);
       let best=null,bv=-1e9;for(const tr of opts){const fee=tr===p.tr||TILLERS.has(tr)||tr==='carter'||tr==='woodcutter'?0:foodYr()*1.2,can=(head.w||0)>=fee;if(!can)continue;
         const v=val(tr)*(tr===p.tr?1.15:1)*(0.85+0.3*frand())-fee/6;if(v>bv){bv=v;best=[tr,fee];}} // the father's trade is learned at home; any other costs an apprenticeship
-      if(best){if(best[1]>0){head.w-=best[1];pool+=best[1];}p.tr=best[0];}p.trChosen=true;}
+      if(best){if(best[1]>0){const M2=heads.filter(q=>q.tr===best[0]&&q!==head);transfer(head,M2.length?M2[Math.floor(frand()*M2.length)]:'out',best[1],'apprenticeship');}p.tr=best[0];}p.trChosen=true;} // the master who takes him is paid; with none here, he goes away to learn
     for(const h of heads){if(h.role||ageYrs(h)>40)continue;const here=val(h.tr);let best=null,bv=here*1.8;for(const tr of opts){const v=val(tr);if(v>bv&&(h.w||0)>foodYr()*1.5){bv=v;best=tr;}}
-      if(best&&frand()<0.3){h.w-=foodYr()*1.5;pool+=foodYr()*1.5;h.tr=best;if(h.sp&&!h.sp.dead)h.sp.tr=best;}}
+      if(best&&frand()<0.3){const M2=heads.filter(q=>q.tr===best&&q!==h);transfer(h,M2.length?M2[Math.floor(frand()*M2.length)]:'out',foodYr()*1.5,'apprenticeship');h.tr=best;if(h.sp&&!h.sp.dead)h.sp.tr=best;}}
     // a family goes where it would do better, if the road is worth it (one choice in a few years)
     if(!W.prehistory||AD()>=W.startAD)for(const h of heads){if(h.role||(h._movedY||-99)>year()-5||s.siegeBy)continue;const mem=hhMembers(s,h);if(!mem.length)continue;
       const here=tradeIncome(s,h.tr)+amenity(s,h,mem)-rentOfHome(s,h)-((s.raidedUntil>day()||s.siegeBy)?foodYr()*2:0)-(s.hunger||0)*foodYr()*4;let best=-1,bg=0;
@@ -9353,7 +9383,7 @@ function tickGrowth(){ // houses are built for households that have none, as fas
     const room=housing(s),short=(s.pop-room)/HOUSEHOLD,means=clamp(s.prosperity/50,0.2,1.6); // households doubled up or lodging; what the place can pay its builders
     if(short>0&&!s.siegeBy){
       let n=Math.min(4,short*0.08*means*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // wattle and daub when there is no sawn timber: slower
-      for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b){got++;const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8,own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // whoever will own it pays the builders and the timber
+      for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b){got++;const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // whoever will own it pays the builders and the timber
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`]));}
       if(!got&&n>0){ // nowhere left to build: the town builds upward where the rent is dearest
         const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0);
