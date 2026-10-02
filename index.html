@@ -2620,8 +2620,8 @@ function mkPerson(s,si,o){
   p.hair=o.ma&&o.pa?(frand()<0.45?o.ma.hair:frand()<0.8?o.pa.hair:hairDraw(s.cult)):hairDraw(s.cult);
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   (s.folk||(s.folk=[])).push(p);return p;}
-function life(p,t){if(!p||p.merc||!t)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>40)E.splice(0,1);} // the ledger of a life: what befell him, and when
-function dropPerson(p,why){if(!p)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);}if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
+function life(p,t){if(!p||p.merc||!t||W.prehistory)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>30)E.splice(0,1);} // the ledger of a life: what befell him, and when (kept from the reign's start; the years before are the chronicle's)
+function dropPerson(p,why){if(!p)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(p.ev&&p.ev.length>8)p.ev=[...p.ev.filter(e=>/^(Born|Married|Apprenticed|Learned|Left|Moved)/.test(e[1])).slice(-5),p.ev[p.ev.length-1]];}/* the dead keep only the bones of their story */if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
 function removeAt(s,i){const a=s.folk;if(i<0||i>=a.length)return null;const p=a[i];a[i]=a[a.length-1];a.pop();return p;} // an index of -1 used to take the last soul on the roll instead
 function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
 /* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
@@ -2755,6 +2755,7 @@ function tickFolk(){
     const die=pickK(s.folk,k-leave.length,p=>{const a=ageYrs(p);return (a<2?3:a>55?1+(a-55)/5:0.25)*Math.exp(-0.5*trait(p,GV));});
     for(const p of die){removeAt(s,s.folk.indexOf(p));dropPerson(p,ageYrs(p)<2?'Died in infancy':`Died at ${s.name}, aged ${Math.floor(ageYrs(p))}${s.hunger>0.2?', in a hungry time':s.infected>0?', of the pestilence':''}`);}});
   Ss.forEach((s,si)=>{ // too few: the levies home, the newborn, the newcomers
+    if(!Number.isFinite(s.pop)){(W._dbg||(W._dbg=[])).push([day(),s.name,'pop not finite',s.folk.length]);s.pop=s.folk.length;}
     let k=Math.round(s.pop)-s.folk.length-(inb.get(si)||0);if(k<=0)return;
     for(let i=W.levies.length-1;i>=0&&k>0;i--)if(W.levies[i].home===si&&!W.levies[i].dead){const p=W.levies[i];W.levies.splice(i,1);p.si=si;s.folk.push(p);k--;}
     const mothers=s.folk.filter(p=>p.sx==='f'&&p.sp&&!p.sp.dead&&p.sp.si===si&&d-p.lb>450&&ageYrs(p)>=16&&ageYrs(p)<45);
@@ -2763,7 +2764,9 @@ function tickFolk(){
       const f=m.sp,ch=mkPerson(s,si,{ma:m,pa:f,fam:f.fam,tr:f.tr,avoid:[m.gn,f.gn,...(m.kn||[])]});m.lb=d;{const t=`A ${ch.sx==='m'?'son':'daughter'}, ${ch.gn}, born`;life(m,t);life(f,t);life(ch,`Born at ${s.name}`);}(m.kn||(m.kn=[])).push(ch.gn);k--;}
     if(k>0&&mig.length){mig.sort((a,b)=>dist2d(Ss[a.si].pos.x,Ss[a.si].pos.z,s.pos.x,s.pos.z)-dist2d(Ss[b.si].pos.x,Ss[b.si].pos.z,s.pos.x,s.pos.z));
       while(k>0&&mig.length){const p=mig.shift();journey(p,p.si,si,'migrant');k--;}} // they take to the road for their new home
-    while(k>0){k-=seedHousehold(s,si,true).length;}});
+    if(k>2000){(W._dbg||(W._dbg=[])).push([day(),s.name,Math.round(s.pop),s.folk.length,k]);if(W._dbg.length>20)W._dbg.shift();}
+    k=Math.min(k,500); // (the roll catches up with the count a month at a time)
+    while(k>0){const n=seedHousehold(s,si,true).length;if(!n)break;k-=n;}});
   for(const p of mig)dropPerson(p,'Left the realm, to seek a living abroad'); // gone beyond the realm's borders
   const inArms=W.armies.reduce((t,a)=>t+(a.gone?0:Math.max(0,a.strength||0)),0); // a host that melts away took its levies with it
   while(W.levies.length>0&&W.levies.length>inArms*1.05){const i=Math.min(W.levies.length-1,Math.floor(frand()*W.levies.length));dropPerson(W.levies[i],'Lost in the wars, and never came home');W.levies.splice(i,1);}
@@ -7689,7 +7692,9 @@ function shareOutput(s,si,PM,heads){const M=s._made||{};s._made={};
     if(!mA)offer(s,'hay',lordAcct(s),M.hay);else for(const f of Md){const w=PM.get(f.wk);offer(s,'hay',w&&!w.dead?w:lordAcct(s),M.hay*f.area/mA);}}} // the hay, his who mows the meadow
 function reconcile(s,heads){ // the stores and their owners agree: what was lost (eaten by armies, burned, spoiled, plundered) is lost by all in proportion; what came unowned (the fleeces, a gift of grain) is the lord's, or the shepherds'
   const Ld=lard(s);
-  for(const g of GOODS){const L=mkt(s,g);let fam=0;if(LU[g]!==undefined)for(const h of heads)fam+=(h.herd&&h.herd[g])||0;
+  for(const g of GOODS){const L=mkt(s,g);
+    for(const[w,v]of[...L]){if(v<1e-3){L.delete(w);continue;}if(w&&w.gn!==undefined&&w.dead){L.delete(w);let x=w;for(let k=0;k<6&&x&&x.gn!==undefined&&x.dead;k++)x=x._heir;offer(s,g,x&&!(x.gn!==undefined&&x.dead)?x:lordAcct(s),v);}} // a dead seller's stock is his heir's
+    let fam=0;if(LU[g]!==undefined)for(const h of heads)fam+=(h.herd&&h.herd[g])||0;
     const T=Math.max(0,(s.stores[g]||0)-fam),ld=(Ld[g]||0)+(g==='timber'?Ld.char||0:0);let led=0;for(const v of L.values())led+=v;const have=led+ld;
     if(T>have+1e-6){const d=T-have;
       if(g==='wool'){let sh=0;for(const h of heads)sh+=(h.herd&&h.herd.sheep)||0;const all=Math.max(sh,s.stores.sheep||0);for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,d*h.herd.sheep/Math.max(1,all));if(all>sh)offer(s,'wool',lordAcct(s),d*(all-sh)/all);else if(!sh)offer(s,'wool',lordAcct(s),d);}
