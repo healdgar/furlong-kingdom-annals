@@ -505,6 +505,12 @@ What happens is decided by quantities the economy produces, not by numbers cross
     the quarry's owner. Whoever will own a new house pays for it.
   - **Death and marriage:** a dead man's purse, beasts and buildings pass to his widow or eldest grown
     child, else escheat to the lord; a bride brings her purse and beasts to her husband's household.
+  - **Ways are kept up by use:** a lane with no house on it grasses over (and comes back with the first
+    house); a king's road is mended by the lords at either end while the tolls of its carts repay the
+    roadmen, else it wears to a rutted track, narrower and slower, never quite gone.
+  - **Buildings are reused:** an empty house is taken by a craftsman who fits it out as his workshop, or
+    mended by its owner while a tenant may yet be found, and only then let fall; a family lodging in a
+    house gets a storey added when that is cheaper than a new house.
   - **Debts stand:** purses and coffers may run below nothing; a family in debt sells beasts and then
     land (the lord buys when no neighbour can), and a lord in debt sells fiefs.
 

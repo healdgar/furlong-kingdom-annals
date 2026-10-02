@@ -1352,7 +1352,7 @@ function route(ai,bi,sea){
   const adj=c=>{const E=W.adj[c]||[];if(!sea||!W.seaLanes||!W.seaLanes.length)return E;const o=E.slice();W.seaLanes.forEach((L,li)=>{if(L.a===c)o.push({to:L.b,li});else if(L.b===c)o.push({to:L.a,li});});return o;};
   const prev={},via={},g={};prev[ai]=null;g[ai]=0;const open=[ai],done=new Set();
   while(open.length){let mi=0;for(let k=1;k<open.length;k++)if(g[open[k]]<g[open[mi]])mi=k;const c=open.splice(mi,1)[0];if(done.has(c))continue;done.add(c);if(c===bi)break;
-    for(const e of adj(c)){const w=e.li!==undefined?W.seaLanes[e.li].len*MARCH_MPD/COG_MPD+PORT_DELAY:(r=>(r.len||1)/(1+0.5*(r.grade||0)))(W.roads[e.ri]),nd=g[c]+w;if(!(e.to in g)||nd<g[e.to]){g[e.to]=nd;prev[e.to]=c;via[e.to]=e;open.push(e.to);}}}
+    for(const e of adj(c)){const w=e.li!==undefined?W.seaLanes[e.li].len*MARCH_MPD/COG_MPD+PORT_DELAY:(r=>(r.len||1)/(1+0.5*(r.grade||0))/(0.6+0.4*(r.cond??1)))(W.roads[e.ri]),nd=g[c]+w;if(!(e.to in g)||nd<g[e.to]){g[e.to]=nd;prev[e.to]=c;via[e.to]=e;open.push(e.to);}}}
   if(!(bi in prev))return null;
   const hops=[];let c=bi;while(prev[c]!==null){hops.push([prev[c],c,via[c]]);c=prev[c];}hops.reverse();
   let poly=[],seaLen=0;
@@ -3377,7 +3377,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
        shaped by the ways that come in (its corners worn round by carts cutting them) */
     if(G.roadJoins){scene.remove(G.roadJoins);G.roadJoins.geometry.dispose();G.roadJoins=null;}
     const lines=[];
-    for(const r of W.roads)lines.push({P:resample(r.drawn||r.path,5),hw:r.grade?4.8:4.2,pv:!!r.grade});
+    for(const r of W.roads)lines.push({P:resample(r.drawn||r.path,5),hw:(r.grade?4.8:4.2)*(0.45+0.55*(r.cond??1)),pv:!!r.grade&&(r.cond??1)>0.6}); // a neglected road narrows to a track
     for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge'){const P=resample(st.pts,5);
       lines.push({P,hw:st.hw,pv:st.kind==='wallst'||P.some(q=>dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr)});}}
     const H=makeHash(24);
@@ -9386,6 +9386,18 @@ function houseBuyer(s,cost){ // who pays for a new house: a household that wants
   const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40),rent=R.length?R.reduce((t,b)=>t+propValue(b),0)/R.length*0.12*(W._pl||1):0;if(rent*12<cost)return null; // a house that would not pay for itself is not built
   const L=heads_(s,h=>(h.w||0)>=cost*2).sort((a,b)=>(b.w||0)-(a.w||0))[0];if(L)return {acct:L,id:L.id};
   const lord=lordAcct(s);return means(lord)>=cost?{acct:lord,id:'lord'}:null;}
+/* the ways, once a year: a lane with no house on it is not kept and grasses over (it comes back with the first house built on it);
+   a king's road is mended by the lords at either end while the carts on it pay the tolls that repay the roadmen, else it wears to a rutted track: slower, narrower, never quite gone */
+function tickWays(){
+  if(day()%360!==300)return;let dirty=false;
+  for(const s of W.settlements){const on=new Set();for(const b of s.buildings)if(!b.removed&&b.state!=='gone'&&b.st)on.add(b.st);
+    for(const st of s.streets||[]){if(st.hidden||st.gone||st.planned||st.cut||(st.kind!=='lane'&&st.kind!=='grid'))continue;if(!on.has(st)){st.hidden=true;dirty=true;}}}
+  for(const r of W.roads){const A=W.settlements[r.a],B=W.settlements[r.b];if(!A||!B)continue;const up=(r.len||1000)/1000*2*PL(),tolls=(r.vol||0)*GOODBASE.grain*PL()*0.5,c0=r.cond??1;
+    const la=lordAcct(A),lb=lordAcct(B);
+    if(tolls>=up&&means(la)+means(lb)>=up){const fa=means(la)/Math.max(1e-9,means(la)+means(lb));buildWorks(A,up*fa,la,'roads');buildWorks(B,up*(1-fa),lb,'roads');r.cond=Math.min(1,c0+0.2);}
+    else r.cond=Math.max(0.15,c0-0.15);
+    if(Math.abs((r.cond??1)-c0)>1e-6)dirty=true;}
+  if(dirty){W.routes={};G.roadsDirty=true;}}
 function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s).sort((a,b)=>(b.w||0)-(a.w||0));}
 /* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
 function tickStreets(){
@@ -9589,7 +9601,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();tickMarket();tickHouseholds();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();tickMarket();tickHouseholds();tickWays();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
