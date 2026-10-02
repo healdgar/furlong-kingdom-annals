@@ -68,3 +68,35 @@ the whole list is done (growth pace, prosperity levels, castle/church tempo, reb
 Historical era gates (stone keeps 1070, gothic 1190, round towers, barbicans, bastions 1500, `tierCap`,
 `siegeEngines`, mills); the logistic birth curve; wharf and quarry (already demand-driven); army supply
 hysteresis (18/35).
+
+## Ownership and money (second sweep, October 2026)
+
+Property not tied to a person or institution, and money created from nothing or destroyed. Goal: every asset has
+an owner (a household, a lord's house, the crown, a church, the town), every income has a payer, every cost a
+recipient. Status: **open** unless marked.
+
+| # | Where | Debt | Replacement | Status |
+|---|---|---|---|---|
+| M1 | household necessaries | 55% of what families spend on bread, fuel and cloth vanishes; no grower or fisher is paid | pay the holders of the stores (tillers, the lord's demesne, fishers); only the crafts' margin goes to the craft pool | open |
+| M2 | harvest (tickTenure) | crops paid as cash from nothing; the lord's share (`lordTake`: demesne crop, villein and lease rents, sharecrop cut) summed and never paid | grain is goods until sold into the stores; `lordTake` paid to the lord (or crown) as rents in kind | open |
+| M3 | lords' `rentOf` | dues from `pop×0.06` created monthly, paid by no one; duplicates M2 | replace with the real flows: rents in kind, town rents, dues from household purses | open |
+| M4 | town stores | goods appear, are converted and eaten with no owner | a market: stores held by households and the lord; producers paid when goods are drawn | open |
+| M5 | caravans, barges, cogs | goods taken without payment, delivered free; profit, tolls, taxes notional; no carter or merchant earns | a merchant household buys at the origin price and sells at the destination; tolls from his margin; carter paid a wage | open |
+| M6 | craft incomes | pool never drawn down; tier/skill multipliers pay more or less than the pool; "odd jobs" and no-trade income from nothing | split the actual pool among its households by tier and skill; odd jobs are wages with an employer | open |
+| M7 | town buildings | no owner; occupants pay rent of which half vanishes; shops, mills, inns, warehouses, wharves, quarries earn nothing for anyone; compensation paid to occupants as if owners | every building has an owner (household, lord, church, town); tenant pays the owner; business income to the household that works it | open |
+| M8 | soldiers' pay | crown and lords' hosts, garrisons, castellans paid into nothing | paid to the levied men's households, the castellan's house, mercenaries (who carry it out of the realm) | open |
+| M9 | building and works costs | castle, church, road, plan, wall, repair, works costs vanish; stone taken unpaid | wages to mason, carpenter and carter households; stone paid to its holder | open |
+| M10 | death and marriage | purses and herds lost at death; a wife's purse hidden | purse and herd pass to the heir or spouse; purses merge at marriage | open |
+| M11 | crown production tax | created from nothing | taken from household purses, or as an aid from lords' rents | open |
+| M12 | murage | created from town worth; spent into nothing | levied from burgher purses and market tolls; paid to builders | open |
+| M13 | church fabric | offerings created; surplus clipped away | a tithe on the harvest; surplus as alms to the poorest | open |
+| M14 | far-port ships | imports free; exports paid to no one; customs created | merchants pay and are paid; customs out of their margin | open |
+| M15 | tolls and lords' works | market toll created; mill and granary earn nothing | the mill takes its multure (to the lord or a miller who leases it); tolls from the merchant | open |
+| M16 | land sale with no buyer | seller paid from nothing; land ownerless | the lord buys, or there is no sale | open |
+| M17 | herds | drives, raids, requisitions charged to families unpaid; beast cash double-counts produce; hay never charged | drives from the lord's herd first or paid; cash only from selling produce; hay paid | open |
+| M18 | crown furlongs | rent from nothing | paid by the household working the land | open |
+| M19 | debt floors and write-offs | purses floored at −30, lords at −5000 with write-offs, treasury at −500 | debts owed to a lender; settled by forced sales | open |
+| M20 | court spending | vanishes | paid to the capital's crafts | open |
+| M21 | clearance compensation | paid to no one; occupants get nothing | paid to the owners and occupants | open |
+| M22 | luxuries | wine and cloth taken from stores unpaid | the vintner, weaver or merchant paid | open |
+| M23–M30 | infill, trade changes, farmsteads, free new houses and rebuilds, bandit loot, new-house treasuries, player decrees, metro pooling, roads and toll houses | small leaks and sources (see the sweep) | route each to a named payer and recipient | open |
