@@ -5,7 +5,7 @@ simulation ticks (October 2026). The aim is an emergent, economically grounded s
 because a quantity (surplus, rent against cost, threat against value, opportunity) makes them worth doing,
 not because a number crossed a hand-picked line.
 
-Status (after the first repair pass, October 2026): items 1–30 replaced; 31, 33–35 open. Statuses: **open**, **fixed** (replaced by the mechanism in the right-hand column), **kept** (defensible).
+Status (after the first repair pass, October 2026): items 1–31 and 33–35 replaced; 32, 36, 37 kept. Statuses: **open**, **fixed** (replaced by the mechanism in the right-hand column), **kept** (defensible).
 Line numbers are as of the sweep and will drift.
 
 Recalibration note: these fixes change many interlocking rates at once. Expect a calibration pass after
@@ -55,11 +55,11 @@ the whole list is done (growth pace, prosperity levels, castle/church tempo, reb
 | # | Where | Debt | Status |
 |---|---|---|---|
 | 30 | treasury >15000 drained 0.12%/day | court spends in proportion to income | fixed |
-| 31 | tools only in towns; free cloth and wine for the capital | crafts where workshops are | open |
+| 31 | tools only in towns; free cloth and wine for the capital | crafts where workshops are | fixed |
 | 32 | watch top-up hysteresis, call-to-arms radii | reasonable hysteresis | kept |
-| 33 | ships ≤8, random arrivals | mesh-limited; arrivals random | open |
-| 34 | trade closed at 15% infected | cliff | open |
-| 35 | street-cutting limits | benefit should be time saved × wages | open |
+| 33 | ships ≤8, random arrivals | mesh-limited; arrivals random | fixed |
+| 34 | trade closed at 15% infected | cliff | fixed |
+| 35 | street-cutting limits | benefit should be time saved × wages | fixed |
 | 36 | courtyard houses gates | mostly economic | kept |
 | 37 | house tongue switch on dice | cosmetic | kept |
 

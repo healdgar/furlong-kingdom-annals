@@ -323,7 +323,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-02 04:15 UTC · after 51ec78a</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Medieval Kingdom Sim</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-02 04:57 UTC · after a41b34c</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -6127,15 +6127,18 @@ function tickStone(){ // monthly: the quarries cut stone, and every place reckon
   for(const q of W.projects||[])if(q.type==='pave'){const A=W.settlements[q.r.a];A._stoneWant=(A._stoneWant||0)+q.r.len*0.12*(1-q.done);}} // a road to be paved wants its setts
 function tickShips(){
   W.ships=W.ships||[];const now=day(),ad=AD();
-  if(ad>=900&&W.ships.length<8)
+  const seaCap=W.settlements.reduce((t2,s)=>t2+(s.harbor?berthsOf(s).length*2:0),0); // as many ships as the realm's quays can work
+  if(ad>=900&&W.ships.length<seaCap)
     for(let si=0;si<W.settlements.length;si++){const s=W.settlements[si];if(!s.harbor||closedToTrade(s))continue;
       const era=ad<1000?0.15:ad<1150?0.35:ad<1300?0.7:1,wh=berthsOf(s).length;
-      if(frand()>=0.012*era*(0.4+s.prosperity/100)*(0.6+0.4*wh)*(MOD.trade||1)*(s.kind==='village'?0.3:1))continue;
+      const fp=FARPORTS.filter(f=>ad>=f.from&&ad<(f.to||9999));if(!fp.length)continue;
+      const pay=F=>{let v=0,b=0;for(const g in F.g){v+=price(s,g)*F.g[g];b+=GOODBASE[g]*F.g[g];}return v/Math.max(1e-6,b);}; // what the port pays for a far port's cargo, against its usual worth
+      const F=fp.slice().sort((a,b)=>pay(b)-pay(a))[0],draw=clamp(pay(F)-0.7,0,2.5); // masters sail where the prices are best; a port glutted with the goods draws none
+      if(frand()>=0.012*era*draw*(0.6+0.4*wh)*(MOD.trade||1))continue;
       const R=offRoute(si);if(!R)continue;
-      const fp=FARPORTS.filter(f=>ad>=f.from&&ad<(f.to||9999));if(!fp.length)continue;const F=fp[Math.floor(frand()*fp.length)];
       const cargo={};for(const g in F.g)cargo[g]=Math.round(F.g[g]*(20+frand()*40));
       W.shipN=(W.shipN||0)+1;W.ships.push({id:W.shipN,kind:shipKind(),from:F.n,port:si,cargo,load:{},phase:'in',t0:now,t1:now+R.len/SHIP_MPD,poly:R.poly,len:R.len,berth:null});
-      if(W.ships.length>=8)break;}
+      if(W.ships.length>=seaCap)break;}
   for(let i=W.ships.length-1;i>=0;i--){const sh=W.ships[i],s=W.settlements[sh.port];
     if(sh.phase==='in'&&now>=sh.t1){ // at the harbour mouth: a free berth, or lie off and wait
       const B=berthsOf(s),taken=new Set(W.ships.filter(o=>o!==sh&&o.phase==='dock').map(o=>o.bi));
@@ -6167,6 +6170,7 @@ function renderShips(){
   if(!G.shipMeshes){const vc=new THREE.MeshLambertMaterial({vertexColors:true}),g=cogGeom();G.shipMeshes=[];
     for(let i=0;i<8;i++){const m=new THREE.Mesh(g,vc);m.castShadow=true;m.visible=false;m.userData.pick={type:'ship',sh:null};scene.add(m);G.shipMeshes.push(m);}}
   const t=performance.now()/1000;let k=0;
+  while(G.shipMeshes.length<(W.ships||[]).length){const m=new THREE.Mesh(G.shipMeshes[0].geometry,G.shipMeshes[0].material);m.castShadow=true;m.visible=false;m.userData.pick={type:'ship',sh:null};scene.add(m);G.shipMeshes.push(m);} // more hulls as the trade grows
   for(const sh of W.ships||[]){if(k>=G.shipMeshes.length)break;const m=G.shipMeshes[k++],p=shipPos(sh);
     m.visible=true;m.position.set(p.x,SEA-0.2+Math.sin(t*1.1+k)*0.2,p.z);m.rotation.set(Math.sin(t*0.8+k)*0.03,-(p.dir||0),0);
     m.scale.setScalar(sh.kind==='carrack'?5:sh.kind==='hulk'?4.4:sh.kind==='great cog'?4:3.4);m.userData.pick.sh=sh;}
@@ -6717,8 +6721,8 @@ function landValue(f){ // a furlong's worth: what it yields as it lies, and how 
 }
 function prodOf(s){ // a year's output by good (the same sums the economy runs daily)
   const r=s.res||{},lf=s.landF??1,smiths=(s.buildings||[]).filter(b=>b.arch==='smithy'&&b.state==='sound').length;
-  return {grain:(r.farm||0)*0.92*0.87*360*lf,fish:(r.fish||0)*0.8*360,timber:(r.forest||0)*0.05*360,ore:(r.ore||0)*0.05*360,tools:smiths*20+(s.kind!=='village'?30:0),
-    cloth:(s.kind==='capital'?0.9*360:0)+(s.stores.sheep||0)*0.012*12*0.55+(s.buildings||[]).filter(b=>b.arch==='shop').length*3,wool:(s.stores.sheep||0)*0.012*12,sheep:(s.stores.sheep||0)*HERDR.sheep,cattle:(s.stores.cattle||0)*HERDR.cattle,horses:(s.stores.horses||0)*HERDR.horses,swine:(s.stores.swine||0)*HERDR.swine,wine:s.kind==='capital'?0.7*360:(s.furl||[]).filter(f=>f.kind===LK.VINE&&f.state===LS.TILLED).length*12};
+  return {grain:(r.farm||0)*0.92*0.87*360*lf,fish:(r.fish||0)*0.8*360,timber:(r.forest||0)*0.05*360,ore:(r.ore||0)*0.05*360,tools:smiths*20,
+    cloth:(s._dyers||0)*0.5*0.8*360+(s.stores.sheep||0)*0.012*12*0.55+(s.buildings||[]).filter(b=>b.arch==='shop').length*3,wool:(s.stores.sheep||0)*0.012*12,sheep:(s.stores.sheep||0)*HERDR.sheep,cattle:(s.stores.cattle||0)*HERDR.cattle,horses:(s.stores.horses||0)*HERDR.horses,swine:(s.stores.swine||0)*HERDR.swine,wine:s.kind==='capital'?0.7*360:(s.furl||[]).filter(f=>f.kind===LK.VINE&&f.state===LS.TILLED).length*12};
 }
 const GOODCOL={grain:'#d8b25a',fish:'#5a8fc0',timber:'#6f8f4a',ore:'#8a8a92',tools:'#4d4640',cloth:'#b85c38',wine:'#7a2f5a',wool:'#b3a57e',sheep:'#9c9480',cattle:'#7a5236',horses:'#4a3426',swine:'#c9867a',spice:'#a0522d',silk:'#8e5aa8',stone:'#a8a39a',hay:'#c9b56a'};
 function prodSprite(p,mx,s){
@@ -7538,7 +7542,7 @@ function spareOf(s,g){ // what a place can send away: a hungry town keeps its fo
   if(g==='hay')return (s.stores.hay||0)-(s._hayWant||0); // a farmer sells only the hay his own beasts will not need this winter // a town keeps the stone its own works want
   return s.stores[g];}
 function closedToTrade(s,from){ // plague, sealed gates, or the besiegers' lines: a town part-encircled still trades on the roads they do not hold
-  if(s.infected/Math.max(1,s.pop)>0.15||s.quarantineUntil>day())return true;
+  if(s.infected/Math.max(1,s.pop)>0.4||s.quarantineUntil>day())return true; // only a dying town or sealed gates stop the carts outright; short of that, fear thins the trade (see the caravans' reckoning)
   if(!s.siegeBy)return false;const A=s.siegeBy.army&&s.siegeBy.army.siegeArc;
   if(!A||A.w>=Math.PI*0.97)return true;
   return from?siegeBlocks(s,Math.atan2(from.z-s.pos.z,from.x-s.pos.x)):false;}
@@ -7563,11 +7567,14 @@ function tickEconomy(){
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF*(s._wcF??1)*(waterMill(s)&&AD()>=1250?1.25:1); // the woodcutters' axes; and a water-driven saw more
     s.stores.ore+=s.res.ore*0.05*workF;
-    if(s.kind!=='village'){ // craft conversion
-      const c=Math.min(s.stores.ore,s.stores.timber,1.4*(waterMill(s)&&AD()>=1200?1.4:1)); // a water-driven trip-hammer works more iron
+    if(s._shopY!==year()){s._shopY=year();let sm=0,dy=0;for(const b of s.buildings)if(b.state==='sound'&&!b.removed){if(b.arch==='smithy')sm+=1+b.tier*0.5;else if(b.arch==='dyer')dy+=1+b.tier*0.5;}
+      let vine=0;for(const f of s.furl||[])if(f.kind===LK.VINE&&f.state===LS.TILLED)vine+=f.area;s._smiths=sm;s._dyers=dy;s._vineHa=vine/1e4;} // the workshops and vineyards the place has, counted once a year
+    { // crafts where there are workshops and the stuff to work: iron and charcoal into tools at the smithies, wool into cloth at the looms (every cottage spins and weaves a little), grapes into wine
+      const c=Math.min(s.stores.ore,s.stores.timber,s._smiths*0.45*(waterMill(s)&&AD()>=1200?1.4:1)); // a water-driven trip-hammer works more iron
       s.stores.ore-=c*0.6;s.stores.timber-=c*0.6;s.stores.tools+=c*0.8;
+      const w=Math.max(0,Math.min((s.stores.wool||0)-woolWant(s)*2,s._dyers*0.5+s.pop*0.0008));if(w>0){s.stores.wool-=w;s.stores.cloth+=w*0.8;}
+      if(si===2)s.stores.wine+=s._vineHa*0.05*workF; // the vintage, in the autumn
     }
-    if(s.kind==='capital'){s.stores.cloth+=0.9;s.stores.wine+=0.7;}
     for(const g of GOODS){
       s.stores[g]-=s.pop*NEED[g]*(g==='grain'||g==='fish'?0:1); // food eaten in population tick
       if(LU[g]!==undefined){s.stores[g]=Math.max(0,s.stores[g]||0);continue;}
@@ -7584,7 +7591,7 @@ function tickEconomy(){
     for(let attempt=0;attempt<5;attempt++){
       const oi=randi('sim',W.settlements.length),o=W.settlements[oi];
       if(closedToTrade(o))continue;
-      let best=null;const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?2:6):o.stores[g]>o.pop*(NEED[g]||0)*30+5) // what it has beyond a month's own needs,po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
+      let best=null;const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?2:6):o.stores[g]>o.pop*(NEED[g]||0)*30+5)/* what it has beyond a month's own needs */,po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
       if(!sell.length)continue;
       for(let di=0;di<W.settlements.length;di++){
         if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
@@ -7593,7 +7600,8 @@ function tickEconomy(){
           const margin=price(d,g)-po[g],carry=0.12+GOODBASE[g]*0.04+dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z)/1000*0.08; // the carter's hire, tolls and loss on the way
           if(margin>carry){
             const r=route(oi,di);if(!r)continue;
-            const score=(margin-carry-r.len/1000*0.04)/Math.max(600,r.len);if(score<=0)continue;
+            const fear=(1-Math.min(1,o.infected/Math.max(1,o.pop)*5))*(1-Math.min(1,d.infected/Math.max(1,d.pop)*5)); // carters shun a town with the pestilence in it, the more the worse
+            const score=(margin-carry-r.len/1000*0.04)*fear/Math.max(600,r.len);if(score<=0)continue;
             if(!best||score>best.score)best={score,di,g,r};
           }
         }
@@ -9046,10 +9054,11 @@ function tickStreets(){
         const key=Math.round(g.N[a].x/40)+','+Math.round(g.N[a].z/40)+'|'+Math.round(g.N[b].x/40)+','+Math.round(g.N[b].z/40);
         const o=acc.get(key)||{a,b,w:0};o.w+=(len-st)*per;acc.set(key,o);}}
     let worst=null;for(const o of acc.values())if(!worst||o.w>worst.w)worst=o;
-    if(!worst||worst.w<1500)continue; // the walks lost to going round add up to a good part of the town's day
+    if(!worst||worst.w<200)continue; // (too small a detour to reckon)
     const A=g.N[worst.a],B=g.N[worst.b],plan=s._lay.live.cut(A,B,true);if(!plan){s._cutT=day()+360*3;continue;}
-    const sound=plan.hit.filter(b=>b.state==='sound'),burnt=plan.hit.length-sound.length;if(sound.length>8){s._cutT=day()+360*5;continue;}
-    const cost=sound.reduce((t,b)=>t+propValue(b)*25,0)+60,payer=s.owner;if(purse(payer)<cost*1.5||s.prosperity<40){s._cutT=day()+360*2;continue;}
+    const sound=plan.hit.filter(b=>b.state==='sound'),burnt=plan.hit.length-sound.length;
+    const cost=sound.reduce((t,b)=>t+propValue(b)*25,0)+60,payer=s.owner,benefit=worst.w*0.4*clamp(s.prosperity/50,0.4,1.6); // the time the town's carters and folk lose going round, over the years, at what their day is worth
+    if(benefit<cost||purse(payer)<cost*1.2){s._cutT=day()+360*2;continue;}
     const done=s._lay.live.cut(A,B,false);if(!done)continue;spend(payer,cost);if(payer>0)book(W.houses[payer],'street works',-cost);
     s._cutT=day()+360*15;s._hhY=-1;syncLive(s);if(G.citList&&G.citList[0]&&G.citList[0].s===s)G.citList=[];
     const nm=['New Street','Broad Street','Newgate Street','Cross Street','Straight Street','King Street'][Math.floor(frand()*6)];done.st.name=nm;
