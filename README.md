@@ -467,12 +467,20 @@ What happens is decided by quantities the economy produces, not by numbers cross
   houses' coffers, the crown's treasury, each church's fabric fund, each town's murage chest, and the world
   beyond the realm. Every building has an owner (a household, the lord, the church, the town); rent goes to
   the owner, and an owner who lives in his own house pays none.
-  - **The market:** the harvest is grain in the barns of those who grew it: the tiller's share, the
-    landowner's, the lord's (his home farm and his tenants' rents in kind), the church's tithe and the
-    mill's multure. Fishers, woodmen, miners, smiths, weavers and vintners offer what they make, shepherds
-    their fleeces, the meadows their hay, the quarry its stone. A family buying bread pays the growers in
-    proportion to what they offered; the millers, bakers, carters and tailors take their margin. What no
-    one offered comes from the lord's own barns.
+  - **The market:** every unit in a town's stores belongs to someone: a seller who has offered it, or a
+    household that has bought it and not yet used it. Each month the harvest is offered by those who grew
+    it (the tiller's share, the landowner's, the lord's home farm and his tenants' rents in kind, the
+    church's tithe, the mill's multure), and the catch, timber, ore, tools, cloth, wine, hay and stone by
+    those who made them. Households buy the month's bread, fish, fuel, cloth and tools as their purses and
+    their credit (beasts and land they could sell) allow; the cheaper of bread and fish is eaten more; what
+    they cannot buy, they go without, and a town whose families cannot pay goes hungry with full barns.
+    Smiths buy iron and charcoal, weavers wool, only when the work pays. A buyer takes his own stock first,
+    then pays every seller content with the price in proportion; a craftsman or merchant will not sell
+    below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
+  - **Prices** are found, not set: each month a good's price rises when buyers wanted more than was sold
+    and falls when stock stands unsold (half a year's stock is no glut), by at most about a quarter a
+    month. The carters carry goods from where they are cheap to where they are dear; foreign ships sell at
+    no less than the world price and buy only where goods are cheaper than abroad.
   - **Rents and taxes are paid, not reckoned:** a lord's income is what his barns sell, his houses let,
     his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
     from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
