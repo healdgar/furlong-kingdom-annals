@@ -2283,7 +2283,7 @@ function layoutSettlement(s){
       const path=r.a===idx?r.open||r.path:[...(r.open||r.path)].reverse(),last=sp[sp.length-1];
       let k0=0,bd=1e9;path.forEach((p,k)=>{const d=dist2d(p.x,p.z,last.x,last.z);if(d<bd){bd=d;k0=k;}});
       const ext=[{x:last.x,z:last.z}];
-      for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;ext.push({x:p.x,z:p.z});}
+      for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;if(liveB().some(o=>!o.removed&&o.state!=='gone'&&dist2d(o.x,o.z,p.x,p.z)<RHW+Math.max(o.w,o.d)*0.55))break;ext.push({x:p.x,z:p.z});} // stops short of a house standing in its way
       if(ext.length>=3&&addStreet(ext,RHW,'road')){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
     });
     branch(isCap?8:isTown?5:2,true,Rmax*0.8);
@@ -2423,7 +2423,7 @@ function layoutSettlement(s){
     court(take,f){ // a run of plots rebuilt as one house about a courtyard
       take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
       live=true;curE=E;take.forEach(unplace);const nb=place('court',2,f,take[0].district||'residential',1);live=false;return nb;},
-    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
+    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
   /* the town's own streets as a network: the way a cart goes from the market to any street end */
@@ -9285,9 +9285,12 @@ function ruralSite(s,h){ // where this household's work lies out of the place: i
     return best?{x:best.x,z:best.z,ha:0,own:1,kind:'wood'}:null;}
   if(h.tr==='fisher'&&h.bh){const w=waterNear(s,h.bh);return w?{x:w.x,z:w.z,ha:0,own:1,kind:'water'}:null;}
   return null;}
+function onRoad(x,z,pad){ // on (or within pad of) a king's road
+  for(const r of W.roads||[]){const P=r.drawn||r.path;if(!P||P.length<2)continue;const bb=r._bb||(r._bb=P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
+    const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5)return true;}return false;}
 function placeRural(s,x,z,arch,owner){ // a farmstead or a hut out on the land
   for(let k=0;k<10;k++){const a=k*2.4,r=k*6,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r,c=cIdx(toCell(px),toCell(pz));
-    if(W.water[c]||slopeAt(toCell(px),toCell(pz))>0.35||riverAt(px,pz,8))continue;
+    if(W.water[c]||slopeAt(toCell(px),toCell(pz))>0.35||riverAt(px,pz,8)||onRoad(px,pz,arch==='cot'?6:9))continue; // not in the river, not on the highway
     if(W.settlements.some(o=>dist2d(px,pz,o.pos.x,o.pos.z)<(o.extentR||o.radius||90)+30))continue;
     if(W.settlements.some(o=>o.buildings.some(b=>!b.removed&&Math.abs(b.x-px)<30&&Math.abs(b.z-pz)<30)))continue;
     if(!bldRoom(1))return null;const A=ARCH[arch],w=arch==='cot'?5:8,d=arch==='cot'?4:12,rot=hash01(px*0.37+pz)*Math.PI;
