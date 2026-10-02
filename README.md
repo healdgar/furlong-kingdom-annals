@@ -225,16 +225,14 @@ Acts are sealed while you rule; the crown's own levers take their place:
     street can be as short as a link (6 m), to tie a dead end in.
     *Stop up a street*: drag along a street, or the stub of one; that stretch
     is taken up (what is left either side stays), and any house left with no
-    way to a street is bought out. The high road is not stopped up. *Square*: drag
-    a loop; it becomes a market place (with a charter) or a square. *Wall*:
-    drag a loop about the town's heart; the circuit follows it, along the
-    bank where it meets water. *New quarter*: drag a loop; the surveyors lay
-    it out as straight streets a burgage plot apart (cross lanes every 96 m),
-    aligned to the nearest street; every crossing is a junction, stretches
-    that would only double an old street are left out, loose ends run on to
-    old streets within 55 m, and stubs to nowhere are dropped. A quarter is
-    many streets and their land bought at once and offered to settlers; a
-    street is one line.
+    way to a street is bought out. The high road is not stopped up. *Square*:
+    drag a loop; it becomes a market place (with a charter) or a square.
+    *Wall*: drag a loop about the town's heart; the circuit follows it, along
+    the bank where it meets water. *Pull down wall*: drag along the wall; that
+    stretch comes down and stands open (a stone wall's blocks go back to the
+    yards); pull down nearly all of it and the town is open. A gap weakens the
+    whole circuit's defence. Buildings block a line only where it crosses
+    their actual footprint.
   - The price is what the ground holds: every house under the brush is bought
     at 25 years' rent (so the dear heart of a town costs far more than its
     edge), field and meadow at their worth, then labour, timber and stone
@@ -243,8 +241,15 @@ Acts are sealed while you rule; the crown's own levers take their place:
   - Commissioned, the line is pegged out on the map and reserved (no one
     builds on it); the householders are bought out one by one, then the works
     go forward as the purse allows, halting when it is empty. When done, the
-    street, square, wall or quarter opens and the town's own growth fills its
+    street, square or wall opens (or the wall comes down) and the town's own growth fills its
     frontage. The brush bar lists the works in hand.
+- **Save, resume, share** (💾): a save is the world's seed and every command
+  you gave, with its day; resuming grows the same world again and gives each
+  command on its day (about a second for each year played). Saves are kept in
+  the browser (and made each year and when you leave the page); *Share* gives
+  a short code (or a link) anyone can load, a file, or posts it to the page's
+  shared shelf on claude.ai. A save from an older build may unfold
+  differently.
 - **The great houses**: honour them, take a hostage (they are far less likely
   to rise for two years), arrange a royal match, or attaint them for
   treason — seize their lands on success, civil war on failure.
@@ -493,7 +498,7 @@ itself; you rule one lord's domain:
   to let, or lengthens the house back into it. A rich household keeps its
   garden. Out at the edge, where rent is cheap, the yards stay green. The
   field strips stop at a yard's fence.
-- **Settlers on new streets.** A street or quarter laid out by a lord's plan
+- **Settlers on new streets.** A street laid out by a lord's plan
   lets its plots cheap: a few households a year take them up, beyond the
   town's own growth, and growth prefers them.
 - **Courtyard houses.** From the mid-1100s, in the dearest fifth of a town,
