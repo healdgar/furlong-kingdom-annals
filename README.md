@@ -137,6 +137,11 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 - **Land & property value overlay:** every town lot is coloured by its own
   worth, fence to fence, and every furlong by its yield and how near its
   buyers are. A house's card gives its rent and lot size.
+- **Land use overlay:** every furlong coloured by what it is doing now: corn,
+  hay meadow, vines, gardens and closes, pasture, woodland, rough grazing (the
+  common within a place's reach), scrub and fallow, burnt ground; the lords'
+  home farms hatched. The legend gives the hectares under each, and the beasts
+  at grass.
 - **Acts** that can't be done just now are greyed out and say why (no dragon
   in this realm, already at war).
 
@@ -474,6 +479,7 @@ What happens is decided by quantities the economy produces, not by numbers cross
     those who made them. Households buy the month's bread, fish, fuel, cloth and tools as their purses and
     their credit (beasts and land they could sell) allow; the cheaper of bread and fish is eaten more; what
     they cannot buy, they go without, and a town whose families cannot pay goes hungry with full barns.
+    A household tops up to a month's need: what is still in the crock from last month is not bought again.
     Smiths buy iron and charcoal, weavers wool, only when the work pays. A buyer takes his own stock first,
     then pays every seller content with the price in proportion; a craftsman or merchant will not sell
     below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
@@ -481,21 +487,30 @@ What happens is decided by quantities the economy produces, not by numbers cross
     and falls when stock stands unsold (half a year's stock is no glut), by at most about a quarter a
     month. The carters carry goods from where they are cheap to where they are dear; foreign ships sell at
     no less than the world price and buy only where goods are cheaper than abroad.
+  - **Great households spend what comes in:** a lord's hall lives on what the month left over, and draws
+    down what lies beyond a quarter's revenue (or saves toward it): rents came at the quarter days, and a
+    great house lived from one to the next. His household's bread, wine, cloth, spice and silk are bought
+    at his seat as his people need them; what the market cannot sell him goes on more hands and the town's
+    crafts. The court spends the same way, keeping a war chest.
   - **Rents and taxes are paid, not reckoned:** a lord's income is what his barns sell, his houses let,
     his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
     from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
     their men come from; castellans to their own; sell-swords carry their pay out of the realm.
-  - **Merchants and carters:** a load goes on the road only when a merchant household (or a stranger, if no
-    one at home can afford it) finds the margin and a carter (by road) or boatman (by water) of the place is
-    free; a carter who trades on his own account drives his own load. The driver is away for the trip and
+  - **Merchants and carters:** every few days the dealers of each place look over what it has to spare and
+    send the best load someone will take: a merchant household of the place, or a dealer of the market the
+    goods will go to riding out to buy (strangers come only by sea), and a carter (by road) or boatman (by
+    water) of either place who is free; a carter who trades on his own account drives his own load. The driver is away for the trip and
     back, and is paid his freight on delivery at the place's going rate, which rises when loads wait for want
     of a driver and falls when drivers stand idle. The merchant pays the market toll and the crown's aid on
     what he brings, and will not sell at the far end below what the load cost him laid down there: the
     price at the origin, the freight and the tolls. Foreign ships buy and sell for silver from abroad.
   - **The labour market:** each trade is paid for its own work: the millers and bakers for bread, the
     tailors for clothes, the brewers for ale, the shoemakers, potters, coopers and the rest out of what
-    families lay out on sundries. Where a place has no one in a trade, families do the work themselves (or
-    strangers are hired, for building) and the want is noted. Each year a place reckons what its people in
+    families lay out on sundries. Where a place has no one in a trade, families take the want to the nearest
+    market town that has it (the more of it the nearer the town lies: that is how a town lives off the country
+    round), do the rest themselves (or hire strangers, for building), and the want is noted. Families
+    already there when the annals open, and newcomers, take the trade among those they hear of that would
+    keep a household best: a town is not seeded with smiths because it has smithies. Each year a place reckons what its people in
     each trade actually earned (less what their stuff cost them) and the work that wanted hands; the young
     choose, and a man under forty changes to, the trade that would pay best here, a grown child moves to
     where his trade pays, and a master is paid to take an apprentice (with none here, the boy goes away to
