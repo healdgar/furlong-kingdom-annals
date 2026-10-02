@@ -337,7 +337,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <span class="chip">⛁ <b id="treasury">0</b></span>
   <span class="chip">☺ <b id="realmpop">0</b></span>
   <span class="chip" id="legitchip" title="Legitimacy">♛ <b id="legit">0</b></span>
-  <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
+  <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b><small id="pathbest" style="margin-left:6px;opacity:.85"></small></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
     <button id="planbtn" title="Plan works with the brush (B): paint streets, squares, a wall or a new quarter in your towns">🖌 Plan</button>
@@ -5892,10 +5892,10 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const seatS=W.settlements[h.seat]||own[0];
     const dues=h.dues||1; // the player's lord may press his tenants harder, or ease them
     const g0=h._g0??h.gold; // the rents themselves come in as they are paid: the harvest sold from his barns, the houses let, the mill's multure, the tolls
-    const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1); // a reckoning of what a fief yields, for its castellan's fee and its price
+    const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*PL(); // a reckoning of what a fief yields, for its castellan's fee and its price
     const far=s=>1-Math.exp(-dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)/(2000*MAPK)); // the farther the fief, the more its castellan keeps
     const stew=stewardship(notableById(h.head));let castellans=0,hosts=0,gar=0;
-    for(const s of own){if(s===seatS)continue;const v=(2+rentOf(s)*(0.25+0.65*far(s)))/stew,C=heads_(s,()=>true).sort((a,c)=>(c.w||0)-(a.w||0)); // the castellan's household, the steadiest in the place
+    for(const s of own){if(s===seatS)continue;const v=(2*PL()+rentOf(s)*(0.25+0.65*far(s)))/stew,C=heads_(s,()=>true).sort((a,c)=>(c.w||0)-(a.w||0)); // the castellan's household, the steadiest in the place
       const pv=Math.min(v,Math.max(0,means(h)));castellans+=pv;transfer(h,C[0]||'out',pv,'castellans');}
     for(const a of W.armies)if(a.house===hi&&!a.gone){const v=a.strength*(a.standing?0.1:0.25)*PL();hosts+=v;soldiersPay(a,v,h);}
     for(const s of own){const v=Math.min((s.garrison||0)*0.2*PL(),Math.max(0,means(h)));gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
@@ -6427,6 +6427,12 @@ function makeTextSprite(text,size,color){
   sp.userData.w=w;sp.userData.h=38;
   return sp;
 }
+function labelState(s){ // what a place's name says at a glance: whose it is to you (yours gold, your enemy's red), its rank (by size), and any trouble: a siege, a hungry town, the pestilence, a town near rising
+  const me=plyH();let g='';if(s.siegeBy)g+='⚔';if((s.hunger||0)>0.3)g+='⚠';if(s.infected>0.5)g+='☠';if((s.unrest||0)>70)g+='⚑';
+  const col=me>=0&&s.owner===me?'#f2cf5b':me>=0&&(atWar(me,s.owner)||inRevolt(s.owner)&&me===0)?'#f29a88':'#f0e6cf';
+  return{t:(g?g+' ':'')+s.name,col,k:s.kind==='capital'?1.3:s.kind==='town'?1:0.78};}
+function refreshLabels(){if(!G.labels)return;for(const sp of G.labels){const s=sp.userData.s;if(!s)continue;const L=labelState(s),key=L.t+L.col;sp.userData.k=L.k;if(sp.userData.key===key)continue;
+  sp.userData.key=key;if(key===s.name+'#f0e6cf'&&!sp.userData.drawn)continue; /* as first drawn */const n=makeTextSprite(L.t,1,L.col);sp.material.map.dispose();sp.material.map=n.material.map;sp.material.needsUpdate=true;sp.userData.w=n.userData.w;sp.userData.drawn=true;n.material.dispose();}}
 function buildLabels(){
   G.labels=[];
   for(const s of W.settlements){
@@ -7738,7 +7744,7 @@ function price0(s,g){ // a first reckoning, before the market has traded
 /* carriage: carters (by road) and boatmen (by water) are households whose living it is; a load goes only if one is free.
    The freight is so much a load-mile at the place's going rate, which rises when loads wait for want of a driver and falls when drivers stand idle */
 function frtRate(o,mode){const F=o.frt||(o.frt={cart:1,boat:1});return F[mode]??1;}
-function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode);} // the beasts' keep and the driver's days
+function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode)*PL();} // the beasts' keep and the driver's days, at the day's prices
 function driverFor(o,mode,m,d){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
   const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62;let L=heads_(o,ok);if(!L.length&&d)L=heads_(d,ok);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
 function merchantFor(o,cost,d){const ok=h=>(h.tr==='merchant'||h.tr==='carter'||h.tr==='boatman')&&(h.w||0)>cost*0.5,L=heads_(o,ok);if(d&&d!==o)L.push(...heads_(d,ok));L.sort((a,c)=>(c.tr==='merchant')-(a.tr==='merchant')||(c.w||0)-(a.w||0));return L[0]||null;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
@@ -11368,6 +11374,11 @@ function updateHUD(){
   const P=W.player;
   if(P){
     document.getElementById('legacy').textContent=P.legacy;
+    if(W.vic&&W.vic.scores){const me=campHouse(),Sc=W.vic.scores,pct=v=>Math.round(v*100)+'%',nm=h=>h===0?'the crown':W.houses[h].name.replace(/^House /,''); // the road to dominance you are furthest along, and whoever is nearer theirs
+      let mb=null;if(Sc[me])for(const Pp of VPATH){const v=Sc[me][Pp.k].v;if(!mb||v>mb.v)mb={v,n:Pp.n};}
+      let rb=null;for(const h in Sc){if(+h===me)continue;for(const Pp of VPATH){const v=Sc[h][Pp.k].v;if(!rb||v>rb.v)rb={v,n:Pp.n,h:+h};}}
+      const el=document.getElementById('pathbest');if(el&&mb){el.textContent=`${mb.n} ${pct(mb.v)}`+(rb&&rb.v>mb.v?` · ${nm(rb.h)} ${rb.n} ${pct(rb.v)}`:'');
+        document.getElementById('legacychip').title='Legacy of your dynasty. Your roads to dominance: '+VPATH.map(Pp=>`${Pp.n} ${pct(Sc[me][Pp.k].v)}`).join(', ')+(rb?`. Nearest rival: ${nm(rb.h)}, ${rb.n} ${pct(rb.v)}`:'');}}
     const n=sovOn()?W.petitions.length:0;
     setHTML(document.getElementById('rulebtn'),(P.on?(P.house>0?'⚑ '+esc(W.houses[P.house].name.replace('House ','')):'♛ Sovereign'):'♛ Rule')+(n?`<span class="pc">${n}</span>`:''));
   }
@@ -11823,12 +11834,13 @@ function animateWorld(dt,now){
     b.rotation.y=-u.a;
   }
   /* --- labels: fade by distance --- */
+  if(now-(G._lblT||0)>2){G._lblT=now;refreshLabels();} // the names take on their colours and their troubles every two seconds or so
   for(const sp of G.labels){
     const dd=camera.position.distanceTo(sp.position);
     const wd=sp.userData.s&&sp.userData.s.wardOf!=null,vis=G.labelsOn&&cam.cur.dist>240&&(!wd||cam.cur.dist<1400);
     sp.visible=vis;
     if(vis){
-      const sc=clamp(dd*0.0011,0.45,3.4)*(wd?0.6:1); // a ward is named like a quarter of the town
+      const sc=clamp(dd*0.0011,0.45,3.4)*(wd?0.6:1)*(sp.userData.k||1); // a ward is named like a quarter of the town; a city larger than a village
       sp.scale.set(sp.userData.w*0.42*sc,sp.userData.h*0.42*sc,1);
       sp.material.opacity=clamp((dd-180)/300,0,1);
     }

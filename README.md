@@ -59,6 +59,12 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
 ## Reading the realm
 
+- **The map's names say what matters at a glance.** When you rule, your own
+  places are named in gold and your enemies' in red; a city's name is larger
+  than a town's, a town's than a village's. A sign before a name marks
+  trouble: ⚔ under siege, ⚠ hungry, ☠ the pestilence, ⚑ near rising. Beside
+  your legacy at the top, the road to dominance you are furthest along, and
+  any rival nearer to theirs (hover for all four).
 - **People on the streets are real.** Walk the camera into a town: the folk
   you see are its residents.
   - **Their own route:** each walks their own way along the town's streets,
