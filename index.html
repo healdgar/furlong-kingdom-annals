@@ -12092,7 +12092,7 @@ const ADV_PROMPT=()=>`Be my advisor in Furlong, a medieval kingdom simulation I 
 1. Check that Node 18 or later is installed (node --version); install it if not.
 2. Save the program at the end of this message, exactly as given, as furlong-advisor.mjs in a folder of its own (for example ~/furlong-advisor/furlong-advisor.mjs). It is the advisor bridge: one file, no dependencies. It listens only on 127.0.0.1 and accepts only my game, which must give the pairing code.
 3. Register it with this app as a local (stdio) MCP server named "furlong", command: node <full path>/furlong-advisor.mjs (in Claude Code: claude mcp add furlong -- node <full path>/furlong-advisor.mjs). Reload if needed so its tools search, discover and execute are available. If you cannot change your own MCP settings, tell me exactly what to paste where, and wait.
-4. Call search with any query. It answers with a six-letter pairing code: tell me the code, and I will enter it in the game's 🗣 dialog. Call search again once I say I have.
+4. Call search with any query. It answers with a pairing code (five letters and a digit): tell me the code, and I will enter it in the game's 🗣 dialog. Call search again once I say I have.
 5. Then call execute with tool "game:persona" and take on that role for the rest of our talk: my closest confidant at court (a named person in the game) if I rule, else the game master. Read the realm (game:state, game:chronicle, game:inspect, search for the rules) before you answer, explain why things happen from the game's workings, suggest how to play, and change the game only when I ask. If game:advise says muted, answer only what I ask.
 
 ----- furlong-advisor.mjs -----
@@ -12186,15 +12186,17 @@ const ADV={muted:false,
     finally{if(sc.startsWith('drawer:')&&drawerTab!==was&&!name.startsWith('drawer:'+drawerTab))selectTab(was);}},
   call(op,args){try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):op==='rules'?(document.getElementById('advrules')||{}).textContent||'':{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}},
   ws:null,
-  connect(code,port,tries){port=port||7357;tries=tries??10;if(ADV.ws)try{ADV.ws.onclose=null;ADV.ws.close();}catch(_){}ADV.status('Connecting…');const ws=new WebSocket(`ws://127.0.0.1:${port}/?code=${encodeURIComponent(code)}`);ADV.ws=ws;let opened=false;
-    ws.onopen=()=>{opened=true;ADV.status('Connected: your advisor can see the realm.');};ws.onerror=()=>{};
-    ws.onclose=e=>{if(ADV.ws!==ws)return;ADV.ws=null;if(e.code===4003&&tries>1){ADV.connect(code,port+1,tries-1);return;} /* a bridge, but not the one with this code: the next port (bridges take the ports in turn, so the first empty one ends the search) */ADV.status(opened?'Disconnected: the advisor bridge stopped. Ask your agent for a new code.':'No advisor bridge here took that code. Is it running, and is the code the one it gave?');};
+  connect(code){code=String(code||'').trim().toUpperCase();const m=code.match(/^[A-Z]{5}(\d)$/);if(!m){ADV.status('A pairing code is five letters and a digit, as your agent gave it.');return;}
+    if(ADV.ws)try{ADV.ws.onclose=null;ADV.ws.close();}catch(_){}ADV.status('Connecting…');const ws=new WebSocket(`ws://127.0.0.1:${7357+ +m[1]}/?code=${code}`);ADV.ws=ws;let opened=false; // the code's last digit is the bridge's port: one try, straight to it
+    const slow=setTimeout(()=>{if(ADV.ws===ws&&!opened)ADV.status('Still trying… Is the bridge running (ask your agent anything), and is the code the one it gave?');},5000);
+    ws.onopen=()=>{opened=true;clearTimeout(slow);ADV.status('Connected: your advisor can see the realm.');};ws.onerror=()=>{};
+    ws.onclose=e=>{clearTimeout(slow);if(ADV.ws!==ws)return;ADV.ws=null;ADV.status(opened?'Disconnected: the advisor bridge stopped. Ask your agent for a new code.':e.code===4003?'That bridge has another code: use the one your agent gave last.':'No advisor bridge answered. Is it running? Ask your agent anything to start it, then use the code it gives.');};
     ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}const r=ADV.call(m.op,m.args);ws.send(JSON.stringify({id:m.id,...r},(k,v)=>v instanceof Element?undefined:v));};},
   status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
   dialog(){const box=document.getElementById('savebox');box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
     box.innerHTML=`<div class="egbox"><h2>An advisor</h2>${ADVCHAT.sample?`<div class="row" style="align-items:center;gap:10px;margin:6px 0 10px"><button class="pbb" id="advhere" style="font-size:14px;padding:6px 14px">Talk to your advisor here</button><small style="opacity:.8">on your own Claude account: you are asked once, and your questions use your Claude usage</small></div><div style="opacity:.7;margin-bottom:4px">Or bring your own agent app:</div>`:''}<div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
       <div style="margin:8px 0 4px">Copy this into your agent app (Claude Code, Claude Cowork, Cursor, or any app that can run commands and local MCP servers). It carries the advisor's small program; the agent saves it, sets itself up and gives you a pairing code:</div><textarea id="advprompt" readonly style="width:100%;height:150px;font-size:11px">${esc(ADV_PROMPT())}</textarea><div class="row"><button class="pbb" id="advcopy">Copy the prompt</button></div>
-      <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. K7Q2PX" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
+      <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. KQRPX0" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
       <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
       <div id="advstat" style="color:#e0c070;margin-top:4px">${on?'Connected: your advisor can see the realm.':'Not connected.'}</div>
       <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
@@ -12268,7 +12270,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = +(process.env.FURLONG_PORT || 7357);
-const CODE = (process.env.FURLONG_CODE || crypto.randomBytes(4).toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6)).padEnd(6, 'X');
+const BASE = (process.env.FURLONG_CODE || crypto.randomBytes(6).toString('base64').replace(/[^A-Z]/gi, '').toUpperCase()).slice(0, 5).padEnd(5, 'X');
+let CODE = BASE + '0'; // five letters, then the port this bridge took (0 for the first): the game goes straight to it
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = [path.join(HERE, 'rules'), path.resolve(HERE, '..')].find(d => fs.existsSync(path.join(d, 'README.md'))) || HERE; // the rules bundled with the package, else the game's own folder
 let VERSION = '0'; try { VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version; } catch (_) { }
@@ -12347,7 +12350,7 @@ server.on('upgrade', (req, s) => {
 });
 let port = PORT;
 server.on('error', e => { if (e.code === 'EADDRINUSE' && port < PORT + 9) { port++; server.listen(port, '127.0.0.1'); } else log('cannot listen on port ' + port + ': ' + e.message); }); // another bridge holds the port: take the next (the game tries ten in turn)
-server.on('listening', () => log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`));
+server.on('listening', () => { CODE = BASE + (port - PORT); log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`); });
 server.listen(port, '127.0.0.1');
 
 function ask(op, args) {
@@ -12479,11 +12482,15 @@ OpenRouter-backed client: your choice). When you rule, it is your closest confid
 in the game (your spouse, else the ablest of your kin); otherwise it is the game master. It sees the whole
 realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
 
-Click 🗣 in the game's top bar and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
+**Played on Claude** (the shared artifact link), click 🗣 and **Talk to your advisor here**: the advisor answers
+in a panel beside the map, on your own Claude account (you are asked once to allow it, and what you ask uses your
+Claude usage). It has the same tools an agent gets through the bridge, run in the page.
+
+**Anywhere else**, click 🗣 and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
 (one file, no dependencies): the agent checks for Node 18+, saves it as `furlong-advisor.mjs`, registers it as a
 local MCP server (in Claude Code, `claude mcp add furlong -- node <path>/furlong-advisor.mjs`), and answers with a
-six-letter pairing code. Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
+pairing code (five letters and a digit). Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
 settings tells you what to paste where. The bridge talks only to a game open in a browser on the same machine
 (`FURLONG_PORT` changes its port, default 7357); once paired it learns the rules from the game itself.
 

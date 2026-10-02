@@ -18,7 +18,7 @@ By hand, register it as a local MCP server:
   { "mcpServers": { "furlong": { "command": "npx", "args": ["-y", "furlong-advisor"] } } }
   ```
 
-Then ask the agent anything about your realm: it answers with a six-letter pairing code. Enter it in the game's
+Then ask the agent anything about your realm: it answers with a pairing code (five letters and a digit). Enter it in the game's
 🗣 dialog and press Connect. Needs Node 18 or later.
 
 ## Tools

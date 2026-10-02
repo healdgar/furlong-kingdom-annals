@@ -72,7 +72,7 @@ Claude usage). It has the same tools an agent gets through the bridge, run in th
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
 (one file, no dependencies): the agent checks for Node 18+, saves it as `furlong-advisor.mjs`, registers it as a
 local MCP server (in Claude Code, `claude mcp add furlong -- node <path>/furlong-advisor.mjs`), and answers with a
-six-letter pairing code. Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
+pairing code (five letters and a digit). Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
 settings tells you what to paste where. The bridge talks only to a game open in a browser on the same machine
 (`FURLONG_PORT` changes its port, default 7357); once paired it learns the rules from the game itself.
 

@@ -11,7 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = +(process.env.FURLONG_PORT || 7357);
-const CODE = (process.env.FURLONG_CODE || crypto.randomBytes(4).toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6)).padEnd(6, 'X');
+const BASE = (process.env.FURLONG_CODE || crypto.randomBytes(6).toString('base64').replace(/[^A-Z]/gi, '').toUpperCase()).slice(0, 5).padEnd(5, 'X');
+let CODE = BASE + '0'; // five letters, then the port this bridge took (0 for the first): the game goes straight to it
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = [path.join(HERE, 'rules'), path.resolve(HERE, '..')].find(d => fs.existsSync(path.join(d, 'README.md'))) || HERE; // the rules bundled with the package, else the game's own folder
 let VERSION = '0'; try { VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'package.json'), 'utf8')).version; } catch (_) { }
@@ -90,7 +91,7 @@ server.on('upgrade', (req, s) => {
 });
 let port = PORT;
 server.on('error', e => { if (e.code === 'EADDRINUSE' && port < PORT + 9) { port++; server.listen(port, '127.0.0.1'); } else log('cannot listen on port ' + port + ': ' + e.message); }); // another bridge holds the port: take the next (the game tries ten in turn)
-server.on('listening', () => log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`));
+server.on('listening', () => { CODE = BASE + (port - PORT); log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`); });
 server.listen(port, '127.0.0.1');
 
 function ask(op, args) {
