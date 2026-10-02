@@ -9215,7 +9215,7 @@ const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'
 const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
 function folkIndex(){const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);return M;}
-function headsOf(s){const H=new Set();for(const p of s.folk||[])if(ageYrs(p)>=16)H.add(householdHead(p));return [...H];}
+function headsOf(s){const F=s.folk||[],c=s._hdC;if(c&&c.d===day()&&c.n===F.length)return c.L;const H=new Set();for(const p of F)if(ageYrs(p)>=16)H.add(householdHead(p));const L=[...H];s._hdC={d:day(),n:F.length,L};return L;} // (reckoned once a day, unless the roll changes)
 function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant';
@@ -9433,7 +9433,7 @@ function tickHouseholds(){
           const g2=val(o)-here-foodYr()*(0.3+d/1000*0.15);if(g2>bg){bg=g2;best=j;}}
         if(best>=0&&frand()<clamp(bg/Math.max(1,here)*0.8,0,0.7)){const o=Ss[best],i=s.folk.indexOf(p);if(i>=0){removeAt(s,i);journey(p,si,best,'migrant');life(p,`Left ${s.name} for ${o.name}, to make a living as a ${p.tr||'labourer'}`);s.pop=Math.max(5,s.pop-1);o.pop+=1;s.migOut=(s.migOut||0)+1;o.migIn=(o.migIn||0)+1;
           if(!W.prehistory&&frand()<0.02)emit('trade',1,s.pos,`${folkName(p)} leaves ${s.name} for ${o.name}, to seek work and a ${p.sx==='f'?'husband':'wife'}.`);}}}}
-    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);
+    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=heads.reduce((t2,o)=>t2+((o.herd&&o.herd[k])||0),0); // the families' beasts, counted once
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=0;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)
@@ -9452,7 +9452,7 @@ function tickHouseholds(){
         const worth=k=>BEAST_YR[k]()+(k==='cattle'&&tiller&&(H.cattle||0)<Math.min(4,strips*0.5)?foodYr()*0.5:0)+(k==='horses'&&(h.tr==='carter'||h.tr==='merchant')&&(H.horses||0)<2?foodYr():0)-keep(k); // an ox for his share of the plough team; a horse for the carter
         const owned=BEASTS.reduce((t2,k)=>t2+(H[k]||0),0);
         const buyer=v=>{if(s.owner>0&&W.houses[s.owner])W.houses[s.owner].gold=(W.houses[s.owner].gold||0)-v;else W.treasury-=v;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers
-        for(const k of BEASTS){const pk=price(s,k),pool2=Math.max(0,(s.stores[k]||0)-headsOf(s).reduce((t2,o)=>t2+((o.herd&&o.herd[k])||0),0)); // what is not a family's is the lord's, and can be bought
+        for(const k of BEASTS){const pk=price(s,k),pool2=Math.max(0,(s.stores[k]||0)-famHerd[k]); // what is not a family's is the lord's, and can be bought
           if(h.w<0&&(H[k]||0)>=1){const n2=Math.min(H[k],Math.ceil(-h.w/Math.max(0.5,pk*0.8)));H[k]-=n2;h.w+=n2*pk*0.8;buyer(n2*pk*0.8);life(h,`Sold ${n2} ${k} to pay debts`);continue;} // a hard year: the beasts are sold to pay the debt
           if(worth(k)<0&&(H[k]||0)>=1){const n2=Math.ceil(H[k]*0.5);H[k]-=n2;h.w+=n2*pk*0.8;buyer(n2*pk*0.8);continue;} // they eat more than they bring in: half go to the drovers
           if(worth(k)>0&&pool2>=1&&h.w-n*foodYr()>pk*1.2&&owned<30){const n2=Math.min(pool2,Math.max(1,Math.floor((h.w-n*foodYr())/pk*0.5)),k==='sheep'?10:k==='swine'?4:2);purchase(s,k,h,n2,pk);H[k]=(H[k]||0)+purchase.got;if(purchase.got>=1)life(h,`Bought ${Math.round(purchase.got)} ${k}`);}} // bought from the drovers who brought them, else from the lord's herd
