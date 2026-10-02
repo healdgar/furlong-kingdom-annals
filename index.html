@@ -9434,9 +9434,11 @@ function crowding(s){ // households without a roof of their own: none at all, or
   let n=0;for(const h of heads_(s,()=>true)){const b=h.bh;if(!b||b.removed||b.s!==s||b.state!=='sound'){n++;continue;}if((b.hh||[]).indexOf(h)>=capOf(b))n++;}return n;}
 function means(x){return x==='crown'?W.treasury:x&&x.gn!==undefined?(x.w||0):x&&x.ch?x.ch.fund:x&&x.buildings?(x.murage||0):x?(x.gold||0):0;} // what an account has to spend
 function houseBuyer(s,cost){ // who pays for a new house: a household that wants one and can pay, else a landlord who expects the rent to repay him within a dozen years, else the lord on the same reckoning
-  const want=heads_(s,h=>!h.bh||h.bh.removed||h.bh.s!==s||(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)).sort((a,b)=>(b.w||0)-(a.w||0));
+  const C=s._hbC&&s._hbC.d===day()?s._hbC:(s._hbC={d:day(),want:heads_(s,h=>!h.bh||h.bh.removed||h.bh.s!==s||(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)).sort((a,b)=>(b.w||0)-(a.w||0)),
+    rent:(()=>{const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40);return R.length?R.reduce((t,b)=>t+propValue(b),0)/R.length*0.12:0;})()}); // reckoned once a day
+  const want=C.want.filter(h=>!h.bh||h.bh.removed||h.bh.s!==s||h.bh.hh&&h.bh.hh.indexOf(h)>=capOf(h.bh)); // (those housed since this morning drop out)
   if(!want.length)return null;if((want[0].w||0)>=cost)return {acct:want[0],id:want[0].id};
-  const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40),rent=R.length?R.reduce((t,b)=>t+propValue(b),0)/R.length*0.12*(W._pl||1):0;if(rent*12<cost)return null; // a house that would not pay for itself is not built
+  const rent=C.rent*(W._pl||1);if(rent*12<cost)return null; // a house that would not pay for itself is not built
   const L=heads_(s,h=>(h.w||0)>=cost*2).sort((a,b)=>(b.w||0)-(a.w||0))[0];if(L)return {acct:L,id:L.id};
   const lord=lordAcct(s);return means(lord)>=cost?{acct:lord,id:'lord'}:null;}
 /* the ways, once a year: a lane with no house on it is not kept and grasses over (it comes back with the first house built on it);
