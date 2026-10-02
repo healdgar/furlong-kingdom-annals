@@ -12193,7 +12193,17 @@ const ADV={muted:false,
     ws.onclose=e=>{clearTimeout(slow);if(ADV.ws!==ws)return;ADV.ws=null;ADV.status(e.code===4003?'That bridge has another code: use the one your agent gave last.':opened?'Disconnected: the advisor bridge stopped. Ask your agent for a new code.':'No advisor bridge answered. Is it running? Ask your agent anything to start it, then use the code it gives.');};
     ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}const r=ADV.call(m.op,m.args);ws.send(JSON.stringify({id:m.id,...r},(k,v)=>v instanceof Element?undefined:v));};},
   status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
-  dialog(){const box=document.getElementById('savebox');box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
+  claudeDialog(box){ // played inside Claude: the advisor talks in the page, on the viewer's own Claude account (an agent app on the viewer's computer cannot reach a page sealed inside Claude)
+    box.style.display='flex';const st=ADVCHAT.state,P=ADV.persona();
+    box.innerHTML=`<div class="egbox"><h2>An advisor</h2><div style="opacity:.9">Talk with ${P.name?esc(P.name)+', your '+esc(P.role):'the game master'}: it sees the whole realm, answers for its workings, and suggests how to play, until you bid it be quiet. It runs on your own Claude account: you are asked once to allow it, and your questions use your Claude usage.</div>
+      <div class="row" style="margin:12px 0 8px;align-items:center">${st==='ready'?'<button class="pbb" id="advhere" style="font-size:14px;padding:6px 16px">Talk to your advisor</button>':st==='pending'?'<span>Reaching Claude…</span>':'<span>Claude is not available to this page in this view (open the link in claude.ai or the Claude app, signed in).</span>'}</div>
+      <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
+      <div style="opacity:.65;font-size:11px;margin-top:8px">To use an agent app on your own computer instead (Claude Code, Cowork, Cursor…), play a copy of the game served from your computer: a page inside Claude is sealed off from your machine.</div>
+      <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
+    {const h=document.getElementById('advhere');if(h)h.onclick=()=>{box.style.display='none';ADVCHAT.open();};}
+    document.getElementById('advmute').onchange=e=>{ADV.muted=e.target.checked;};document.getElementById('advclose').onclick=()=>{box.style.display='none';};
+    if(st==='pending'&&ADVCHAT.ready)ADVCHAT.ready.then(()=>{if(box.style.display==='flex'&&document.getElementById('advclose'))ADV.claudeDialog(box);});},
+  dialog(){const box=document.getElementById('savebox');if(window.claude&&window.claude.use){ADV.claudeDialog(box);return;}box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
     box.innerHTML=`<div class="egbox"><h2>An advisor</h2>${ADVCHAT.sample?`<div class="row" style="align-items:center;gap:10px;margin:6px 0 10px"><button class="pbb" id="advhere" style="font-size:14px;padding:6px 14px">Talk to your advisor here</button><small style="opacity:.8">on your own Claude account: you are asked once, and your questions use your Claude usage</small></div><div style="opacity:.7;margin-bottom:4px">Or bring your own agent app:</div>`:''}<div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
       <div style="margin:8px 0 4px">Copy this into your agent app (Claude Code, Claude Cowork, Cursor, or any app that can run commands and local MCP servers). It carries the advisor's small program; the agent saves it, sets itself up and gives you a pairing code:</div><textarea id="advprompt" readonly style="width:100%;height:150px;font-size:11px">${esc(ADV_PROMPT())}</textarea><div class="row"><button class="pbb" id="advcopy">Copy the prompt</button></div>
       <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. KQRPX0" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
@@ -12209,7 +12219,8 @@ const ADV={muted:false,
    account (the artifact's `sample` capability: they are asked once, and pay for what they ask). Claude gets the
    same tools an agent gets through the bridge, run here in the page. Elsewhere this stays hidden. */
 const ADVCHAT={sample:null,turns:[],busy:null,tools:false,
-  async init(){try{if(!window.claude||!claude.use)return;const s=await claude.use('sample');if(!s)return;ADVCHAT.sample=s;
+state:'none',ready:null,
+  async init(){try{if(!window.claude||!claude.use)return;ADVCHAT.state='pending';const s=await claude.use('sample');if(!s){ADVCHAT.state='none';return;}ADVCHAT.sample=s;ADVCHAT.state='ready';
     const L=await s.limits().catch(()=>null);ADVCHAT.tools=!!(L&&L.tools);}catch(_){}},
   clip(v,n){const t=typeof v==='string'?v:JSON.stringify(v,(k,x)=>x instanceof Element?undefined:x);return t&&t.length>(n||12000)?t.slice(0,n||12000)+' …(cut short)':t;},
   rules(q){const R=ADVCHAT._R||(ADVCHAT._R=(()=>{const out=[],src=(document.getElementById('advrules')||{}).textContent||'';let head='README',buf=[];const push=()=>{if(buf.join('').trim())out.push({section:head,text:buf.join('\n').trim()});buf=[];};
@@ -12252,7 +12263,7 @@ ${ch}`;},
       const why={cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??'Something went wrong reaching Claude; try again.';
       if(why)ADVCHAT.bubble('sys',why);if(!out.textContent)out.remove();ADVCHAT.turns.pop();}
     finally{ADVCHAT.busy=null;document.getElementById('achstop').style.display='none';document.getElementById('achsend').disabled=false;}}};
-ADVCHAT.init();
+ADVCHAT.ready=ADVCHAT.init().finally(()=>{if(ADVCHAT.state==='pending')ADVCHAT.state='none';});
 window.FURLONG={search:q=>ADV.call('search',{q}).result,discover:s=>ADV.call('discover',{scope:s}).result,execute:(t,a)=>ADV.call('execute',{tool:t,args:a}).result};
 boot();
 </script>
