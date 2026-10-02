@@ -4330,7 +4330,8 @@ function tickGarrisons(){ // monthly: each town musters men to its watch, from i
   for(const s of W.settlements){if(s.siegeBy)continue;const need=garrisonNeed(s),g=s.garrison||0;if(g>=need*0.9||s.pop<40)continue;
     const k=Math.min((need-g)*0.25,s.pop*0.01),cost=k*1.5;if(purse(s.owner)<cost*3)continue;
     spend(s.owner,cost);if(s.owner>0)book(W.houses[s.owner],'garrisons',-cost);s.garrison=g+k;}} // the watch are townsmen serving their turn: they do not leave the town's roll
-function tickCallToArms(){ // an enemy host within a day and a half's march: the town arms its own men, as many as its means and its fear allow; they go back to work when the danger passes
+function tickCallToArms(){
+  for(const s of W.settlements)if(s.siegeBy)s.lastSiegeDay=day(); // an enemy host within a day and a half's march: the town arms its own men, as many as its means and its fear allow; they go back to work when the danger passes
   if(day()%2)return;const H=W.armies.filter(b=>!b.gone&&b.state!=='rout'&&b.strength>=20).map(b=>({b,p:armySimPos(b)}));
   for(const s of W.settlements){if(s.pop<40)continue;let near=1e9,foe=null;for(const{b,p}of H)if(atWar(b.house,s.owner)){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<near){near=d;foe=b;}}
     if(near<1800&&!(s.militia>0)){const share=0.04+(s.walls>0?0.04:0)+0.05*clamp(s.prosperity/100,0,1)+(casRing(s)?0.02:0); // walls to man and silver for arms bring more men out
@@ -4359,17 +4360,26 @@ function damageWalls(s,c,w,amt){ // batter the circuit about angle c, most at th
   if(!s.wallRad)return;const D=s.wallDmg||(s.wallDmg=new Float32Array(WALLN));
   for(let k=0;k<WALLN;k++){const a=k/WALLN*Math.PI*2,d=Math.abs(Math.atan2(Math.sin(a-c),Math.cos(a-c)));if(d>w)continue;D[k]=Math.min(1,D[k]+amt*(1-d/w)*(0.5+hash01(k*3.7+s.pos.x)));}}
 function siegeEngines(){const ad=AD();return ad<1100?0.0012:ad<1300?0.0035:0.008;} // rams and mining; trebuchets; guns
+function townThreat(s){ // how much danger the burghers feel: raids, sieges and wars remembered, a border, robbers about; never quite none
+  let th=0.12;if(s.raidedUntil>day()-720)th+=0.6;if(s.lastSiegeDay>day()-3600)th+=0.5;if(houseAtWar(s.owner))th+=0.4;if(s.role==='border')th+=0.3;
+  for(const c of W.banditCamps||[])if(dist2d(c.x,c.z,s.pos.x,s.pos.z)<2000*MAPK)th+=0.15;return Math.min(th,2);}
+function townWorth(s){ // what the town's houses and shops are worth (25 years' rents): what a wall protects
+  if(s._worthY===year())return s._worth;let v=0;for(const b of s.buildings)if(b.state==='sound'&&!b.inst)v+=propValue(b);s._worthY=year();s._worth=v*25;return s._worth;}
+function wallCost(s,stone,R){const per=2*Math.PI*(R||s.wallR||Math.max(80,(s.extentR||s.radius||90)));return per*(stone?2.4:0.8);}
 function tickRepairs(){ // once a year: the works made good, as the lord (or the burghers) can pay; neglected walls crumble
   if(day()%360!==262)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const hi=s.owner,Lh=hi>0?W.houses[hi]:null;
-    if(s.wallRad&&s.prosperity<25&&chance('sim',0.4))damageWalls(s,frand()*6.283,0.4,0.05); // a poor town lets its walls go
+    if(s.kind!=='village')s.murage=(s.murage||0)+townWorth(s)/25*0.04*clamp(s.prosperity/50,0.3,1.5)*(0.5+townThreat(s)); // the murage: a toll and a rate the burghers lay on themselves for their walls, more when they feel the danger
+    if(s.wallRad)damageWalls(s,frand()*6.283,0.5,0.015*clamp(1.6-s.prosperity/50,0.2,1.6)); // weather and neglect: every year a little, more in a poor town
     const D=wallDamage(s),open=s.breachUntil>day();
     if(s.wallRad&&(D>0.02||open)){const per=2*Math.PI*(s.wallR||100),cost=Math.round(D*per*(s.walls>=2?3:1)+(open?150:0)),st=Math.round(D*per*(s.walls>=2?0.3:0));
       const have=s.stores.stone||0,carted=Math.max(0,st-have)*0.6;
-      if(purse(hi)>=(cost+carted)*1.5){spend(hi,cost+carted);if(Lh)book(Lh,'repairs',-(cost+carted));s.stores.stone=Math.max(0,have-st);for(let k=0;k<WALLN;k++)s.wallDmg[k]=0;s.breachUntil=0;
+      const tot=cost+carted,fromTown=Math.min(s.murage||0,tot),fromLord=Math.min(Math.max(0,purse(hi)-tot*0.5),tot-fromTown)*(0.4+0.4*townThreat(s)),paid=fromTown+Math.max(0,fromLord),fr=clamp(paid/tot,0,1); // the town's murage first, then the lord as he can and as he fears
+      if(fr>0.02){s.murage=(s.murage||0)-fromTown;if(fromLord>0){spend(hi,fromLord);if(Lh)book(Lh,'repairs',-fromLord);}s.stores.stone=Math.max(0,have-st*fr);for(let k=0;k<WALLN;k++)s.wallDmg[k]*=1-fr;if(open&&paid>=150)s.breachUntil=0;
+        if(fr<1)s._repairWant=Math.round(tot*(1-fr));
         const t=open?'The breach in the walls was walled up and the gate rehung; the battered stretches were patched.':'Masons made good the battered stretches of the walls.';s.history.push({yr:year(),t});
-        if(!W.prehistory)emit(Lh?'house':'trade',3,s.pos,`${s.name}: ${t.charAt(0).toLowerCase()+t.slice(1)}`.replace(/^(\w)/,m=>m.toUpperCase()));}
-      else if(open||D>0.3)s._repairWant=cost+carted;}}}
+        if(!W.prehistory&&fr>0.5)emit(Lh?'house':'trade',3,s.pos,`${s.name}: ${t.charAt(0).toLowerCase()+t.slice(1)}`.replace(/^(\w)/,m=>m.toUpperCase()));}
+      else s._repairWant=tot;}}}
 /* ---------------- the game: four roads to dominance, the chronicler's verdict, and the deeds remembered ----------------
    You play a dynasty. Every house (yours and its rivals) is measured each month on four paths: Conquest (rule
    three in five of the realm's people from the throne, no rival able to raise a third of your host), Concord (every house
@@ -7809,7 +7819,7 @@ function tickPolitics(){
     const seatP=W.settlements[h.seat]?.pos,encroach=seatP&&W.settlements.some(s=>s.owner===0&&s!==W.capital&&dist2d(s.pos.x,s.pos.z,seatP.x,seatP.z)<1500);
     const grievance=0.3+(h.might>1.1?0.4:0)+(encroach?0.5:0)+Math.max(0,(MOD.tax-12)/10)+((h.grudges||{})[0]?0.4:0); // slights fall where there is already cause
     if(chance('sim',0.001*MOD.aggr*grievance)){
-      h.loyalty=clamp(h.loyalty-(8+randi('sim',12)),0,100);
+      h.loyalty=clamp(h.loyalty-4*grievance-randi('sim',4),0,100); // a slight cuts as deep as the grievance it falls on
       const seatPos=W.settlements[h.seat]?.pos||W.capital.pos;
       emit('crown',4,seatPos,(pick('sim',[
         ()=>vary('slight_office',[()=>`${h.name} is passed over for the office of Warden of the Marches; its lord leaves court without taking leave.`,()=>`The office of Warden of the Marches goes elsewhere, and ${h.name} is passed over; its lord leaves court without taking leave.`,()=>`${h.name} is passed over for the wardenship of the Marches, and its lord leaves court without taking leave.`,()=>`Its lord leaves court without taking leave: ${h.name} has been passed over for the office of Warden of the Marches.`,()=>`At court ${h.name} is passed over for the office of Warden of the Marches, and its lord rides out without taking leave.`,()=>`The Marches are given a Warden, and ${h.name} is passed over; its lord leaves court without taking leave.`]),
@@ -8117,13 +8127,17 @@ function startWar(hi,why){
   W.houses.forEach((oh,oi)=>{
     if(oi===0||oi===hi||oh.exiled)return;
     if(oi===plyH()){warPetition(oi,hi);return;} // the player is asked, not rolled for
-    if(oh.loyalty<32&&chance('sim',0.4)){
+    if(chance('sim',clamp((grievanceOf(oh)*riseOdds(hi,hostTarget(hi))-0.2)*2,0,0.9))){ // others join as their own grievance and the rising's odds make it worth the risk
       raiseArmy(oi,oh.seat,600*oh.might,'rebel');
       emit('war',8,W.settlements[oh.seat].pos,`${oh.name} declares for the rebels; old grudges run deep.`);
     }
   });
   refreshOverlay();
 }
+function riseOdds(hi,extra){ // the chance a rising would win, as its lords would reckon it: their hosts and their likely friends against the crown's, the crown's hold on men's minds weighing too
+  const mine=hostTarget(hi)+(extra||0);let friends=0;W.houses.forEach((o,oi)=>{if(oi&&oi!==hi&&!o.exiled)friends+=hostTarget(oi)*clamp((45-o.loyalty)/45,0,1)*((o.grudges||{})[0]?1:0.5);});
+  const crown=hostTarget(0)*(0.6+W.legitimacy/100)+W.armies.filter(a=>a.house===0&&!a.gone).reduce((t,a)=>t+a.strength,0)*0.5;return (mine+friends)/(mine+friends+crown);}
+function grievanceOf(h){return clamp((55-h.loyalty)/55,0,1)+((h.grudges||{})[0]?0.3:0)+(h.seizures||0)*0.1;}
 function checkWarSpark(){
   if(W.war||day()<W.truceUntil)return;
   for(let hi=1;hi<W.houses.length;hi++){
@@ -8131,7 +8145,8 @@ function checkWarSpark(){
     if(h.exiled)continue;
     if(hi===plyH())continue; // your house rises only if you raise it
     const held=h.hostageUntil>day()?0.25:1; // a son at court stays a father's hand — mostly
-    if(h.loyalty<30&&chance('sim',0.0045*MOD.aggr*mythMult()*held)){
+    const gain=grievanceOf(h)*riseOdds(hi),cost=0.22+(held<1?0.35:0); // a lord rises when his grievance, weighed by his chance of winning, outruns what he risks
+    if(gain>cost&&chance('sim',clamp((gain-cost)*0.03,0,0.02)*MOD.aggr*mythMult())){
       startWar(hi,pick('sim',['can stomach the crown’s taxes no longer','declares the crown unfit to rule','rises to avenge old slights']));
       return;
     }
@@ -8201,16 +8216,16 @@ function tickMilitary(){
       const s=W.settlements[a.at];
       if(hostileTo(a,s)){
         const defend=defenceOf(s);
-        if(!inRebellion(a)&&a.strength<defend*2){ // too weak to take it: a raid, the fields burned and the land about it held for a season
+        const pTake=a.strength*(a.morale/70)/(a.strength*(a.morale/70)+defend*1.2),worth=pTake*townWorth(s)*0.3,raidV=s.pop*2+(s.stores.grain||0)*GOODBASE.grain*0.3; // what a siege is likely to win against what a raid surely takes
+        if(!inRebellion(a)&&worth<raidV){ // not worth the siege: a raid, the fields burned and the land about it held for a season
           a.state='siege';a.raid=true;a.siegeUntil=now+25;s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
           emit('war',6,s.pos,vary('raid',[()=>`${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`The corn about ${s.name} is put to the torch by ${a.name.replace(/^Host/,'the host')}; the townsfolk man the barricades.`,()=>`Before ${s.name} comes ${a.name}, burning the corn up to the gates; the townsfolk throw up barricades and man them.`,()=>`The townsfolk of ${s.name} man the barricades as ${a.name.replace(/^Host/,'the host')} raids their lands, burning the corn to the very gates.`,()=>{const c=notableById(a.commander);return c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} against ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`:`${a.name} comes against ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`;},()=>`${a.name} comes against ${s.name} with some ${Math.round(a.strength)} men, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} raids the lands of ${s.name}, burning the corn up to the gates; the townsfolk man the barricades.`,()=>`Smoke stands over the fields of ${s.name}: ${a.name} has burned the corn up to the gates, and the townsfolk man the barricades.`]));
-        }else if(!(s.walls>0&&s.garrison>20)){ // no walls: still days of skirmish before the place is theirs, longer against a garrison
-          a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:18)+Math.round((s.garrison||0)/6+s.pop/60);s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s); // the townsfolk defend their homes: weeks, not days
-        }else if(s.walls>0&&s.garrison>20){
-          a.state='siege';a.siegeUntil=now+18+s.walls*22-(seasonIdx()===3?0:6)+Math.round((s.natDef||0)*40)+(s.bastions?35:0)+(s.citadel?25:0); // river-girt, bastioned or citadel towns hold out longer
+        }else{ // the siege: as long as the works, the men to man them and the ground make it (walls without men are no walls)
+          const manned=clamp(((s.garrison||0)+(s.militia||0)*0.5)/30,0,1);
+          a.state='siege';a.siegeUntil=now+(inRebellion(a)?4:12)+Math.round((s.garrison||0)/6+s.pop/60+manned*(s.walls*22-(seasonIdx()===3?0:6)+(s.natDef||0)*40+(s.bastions?35:0)+(s.citadel?25:0)));
           s.siegeBy={houseName:W.houses[a.house].name,army:a};siegeArc(a,s);
           emit('war',8,s.pos,vary('invest',[()=>`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`,()=>`${a.name} sits down before ${s.name}; siege lines are dug and tents are pitched before the walls.`,()=>`Siege lines are dug about ${s.name} by ${a.name.replace(/^Host/,'the host')}, and a camp of tents rises before the walls.`,()=>`A camp of tents rises before the walls of ${s.name}: ${a.name} invests it, and the siege lines are dug.`,()=>`${s.name} is invested by ${a.name}; the siege lines are dug, and tents cover the ground before the walls.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`,()=>{const c=notableById(a.commander);return c?`${c.name} invests ${s.name} with ${a.name.replace(/^Host/,'the host')}; siege lines are dug and a camp of tents rises before the walls.`:`${a.name} invests ${s.name}; siege lines are dug and a camp of tents rises before the walls.`;}]));
-        }else takeSettlement(a,s);
+        }
       }else a.state='idle';
     }
     if(a.state==='siege'){
@@ -8867,12 +8882,12 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
     if(s.kind==='village'&&AD()>=950&&marketHeads(s)>Math.max(150,s.pop*0.35)&&(roadsN>=2||s.river||s.harbor)){ // a charter follows the trade: when a good share of the place lives by its market, it is made a town
       L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}
-    else if(s.kind!=='village'&&!s.wallRad&&s.pop>850&&s.prosperity>48&&chance('sim',0.3)){
-      L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
-    else if(s.wallRad&&s.kind!=='village'&&outsideFrac(s)>0.45&&s.pop>(s._wallPop||s.pop0)*1.4&&year()-(s._wallYr||-99)>=45&&s.prosperity>52&&!s.siegeBy&&chance('sim',0.3)){ // walls are dear: a generation or two between circuits
-      if(L.live.wall()){s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
+    else if(s.kind!=='village'&&!s.wallRad&&(s.murage||0)>=wallCost(s,false)&&townThreat(s)*townWorth(s)*0.2>wallCost(s,false)){ // the burghers wall their town when what they stand to lose, weighed by the danger, is more than the wall costs, and the murage can pay
+      s.murage-=wallCost(s,false);L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
+    else if(s.wallRad&&s.kind!=='village'&&!s.siegeBy&&(s.murage||0)>=wallCost(s,s.walls>=2,(s.extentR||s.wallR)*1.1)&&townThreat(s)*townWorth(s)*outsideFrac(s)*0.2>wallCost(s,s.walls>=2,(s.extentR||s.wallR)*1.1)&&year()-(s._wallYr||-99)>=10){ // a new circuit when the suburbs outside are worth walling and the murage can pay
+      if(L.live.wall()){s.murage-=wallCost(s,s.walls>=2);s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
       else s._wallYr=year()-30;} // the old wall still serves: ask again in fifteen years
-    else if(s.walls===1&&AD()>=1150&&s.prosperity>55&&s.pop>600&&chance('sim',0.25)&&hasStone(s,'wall')&&L.live.stoneWall()&&(useStone(s,'wall'),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
+    else if(s.walls===1&&AD()>=1150&&(s.murage||0)>=wallCost(s,true)&&townThreat(s)*townWorth(s)*0.1>wallCost(s,true)&&hasStone(s,'wall')&&L.live.stoneWall()&&(useStone(s,'wall'),s.murage-=wallCost(s,true),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
     else if(s.kind!=='village'&&AD()>=1000&&s.pop>900&&parishNeed(s)&&chance('sim',0.3)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
     else if(s.kind!=='village'&&AD()>=1150&&(s.role==='crossing'||s.kind==='capital'&&s.river)&&s.pop>900&&chance('sim',0.1)&&L.live.neustadt())did=`The lord plants a “New Town” across the river from ${s.name}: one straight street of equal plots.`;
@@ -10230,7 +10245,7 @@ function tickLordPlayer(){ // what comes to a lord's table
         {label:'Decline',act:()=>{(o.grudges||(o.grudges={}))[hi]=true;}}]});}
 }
 function warPetition(oi,hi){const oh=W.houses[oi],rb=W.houses[hi];
-  petition({key:'rising'+hi,to:oi,title:`${rb.name} rises against the crown`,pos:W.settlements[rb.seat]?.pos,days:25,ai:oh.loyalty<32?0:2,
+  petition({key:'rising'+hi,to:oi,title:`${rb.name} rises against the crown`,pos:W.settlements[rb.seat]?.pos,days:25,ai:grievanceOf(oh)*riseOdds(rb===W.houses[hi]?hi:W.houses.indexOf(rb))>0.2?0:2,
     text:`${rb.name} has raised its banners. Its envoys come to ${oh.name} by night: will you ride with them? Your standing at court is ${Math.round(oh.loyalty)}.`,
     opts:[{label:'Declare for the rebels',act:()=>{raiseArmy(oi,oh.seat,600*(oh.might||1),'rebel');oh.loyalty=Math.min(oh.loyalty,20);emit('war',8,W.settlements[oh.seat].pos,`${oh.name} declares for the rebels; old grudges run deep.`);refreshOverlay();}},
       {label:'Stand with the crown',act:()=>{oh.loyalty=clamp(oh.loyalty+5,0,100);emit('house',3,W.capital.pos,`${oh.name} sends the rebels’ envoys to the crown in chains.`);}},
