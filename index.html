@@ -4151,6 +4151,15 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
    (reached by a passage beside the house). A rich household keeps its garden: it has no need of the rent.
    Out at the edge, where rent is cheap, the yards stay green. */
 const YARD_WORTH=0.006; // what a square metre of garden is worth to a household in a year, in crowns
+function tickSettlers(){ // a lord's new street or quarter draws settlers to its plots, a few households a year, beyond the town's own growth
+  if(day()%360!==250)return;
+  for(const s of W.settlements){if(!s._lay||!s.growSlots||s.siegeBy||G.bldList.length>=G.bodies.instanceMatrix.count-20)continue;
+    const slots=s.growSlots.filter(c=>c.st.planned&&!c.st.planQ&&!c.st.hidden);if(!slots.length)continue;
+    const k=Math.max(1,Math.round(s.prosperity/25));let got=0;
+    for(let i=0;i<k&&slots.length;i++){const c=slots.splice(Math.floor(frand()*slots.length),1)[0];s.growSlots.splice(s.growSlots.indexOf(c),1);
+      const b=s._lay.buildLot(c,Math.min(1,tierCap()));if(!b)continue;b.grown=day();b.settler=true;
+      b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);s.pop+=4;got++;}
+    if(got&&!W.prehistory&&frand()<0.5)emit('trade',2,s.pos,`Settlers take up ${got} plot${got>1?'s':''} on the new streets of ${s.name}, drawn by the low rents.`);}}
 function tickInfill(){
   if(day()%360!==245||W.prehistory&&AD()<1100)return;if(AD()<1100)return;
   for(const s of W.settlements){if(s.kind==='village'||s.pop<300||!s._lay||!s._lay.live||s.siegeBy)continue;
@@ -4487,7 +4496,7 @@ function rebuildWalls(){
         if(cfg.gate>=2){const ox=Math.cos(g.a),oz=Math.sin(g.a); // a barbican: walls run out to a forward gate, so the gate is won twice
           for(const sd of[-1,1]){const u={x:g.m.x+c2*sd*4.6+ox*2.5,z:g.m.z-s2*sd*4.6+oz*2.5},v={x:u.x+ox*11,z:u.z+oz*11};slab(u,v,1.8,h*0.7,0xa59c8d,0x958c7e);}
           const fx=g.m.x+ox*14,fz=g.m.z+oz*14;inst.gate.push([fx,hAt(fx,fz),fz,g.ry,true,h*0.7,6.5]);}}
-      else if(!cfg.noGates)inst.gate.push([g.m.x,y,g.m.z,g.ry,stone,h,7]);}
+      else if(!cfg.noGates)inst.gate.push([g.m.x,y,g.m.z,g.ry,stone,h,7,!!s.siegeBy,false]);}
   };
   for(const s of W.settlements){
     if(s.lake){const dm=s.lake.dam,px=-Math.sin(dm.a)*dm.w/2,pz=Math.cos(dm.a)*dm.w/2; // the mill dam
@@ -4622,11 +4631,12 @@ function rebuildWalls(){
       if(W.water[cIdx(ci,cj)]===1||riverAt(q.x,q.z,1)||wallKindAt(s,g)===1)return;
       if(s.citadel&&dist2d(q.x,q.z,s.citadel.x,s.citadel.z)<s.citadel.S*0.62)return;
       const q0=at(g-0.02),q1=at(g+0.02),ry=-Math.atan2(q1.z-q0.z,q1.x-q0.x);
+      const shut=!!s.siegeBy,broke=s.breachUntil>day()&&Math.abs(Math.atan2(Math.sin(g-s.breachA),Math.cos(g-s.breachA)))<0.12; // the gates are shut against a siege; the stormed one hangs broken
       if(gates.roads[gi2]&&(stone||bast)){
-        inst.gtower.push([q.x,hAt(q.x,q.z),q.z,ry,T]);
+        inst.gtower.push([q.x,hAt(q.x,q.z),q.z,ry,T,shut&&!broke,broke]);
         if(riverAt(q.x,q.z,35)){const c2=Math.cos(ry),s2=Math.sin(ry); // a bridge castle: round towers at the gate's corners
           for(const sd of[-1,1])inst.tower.push([q.x+c2*sd*11,hAt(q.x,q.z),q.z-s2*sd*11,true,H+6,8]);}
-      }else inst.gate.push([q.x,hAt(q.x,q.z),q.z,ry,stone,H,gates.roads[gi2]?10:7]);
+      }else inst.gate.push([q.x,hAt(q.x,q.z),q.z,ry,stone,H,gates.roads[gi2]?10:7,shut&&!broke,broke]);
     });
   }
   const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true,shadowSide:THREE.DoubleSide})); // every face in the shadow map: a thin wall seen edge-on by the sun cast a broken shadow
@@ -4653,19 +4663,23 @@ function rebuildWalls(){
   const cgb=mk(bx,inst.cgb.length); // the gate passage between a gatehouse's towers
   inst.cgb.forEach((v,i)=>{const[x,g,z,ry,H]=v;setInst(cgb,i,x,g-1,z,ry,6.6,H+1,7.5);cgb.setColorAt(i,C1.setHex(0xa39a8b));});
   for(const m of[sq,sqc,cgb]){m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
-  const gt=mk(bx,inst.gate.length*4);let gi=0;
+  const gt=mk(bx,inst.gate.length*5);let gi=0;
   inst.gate.forEach(v=>{
     const[x,g,z,ry,stone,H,span]=v,c2=Math.cos(ry),s2=Math.sin(ry),th=(stone?2.6:1.3)+1.2;
     for(const sd of[-1,1]){const o=sd*(span/2+0.9);setInst(gt,gi,x+c2*o,g-1,z-s2*o,ry,stone?2.4:1.4,H,th);gt.setColorAt(gi++,C1.setHex(stone?0x958c7e:0x5a4229));} // the gate-posts
     setInst(gt,gi,x,g+H-1,z,ry,span+4,stone?3.6:2,th);gt.setColorAt(gi++,C1.setHex(stone?0x958c7e:0x5f472d));
     setInst(gt,gi,x,g+H+2.6,z,ry,span+2,1.2,(stone?2.6:1.3)+0.6);gt.setColorAt(gi++,C1.setHex(stone?0x4f5866:0x7d6441));
+    if(v[7]){setInst(gt,gi,x,g-0.5,z,ry,span+0.4,H*0.85,0.5);gt.setColorAt(gi++,C1.setHex(0x4a3626));} // the gates shut and barred
+    else if(v[8]){setInst(gt,gi,x,g+0.05,z,ry+0.4,span*0.8,0.35,H*0.6);gt.setColorAt(gi++,C1.setHex(0x3a2a1e));}
   });
   // tower gates: two piers, a tall gate-house above the passage, a steep roof
-  const gtb=mk(bx,inst.gtower.length*3),gtr=mk(new THREE.ConeGeometry(0.5,1,4).rotateY(Math.PI/4).translate(0,0.5,0),inst.gtower.length);let gk=0;
+  const gtb=mk(bx,inst.gtower.length*4),gtr=mk(new THREE.ConeGeometry(0.5,1,4).rotateY(Math.PI/4).translate(0,0.5,0),inst.gtower.length);let gk=0;
   inst.gtower.forEach((v,i)=>{
     const[x,g,z,ry,T]=v,c2=Math.cos(ry),s2=Math.sin(ry),dpt=T+3;
     for(const sd of[-1,1]){setInst(gtb,gk,x+c2*sd*5.8,g-1,z-s2*sd*5.8,ry,3.6,7,dpt);gtb.setColorAt(gk++,C1.setHex(0x9a917f));}
     setInst(gtb,gk,x,g+6,z,ry,15.2,13,dpt);gtb.setColorAt(gk++,C1.setHex(0xa39a8b));
+    if(v[5]){setInst(gtb,gk,x,g-0.5,z,ry,8.4,7,0.7);gtb.setColorAt(gk++,C1.setHex(0x4a3626));} // the leaves shut, the portcullis down
+    else if(v[6]){setInst(gtb,gk,x,g+0.05,z,ry+0.35,7,0.4,5);gtb.setColorAt(gk++,C1.setHex(0x3a2a1e));} // battered in, lying in the passage
     setInst(gtr,i,x,g+19,z,ry,16.5,9,dpt*1.2);gtr.setColorAt(i,C1.setHex(0x4f5866));
   });
   for(const m of[mer,tw,tc,gt,gtb,gtr]){m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
@@ -5909,7 +5923,7 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
         continue;}}
     // the likeliest lots are near the heart and on the busy streets, but people build where they can get a plot
     const pool=s.growSlots.slice(0,24),k0=pool[0].key;
-    const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0),1);
+    const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0)+(q.st.planned?0.8:0),1); // a lord's new street lets its plots cheap
     s.growSlots.splice(s.growSlots.indexOf(c),1);
     const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));if(!b)continue;b.grown=day();
     if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);} // the first house on a new lane: the lane appears
@@ -6128,6 +6142,10 @@ function buildAgents(){
   G.soldierKit=new THREE.InstancedMesh(sp.fixed,agentMat(),1500);
   const white=new THREE.Color(1,1,1),allocColors=m=>{for(let i=0;i<m.count;i++)m.setColorAt(i,white);}; // colour buffer sized to capacity (it is sized by .count)
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){allocColors(m);m.frustumCulled=false;m.count=0;scene.add(m);}
+  { // a company's standard: a pole and a pennon in the house's colours
+    const pole=new THREE.BoxGeometry(0.1,3.4,0.1).translate(0,1.7,0),flag=new THREE.BoxGeometry(0.05,0.7,1.1).translate(0,3.0,0.6);
+    G.pennonPole=new THREE.InstancedMesh(pole,agentMat(),220);G.pennonFlag=new THREE.InstancedMesh(flag,agentMat(),220);
+    for(const m of[G.pennonPole,G.pennonFlag]){allocColors(m);m.frustumCulled=false;m.count=0;scene.add(m);}}
   // townsfolk walking the streets
   const cp=personParts('citizen');
   G.citizens=new THREE.InstancedMesh(cp.tint,agentMat(),140);
@@ -7817,7 +7835,9 @@ function tickMilitary(){
         if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;driveOffHerds(s,a);a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
           const cm=notableById(a.commander),A=a.strength*(a.morale/70)*generalship(cm),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
-          if(chance('sim',A/(A+D*1.2))){s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);}
+          if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=now+120;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;}
+            s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);
+            if(g)emit('war',7,{x:g.x,z:g.z},`The gate of ${s.name} gives way under the ram; ${a.name.replace(/^Host/,'the host')} pours in through the breach.`);}
           else{
             a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
             if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.holdUntil=day()+60;
@@ -8767,7 +8787,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -10263,6 +10283,39 @@ function updateHUD(){
 /* =========================================================================
    PER-FRAME WORLD ANIMATION
    ========================================================================= */
+function musterPos(s,a){ // where a host lies at a town: open ground outside it, near a road, clear of houses and water
+  if(!s._muster||s._musterY!==year()){const R=Math.max(s.wallR||0,s.extentR||s.radius||90)+55;let best=null,bs=-1e9;
+    for(let k=0;k<24;k++){const an=k/24*Math.PI*2,x=s.pos.x+Math.cos(an)*R,z=s.pos.z+Math.sin(an)*R;
+      if(!planCellOK(x,z)||riverAt(x,z,15))continue;let near=1e9;for(const b of s.buildings)if(!b.removed){const d=dist2d(b.x,b.z,x,z);if(d<near)near=d;}
+      if(near<30)continue;let rd=1e9;for(const r of W.roads){const P=r.drawn||r.path;for(let i=0;i<P.length;i+=3){const d=dist2d(P[i].x,P[i].z,x,z);if(d<rd)rd=d;}}
+      const sc=Math.min(near,90)/30-Math.abs(rd-40)/60-Math.abs(hAt(x,z)-hAt(s.pos.x,s.pos.z))*0.1;if(sc>bs){bs=sc;best={x,z,dir:an+Math.PI};}}
+    s._muster=best||{x:s.pos.x+R,z:s.pos.z,dir:Math.PI};s._musterY=year();}
+  const m=s._muster,o=((a.id%3)-1)*36,lx=-Math.sin(m.dir),lz=Math.cos(m.dir); // more than one host: side by side
+  return{x:m.x+lx*o,z:m.z+lz*o,dir:m.dir};}
+function siegeGate(s,A){ // the gate the storming party makes for: the one nearest their lines, a road gate if there is one
+  const key=(s.streets||[]).length+':'+(s.wallR|0);if(!s._gates||s._gatesK!==key){s._gates=wallGates(s);s._gatesK=key;}
+  let g=null,bd=1e9;s._gates.forEach((an,i)=>{const d=Math.abs(Math.atan2(Math.sin(an-A.c),Math.cos(an-A.c)))-(s._gates.roads[i]?0.3:0);if(d<bd&&wallKindAt(s,an)!==1){bd=d;g=an;}});
+  if(g==null)return null;const r=wallRadAt(s,g),ox=Math.cos(g),oz=Math.sin(g);
+  return{a:g,x:s.pos.x+ox*r,z:s.pos.z+oz*r,ox,oz,d0:12};}
+function siegePts(a,s,A,n,us){ // the lines: strung round the walls facing them, pushed out past any house that stands outside
+  const key=n+':'+A.c.toFixed(2)+':'+A.w.toFixed(2)+':'+us.toFixed(1)+':'+s.buildings.length;if(a._spK===key)return a._sp;
+  const out=[];for(let k=0;k<Math.max(1,n);k++){const f=(k+0.5)/Math.max(1,n),an=A.c-A.w+2*A.w*f;let rr=(s.wallRad?wallRadAt(s,an):A.R)+26+(k%3)*2.2*us;
+    for(let t=0;t<12;t++){const x=s.pos.x+Math.cos(an)*rr,z=s.pos.z+Math.sin(an)*rr;if(!s.buildings.some(b=>!b.removed&&Math.abs(b.x-x)<Math.max(b.w,b.d)*0.6+2&&Math.abs(b.z-z)<Math.max(b.w,b.d)*0.6+2))break;rr+=8;}
+    out.push({x:s.pos.x+Math.cos(an)*rr,z:s.pos.z+Math.sin(an)*rr,a:an});}
+  a._spK=key;a._sp=out;return out;}
+function entryPath(s){ // from the broken gate along the streets to the market
+  if(s._entry&&s._entryK===s.breachA)return s._entry;const g=streetGraph(s),r=wallRadAt(s,s.breachA),gx=s.pos.x+Math.cos(s.breachA)*(r+20),gz=s.pos.z+Math.sin(s.breachA)*(r+20);
+  const mk=(s.places||[]).find(p=>p.kind==='market')||s.pos,a=nearestNode(g,gx,gz),b=nearestNode(g,mk.x,mk.z),P=streetPath(g,a,b);
+  let pts=P&&P.length>1?[{x:gx,z:gz},...P.map(i=>({x:g.N[i].x,z:g.N[i].z}))]:[{x:gx,z:gz},{x:mk.x,z:mk.z}];pts._len=polyLen(pts);s._entry=pts;s._entryK=s.breachA;return pts;}
+function drawRam(s,g,now,us){ // a ram under its shed, swung against the gate
+  G.rams=G.rams||new Map();let m=G.rams.get(s);
+  if(!m){m=new THREE.Group();const wood=new THREE.MeshLambertMaterial({color:0x5a4430}),hide=new THREE.MeshLambertMaterial({color:0x6e5a3a});
+    const shed=new THREE.Mesh(gableGeom(),hide);shed.scale.set(7,2.2,3.4);shed.position.y=2.6;shed.rotation.y=Math.PI/2;m.add(shed);
+    for(const[x,z]of[[-3,-1.5],[3,-1.5],[-3,1.5],[3,1.5]]){const post=new THREE.Mesh(new THREE.BoxGeometry(0.3,2.6,0.3).translate(0,1.3,0),wood);post.position.set(z,0,x);m.add(post);}
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,8,8).rotateX(Math.PI/2),wood);beam.position.y=1.5;beam.name='beam';m.add(beam);
+    m.traverse(o=>{if(o.isMesh)o.castShadow=true;});scene.add(m);G.rams.set(s,m);}
+  G._ramsSeen.add(s);const x=g.x+g.ox*5.5,z=g.z+g.oz*5.5;m.position.set(x,surfY(x,z),z);m.rotation.y=-Math.atan2(g.oz,g.ox)+Math.PI/2;
+  const bm=m.getObjectByName('beam');if(bm)bm.position.z=-1.2+Math.max(0,Math.sin(now*3))*1.6;}
 function polyPos(poly,f){
   if(!poly||!poly.length)return null;
   if(poly.length===1)return{x:poly[0].x,z:poly[0].z};
@@ -10483,7 +10536,7 @@ function animateWorld(dt,now){
       placeMarker(e,houseMarker(0),p.x,y,p.z,20);}
   }
   /* --- armies --- */
-  let si2=0;const activeBattles=new Set();G.battleSprites=G.battleSprites||new Map();
+  let si2=0,pn=0;G._ramsSeen=new Set();const activeBattles=new Set();G.battleSprites=G.battleSprites||new Map();
   G.fleets=G.fleets||new Map();const afloat=new Set();
   for(const a of W.armies){
     let p;
@@ -10504,7 +10557,7 @@ function animateWorld(dt,now){
     const sieging=a.state==='siege'&&a.siegeArc&&W.settlements[a.at],A=sieging?a.siegeArc:null,st=W.settlements[a.at];
     if(sieging){const r=A.R+30;p={x:st.pos.x+Math.cos(A.c)*r,z:st.pos.z+Math.sin(A.c)*r,dir:A.c+Math.PI};} // the banner at the middle of the lines
     const onWalls=a.state==='idle'&&!a.field&&st&&st.siegeBy&&a.house===st.owner; // besieged: its men are up on the walls
-    if(!p){const s=W.settlements[a.at];p={x:s.pos.x+(a.state==='siege'?90:20),z:s.pos.z+40,dir:0};}
+    if(!p){const s=W.settlements[a.at];p=a.state!=='siege'&&!onWalls?musterPos(s,a):{x:s.pos.x+90,z:s.pos.z+40,dir:0};} // lying at a town: out on its muster ground
     const y=p.sea?SEA:surfY(p.x,p.z);
     a._rpos={x:p.x,y:y+10,z:p.z};
     if(p.sea){afloat.add(a); // aboard the transports: a squadron of cogs in line ahead, a ship to every hundred and fifty men
@@ -10527,21 +10580,38 @@ function animateWorld(dt,now){
       cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5)); // even a sable livery must read at a glance
       const n=onWalls||p.sea?0:Math.min(160,Math.max(12,Math.round(a.strength/3))),per=n>60?14:10;
       const dir=p.dir||0,fx=Math.cos(dir),fz=Math.sin(dir),lx=-fz,lz=fx;
+      const column=(a.state==='march'||a.state==='rout')&&a.poly&&a.poly.length>1,L=column?(a._plen||(a._plen=polyLen(a.poly))):0;
+      const fNow=column?clamp((simDay-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay),0,1):0;
+      const foeT=column&&a.state==='march'&&W.settlements[a.target]&&hostileTo(a,W.settlements[a.target])?W.settlements[a.target]:null,foeR=foeT?(foeT.wallRad?foeT.wallR:(foeT.extentR||90))+22:0;
+      const taken=st&&st.breachUntil>simDay&&st.takenBy===a.id&&simDay-st.takenDay<8&&st.owner===a.house&&!column?entryPath(st):null; // just through the breach: filing in along the streets
+      const camp=!taken&&!column&&!sieging&&a.state!=='battle'&&!a.field&&st?musterPos(st,a):null; // at a town: on open ground outside it, never in its streets
+      const storm=sieging&&st.wallRad&&!a.raid?siegeGate(st,A):null,nStorm=storm?Math.min(36,Math.round(n*0.3)):0;
+      const sPts=sieging?siegePts(a,st,A,n-nStorm,us):null;
+      const cdir=camp?camp.dir:dir,cfx=Math.cos(cdir),cfz=Math.sin(cdir),clx=-cfz,clz=cfx,cpx=camp?camp.x:p.x,cpz=camp?camp.z:p.z;
       for(let k=0;k<n&&si2<1500;k++){
-        const col=k%per-(per-1)/2,row=Math.floor(k/per);
-        let sx=p.x+(fx*(-row*1.9)+lx*col*1.3)*us,sz=p.z+(fz*(-row*1.9)+lz*col*1.3)*us,sdir=dir;
-        if(sieging){const f=(k+0.5)/n,an=A.c-A.w+2*A.w*f,rr=(st.wallRad?wallRadAt(st,an):A.R)+26+(k%3)*2.2*us;sx=st.pos.x+Math.cos(an)*rr;sz=st.pos.z+Math.sin(an)*rr;sdir=an+Math.PI;} // strung out round the town, facing the walls
+        let sx,sz,sdir=dir,lead=false;
+        if(column){ // a column of companies on the road, three abreast, a standard at the head of each
+          const c=Math.floor(k/12),j=k%12,rank=Math.floor(j/3),file=j%3,back=(c*(4*1.7+4.5)+rank*1.7)*us,q=armyAt(a,fNow-back/Math.max(1,L));if(!q||q.sea)continue;
+          const qd=q.dir??dir,qx=Math.cos(qd),qz=Math.sin(qd);sx=q.x-qz*(file-1)*1.15*us;sz=q.z+qx*(file-1)*1.15*us;sdir=qd;lead=j===1;
+          if(foeT){const d=dist2d(sx,sz,foeT.pos.x,foeT.pos.z);if(d<foeR){const an=Math.atan2(sz-foeT.pos.z,sx-foeT.pos.x)+(k%7-3)*0.012;sx=foeT.pos.x+Math.cos(an)*(foeR+(k%5)*2);sz=foeT.pos.z+Math.sin(an)*(foeR+(k%5)*2);}}} // not through an enemy's walls: they bunch outside
+        else if(taken){const P=taken,Lp=P._len,d=((now*5*us+(n-k)*2.2*us)%Lp+Lp)%Lp,q=polyPos(P,d/Lp);const file=k%2;sx=q.x-Math.sin(q.dir||0)*(file-0.5)*1.1*us;sz=q.z+Math.cos(q.dir||0)*(file-0.5)*1.1*us;sdir=q.dir||0;lead=k%12===0;}
+        else if(storm&&k<nStorm){const rank=Math.floor(k/3),file=k%3,d=storm.d0+rank*1.7*us;sx=storm.x+storm.ox*d-storm.oz*(file-1)*1.2*us;sz=storm.z+storm.oz*d+storm.ox*(file-1)*1.2*us;sdir=storm.a+Math.PI;lead=k===1;}
+        else if(sieging){const q=sPts[(k-nStorm)%sPts.length];sx=q.x;sz=q.z;sdir=q.a+Math.PI;}
+        else if(camp){const col2=k%per-(per-1)/2,row=Math.floor(k/per);sx=cpx+(cfx*(-row*1.9)+clx*col2*1.3)*us;sz=cpz+(cfz*(-row*1.9)+clz*col2*1.3)*us;sdir=cdir;lead=k%per===0&&row%4===0;}
+        else{const col2=k%per-(per-1)/2,row=Math.floor(k/per);sx=p.x+(fx*(-row*1.9)+lx*col2*1.3)*us;sz=p.z+(fz*(-row*1.9)+lz*col2*1.3)*us;lead=k%per===0&&row%4===0;}
         let fallen=false;
         if(a.state==='battle'){sx+=Math.sin(now*7+k*3)*0.9*us;sz+=Math.cos(now*6+k*5)*0.9*us; // the press of the melee
           const prog=clamp((simDay-(a.battleStart||simDay))/Math.max(0.5,(a.battleUntil||simDay+1)-(a.battleStart||simDay)),0,1);fallen=(k*37%100)/100<prog*0.3;} // and the dead lie where they fell
-        else if(a.state==='siege'||a.state==='idle'){sx+=Math.sin(k*12.9)*0.5;sz+=Math.cos(k*7.3)*0.5;}
-        const bob=a.state==='march'||a.state==='rout'?Math.abs(Math.sin(now*8+k))*0.12*us:0;
-        const yy=surfY(sx,sz)+bob,ry=-sdir+Math.PI/2+(a.state==='rout'?Math.PI:0);
+        else if(!column&&!taken&&(a.state==='siege'||a.state==='idle')){sx+=Math.sin(k*12.9)*0.5;sz+=Math.cos(k*7.3)*0.5;}
+        const bob=column||taken?Math.abs(Math.sin(now*8+k))*0.12*us:0;
+        const yy=surfY(sx,sz)+bob,ry=-sdir+Math.PI/2;
         const hy=fallen?us*0.22:us;
         setInst(G.soldiers,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierShields,si2,sx,yy,sz,ry,us,hy,us);setInst(G.soldierKit,si2,sx,yy,sz,ry,us,hy,us);
         G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);
+        if(lead&&!fallen&&pn<220){setInst(G.pennonPole,pn,sx,yy,sz,ry,us,us,us);setInst(G.pennonFlag,pn,sx,yy,sz,ry,us,us,us);G.pennonPole.setColorAt(pn,C1.setHex(0x3a2c20));G.pennonFlag.setColorAt(pn,cT);pn++;}
         si2++;
       }
+      if(storm)drawRam(st,storm,now,us);
     }
   }
   for(const[a,fl]of G.fleets)if(!afloat.has(a)){if(a.gone||!W.armies.includes(a)){scene.remove(fl);G.fleets.delete(a);}else fl.visible=false;} // ashore again: the transports are paid off
@@ -10556,6 +10626,9 @@ function animateWorld(dt,now){
       G.soldiers.setColorAt(si2,cT);G.soldierShields.setColorAt(si2,cS);si2++;}}
   for(const[k,sp]of G.battleSprites)if(!activeBattles.has(k)){scene.remove(sp);sp.material.dispose();G.battleSprites.delete(k);} // the field falls quiet
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
+  for(const m of[G.pennonPole,G.pennonFlag]){m.count=pn;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
+  for(const[st,g]of G.rams||[])if(!G._ramsSeen.has(st)){scene.remove(g);G.rams.delete(st);} // the siege is over: the ram is drawn off
+  {let dirty=false;for(const t of W.settlements){const k=(t.siegeBy&&t.wallRad?1:0)+(t.breachUntil>simDay?2:0);if(k!==(t._gateK||0)){t._gateK=k;dirty=true;}}if(dirty)rebuildWalls();} // gates shut when the enemy comes, and stand broken after a storm
   for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
   if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
     placeMarker(W.dragon,markerTex('dragon',g2=>{badge(g2,'#7a1f1f','#e8c247');g2.font='32px serif';g2.textAlign='center';g2.fillText('🐉',32,44);}),vis?dm.position.x:W.dragon.lair.x,(vis?dm.position.y:W.dragon.lair.y)-20,vis?dm.position.z:W.dragon.lair.z,vis?30:20);}
