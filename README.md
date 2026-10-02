@@ -64,7 +64,11 @@ OpenRouter-backed client: your choice). When you rule, it is your closest confid
 in the game (your spouse, else the ablest of your kin); otherwise it is the game master. It sees the whole
 realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
 
-Click 🗣 in the game's top bar and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
+**Played on Claude** (the shared artifact link), click 🗣 and **Talk to your advisor here**: the advisor answers
+in a panel beside the map, on your own Claude account (you are asked once to allow it, and what you ask uses your
+Claude usage). It has the same tools an agent gets through the bridge, run in the page.
+
+**Anywhere else**, click 🗣 and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
 (one file, no dependencies): the agent checks for Node 18+, saves it as `furlong-advisor.mjs`, registers it as a
 local MCP server (in Claude Code, `claude mcp add furlong -- node <path>/furlong-advisor.mjs`), and answers with a

@@ -81,14 +81,17 @@ function attach(s) {
 const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s 🗣 dialog.'); });
 server.on('upgrade', (req, s) => {
   const u = new URL(req.url, 'http://x');
-  if ((u.searchParams.get('code') || '').toUpperCase() !== CODE || !req.headers['sec-websocket-key']) { s.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
+  if (!req.headers['sec-websocket-key']) { s.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
   const acc = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   s.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + acc + '\r\n\r\n');
+  if ((u.searchParams.get('code') || '').toUpperCase() !== CODE) { const why = Buffer.from('not my code'); s.end(Buffer.concat([Buffer.from([0x88, 2 + why.length, 0x0f, 0xa3]), why])); return; } // close 4003: not this bridge's code (a refused handshake would make the browser hold back its next tries)
   if (sock) try { sock.end(); } catch (_) { }
   sock = s; attach(s); log('paired with the game');
 });
-server.on('error', e => log('cannot listen on port ' + PORT + ': ' + e.message));
-server.listen(PORT, '127.0.0.1', () => log(`listening on 127.0.0.1:${PORT}; pairing code ${CODE}`));
+let port = PORT;
+server.on('error', e => { if (e.code === 'EADDRINUSE' && port < PORT + 9) { port++; server.listen(port, '127.0.0.1'); } else log('cannot listen on port ' + port + ': ' + e.message); }); // another bridge holds the port: take the next (the game tries ten in turn)
+server.on('listening', () => log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`));
+server.listen(port, '127.0.0.1');
 
 function ask(op, args) {
   if (!sock) return Promise.resolve({ error: `Not paired with a game yet. Ask the player to open the game, click 🗣 (An advisor) in the top bar, and enter the pairing code ${CODE}.` });

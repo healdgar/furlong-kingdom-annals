@@ -190,7 +190,14 @@ body.watch #uiback,body.hideui #uiback{display:block;}
 #savebox .pbb{background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px;}
 #savebox .pbb:hover{background:#6e5639;}#savebox input[type=text],#savebox textarea{background:#1b1610;color:var(--parch);border:1px solid #6e5639;border-radius:4px;padding:5px;font:inherit;font-size:12px;box-sizing:border-box;}
 #savebox .sv{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(224,192,112,.18);flex-wrap:wrap;}#savebox .sv .sn{flex:1 1 200px;min-width:0;}
-#savebox .sv small,#savebox .note{opacity:.75;font-size:11px;}#savebox .row{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;}
+#savebox .sv small,#savebox .note{opacity:.75;font-size:11px;}
+#advchat{position:fixed;left:12px;bottom:34px;z-index:55;width:min(400px,calc(100vw - 32px));max-height:62vh;display:none;flex-direction:column;background:#2a2219;color:var(--parch);border:1px solid #8a6e46;border-radius:8px;box-shadow:0 6px 30px rgba(0,0,0,.6);font-size:13px;padding:10px 12px;box-sizing:border-box;}
+#advchat .ach{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-family:"IM Fell English",Georgia,serif;color:#e0c070;font-size:15px;}
+#advchat #achlog{flex:1;overflow:auto;min-height:80px;display:flex;flex-direction:column;gap:6px;padding-right:2px;}
+#advchat .acm{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4;padding:6px 8px;border-radius:6px;max-width:92%;}
+#advchat .acm.me{align-self:flex-end;background:#5a4630;}#advchat .acm.ai{align-self:flex-start;background:#1b1610;border:1px solid #4a3a26;}#advchat .acm.sys{align-self:center;opacity:.75;font-style:italic;font-size:12px;}
+#advchat textarea{width:100%;background:#1b1610;color:var(--parch);border:1px solid #6e5639;border-radius:4px;padding:5px;font:inherit;font-size:13px;box-sizing:border-box;resize:vertical;}
+#advchat .pbb{background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;padding:3px 9px;cursor:pointer;font:inherit;font-size:12px;}#advchat .row{display:flex;gap:6px;margin-top:6px;align-items:center;}#savebox .row{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;}
 #savebtn{pointer-events:auto;}
 #endgame .egbox{background:#2a2219;color:var(--parch);border:1px solid #8a6e46;border-radius:8px;padding:18px 22px;max-width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-shadow:0 6px 30px rgba(0,0,0,.6);}
 #endgame h2{margin:0 0 8px;font-family:"IM Fell English",Georgia,serif;color:#e0c070;font-weight:normal;}
@@ -12179,21 +12186,71 @@ const ADV={muted:false,
     finally{if(sc.startsWith('drawer:')&&drawerTab!==was&&!name.startsWith('drawer:'+drawerTab))selectTab(was);}},
   call(op,args){try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):op==='rules'?(document.getElementById('advrules')||{}).textContent||'':{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}},
   ws:null,
-  connect(code,port){if(ADV.ws)try{ADV.ws.close();}catch(_){}const ws=new WebSocket(`ws://127.0.0.1:${port||7357}/?code=${encodeURIComponent(code)}`);ADV.ws=ws;
-    ws.onopen=()=>{ADV.status('Connected: your advisor can see the realm.');};ws.onclose=()=>{if(ADV.ws===ws){ADV.ws=null;ADV.status('Not connected.');}};ws.onerror=()=>ADV.status('Could not reach the advisor bridge on this machine. Is it running?');
+  connect(code,port,tries){port=port||7357;tries=tries??10;if(ADV.ws)try{ADV.ws.onclose=null;ADV.ws.close();}catch(_){}ADV.status('Connecting…');const ws=new WebSocket(`ws://127.0.0.1:${port}/?code=${encodeURIComponent(code)}`);ADV.ws=ws;let opened=false;
+    ws.onopen=()=>{opened=true;ADV.status('Connected: your advisor can see the realm.');};ws.onerror=()=>{};
+    ws.onclose=e=>{if(ADV.ws!==ws)return;ADV.ws=null;if(e.code===4003&&tries>1){ADV.connect(code,port+1,tries-1);return;} /* a bridge, but not the one with this code: the next port (bridges take the ports in turn, so the first empty one ends the search) */ADV.status(opened?'Disconnected: the advisor bridge stopped. Ask your agent for a new code.':'No advisor bridge here took that code. Is it running, and is the code the one it gave?');};
     ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}const r=ADV.call(m.op,m.args);ws.send(JSON.stringify({id:m.id,...r},(k,v)=>v instanceof Element?undefined:v));};},
   status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
   dialog(){const box=document.getElementById('savebox');box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
-    box.innerHTML=`<div class="egbox"><h2>An advisor</h2><div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
+    box.innerHTML=`<div class="egbox"><h2>An advisor</h2>${ADVCHAT.sample?`<div class="row" style="align-items:center;gap:10px;margin:6px 0 10px"><button class="pbb" id="advhere" style="font-size:14px;padding:6px 14px">Talk to your advisor here</button><small style="opacity:.8">on your own Claude account: you are asked once, and your questions use your Claude usage</small></div><div style="opacity:.7;margin-bottom:4px">Or bring your own agent app:</div>`:''}<div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
       <div style="margin:8px 0 4px">Copy this into your agent app (Claude Code, Claude Cowork, Cursor, or any app that can run commands and local MCP servers). It carries the advisor's small program; the agent saves it, sets itself up and gives you a pairing code:</div><textarea id="advprompt" readonly style="width:100%;height:150px;font-size:11px">${esc(ADV_PROMPT())}</textarea><div class="row"><button class="pbb" id="advcopy">Copy the prompt</button></div>
       <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. K7Q2PX" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
       <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
       <div id="advstat" style="color:#e0c070;margin-top:4px">${on?'Connected: your advisor can see the realm.':'Not connected.'}</div>
       <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
+    {const h=document.getElementById('advhere');if(h)h.onclick=()=>{box.style.display='none';ADVCHAT.open();};}
     document.getElementById('advcopy').onclick=()=>{const t=document.getElementById('advprompt');t.select();(navigator.clipboard?navigator.clipboard.writeText(ADV_PROMPT()):Promise.reject()).catch(()=>document.execCommand('copy'));document.getElementById('advcopy').textContent='Copied';};
     document.getElementById('advgo').onclick=()=>{const c=document.getElementById('advcode').value.trim().toUpperCase();if(c)ADV.connect(c);};
     document.getElementById('advmute').onchange=e=>{ADV.muted=e.target.checked;};
     document.getElementById('advclose').onclick=()=>{box.style.display='none';};}};
+/* The advisor in the page itself: inside a Claude viewer, the player talks to the advisor on their own Claude
+   account (the artifact's `sample` capability: they are asked once, and pay for what they ask). Claude gets the
+   same tools an agent gets through the bridge, run here in the page. Elsewhere this stays hidden. */
+const ADVCHAT={sample:null,turns:[],busy:null,tools:false,
+  async init(){try{if(!window.claude||!claude.use)return;const s=await claude.use('sample');if(!s)return;ADVCHAT.sample=s;
+    const L=await s.limits().catch(()=>null);ADVCHAT.tools=!!(L&&L.tools);}catch(_){}},
+  clip(v,n){const t=typeof v==='string'?v:JSON.stringify(v,(k,x)=>x instanceof Element?undefined:x);return t&&t.length>(n||12000)?t.slice(0,n||12000)+' …(cut short)':t;},
+  rules(q){const R=ADVCHAT._R||(ADVCHAT._R=(()=>{const out=[],src=(document.getElementById('advrules')||{}).textContent||'';let head='README',buf=[];const push=()=>{if(buf.join('').trim())out.push({section:head,text:buf.join('\n').trim()});buf=[];};
+      for(const l of src.split('\n')){const m=l.match(/^<<<FILE (.+)>>>$/);if(m){push();head=m[1];continue;}if(/^#{1,3} /.test(l)){push();head=l.replace(/^#+ /,'');}else buf.push(l);}push();return out;})());
+    const W2=String(q||'').toLowerCase().split(/\s+/).filter(w=>w.length>2);if(!W2.length)return[];
+    return R.map(d=>({d,s:W2.reduce((t,w)=>t+(d.section.toLowerCase().includes(w)?3:0)+(d.text.toLowerCase().split(w).length-1),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,3).map(({d})=>({rules:d.section,text:d.text.slice(0,1500)}));},
+  toolList(){const run=(op,args)=>{const r=ADV.call(op,args);if(r.error)throw new Error(r.error);return ADVCHAT.clip(r.result);};
+    return[
+      {name:'search',description:'Search the game: its controls (buttons, sliders, lists), the places, houses and people of the realm, and the rules. Returns matches.',inputSchema:{type:'object',properties:{query:{type:'string'}},required:['query']},execute:i=>ADVCHAT.clip({game:ADV.search(String(i.query||'')),rules:ADVCHAT.rules(i.query)})},
+      {name:'state',description:'Read the realm: path "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>" or "rates". Returns JSON.',inputSchema:{type:'object',properties:{path:{type:'string'}}},execute:i=>run('execute',{tool:'game:state',args:{path:String(i.path||'realm')}})},
+      {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
+      {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
+      {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "drawer:crown", "drawer:rates", "drawer:acts", "drawer:over", "drawer:world", "card", "petition", "plan"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
+      {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
+  brief(){const P=ADV.persona(),st=ADV.state('realm'),ch=allLines.slice(-6).join('\n');
+    return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
+Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to.${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
+
+The realm now: ${JSON.stringify(st)}
+Latest in the annals:
+${ch}`;},
+  open(){let el=document.getElementById('advchat');if(!el){el=document.createElement('div');el.id='advchat';
+      el.innerHTML=`<div class="ach"><b id="achwho">Your advisor</b><span><button class="pbb" id="achnew" title="Begin a new conversation">New</button> <button class="pbb" id="achx" title="Close">✕</button></span></div><div id="achlog"></div><div class="row"><textarea id="achin" rows="2" placeholder="Ask your advisor…"></textarea></div><div class="row" style="justify-content:space-between"><small style="opacity:.7">Uses your own Claude account</small><span><button class="pbb" id="achstop" style="display:none">Stop</button> <button class="pbb" id="achsend">Send</button></span></div>`;
+      document.body.appendChild(el);
+      document.getElementById('achx').onclick=()=>{el.style.display='none';};
+      document.getElementById('achnew').onclick=()=>{if(ADVCHAT.busy)ADVCHAT.busy.abort();ADVCHAT.turns=[];document.getElementById('achlog').innerHTML='';};
+      document.getElementById('achsend').onclick=()=>ADVCHAT.send();
+      document.getElementById('achstop').onclick=()=>{if(ADVCHAT.busy)ADVCHAT.busy.abort();};
+      document.getElementById('achin').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ADVCHAT.send();}});}
+    const P=ADV.persona();document.getElementById('achwho').textContent=P.name?`${P.name}, ${P.role}`:'The game master';
+    el.style.display='flex';document.getElementById('achin').focus();},
+  bubble(who,text){const d=document.createElement('div');d.className='acm '+who;d.textContent=text;const L=document.getElementById('achlog');L.appendChild(d);L.scrollTop=L.scrollHeight;return d;},
+  async send(){const box=document.getElementById('achin'),q=box.value.trim();if(!q||ADVCHAT.busy||!ADVCHAT.sample)return;box.value='';
+    ADVCHAT.bubble('me',q);ADVCHAT.turns.push({role:'user',content:q});while(ADVCHAT.turns.length>16)ADVCHAT.turns.splice(0,2); // the oldest exchanges drop away; the brief is written fresh each time
+    const out=ADVCHAT.bubble('ai','Thinking…'),ctl=new AbortController();ADVCHAT.busy=ctl;document.getElementById('achstop').style.display='';document.getElementById('achsend').disabled=true;
+    const opts={cache:false,signal:ctl.signal,onText:({text})=>{out.textContent=text;document.getElementById('achlog').scrollTop=1e9;}};if(ADVCHAT.tools)opts.tools=ADVCHAT.toolList();
+    try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
+      out.textContent=text+(truncated?'\n(cut short: ask for less at a time)':'');ADVCHAT.turns.push({role:'assistant',content:text});}
+    catch(e){const code=e&&e.code;out.textContent=e&&e.text?e.text:'';
+      const why={cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??'Something went wrong reaching Claude; try again.';
+      if(why)ADVCHAT.bubble('sys',why);if(!out.textContent)out.remove();ADVCHAT.turns.pop();}
+    finally{ADVCHAT.busy=null;document.getElementById('achstop').style.display='none';document.getElementById('achsend').disabled=false;}}};
+ADVCHAT.init();
 window.FURLONG={search:q=>ADV.call('search',{q}).result,discover:s=>ADV.call('discover',{scope:s}).result,execute:(t,a)=>ADV.call('execute',{tool:t,args:a}).result};
 boot();
 </script>
@@ -12281,14 +12338,17 @@ function attach(s) {
 const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s 🗣 dialog.'); });
 server.on('upgrade', (req, s) => {
   const u = new URL(req.url, 'http://x');
-  if ((u.searchParams.get('code') || '').toUpperCase() !== CODE || !req.headers['sec-websocket-key']) { s.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return; }
+  if (!req.headers['sec-websocket-key']) { s.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
   const acc = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   s.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + acc + '\r\n\r\n');
+  if ((u.searchParams.get('code') || '').toUpperCase() !== CODE) { const why = Buffer.from('not my code'); s.end(Buffer.concat([Buffer.from([0x88, 2 + why.length, 0x0f, 0xa3]), why])); return; } // close 4003: not this bridge's code (a refused handshake would make the browser hold back its next tries)
   if (sock) try { sock.end(); } catch (_) { }
   sock = s; attach(s); log('paired with the game');
 });
-server.on('error', e => log('cannot listen on port ' + PORT + ': ' + e.message));
-server.listen(PORT, '127.0.0.1', () => log(`listening on 127.0.0.1:${PORT}; pairing code ${CODE}`));
+let port = PORT;
+server.on('error', e => { if (e.code === 'EADDRINUSE' && port < PORT + 9) { port++; server.listen(port, '127.0.0.1'); } else log('cannot listen on port ' + port + ': ' + e.message); }); // another bridge holds the port: take the next (the game tries ten in turn)
+server.on('listening', () => log(`listening on 127.0.0.1:${port}; pairing code ${CODE}`));
+server.listen(port, '127.0.0.1');
 
 function ask(op, args) {
   if (!sock) return Promise.resolve({ error: `Not paired with a game yet. Ask the player to open the game, click 🗣 (An advisor) in the top bar, and enter the pairing code ${CODE}.` });
