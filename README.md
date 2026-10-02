@@ -463,6 +463,31 @@ What happens is decided by quantities the economy produces, not by numbers cross
     put up huts by the wood and the water.
   - **Time:** the poor work on past dusk; a man with coin to spare and a taste for company stops at the
     tavern on his way home.
+- **Every coin comes from someone and goes to someone.** The accounts are the households' purses, the great
+  houses' coffers, the crown's treasury, each church's fabric fund, each town's murage chest, and the world
+  beyond the realm. Every building has an owner (a household, the lord, the church, the town); rent goes to
+  the owner, and an owner who lives in his own house pays none.
+  - **The market:** the harvest is grain in the barns of those who grew it: the tiller's share, the
+    landowner's, the lord's (his home farm and his tenants' rents in kind), the church's tithe and the
+    mill's multure. Fishers, woodmen, miners, smiths, weavers and vintners offer what they make, shepherds
+    their fleeces, the meadows their hay, the quarry its stone. A family buying bread pays the growers in
+    proportion to what they offered; the millers, bakers, carters and tailors take their margin. What no
+    one offered comes from the lord's own barns.
+  - **Rents and taxes are paid, not reckoned:** a lord's income is what his barns sell, his houses let,
+    his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
+    from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
+    their men come from; castellans to their own; sell-swords carry their pay out of the realm.
+  - **Merchants and carters:** a merchant household (or a stranger, if no one at home can afford the
+    load) buys at the origin's price, hires the carters or boatmen, pays the tolls and the crown's aid from
+    its margin, and sells at the destination as the town buys. Foreign ships buy and sell for silver from
+    abroad, and pay the lord's customs.
+  - **Building is wages:** castles, churches, walls, roads, plans, new houses and rebuilds pay the masons,
+    carpenters, thatchers and carters of the place (or the nearest that has them); stone is bought from
+    the quarry's owner. Whoever will own a new house pays for it.
+  - **Death and marriage:** a dead man's purse, beasts and buildings pass to his widow or eldest grown
+    child, else escheat to the lord; a bride brings her purse and beasts to her husband's household.
+  - **Debts stand:** purses and coffers may run below nothing; a family in debt sells beasts and then
+    land (the lord buys when no neighbour can), and a lord in debt sells fiefs.
 
 ## How it works
 
