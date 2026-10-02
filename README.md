@@ -65,12 +65,16 @@ in the game (your spouse, else the ablest of your kin); otherwise it is the game
 realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
 
 Click 🗣 in the game's top bar and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
-Cursor, or any app that can run commands and local MCP servers). The agent checks for Node 18+, fetches this
-repository, registers `tools/advisor-mcp.mjs` as a local MCP server (one file, no dependencies; in Claude Code,
-`claude mcp add furlong -- node <path>/tools/advisor-mcp.mjs`), and answers with a six-letter pairing code. Enter
-the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP settings tells you what to
-paste where. The bridge talks only to a game open in a browser on the same machine (`FURLONG_PORT` changes its
-port, default 7357).
+Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
+(one file, no dependencies): the agent checks for Node 18+, saves it as `furlong-advisor.mjs`, registers it as a
+local MCP server (in Claude Code, `claude mcp add furlong -- node <path>/furlong-advisor.mjs`), and answers with a
+six-letter pairing code. Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
+settings tells you what to paste where. The bridge talks only to a game open in a browser on the same machine
+(`FURLONG_PORT` changes its port, default 7357); once paired it learns the rules from the game itself.
+
+The bridge's source is `advisor/furlong-advisor.mjs` (also runnable from a copy of this folder as
+`node tools/advisor-mcp.mjs`); `tools/stamp.sh` embeds it and the rules in `index.html` for each release.
+`advisor/` is laid out as an npm package (`furlong-advisor`, unpublished) for a later `npx` release.
 
 It has three tools. `search` finds controls, places, houses, people and rules. `discover` lists what can be done
 now: every button, slider and list the interface shows, read off the live page, so new buttons need no upkeep,
