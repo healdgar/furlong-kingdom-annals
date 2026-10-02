@@ -442,6 +442,27 @@ What happens is decided by quantities the economy produces, not by numbers cross
   and forts where held land is worth keeping; **risings** come when a lord's grievance, weighed by his
   chance of winning, outruns the risk; **towns** revolt when their anger outruns the garrison's hold;
   **wars** end when the realm wearies of them.
+- **Households** keep their own purses and make their own choices once a year:
+  - **Growing up:** grown children set up house of their own when they can earn their keep (by
+    twenty-six at the latest), with a portion from their parents; their new household needs a roof,
+    which is what builds the town.
+  - **Spending:** the necessaries (bread, fuel, cloth) are bought at the town's prices; what is left goes
+    as the family's temper takes it (the bold to the tavern, the vain to finery, the careful into
+    savings), a cow for a farming family that can afford one, land when a neighbour must sell.
+  - **The trades live on it:** what families spend is the living of the bakers, carpenters, smiths,
+    carters, merchants and the rest, shared among those who follow each trade, so a crowded trade pays
+    less and a scarce one more.
+  - **Choosing a trade:** at fourteen the young take up what pays best here: the father's trade is
+    learned at home, any other costs an apprenticeship the family must afford; a man under forty whose
+    trade has failed him turns to a better one.
+  - **Moving:** a family goes to another place when its trade would do better there by more than the
+    road and setting up anew would cost; whole named households take to the road together.
+  - **Homes on the land:** a farmer who owns his strips builds a farmstead out among them when the walk
+    saved and the eye kept on his crops repay the cost and the company of the village (less so in
+    troubled times); a landlord builds one for his tenant when the rent repays him; woodmen and fishers
+    put up huts by the wood and the water.
+  - **Time:** the poor work on past dusk; a man with coin to spare and a taste for company stops at the
+    tavern on his way home.
 
 ## How it works
 
