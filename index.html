@@ -4302,13 +4302,13 @@ function tickSettlers(){ // a lord's new street or quarter draws settlers to its
       b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);got++;} // the roof is built; the families come by tickMigration, drawn by the room
     if(got&&!W.prehistory&&frand()<0.5)emit('trade',2,s.pos,`Settlers take up ${got} plot${got>1?'s':''} on the new streets of ${s.name}, drawn by the low rents.`);}}
 function tickInfill(){
-  if(day()%360!==245||W.prehistory&&AD()<1100)return;if(AD()<1100)return;
-  for(const s of W.settlements){if(s.kind==='village'||s.pop<300||!s._lay||!s._lay.live||s.siegeBy)continue;
+  if(day()%360!==245)return;
+  for(const s of W.settlements){if(!s._lay||!s._lay.live||s.siegeBy)continue; // anywhere the rent of a plot comes to outweigh the garden: in practice the hearts of busy towns
     if(s._hhY!==year())houseFolk(s);
     const demand=s.pop/Math.max(1,housing(s)); // a new house lets only if there are tenants for it
-    if(demand>0.9&&s.pop>s._room*0.75&&s._lay.live.wallLanes(2)){syncLive(s);if(!s._laneNote){s._laneNote=1;s.history.push({yr:year(),t:'New lanes were laid into ground worth building on that no street yet reached.'});}}
+    if(demand>0.95&&s._lay.live.wallLanes(Math.min(4,Math.ceil((demand-0.95)*20)))){syncLive(s);if(!s._laneNote){s._laneNote=1;s.history.push({yr:year(),t:'New lanes were laid into ground worth building on that no street yet reached.'});}}
     const homes=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&RESID.has(b.arch)&&b.arch!=='court'&&b.arch!=='cot'&&!b.backOf);
-    let n=demand<0.92?0:Math.max(1,Math.round(s.pop/150*Math.min(2,(demand-0.9)*10))),done=0;
+    let n=Math.max(0,Math.round(s.pop/150*clamp((demand-0.9)*10,0,2))),done=0; // as many as there are tenants wanting rooms
     const cands=homes.map(b=>{const rent=lotRentAt(s,b.x,b.z,b.st)/56,area=b.lot&&b.lot.length>2?polyArea(b.lot)-b.w*b.d:80;return{b,rent,area};}).filter(c=>c.area>55&&c.rent>YARD_WORTH*1.5).sort((a,c)=>c.rent-a.rent);
     for(const c of cands){if(done>=n)break;const b=c.b,h=(b.hh||[])[0],rich=h&&(h.w||0)>150;
       if(rich&&c.rent<YARD_WORTH*5)continue; // a rich household keeps its garden
@@ -5755,9 +5755,9 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   // the frontier: a lord holding a march far from his own places plants a fort to keep it
   W.houses.forEach((h,hi)=>{
     if(h.exiled||(h._fortT||0)>day())return;
-    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(held.length<12||purse(hi)<1600)return; // a march worth a castle, and the silver to raise one
+    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(!held.length)return;const worth=held.reduce((t,f)=>t+landValue(f),0)*8;if(worth<900||purse(hi)<900*1.3)return; // a march whose fields are worth a castle to keep, and the silver to raise one
     const cx=held.reduce((t,f)=>t+f.x,0)/held.length,cz=held.reduce((t,f)=>t+f.z,0)/held.length;
-    if(nearOwnPlace(hi,cx,cz,1100)||!chance('sim',0.5))return;
+    if(nearOwnPlace(hi,cx,cz,1100))return;
     const seat=W.settlements.find(s=>s.owner===hi);if(!seat)return;
     const n=W.settlements.length;
     for(let k=0;k<12&&W.settlements.length===n;k++){const a=k*2.4,r=k*40;
@@ -5800,7 +5800,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       else if(h.gold<-1500){h.loyalty=clamp(h.loyalty-3,0,100);} // no buyer: the creditors press, and the lord grows desperate
     }
   });
-  if(day()%360===260&&chance('sim',0.12))foundTown();
+  if(day()%360===260)foundTown();
   // enfeoffment: a crown that holds too much grants its outlying towns to vassals (or recalls an exiled house to hold them)
   if(!W.war&&day()%360===(200%360)){
     const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
@@ -6171,15 +6171,15 @@ function renderShips(){
     m.scale.setScalar(sh.kind==='carrack'?5:sh.kind==='hulk'?4.4:sh.kind==='great cog'?4:3.4);m.userData.pick.sh=sh;}
   for(;k<G.shipMeshes.length;k++)G.shipMeshes[k].visible=false;}
 function foundTown(){ // a lord founds a new market town, laid out in one stroke (Freiburg): only in an age that plans towns
-  if(AD()<1120||W.settlements.filter(o=>o.planned).length>=2||!bldRoom(200))return;
-  const lords=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&(W.houses[i].gold||0)>1500);
+  if(AD()<1120||!bldRoom(200))return;
+  const lords=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&purse(i)>1200*1.3+hostTarget(i)*4);
   if(!lords.length)return;const hi=wpick(lords,i=>W.houses[i].gold/1500,1),seat=W.settlements.find(o=>o.owner===hi);if(!seat)return;
   const sites=[];
   for(const r of W.roads){if(r.a===r.b)continue;const q=r.path[Math.floor(r.path.length/2)];if(!q)continue;
     if(W.settlements.some(o=>dist2d(q.x,q.z,o.pos.x,o.pos.z)<(o.radius||90)+520))continue;
     const f=G.land&&furlongAt(q.x,q.z);if(f&&f.lord>=0&&f.lord!==hi)continue;
-    sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z)});}
-  const site=wpick(sites,q=>-q.d/1500,1);if(!site)return;
+    sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z),v:(r.vol||0)});}
+  const site=sites.map(q=>({...q,val:q.v*60*12-q.d/30})).sort((a,b)=>b.val-a.val)[0];if(!site||site.val<1200)return; // a town where the carts pass: its tolls and stallage over a dozen years must repay the founding
   const n=W.settlements.length;
   if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;book(W.houses[hi],'founding',-1200);}
 }
@@ -7578,20 +7578,21 @@ function tickEconomy(){
       if(s.taxBreakUntil>day()&&s.owner>0&&s.owner===s.taxBreakHouse&&W.houses[s.owner])W.houses[s.owner].gold=(W.houses[s.owner].gold||0)+due;else W.treasury+=due;} // dues remitted to a lord stay in his purse
   }
   // caravans
-  if(W.caravans.length<Math.round(30*MOD.trade)&&day()%2===0){
-    for(let attempt=0;attempt<3;attempt++){
+  const carters=Math.round((12+W.settlements.reduce((t2,x)=>t2+x.pop,0)/160)*MOD.trade); // as many carts on the roads as the realm has carters for
+  if(W.caravans.length<carters&&day()%2===0){
+    for(let attempt=0;attempt<5;attempt++){
       const oi=randi('sim',W.settlements.length),o=W.settlements[oi];
       if(closedToTrade(o))continue;
-      let best=null;const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?4:12):o.stores[g]>40),po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
+      let best=null;const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?2:6):o.stores[g]>o.pop*(NEED[g]||0)*30+5) // what it has beyond a month's own needs,po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
       if(!sell.length)continue;
       for(let di=0;di<W.settlements.length;di++){
         if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
         for(const g of sell){
-          const margin=price(d,g)-po[g];
-          if(margin>GOODBASE[g]*0.5){
+          const margin=price(d,g)-po[g],carry=0.12+GOODBASE[g]*0.04+dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z)/1000*0.08; // the carter's hire, tolls and loss on the way
+          if(margin>carry){
             const r=route(oi,di);if(!r)continue;
-            const score=margin/Math.max(600,r.len);
+            const score=(margin-carry-r.len/1000*0.04)/Math.max(600,r.len);if(score<=0)continue;
             if(!best||score>best.score)best={score,di,g,r};
           }
         }
@@ -7610,27 +7611,7 @@ function tickEconomy(){
       }
     }
   }
-  // ambient market traffic keeps the roads alive even without arbitrage gaps
-  for(let amb=0;amb<2;amb++){
-    if(W.caravans.length>=Math.round(26*MOD.trade)||!chance('sim',0.5*MOD.trade))continue;
-    const oi=randi('sim',W.settlements.length);let di=randi('sim',W.settlements.length);
-    if(oi!==di){
-      const o=W.settlements[oi],d2=W.settlements[di];
-      if(!closedToTrade(o)&&!closedToTrade(d2)){
-        const g=GOODS.filter(x=>LU[x]===undefined).reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
-        if(spareOf(o,g)>25){
-          const r=route(oi,di);
-          if(r){
-            const qty=Math.min(o.stores[g]*0.25,40);o.stores[g]-=qty;
-            W.caravans.push({origin:oi,dest:di,good:g,qty,value:qty*price(d2,g),poly:r.poly,len:r.len,
-              departDay:day(),arriveDay:day()+(r.time??r.len)/CART_MPD,robbed:false,sea:false,proxy:null});
-            const rr=W.roads.find(r2=>(r2.a===oi&&r2.b===di)||(r2.a===di&&r2.b===oi));
-            if(rr)rr.vol=(rr.vol||0)+0.5;
-          }
-        }
-      }
-    }
-  }
+  // (no 'ambient' carts: a cart goes where the price difference pays its way)
   // river barges between river-linked settlements (faster and safer than the road)
   if(W.riverPairs&&W.riverPairs.length&&W.caravans.filter(c=>c.river).length<5&&chance('sim',0.4*MOD.trade)){
     const pr=pick('sim',W.riverPairs);
@@ -9024,10 +9005,11 @@ function tickTenure(){
     const L=W.houses[s.owner];if(urban>0){if(s.owner>0&&L){L.gold=(L.gold||0)+urban*0.5;book(L,'town rents',urban*0.5);}else W.treasury+=urban*0.5;} // the townsfolk's rents: half reach the lord, the rest go in repairs and his officers' pockets
     // the market in land
     for(const h of heads){if(h.w>=-4)continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
-      const f=mine[Math.floor(frand()*mine.length)],price=f.area/1e4*10;const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
+      const f=mine[Math.floor(frand()*mine.length)],price=Math.max(f.area/1e4*4,landValue(f)*10);const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
       if(buyer){buyer.w-=price;f.own=buyer.id;if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else f.own=-1;
       h.w+=price;f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
-    if(AD()>=1349)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=f.area/1e4*12;if(h.w>price*2.5){h.w-=price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
+    const tillHa=T.reduce((t2,f)=>t2+f.area,0)/1e4,hands=Math.max(1,heads.length),dear=tillHa/hands; // land per household: where hands are few, labour is dear and a home farm worked by hired men no longer pays
+    if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){h.w-=price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
     for(const h of heads){const mine=T.filter(f=>f.wk===h.id&&f.own===h.id),can=Math.max(2,Math.ceil((size.get(h)||1)*0.8));if(mine.length<=can)continue; // more strips than the household can work: let to sharecroppers
       const ll=heads.filter(o=>tills(o,s)&&!(o._strips>0));for(const f of mine.slice(can)){const t=ll.shift();if(!t)break;f.wk=t.id;f.ten='crop';t._strips=1;}}
   });
