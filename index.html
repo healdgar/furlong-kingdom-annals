@@ -2265,7 +2265,7 @@ function layoutSettlement(s){
       if(s.wallRad&&s.villageOut){s.villageOut=false;hist(0,'The old village was at last taken within the walls.');}
       const stone=AD()>=1150&&hasStone(s,'wall'),bast=bastioned&&!first&&AD()>=1500&&stone; // a circuit in stone only if the stone is in the yards
       const oc=newCircuit(bast?20:14);if(oc==='same'){live=false;return false;}
-      s.bastions=bast;s.walls=stone?Math.max(2,s.walls+1):1;if(stone)useStone(s,'wall');
+      s.bastions=bast;s.walls=stone?Math.max(2,s.walls+1):1;if(stone)useStone(s,'wall');s.wallDmg=null;s.breachUntil=0;
       const cleared=clearWallLine(s);cleared.forEach(unplace);
       let gl=[];if(bast){gl=liveB().filter(b=>!b.inst&&wallSide(b.x,b.z)>0&&wallSide(b.x,b.z)<70);gl.forEach(unplace);}
       hist(0,(first?(s.walls===1?'A palisade and ditch were raised about the town':'Walled in stone'):(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':circuitLine(oc,false)))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for the new line`:'')+'.');
@@ -2273,7 +2273,7 @@ function layoutSettlement(s){
     fire(at){live=true;curE=E;fire(at);live=false;},
     clear(at){live=true;curE=E;fire({...at,clear:true});live=false;},
     siege(){live=true;curE=E;siege(0);live=false;},
-    stoneWall(){if(s.walls!==1||!s.wallRad)return false;live=true;s.walls=2;hist(0,'The palisade was taken down and the town walled in stone on the same line.');live=false;return true;},
+    stoneWall(){if(s.walls!==1||!s.wallRad)return false;live=true;s.wallDmg=null;s.breachUntil=0;s.walls=2;hist(0,'The palisade was taken down and the town walled in stone on the same line.');live=false;return true;},
     stoneBailey(){if(!s.bailey||s.baileyStone)return false;live=true;s.baileyStone=true;hist(0,'The bailey palisade was rebuilt as a curtain wall of stone, with towers.');live=false;return true;},
     rebuildKeep(){if(keep&&keep.motte&&!keep.removed){if(AD()<1070)return false;live=true;keep.motte=false;keep.shell=true;keep.tier=2;keep.w=keep.d=11;updateBuildingInstance(keep);
         hist(0,'The timber tower on the motte was replaced by a keep of stone.');live=false;return true;}
@@ -2361,7 +2361,7 @@ function layoutSettlement(s){
     planWall(rad,stone){live=true;curE=E;const kind=new Uint8Array(WALLN);let nat=0; // the circuit as drawn: water along it is a bank, not a wall
       for(let k=0;k<WALLN;k++){const a=k/WALLN*Math.PI*2,x=C.x+Math.cos(a)*rad[k],z=C.z+Math.sin(a)*rad[k];if(W.water[cIdx(toCell(x),toCell(z))]===1||riverAt(x,z,2)){kind[k]=2;nat++;}}
       if(s.wallRad)s.oldWalls.push(Array.from(s.wallRad));
-      s.wallRad=Float32Array.from(rad);s.wallKind=kind;s.natDef=nat/WALLN;s.wallR=Math.max(...rad);s.walls=stone?Math.max(2,s.walls||0):Math.max(1,s.walls||0);s.wallKept=null;
+      s.wallRad=Float32Array.from(rad);s.wallDmg=null;s.breachUntil=0;s.wallKind=kind;s.natDef=nat/WALLN;s.wallR=Math.max(...rad);s.walls=stone?Math.max(2,s.walls||0):Math.max(1,s.walls||0);s.wallKept=null;
       clearWallLine(s).forEach(unplace);live=false;},
     infill(b,bx,bz){ // into the yard behind b (bx,bz: the way out of the back door): a cottage at the foot of the toft, else the house lengthened back
       const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=bx*c-bz*sn,lz=bx*sn+bz*c,alongZ=Math.abs(lz)>=Math.abs(lx),half=alongZ?b.d/2:b.w/2;
@@ -3895,7 +3895,7 @@ function casKeep(s){return s.buildings.find(b=>b.arch==='keep'&&!b.removed&&b.st
 function casOf(s){return s.cas||(s.cas={towers:4,round:AD()>=1200,gate:0,barb:false,outer:0,chapel:false,tried:{}});}
 function casR(s,R){return R.r+(s.cas&&s.cas.outer&&R===casRing(s)?s.cas.outer:0);}
 function casStone(s){const R=casRing(s);return !R?false:R===s.bailey?!!s.baileyStone:R===s.hillCastle?!(s.hillCastle.timber&&!s.motteStone):!!R.stone;}
-function casCfg(s,R){if(R!==casRing(s))return{needGate:true};const c=casOf(s);return{towers:c.towers,square:!c.round,gate:c.gate,needGate:true};}
+function casCfg(s,R){if(R!==casRing(s))return{needGate:true};const c=casOf(s);return{towers:c.towers,square:!c.round,gate:c.gate,needGate:true,dmg:c.dmg||0};}
 function casDesc(s){const R=casRing(s),c=casOf(s),k=casKeep(s),p=[];
   if(k)p.push(k.motte?'a timber tower on its motte':s.motte?'a shell keep of stone on its motte':k.hill?'a keep on the height':'a tower keep'+(k.tier>=2&&k.w>=18?', rebuilt great':''));
   if(R){const st=casStone(s);p.push((R===s.bailey?'a bailey':R===s.hillCastle?'a ward on the hill':'a yard')+' within '+(st?`a curtain of stone with ${c.towers} ${c.round?'round':'square'} towers`:'a palisade and ditch'));
@@ -3908,6 +3908,7 @@ function casLvl(s){ // what the place is worth fortifying: a village's tower, a 
   return s.kind==='capital'?3:seat||s.role==='seat'||s.kind!=='village'&&s.role==='border'?2:s.kind!=='village'||s.role==='border'||s.role==='fort'?1:0;}
 function casNext(s,ad){const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-25),lv=casLvl(s);
   const great=lv>=2,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
+  if((c.dmg||0)>0.08)return{k:'repair',cr:Math.round(200+c.dmg*1500),st:Math.round(c.dmg*200),t:'the battered castle repaired'};
   if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))return{k:'keep',cr:500,st:150,t:'the keep rebuilt in stone'};
   if(s.bailey&&!s.baileyStone&&ad>=1150)return{k:'bailey',cr:600,st:120,t:'the bailey walled in stone'};
   if(!R&&k&&!k.motte&&ad>=1000&&lv>=1&&ok('ward'))return{k:'ward',cr:ad>=1150?900:400,st:ad>=1150?120:0,t:ad>=1150?'a curtain of stone about the keep':'a palisade about the keep'};
@@ -3929,17 +3930,17 @@ function tickCastles(){
     const hi=s.owner,Lh=hi>0?W.houses[hi]:null;if(Lh&&Lh.exiled)return;
     const c=casOf(s),n=casNext(s,ad);c.next=n;if(!n)return;
     const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=Math.round(n.cr+(n.st-useS)*3); // a lord pays dear for stone carted from afar
-    const threat=(s.role==='border'?1:0)+(houseAtWar(hi)?1:0)+(s.raidedUntil>day()-360*4?0.6:0)+(s.siegeBy?1:0);
+    const threat=(n.k==='repair'?2:0)+(s.role==='border'?1:0)+(houseAtWar(hi)?1:0)+(s.raidedUntil>day()-360*4?0.6:0)+(s.siegeBy?1:0);
     if(purse(hi)<cost*(hi>0?2.5:4)||!chance('sim',0.14+0.14*threat))return; // built from the surplus, not the war chest; most of all when there is a threat
     const k0motte=!!(casKeep(s)||{}).motte;let ok=true,sync=false;const L=s._lay.live,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);
     if(n.k==='keep'){ok=L.rebuildKeep();if(ok)s.motteStone=true;sync=true;}else if(n.k==='bailey')ok=L.stoneBailey();
     else if(n.k==='ward'){ok=L.ward(ad>=1150);sync=true;}else if(n.k==='outer'){ok=L.outer();sync=true;}else if(n.k==='chapel'){ok=L.chapel();sync=true;if(ok)c.chapel=true;}
     else if(n.k==='wardStone')s.ward.stone=true;else if(n.k==='towers'){c.towers+=2;if(ad>=1200)c.round=true;}else if(n.k==='gate')c.gate=1;else if(n.k==='barb')c.gate=2;
-    else if(n.k==='round')c.round=true;else if(n.k==='hall'&&hall){hall.tier=2;hall.h=ARCH.hall[2]*1.3;updateBuildingInstance(hall);}
+    else if(n.k==='round')c.round=true;else if(n.k==='repair')c.dmg=0;else if(n.k==='hall'&&hall){hall.tier=2;hall.h=ARCH.hall[2]*1.3;updateBuildingInstance(hall);}
     if(!ok){c.tried[n.k]=year();return;}
     spend(hi,cost);if(Lh)book(Lh,'castle works',-cost);s.stores.stone=have-useS;
     const who=Lh?Lh.name:'The crown',kn=casKeep(s),cn=kn&&buildingName(kn)||'the castle of '+s.name;
-    const t={keep:k0motte?`${who} has the timber tower of ${cn} pulled down and a keep of stone raised on the motte.`:`${who} rebuilds the keep of ${s.name} as a great tower of stone.`,
+    const t={repair:`Masons make good the battered curtain of ${cn}; the breaches are walled up.`,keep:k0motte?`${who} has the timber tower of ${cn} pulled down and a keep of stone raised on the motte.`:`${who} rebuilds the keep of ${s.name} as a great tower of stone.`,
       bailey:`The palisade of the bailey at ${cn} is taken down and the bailey walled in stone.`,ward:`${who} throws ${n.t} at ${s.name}; the houses within the yard are pulled down.`,wardStone:`The palisade about ${cn} is rebuilt in stone.`,towers:`Two towers are added to the curtain of ${cn}.`,
       gate:`A gatehouse of two towers is built at ${cn}, its passage closed by a portcullis.`,hall:`A great hall of stone is raised in the yard of ${cn}.`,chapel:`A chapel is built in the yard of ${cn}.`,
       round:`The old square towers of ${cn} are rebuilt round, the better to turn the stones of a siege engine.`,barb:`A barbican is built before the gate of ${cn}.`,
@@ -4176,6 +4177,25 @@ function tickInfill(){
       if(!s._infillNote){s._infillNote=1;s.history.push({yr:year(),t:'The yards behind the houses in the heart of the town began to fill: houses lengthened back into their tofts, cottages built at the foot of the gardens to let.'});
         emit('trade',2,s.pos,`${s.name}: ground in the heart of the town is too dear for gardens; the yards behind the houses fill with cottages and workshops.`);}}
     if(done)syncLive(s);}}
+/* ---------------- damage to the works: battered in a siege, breached in a storm, crumbling when neglected, made good when paid for ---------------- */
+const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+function wallDmgAt(s,a){const D=s.wallDmg;if(!D)return 0;const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN;return Math.max(D[i],D[(i+1)%WALLN]);}
+function wallDamage(s){if(!s.wallDmg)return 0;let t=0;for(const v of s.wallDmg)t+=v;return t/WALLN;}
+function damageWalls(s,c,w,amt){ // batter the circuit about angle c, most at the middle
+  if(!s.wallRad)return;const D=s.wallDmg||(s.wallDmg=new Float32Array(WALLN));
+  for(let k=0;k<WALLN;k++){const a=k/WALLN*Math.PI*2,d=Math.abs(Math.atan2(Math.sin(a-c),Math.cos(a-c)));if(d>w)continue;D[k]=Math.min(1,D[k]+amt*(1-d/w)*(0.5+hash01(k*3.7+s.pos.x)));}}
+function siegeEngines(){const ad=AD();return ad<1100?0.0012:ad<1300?0.0035:0.008;} // rams and mining; trebuchets; guns
+function tickRepairs(){ // once a year: the works made good, as the lord (or the burghers) can pay; neglected walls crumble
+  if(day()%360!==262)return;
+  for(const s of W.settlements){if(s.siegeBy)continue;const hi=s.owner,Lh=hi>0?W.houses[hi]:null;
+    if(s.wallRad&&s.prosperity<25&&chance('sim',0.4))damageWalls(s,frand()*6.283,0.4,0.05); // a poor town lets its walls go
+    const D=wallDamage(s),open=s.breachUntil>day();
+    if(s.wallRad&&(D>0.02||open)){const per=2*Math.PI*(s.wallR||100),cost=Math.round(D*per*(s.walls>=2?3:1)+(open?150:0)),st=Math.round(D*per*(s.walls>=2?0.3:0));
+      const have=s.stores.stone||0,carted=Math.max(0,st-have)*0.6;
+      if(purse(hi)>=(cost+carted)*1.5){spend(hi,cost+carted);if(Lh)book(Lh,'repairs',-(cost+carted));s.stores.stone=Math.max(0,have-st);for(let k=0;k<WALLN;k++)s.wallDmg[k]=0;s.breachUntil=0;
+        const t=open?'The breach in the walls was walled up and the gate rehung; the battered stretches were patched.':'Masons made good the battered stretches of the walls.';s.history.push({yr:year(),t});
+        if(!W.prehistory)emit(Lh?'house':'trade',3,s.pos,`${s.name}: ${t.charAt(0).toLowerCase()+t.slice(1)}`.replace(/^(\w)/,m=>m.toUpperCase()));}
+      else if(open||D>0.3)s._repairWant=cost+carted;}}}
 function chFabric(b){const ch=chOf(b),L=chLay(b),p=[];
   p.push(ch.stone?(ch.gothic?'stone, in the new pointed style':'stone, round-arched'):'timber');
   p.push(`a nave ${Math.round(L.nl)} m by ${Math.round(L.nw)}${ch.aisles?` with ${ch.aisles===2?'two aisles':'an aisle'}`:''}`);
@@ -4484,8 +4504,9 @@ function rebuildWalls(){
       if(blocked(m)||blocked(p)&&blocked(q))continue;
       if(k===force||gate(p,q)){if(k-lastGap>1&&!keepOut.some(C=>dist2d(m.x,m.z,C.x,C.z)<C.r+2))gaps.push({m,a:(a0+a1)/2,ry:-Math.atan2(q.z-p.z,q.x-p.x)});lastGap=k;continue;}
       let segs=[[p,q]];for(const C of keepOut)segs=segs.flatMap(([u,v])=>segOutside(u,v,C));
+      const ruin=(cfg.dmg||0)>0&&hash01(k*7.1+cx*0.01)<cfg.dmg*0.75; // a stretch thrown down in a siege, not yet rebuilt
       for(const[u,v]of segs){const L=dist2d(u.x,u.z,v.x,v.z);if(L<=0.8)continue;const n=Math.max(1,Math.ceil(L/4)); // short lengths, each topped at its own ground: the curtain climbs the slope in small steps
-        for(let i=0;i<n;i++)slab(lerpPt(u,v,i/n),lerpPt(u,v,(i+1)/n),stone?2.6:1.4,h,stone?0xa59c8d:0x6e5334,stone?0x958c7e:0x5f472d);}}
+        for(let i=0;i<n;i++)slab(lerpPt(u,v,i/n),lerpPt(u,v,(i+1)/n),stone?2.6:1.4,ruin?h*0.25:h,ruin?0x7d756a:stone?0xa59c8d:0x6e5334,ruin?0x857c70:stone?0x958c7e:0x5f472d);}}
     const nT=cfg.towers||4; // mural towers: square in the old work, round in the new
     for(let k=0;k<nT;k++){const a=k/nT*6.2832+0.4,t=P(a);if(blocked(t)||keepOut.some(C=>dist2d(t.x,t.z,C.x,C.z)<C.r+3)||gaps.some(g=>dist2d(g.m.x,g.m.z,t.x,t.z)<10))continue;
       if(stone&&cfg.square)inst.sqt.push([t.x,hAt(t.x,t.z),t.z,-a,h,6.2]);else inst.tower.push([t.x,hAt(t.x,t.z),t.z,stone,h,stone?7:4.5]);}
@@ -4564,13 +4585,13 @@ function rebuildWalls(){
     for(const rn of runs){
       const P=rn.map(i=>{const a=i/N*Math.PI*2;return{a,...at(a)};});
       P.forEach((p,k)=>{ // outward normal of the traced line (not the radial: the trace bends)
-        p.g=hAt(p.x,p.z);p.top=p.g+H;
+        p.g=hAt(p.x,p.z);p.dm=wallDmgAt(s,p.a);p.top=p.g+H*(1-0.85*sstep(0.45,1,p.dm)); // a battered stretch is lower, a breach a heap of rubble
         const A=P[Math.max(0,k-1)],Bq=P[Math.min(P.length-1,k+1)];let nx=Bq.z-A.z,nz=-(Bq.x-A.x);const L=Math.hypot(nx,nz)||1;nx/=L;nz/=L;
         if(nx*Math.cos(p.a)+nz*Math.sin(p.a)<0){nx=-nx;nz=-nz;}
         p.ox=nx;p.oz=nz;});
       for(let k=0;k<P.length-1;k++){
         const p=P[k],q=P[k+1],h2=T/2,sh=0.93+hash01(k+s.name.length)*0.07;
-        const cc=new THREE.Color(col).multiplyScalar(sh).getHex();
+        const cc=(p.dm+q.dm)/2>0.8?0x7d756a:new THREE.Color(col).multiplyScalar(sh*(1-0.25*Math.min(1,(p.dm+q.dm)))).getHex();
         const O=(v,y)=>[v.x+v.ox*h2,y,v.z+v.oz*h2],I=(v,y)=>[v.x-v.ox*h2,y,v.z-v.oz*h2];
         const mo=[(p.ox+q.ox)/2,0,(p.oz+q.oz)/2];
         quad(O(p,p.g-2.5),O(q,q.g-2.5),O(q,q.top),O(p,p.top),mo,cc);                 // outer face
@@ -4579,10 +4600,10 @@ function rebuildWalls(){
         if(bast){}
         else if(stone){ // merlons along the outer parapet
           const L=dist2d(p.x,p.z,q.x,q.z);
-          for(let t=1;t<L;t+=3.2){const f=t/L;inst.merlon.push([lerp(p.x,q.x,f)+p.ox*(h2-0.5),lerp(p.top,q.top,f),lerp(p.z,q.z,f)+p.oz*(h2-0.5),-Math.atan2(q.z-p.z,q.x-p.x)]);}
+          if((p.dm+q.dm)/2<0.35)for(let t=1;t<L;t+=3.2){const f=t/L;inst.merlon.push([lerp(p.x,q.x,f)+p.ox*(h2-0.5),lerp(p.top,q.top,f),lerp(p.z,q.z,f)+p.oz*(h2-0.5),-Math.atan2(q.z-p.z,q.x-p.x)]);}
         }else{ // a palisade: sharpened stakes along the top
           const L=dist2d(p.x,p.z,q.x,q.z);
-          for(let t=0;t<L;t+=1.1){const f=t/L;inst.stake.push([lerp(p.x,q.x,f),lerp(p.top,q.top,f),lerp(p.z,q.z,f),0.85+hash01(t*7+k)*0.4]);}
+          for(let t=0;t<L;t+=1.1){const f=t/L;if(hash01(t*3.1+k)<(p.dm+q.dm)/2)continue;inst.stake.push([lerp(p.x,q.x,f),lerp(p.top,q.top,f),lerp(p.z,q.z,f),0.85+hash01(t*7+k)*0.4]);}
         }
       }
       // end caps where a run stops (gates, water)
@@ -4618,7 +4639,7 @@ function rebuildWalls(){
       }else{
         // towers: at both ends of every run, and every ~45 m along it
         const every=Math.max(1,Math.round((stone?45:60)/(2*Math.PI*wr/N)));
-        P.forEach((p,k)=>{if(k===0||k===P.length-1||k%every===0)inst.tower.push([p.x,p.g,p.z,stone,H]);});
+        P.forEach((p,k)=>{if((k===0||k===P.length-1||k%every===0)&&p.dm<0.9)inst.tower.push([p.x,p.g,p.z,stone,H*(1-0.5*sstep(0.4,0.9,p.dm))]);});
       }
     }
     // gatehouses spanning each gate — only where there is wall beside them (a gate standing alone in a field is nonsense)
@@ -6983,6 +7004,7 @@ function showInspect(pk){
     sub.textContent=s.bastions?'a bastioned trace, with a ditch':s.walls>=2?'a curtain of stone':'a palisade and ditch';
     let L=0;for(let k=0;k<WALLN;k++){const a0=k/WALLN*Math.PI*2,a1=(k+1)/WALLN*Math.PI*2;L+=dist2d(Math.cos(a0)*wallRadAt(s,a0),Math.sin(a0)*wallRadAt(s,a0),Math.cos(a1)*wallRadAt(s,a1),Math.sin(a1)*wallRadAt(s,a1));}
     h+=row('Circuit',(L/1000).toFixed(2)+' km');h+=row('Gates',wallGates(s).length);
+    {const dm=wallDamage(s),open=s.breachUntil>day();h+=row('State',open?`breached at a gate; ${Math.round(dm*100)}% battered${s._repairWant?` (repairs wait on ${Math.round(s._repairWant)} gold)`:''}`:dm>0.02?`${Math.round(dm*100)}% battered`:'sound');}
     if(kinds[1])h+=row('Cliffs',Math.round(kinds[1]/n*100)+'% of the circuit needs no wall');
     if(kinds[2])h+=row('Water',Math.round(kinds[2]/n*100)+'% runs along the bank');
     if(kinds[3])h+=row('Hillside',Math.round(kinds[3]/n*100)+'% rides a falling slope');
@@ -7831,15 +7853,20 @@ function tickMilitary(){
     if(a.state==='siege'){
       const s=W.settlements[a.at];if(a.siegeArc)siegeArc(a,s);
       s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
+      if(!a.raid&&a.siegeArc){const amt=siegeEngines()*clamp(a.strength/600,0.3,2); // the engines batter the works day by day
+        if(s.wallRad){damageWalls(s,a.siegeArc.c,a.siegeArc.w*0.6,amt);const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.08,amt*2);}
+        else if(casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+amt*0.8);}}
       if(now>=a.siegeUntil){
         if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;driveOffHerds(s,a);a.state='idle';liftSiege(a);marchArmy(a,a.home);a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
           const cm=notableById(a.commander),A=a.strength*(a.morale/70)*generalship(cm),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
-          if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=now+120;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;}
+          if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=Infinity;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;damageWalls(s,g.a,0.06,1);} // the gate and the wall beside it thrown down, until it is rebuilt
+            if(!s.wallRad&&casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+0.35);}
             s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);
             if(g)emit('war',7,{x:g.x,z:g.z},`The gate of ${s.name} gives way under the ram; ${a.name.replace(/^Host/,'the host')} pours in through the breach.`);}
           else{
             a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
+            if(s.wallRad&&a.siegeArc){const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.1,0.25);}
             if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.holdUntil=day()+60;
               emit('war',8,s.pos,vary('storm_fails',[()=>`The storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${a.name} leaves its dead in the ditch at ${s.name}; the storm fails, and the siege is raised.`,()=>`The storm of ${s.name} fails, and its ditch is filled with the dead of ${a.name.replace(/^Host/,'the host')}; the siege is raised.`,()=>`${a.name} raises the siege of ${s.name}, leaving its dead in the ditch; the storm has failed.`,()=>`Failing in the storm of ${s.name}, ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`]));
               if(inRebellion(a))warScore(a.side==='crown'?-10:10);}
@@ -7941,12 +7968,14 @@ function prominence(s){ // height of the town above the country within ~300 m: h
   return s._prom;}
 function fortOf(s){ // what the works and the lie of the land multiply the defenders by
   let m=1;const parts=[];
-  if(s.walls>=2){m+=1.5;parts.push('stone walls');}else if(s.walls===1){m+=0.6;parts.push('palisade and ditch');}
+  {const dm=wallDamage(s),open=s.breachUntil>day(),k=1-0.7*dm-(open?0.35:0);
+    if(s.walls>=2){m+=1.5*k;parts.push('stone walls'+(open?', breached':dm>0.05?`, ${Math.round(dm*100)}% battered`:''));}else if(s.walls===1){m+=0.6*k;parts.push('palisade and ditch'+(open?', breached':dm>0.05?`, ${Math.round(dm*100)}% battered`:''));}}
   if(s.bastions){m+=1;parts.push('bastioned trace');}
   if(s.citadel){m+=0.4;parts.push('citadel');}
   if(s.hillCastle){m+=0.4;parts.push('castle on the height');}
   else if(s.motte){m+=s.motteStone?0.5:0.25;parts.push(s.motteStone?'stone keep on its motte':'motte and bailey');}
   if(s.baileyStone){m+=0.2;if(!parts.includes('stone bailey'))parts.push('stone bailey');}
+  if(s.cas&&s.cas.dmg>0.05){m*=1-0.5*s.cas.dmg;parts.push(`castle ${Math.round(s.cas.dmg*100)}% battered`);}
   if(s.ward){m+=s.ward.stone?0.35:0.15;parts.push(s.ward.stone?'a curtain about the keep':'a palisade about the keep');}
   {const c=s.cas;if(c&&casRing(s)){if(c.towers>4){m+=(c.towers-4)*0.04;parts.push(`${c.towers} ${c.round?'round':'square'} towers on the castle curtain`);}
     if(c.gate){m+=c.gate>=2?0.22:0.12;parts.push(c.gate>=2?'gatehouse and barbican':'a gatehouse');}if(c.outer){m+=0.3;parts.push('a concentric outer ward');}}}
@@ -8787,7 +8816,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -10628,7 +10657,7 @@ function animateWorld(dt,now){
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const m of[G.pennonPole,G.pennonFlag]){m.count=pn;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const[st,g]of G.rams||[])if(!G._ramsSeen.has(st)){scene.remove(g);G.rams.delete(st);} // the siege is over: the ram is drawn off
-  {let dirty=false;for(const t of W.settlements){const k=(t.siegeBy&&t.wallRad?1:0)+(t.breachUntil>simDay?2:0);if(k!==(t._gateK||0)){t._gateK=k;dirty=true;}}if(dirty)rebuildWalls();} // gates shut when the enemy comes, and stand broken after a storm
+  {let dirty=false;for(const t of W.settlements){const k=(t.siegeBy&&t.wallRad?1:0)+(t.breachUntil>simDay?2:0)+4*Math.round(wallDamage(t)*12)+64*Math.round(((t.cas&&t.cas.dmg)||0)*8);if(k!==(t._gateK||0)){t._gateK=k;dirty=true;}}if(dirty)rebuildWalls();} // gates shut when the enemy comes, and stand broken after a storm
   for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
   if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
     placeMarker(W.dragon,markerTex('dragon',g2=>{badge(g2,'#7a1f1f','#e8c247');g2.font='32px serif';g2.textAlign='center';g2.fillText('🐉',32,44);}),vis?dm.position.x:W.dragon.lair.x,(vis?dm.position.y:W.dragon.lair.y)-20,vis?dm.position.z:W.dragon.lair.z,vis?30:20);}
