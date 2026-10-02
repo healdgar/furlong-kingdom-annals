@@ -342,6 +342,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
     <button id="planbtn" title="Plan works with the brush (B): paint streets, squares, a wall or a new quarter in your towns">🖌 Plan</button>
     <button id="savebtn" title="Save, resume or share this game">💾</button>
+    <button id="advbtn" title="An AI advisor: your closest confidant, or the game master (any agent app, any model)">🗣</button>
     <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in half an hour — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
@@ -2774,8 +2775,7 @@ function tickFolk(){
     if(k>0&&mig.length){mig.sort((a,b)=>dist2d(Ss[a.si].pos.x,Ss[a.si].pos.z,s.pos.x,s.pos.z)-dist2d(Ss[b.si].pos.x,Ss[b.si].pos.z,s.pos.x,s.pos.z));
       while(k>0&&mig.length){const p=mig.shift();journey(p,p.si,si,'migrant');k--;}} // they take to the road for their new home
     if(k>2000){(W._dbg||(W._dbg=[])).push([day(),s.name,Math.round(s.pop),s.folk.length,k]);if(W._dbg.length>20)W._dbg.shift();}
-    k=Math.min(k,500); // (the roll catches up with the count a month at a time)
-    while(k>0){const n=seedHousehold(s,si,true).length;if(!n)break;k-=n;}});
+    while(k>0){const hh=seedHousehold(s,si,true),n=hh.length;if(!n)break;for(const q of hh)q.w=0;k-=n;}}); /* the place's own increase, set up in households of their own: they come with their hands, not with silver from nowhere */
   for(const p of mig)dropPerson(p,'Left the realm, to seek a living abroad'); // gone beyond the realm's borders
   const inArms=W.armies.reduce((t,a)=>t+(a.gone?0:Math.max(0,a.strength||0)),0); // a host that melts away took its levies with it
   while(W.levies.length>0&&W.levies.length>inArms*1.05){const i=Math.min(W.levies.length-1,Math.floor(frand()*W.levies.length));dropPerson(W.levies[i],'Lost in the wars, and never came home');W.levies.splice(i,1);}
@@ -5776,7 +5776,7 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
       const go=a.strength*Math.min(0.15,0.04*(a._arrears/Math.max(1e-6,a.strength*(a.standing?0.1:0.25)*PL())));a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
     }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
       const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
-      const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/1.5:1e9);
+      const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/(1.5*PL()):1e9);
       if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0){const c=add*1.5*PL();h.gold-=c;book(h,'recruits',-c);payAmong(heads_(s,q=>ageYrs(q)<50),c,null);}}
     }
   });
@@ -5873,14 +5873,14 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   // the frontier: a lord holding a march far from his own places plants a fort to keep it
   W.houses.forEach((h,hi)=>{
     if(h.exiled||(h._fortT||0)>day())return;
-    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(!held.length)return;const worth=held.reduce((t,f)=>t+landValue(f),0)*8;if(worth<900||purse(hi)<900*1.3)return; // a march whose fields are worth a castle to keep, and the silver to raise one
+    const held=G.land.F.filter(f=>f.lord===hi&&f.held);if(!held.length)return;const worth=held.reduce((t,f)=>t+landValue(f),0)*8;if(worth<900*PL()||purse(hi)<900*PL()*1.3)return; // a march whose fields are worth a castle to keep, and the silver to raise one
     const cx=held.reduce((t,f)=>t+f.x,0)/held.length,cz=held.reduce((t,f)=>t+f.z,0)/held.length;
     if(nearOwnPlace(hi,cx,cz,1100))return;
     const seat=W.settlements.find(s=>s.owner===hi);if(!seat)return;
     const n=W.settlements.length;
     for(let k=0;k<12&&W.settlements.length===n;k++){const a=k*2.4,r=k*40;
       doAct('village',{x:cx+Math.cos(a)*r,z:cz+Math.sin(a)*r},{from:seat,fort:true,owner:hi});}
-    if(W.settlements.length>n){const c=900*PL();spend(hi,c);book(h,'castles',-c);wages(seat,c,'castles');}
+    if(W.settlements.length>n){const c=900*PL();if(spend(hi,c)){book(h,'castles',-c);wages(seat,c,'castles');}}
     h._fortT=day()+360*10;
   });
   // the purse: rents and tolls in, hosts and castellans out; a house in debt sells its outlying lands
@@ -6327,7 +6327,7 @@ function foundTown(){ // a lord founds a new market town, laid out in one stroke
     const f=G.land&&furlongAt(q.x,q.z);if(f&&f.lord>=0&&f.lord!==hi)continue;
     sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z),v:(r.vol||0)});}
   const site=sites.map(q=>({...q,val:q.v*60*12-q.d/30})).sort((a,b)=>b.val-a.val)[0];if(!site||site.val<1200)return; // a town where the carts pass: its tolls and stallage over a dozen years must repay the founding
-  const n=W.settlements.length;
+  const n=W.settlements.length;if(purse(hi)<1200*PL())return; // and the silver to found it
   if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){const c=1200*PL();W.houses[hi].gold-=c;book(W.houses[hi],'founding',-c);wages(seat,c,'founding');}
 }
 function foundDaughter(s,press){
@@ -8391,7 +8391,7 @@ function raiseArmy(hi,fromS,strength,side){
   const s=W.settlements[fromS];
   const commanders=W.notables.filter(n=>n.alive&&n.house===hi&&ageOf(n)>=16&&(n.role==='head'||n.role==='scion'||n.role==='monarch'||n.role==='cousin'));
   const cmd=(hi===0&&commanders.find(n=>n.role!=='monarch'))||commanders[0]||W.notables.find(n=>n.alive&&ageOf(n)>=16); // a marshal leads the royal host; the king rides out only if there is no one else
-  strength=Math.min(strength,s.pop*0.25);
+  strength=clamp(strength||0,0,s.pop*0.25); // no fewer than none: a host is raised from men, not from a debt
   s.pop-=strength*0.7;
   const a={id:++armyN,house:hi,side,name:'Host of '+W.houses[hi].name.replace('House ',''),
     strength,morale:70+randi('sim',20),supply:100,commander:cmd?cmd.id:null,
@@ -8432,7 +8432,7 @@ function startWar(hi,why){
   W.war={rebel:hi,score:0,start:day(),name:'the '+pick('sim',['War of the ','Rising of the ','Rebellion of the '])+h.name.replace('House ','')};
   const rebelPop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0)+400;
   raiseArmy(hi,h.seat,rebelPop*0.09*h.might*MOD.aggr,'rebel');
-  raiseArmy(0,0,W.capital.pop*0.10+W.treasury*0.004,'crown');
+  raiseArmy(0,0,W.capital.pop*0.10+Math.max(0,W.treasury)*0.004,'crown');
   emit('war',10,W.settlements[h.seat].pos,`${h.name} ${why||'renounces its oaths'} and raises its banners against the crown! ${W.war.name} begins.`);
   // allies declare by loyalty & grudge
   W.houses.forEach((oh,oi)=>{
@@ -9341,7 +9341,7 @@ function tickTenure(){
     // the market in land
     for(const h of heads){if(h.w>=-4)continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
       const f=mine[Math.floor(frand()*mine.length)],price=Math.max(f.area/1e4*4,landValue(f)*10);const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
-      if(buyer){buyer.w=(buyer.w||0)-price;f.own=buyer.id;life(buyer,`Bought a strip from ${folkName(h)}, in debt`);life(h,`Sold a strip to ${folkName(buyer)} to pay debts, and stayed on to work it for half the crop`);if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else{f.own=-1;acct(lordAcct(s),-price);life(h,'Sold a strip back to the lord to pay debts');} // no neighbour can pay: the lord takes it back for the price
+      if(buyer){buyer.w=(buyer.w||0)-price;f.own=buyer.id;life(buyer,`Bought a strip from ${folkName(h)}, in debt`);life(h,`Sold a strip to ${folkName(buyer)} to pay debts, and stayed on to work it for half the crop`);if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else if(means(lordAcct(s))>=price){f.own=-1;acct(lordAcct(s),-price);life(h,'Sold a strip back to the lord to pay debts');}else continue; // no neighbour can pay: the lord takes it back for the price
       h.w=(h.w||0)+price;f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
     const tillHa=T.reduce((t2,f)=>t2+f.area,0)/1e4,hands=Math.max(1,heads.length),dear=tillHa/hands; // land per household: where hands are few, labour is dear and a home farm worked by hired men no longer pays
     if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){h.w=(h.w||0)-price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
@@ -9531,10 +9531,10 @@ function tickHouseholds(){
         const strips=(s.furl||[]).filter(f=>f.wk===h.id).length,tiller=TILLERS.has(h.tr)||tills(h,s);
         const worth=k=>BEAST_YR[k]()+(k==='cattle'&&tiller&&(H.cattle||0)<Math.min(4,strips*0.5)?foodYr()*0.5:0)+(k==='horses'&&(h.tr==='carter'||h.tr==='merchant')&&(H.horses||0)<2?foodYr():0)-keep(k); // an ox for his share of the plough team; a horse for the carter
         const owned=BEASTS.reduce((t2,k)=>t2+(H[k]||0),0);
-        const buyer=v=>{if(s.owner>0&&W.houses[s.owner])W.houses[s.owner].gold=(W.houses[s.owner].gold||0)-v;else W.treasury-=v;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers
+        const reeve=s.owner>0&&W.houses[s.owner]?s.owner:0,sellTo=(k,n2,pk)=>{const u=pk*0.8,m=Math.min(n2,Math.floor(Math.max(0,purse(reeve))/Math.max(1e-6,u)));if(!(m>=1))return 0;H[k]-=m;h.w=(h.w||0)+m*u;spend(reeve,m*u);return m;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers, as far as his purse goes
         for(const k of BEASTS){const pk=price(s,k),pool2=Math.max(0,(s.stores[k]||0)-famHerd[k]); // what is not a family's is the lord's, and can be bought
-          if(h.w<0&&(H[k]||0)>=1){const n2=Math.min(H[k],Math.ceil(-h.w/Math.max(0.5,pk*0.8)));H[k]-=n2;h.w=(h.w||0)+n2*pk*0.8;buyer(n2*pk*0.8);life(h,`Sold ${n2} ${k} to pay debts`);continue;} // a hard year: the beasts are sold to pay the debt
-          if(worth(k)<0&&(H[k]||0)>=1){const n2=Math.ceil(H[k]*0.5);H[k]-=n2;h.w=(h.w||0)+n2*pk*0.8;buyer(n2*pk*0.8);continue;} // they eat more than they bring in: half go to the drovers
+          if(h.w<0&&(H[k]||0)>=1){const n2=sellTo(k,Math.min(H[k],Math.ceil(-h.w/Math.max(0.5,pk*0.8))),pk);if(n2)life(h,`Sold ${n2} ${k} to pay debts`);continue;} // a hard year: the beasts are sold to pay the debt
+          if(worth(k)<0&&(H[k]||0)>=1){sellTo(k,Math.ceil(H[k]*0.5),pk);continue;} // they eat more than they bring in: half go to the drovers
           if(worth(k)>0&&pool2>=1&&h.w-n*foodYr()>pk*1.2&&owned<30){const n2=Math.min(pool2,Math.max(1,Math.floor((h.w-n*foodYr())/pk*0.5)),k==='sheep'?10:k==='swine'?4:2);purchase(s,k,h,n2,pk);H[k]=(H[k]||0)+purchase.got;if(purchase.got>=1)life(h,`Bought ${Math.round(purchase.got)} ${k}`);}} // bought from the drovers who brought them, else from the lord's herd
       }
     }
@@ -11112,6 +11112,7 @@ function initUI(){
   });
   document.getElementById('rulebtn').addEventListener('click',()=>{jot({k:'sov',on:!sovOn()});setSovereign(!sovOn());});
   document.getElementById('savebtn').addEventListener('click',saveUI);
+  document.getElementById('advbtn').addEventListener('click',()=>ADV.dialog());
   addEventListener('pagehide',autosave);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosave();}); // leaving the page keeps the game
   document.getElementById('planbtn').addEventListener('click',planToggle);
   document.getElementById('perfbox').addEventListener('click',e=>{if(e.target.id!=='perfcopy')return;const t=perfReport(false);
@@ -12060,6 +12061,117 @@ async function replaySave(o,progress){ // grow the days again, giving each comma
   buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
   if(o.cam){cam.focus.set(o.cam.x,hAt(o.cam.x,o.cam.z),o.cam.z);cam.cur.focus.copy(cam.focus);cam.dist=cam.cur.dist=o.cam.d;cam.yaw=cam.cur.yaw=o.cam.yaw;cam.mode='free';}
   emit('crown',4,W.capital.pos,`The annals are taken up again in AD ${AD()}${o.name?` (“${o.name}”)`:''}.`+(o.build!==buildId()?' This save was made in another build of the game: the realm may have unfolded differently.':''));}
+/* ============================ THE ADVISOR'S DOOR ============================
+   The whole game as three tools for any agent, on any model: search(q), discover(scope), execute(tool, args).
+   The tools are read off the live interface, not listed by hand: every button, slider, list and box the player can use
+   (the top bar, each drawer tab, the open card, the petition, the plan bar) is a tool named by where it is and what it
+   says, so a new button is a new tool with no upkeep. A few verbs no button carries: read the state, find a thing by
+   name, open its card, read the chronicle, speak as whom. An agent reaches it through the connect dialog (a local MCP
+   bridge), or, where the game runs in the agent's own browser, as window.FURLONG. */
+const ADV={muted:false,
+  slug(t){return String(t||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^\w ]+/g,' ').trim().toLowerCase().replace(/\s+/g,'-').slice(0,48)||'x';},
+  labelOf(el){const r=el.closest('.slrow,.wrow,label');let t=el.getAttribute('aria-label')||'';
+    if(!t&&(el.tagName==='INPUT'||el.tagName==='SELECT')&&r)t=(r.querySelector('label span,span')||r).textContent;
+    if(!t)t=[...el.childNodes].filter(n=>n.nodeType===3||n.tagName==='B'||n.tagName==='SPAN'&&!n.classList.contains('tg')).map(n=>n.textContent).join(' ');
+    if(!/\p{L}/u.test(t||''))t=(el.title?el.title.split(/[:(—]/)[0]:'')||el.id||t; // a button that is only a sign is named by what it says on hover
+    return (t||el.dataset.o||el.dataset.s||el.dataset.t||'').replace(/\s+/g,' ').trim().slice(0,80);},
+  scopes(){const S=['hud'];for(const t of document.querySelectorAll('#dtabs .t'))S.push('drawer:'+t.dataset.t);
+    if(document.getElementById('insp').classList.contains('on')||getComputedStyle(document.getElementById('insp')).display!=='none')S.push('card');
+    const pb=document.getElementById('petition');if(pb&&pb.style.display==='block')S.push('petition');
+    const pl=document.getElementById('planbar');if(pl&&pl.offsetParent)S.push('plan');return S;},
+  root(scope){if(scope==='hud')return document.getElementById('hud');if(scope==='card')return document.getElementById('insp');if(scope==='petition')return document.getElementById('petition');if(scope==='plan')return document.getElementById('planbar');
+    if(scope.startsWith('drawer:')){const t=scope.slice(7);if(drawerTab!==t)selectTab(t);return document.getElementById('dbody');}return null;},
+  harvest(scope){const R=ADV.root(scope);if(!R)return[];const out=[],seen={};
+    for(const el of R.querySelectorAll('button,input,select,textarea')){if(el.type==='hidden'||el.closest('[style*="display:none"]'))continue;
+      const label=ADV.labelOf(el);let name=scope+':'+ADV.slug(label||el.tagName);if(seen[name])name+='#'+(++seen[name]);else seen[name]=1;
+      const sm=el.querySelector&&el.querySelector('small'),d={name,label,scope,kind:el.tagName==='BUTTON'?'button':el.tagName==='SELECT'?'select':el.type==='range'?'slider':el.type==='checkbox'?'checkbox':'text',disabled:!!el.disabled};
+      if(el.title)d.help=el.title;if(sm&&sm.textContent.trim())d.why=sm.textContent.trim();if(el.querySelector&&el.querySelector('.tg'))d.place=true; // ⌖: then a place on the map
+      if(d.kind==='slider'){d.value=+el.value;d.min=+el.min;d.max=+el.max;d.step=+el.step||undefined;}else if(d.kind==='select'){d.value=el.value;d.options=[...el.options].map(o=>({value:o.value,label:o.textContent.trim().slice(0,60)}));}else if(d.kind==='checkbox')d.value=el.checked;else if(d.kind==='text')d.value=el.value;
+      d._el=el;out.push(d);}
+    return out;},
+  verbs:[
+    {name:'game:state',kind:'verb',label:'Read the state of the realm, or a part of it',args:{path:'optional: "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>", "rates"'}},
+    {name:'game:find',kind:'verb',label:'Find places, houses and notable people by name',args:{name:'text'}},
+    {name:'game:inspect',kind:'verb',label:"Fly to a place, house or person and open its card (then discover('card') lists the card's own buttons)",args:{name:'a name as game:find returns it'}},
+    {name:'game:chronicle',kind:'verb',label:'The latest entries of the annals',args:{n:'how many (default 20)'}},
+    {name:'game:persona',kind:'verb',label:'Who the advisor is in this game: the ruler’s closest confidant when the player rules, else the game master'},
+    {name:'game:place',kind:'verb',label:'Finish a tool that asked for a place on the map (marked place:true)',args:{at:'a place name, or {x,z}'}},
+    {name:'game:advise',kind:'verb',label:'Whether the player wants counsel unasked (the player can silence the advisor in the Advisor dialog)'}],
+  discover(scope){const S=scope?[scope]:ADV.scopes(),was=drawerTab,out={scopes:ADV.scopes(),tools:[]};
+    try{for(const sc of S)for(const d of ADV.harvest(sc)){const{_el,...x}=d;out.tools.push(x);}}finally{if(drawerTab!==was)selectTab(was);}
+    if(!scope)out.tools.push(...ADV.verbs);out.muted=ADV.muted;return out;},
+  search(q){const Q=String(q||'').toLowerCase().split(/\s+/).filter(Boolean),hit=t=>Q.every(w=>t.toLowerCase().includes(w)),out=[];
+    const all=ADV.discover();for(const t of all.tools)if(hit([t.name,t.label,t.help||'',t.why||''].join(' ')))out.push({tool:t.name,label:t.label,disabled:t.disabled||undefined});
+    for(const e of ADV.entities())if(hit(e.name))out.push({thing:e.name,kind:e.kind,code:e.code});
+    return out.slice(0,60);},
+  entities(){const E=[];W.settlements.forEach((s,i)=>E.push({name:s.name,kind:s.kind,code:'s'+i}));W.houses.forEach((h,i)=>{if(!h.extinct)E.push({name:h.name,kind:'house',code:'h'+i});});
+    for(const n of W.notables||[])if(n.alive)E.push({name:fullTitle(n),kind:'person',code:'n'+n.id});return E;},
+  byName(name){const t=String(name||'').toLowerCase(),E=ADV.entities();return E.find(e=>e.name.toLowerCase()===t)||E.find(e=>e.name.toLowerCase().includes(t))||null;},
+  safe(v,depth){depth=depth??2;if(v==null||typeof v==='number'||typeof v==='boolean')return typeof v==='number'?Math.round(v*100)/100:v;if(typeof v==='string')return v.slice(0,300);
+    if(typeof v==='function'||v.isObject3D||v.isMaterial||v.isTexture||v instanceof Float32Array||v instanceof Uint8Array)return undefined;
+    if(depth<=0)return Array.isArray(v)?`[${v.length}]`:v.name||v.id||'{…}';
+    if(v instanceof Map)return ADV.safe(Object.fromEntries([...v].slice(0,40).map(([k,x])=>[typeof k==='object'?(k.name||k.id):k,x])),depth);
+    if(Array.isArray(v))return v.slice(0,40).map(x=>ADV.safe(x,depth-1));const o={};let n=0;for(const k in v){if(k[0]==='_'||++n>60)continue;const x=ADV.safe(v[k],depth-1);if(x!==undefined)o[k]=x;}return o;},
+  place(s){if(!s)return null;const pr={};for(const g of GOODS)pr[g]=+(price(s,g)/GOODBASE[g]).toFixed(2);
+    return{name:s.name,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),prosperity:Math.round(s.prosperity),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),
+      plague:s.infected>0.5,besieged:!!s.siegeBy,walls:s.walls||0,garrison:Math.round(s.garrison||0),murage:Math.round(s.murage||0),stores:ADV.safe(s.stores,1),prices_vs_usual:pr,trades:tradeCounts(s),wardOf:s.wardOf!=null?W.settlements[s.wardOf]?.name:undefined};},
+  state(path){const p=String(path||'realm'),[k,arg]=[p.split(':')[0],p.split(':').slice(1).join(':')],H=h=>({name:h.name,gold:Math.round(h.gold||0),loyalty:Math.round(h.loyalty??0),might:+(h.might||1).toFixed(2),seat:W.settlements[h.seat]?.name,places:W.settlements.filter(s=>s.owner===W.houses.indexOf(h)).map(s=>s.name),head:h.head!=null?fullTitle(notableById(h.head)||{name:'?'}):undefined,exiled:!!h.exiled});
+    if(k==='realm')return{date:dateStr(),year:AD(),monarch:W.monarch&&fullTitle(W.monarch),treasury:Math.round(W.treasury),people:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),legitimacy:Math.round(W.legitimacy),places:W.settlements.length,
+      war:!!W.war,feuds:(W.feuds||[]).map(f=>[W.houses[f.a]?.name,W.houses[f.b]?.name]),plague:!!W.plagueActive,priceLevel:+(W._pl||1).toFixed(2),player:W.player&&W.player.on?{house:W.houses[W.player.house|0]?.name,legacy:W.player.legacy}:null,petitions:(W.petitions||[]).length,speed:speedIdx};
+    if(k==='settlements')return W.settlements.map(s=>({name:s.name,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),besieged:!!s.siegeBy}));
+    if(k==='settlement'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]):{error:'no such place: '+arg};}
+    if(k==='houses')return W.houses.map(H);
+    if(k==='house'){const e=ADV.byName(arg);return e&&e.code[0]==='h'?H(W.houses[+e.code.slice(1)]):{error:'no such house: '+arg};}
+    if(k==='monarch')return ADV.safe(W.monarch,1);
+    if(k==='player')return W.player?ADV.safe(W.player,1):null;
+    if(k==='armies')return W.armies.filter(a=>!a.gone).map(a=>({house:W.houses[a.house]?.name,strength:Math.round(a.strength),state:a.state,at:W.settlements[a.at]?.name,target:W.settlements[a.target]?.name,arrears:Math.round(a._arrears||0)}));
+    if(k==='wars')return{war:ADV.safe(W.war,1),feuds:ADV.safe(W.feuds,1)};
+    if(k==='victory')return W.vic?{scores:Object.fromEntries(Object.entries(W.vic.scores).map(([h,sc])=>[W.houses[h]?.name,Object.fromEntries(VPATH.map(P=>[P.n,{progress:+sc[P.k].v.toFixed(2),why:sc[P.k].why}]))])),yourHouse:W.houses[campHouse()]?.name,endsAD:W.camp&&W.camp.end+W.startAD}:null;
+    if(k==='prices'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]).prices_vs_usual:{error:'no such place: '+arg};}
+    if(k==='rates')return ADV.safe(MOD,1);
+    return{error:'unknown path',paths:ADV.verbs[0].args.path};},
+  persona(){const P=W.player,hi=P&&P.on?(P.house|0):-1;if(hi<0)return{role:'game master',speak:'As the game master: knowing, wry, fair to every house; explain the rules and what the realm is doing, suggest what a player might try.'};
+    const h=W.houses[hi],head=hi===0?W.monarch:notableById(h.head),sp=head&&head.spouse?notableById(head.spouse):null;
+    const kin=(W.notables||[]).filter(n=>n.alive&&n!==head&&(hi===0?n.house===0||n.role==='courtier':n.house===hi)&&ageOf(n)>=18).sort((a,b)=>stewardship(b)-stewardship(a));
+    const c=sp&&sp.alive&&ageOf(sp)>=18?sp:kin[0];if(!c)return{role:'steward',name:'your steward',speak:'As the ruler’s steward: loyal, plain-spoken, careful of the purse.'};
+    return{role:c===sp?'spouse and closest confidant':'closest confidant',name:fullTitle(c),of:head&&fullTitle(head),house:h.name,traits:c.traits,age:ageOf(c),
+      speak:`Speak as ${fullTitle(c)}, ${c===sp?'the ruler’s spouse':'kin and counsellor'} of ${h.name}: in character, in the first person, with the realm’s own names; counsel the ruler, never command.`};},
+  execute(name,args){args=args||{};
+    if(name.startsWith('game:')){const v=name.slice(5);
+      if(v==='state')return ADV.state(args.path);
+      if(v==='find')return ADV.entities().filter(e=>e.name.toLowerCase().includes(String(args.name||'').toLowerCase())).slice(0,30);
+      if(v==='inspect'){const e=ADV.byName(args.name);if(!e)return{error:'nothing by that name'};goName(e.code);const I=document.getElementById('insp');return{card:(document.getElementById('insptitle').textContent+' — '+document.getElementById('inspsub').textContent+'\n'+document.getElementById('inspbody').innerText).slice(0,4000),tools:ADV.discover('card').tools};}
+      if(v==='chronicle')return allLines.slice(-(+args.n||20));
+      if(v==='persona')return ADV.persona();
+      if(v==='advise')return{muted:ADV.muted};
+      if(v==='place'){if(!placeMode)return{error:'nothing is waiting for a place'};let p=args.at;if(typeof p==='string'){const e=ADV.byName(p);if(!e||e.code[0]!=='s')return{error:'no such place: '+p};const s=W.settlements[+e.code.slice(1)];p={x:s.pos.x,z:s.pos.z};}
+        const mode=placeMode,arg=placeArg;setPlaceMode(null);jot({k:'place',m:mode,x:+(+p.x).toFixed(2),z:+(+p.z).toFixed(2),pk:null});doPlace(mode,arg,{x:+p.x,y:0,z:+p.z},null);return{ok:true,done:mode,news:allLines.slice(-3)};}
+      return{error:'unknown verb'};}
+    const sc=name.slice(0,name.lastIndexOf(':')),was=drawerTab;
+    try{const t=ADV.harvest(sc).find(d=>d.name===name);if(!t)return{error:'no such tool here now; discover() again',scopes:ADV.scopes()};
+      if(t.disabled)return{error:'not now',why:t.why||t.help||'disabled'};const el=t._el,n0=allLines.length;
+      if(t.kind==='button')el.click();
+      else if(t.kind==='checkbox'){el.checked=!!args.value;el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new Event('input',{bubbles:true}));}
+      else{if(args.value===undefined)return{error:'give a value',tool:(({_el,...x})=>x)(t)};el.value=args.value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
+      const r={ok:true,news:allLines.slice(n0).slice(-5)};if(placeMode)r.needsPlace='call game:place with {at: a place name or {x,z}}: '+(document.getElementById('placehint').textContent||'');return r;}
+    finally{if(sc.startsWith('drawer:')&&drawerTab!==was&&!name.startsWith('drawer:'+drawerTab))selectTab(was);}},
+  call(op,args){try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}},
+  ws:null,
+  connect(code,port){if(ADV.ws)try{ADV.ws.close();}catch(_){}const ws=new WebSocket(`ws://127.0.0.1:${port||7357}/?code=${encodeURIComponent(code)}`);ADV.ws=ws;
+    ws.onopen=()=>{ADV.status('Connected: your advisor can see the realm.');};ws.onclose=()=>{if(ADV.ws===ws){ADV.ws=null;ADV.status('Not connected.');}};ws.onerror=()=>ADV.status('Could not reach the advisor bridge on this machine. Is it running?');
+    ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}const r=ADV.call(m.op,m.args);ws.send(JSON.stringify({id:m.id,...r},(k,v)=>v instanceof Element?undefined:v));};},
+  status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
+  dialog(){const box=document.getElementById('savebox');box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
+    box.innerHTML=`<div class="egbox"><h2>An advisor</h2><div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
+      <ol style="margin:8px 0 8px 18px;padding:0;line-height:1.5"><li>In your agent app, add the Furlong advisor bridge: <code>node tools/advisor-mcp.mjs</code> from the game's folder.</li><li>Ask it anything about the realm; it answers with a pairing code.</li><li>Enter the code here.</li></ol>
+      <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. K7Q2PX" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
+      <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
+      <div id="advstat" style="color:#e0c070;margin-top:4px">${on?'Connected: your advisor can see the realm.':'Not connected.'}</div>
+      <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
+    document.getElementById('advgo').onclick=()=>{const c=document.getElementById('advcode').value.trim().toUpperCase();if(c)ADV.connect(c);};
+    document.getElementById('advmute').onchange=e=>{ADV.muted=e.target.checked;};
+    document.getElementById('advclose').onclick=()=>{box.style.display='none';};}};
+window.FURLONG={search:q=>ADV.call('search',{q}).result,discover:s=>ADV.call('discover',{scope:s}).result,execute:(t,a)=>ADV.call('execute',{tool:t,args:a}).result};
 boot();
 </script>
 </body>

@@ -57,6 +57,23 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   browser exposes a GPU timer, draw calls, triangles, memory and scene size.
   *Copy report* puts it on the clipboard.
 
+## An advisor
+
+Bring an AI to your side, on any model, through any agent app that speaks MCP (Claude, a coding agent, an
+OpenRouter-backed client: your choice). When you rule, it is your closest confidant at court, a named person
+in the game (your spouse, else the ablest of your kin); otherwise it is the game master. It sees the whole
+realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
+
+1. Add the bridge to your agent app as a stdio MCP server: `node tools/advisor-mcp.mjs` (Node 18+, no installs;
+   `FURLONG_PORT` to change its port, default 7357).
+2. Ask it anything; until it is paired it answers with a pairing code.
+3. In the game, click 🗣 in the top bar and enter the code.
+
+It has three tools. `search` finds controls, places, houses, people and rules. `discover` lists what can be done
+now: every button, slider and list the interface shows, read off the live page, so new buttons need no upkeep,
+plus verbs to read the state, find, inspect, read the chronicle, and name its persona. `execute` uses one, and it
+acts only when you ask. In a browser the agent drives itself, the same surface is `window.FURLONG`.
+
 ## Reading the realm
 
 - **The map's names say what matters at a glance.** When you rule, your own

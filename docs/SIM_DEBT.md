@@ -100,3 +100,23 @@ recipient. Status (after the repair pass, October 2026): all fixed but M19 and p
 | M21 | clearance compensation | paid to no one; occupants get nothing | paid to the owners and occupants | fixed |
 | M22 | luxuries | wine and cloth taken from stores unpaid | the vintner, weaver or merchant paid | fixed |
 | M23–M30 | infill, trade changes, farmsteads, free new houses and rebuilds, bandit loot, new-house treasuries, player decrees, metro pooling, roads and toll houses | small leaks and sources (see the sweep) | route each to a named payer and recipient | partly: infill, trade changes, farmsteads, new houses and rebuilds, decrees now paid to named recipients; bandit loot, metro pooling and toll houses still open |
+
+## Circulation (third sweep, October 2026)
+
+Money that was conserved but did not circulate, and signals that misled choices. Found by tracing each account's
+inflows and outflows year by year from AD 850.
+
+| # | Where | Debt | Replacement | Status |
+|---|---|---|---|---|
+| C1 | lords' halls | spent 3% of the coffer a month whatever came in: rents piled up in the coffers, purses below emptied, towns starved with full barns | the hall lives on the month's surplus and draws down what lies beyond a quarter's revenue (rents came at the quarter days) | fixed |
+| C2 | the court | spent only what lay beyond a war chest, at 0.08% a day | as a hall: the month's surplus, and what lies beyond a war chest and a quarter's revenue | fixed |
+| C3 | the hall's purchases | bought a budget's worth of bread at any price (a glut swept whole barns into the larder); unbought wine and silk left the silver unspent | the hall buys what its people eat and wear; what the market cannot sell it goes on hands and crafts | fixed |
+| C4 | households' food | bought a month's bread every month over what was still in the crock: demand double-counted, prices spiralled | top up to a month's need | fixed |
+| C5 | trade | one load every two days for the whole realm; a route with no one to serve it blocked every other | every place looks over its spare goods every few days and sends the best load a dealer and carter of either market will take | fixed |
+| C6 | the want of merchants | every failed candidate noted at a tenth of the load's value, every market day: merchants seemed wanted at a thousand years' bread, and everyone became one | the best missed load only, at the profit it would have made, each unit of unsold surplus once a year | fixed |
+| C7 | trades at the founding | taken from the buildings (a smithy, a smith): towns full of smiths and brewers with no custom | families take the opening that keeps a household best | fixed |
+| C8 | country custom | a want with no craftsman in the village was done at home: country money never reached the town's workshops | bought at the nearest market town that has the trade, the more of it the nearer | fixed |
+| C9 | grazing | a hay meadow counted as 1.4 beasts of summer grass: flocks bred meadows bred flocks (25,000 sheep for 1,500 souls) | its hay is the winter's keep; in summer a mown meadow gives its aftermath | fixed |
+| C10 | freight, castellans' fees | fixed coin while prices moved: carters took 37 years' bread a year after a deflation | at the day's prices | fixed |
+| C11 | the place's own increase | households set up to fill the count brought 2–4 years' bread in silver from nowhere, priced at the day's level: more people, more money, dearer bread, richer newcomers | they come with their hands | fixed |
+| C12 | two population models | the count follows a capacity reckoned from building slots and trade tallies; the named households live by what they earn; the two part (towns empty with prosperity at 100, or swell past their folk) | measure capacity from the households' own living | open |
