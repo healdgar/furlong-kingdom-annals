@@ -499,10 +499,11 @@ What happens is decided by quantities the economy produces, not by numbers cross
     household that has bought it and not yet used it. Each month the harvest is offered by those who grew
     it (the tiller's share, the landowner's, the lord's home farm and his tenants' rents in kind, the
     church's tithe, the mill's multure), and the catch, timber, ore, tools, cloth, wine, hay and stone by
-    those who made them. Households buy the month's bread, fish, fuel, cloth and tools as their purses and
-    their credit (beasts and land they could sell) allow; the cheaper of bread and fish is eaten more; what
-    they cannot buy, they go without, and a town whose families cannot pay goes hungry with full barns.
-    A household tops up to a month's need: what is still in the crock from last month is not bought again.
+    those who made them. Households buy the month's bread, fish, fuel, cloth and tools with what is in their
+    purses; the cheaper of bread and fish is eaten more; what they cannot buy, they go without, and a town
+    whose families cannot pay goes hungry with full barns. A household tops up to a month's need: what is
+    still in the crock from last month is not bought again. A farming household keeps back its own bread
+    till the next harvest and sells the rest.
     Smiths buy iron and charcoal, weavers wool, only when the work pays. A buyer takes his own stock first,
     then pays every seller content with the price in proportion; a craftsman or merchant will not sell
     below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
@@ -560,8 +561,11 @@ What happens is decided by quantities the economy produces, not by numbers cross
   - **Buildings are reused:** an empty house is taken by a craftsman who fits it out as his workshop, or
     mended by its owner while a tenant may yet be found, and only then let fall; a family lodging in a
     house gets a storey added when that is cheaper than a new house.
-  - **Debts stand:** purses and coffers may run below nothing; a family in debt sells beasts and then
-    land (the lord buys when no neighbour can), and a lord in debt sells fiefs.
+  - **No one pays out what he has not got:** rent, dues and fees a family cannot meet are arrears, not coin
+    from nothing; a lord or the crown spends only what the coffer holds. Bread on the slate is lent: the
+    best-off neighbour, else the parish, else the lord advances it from his own purse, and is repaid from
+    what is left once the month's bread is put by, the oldest debt first; a debt passes with the purse at
+    death. A family deep in debt sells beasts and then land (to a neighbour, or to the lord if he can pay).
 
 ## How it works
 
