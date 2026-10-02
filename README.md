@@ -1047,3 +1047,7 @@ What happens is decided by quantities the economy produces, not by numbers cross
 
 Verified: 200 unattended sim-years keep population, treasury, and the houses
 within sane bounds — and the realm still produces story.
+
+## License
+
+[MIT](LICENSE): free to use, copy, change and share, with the copyright notice kept. Three.js, loaded from its CDN, is MIT too.
