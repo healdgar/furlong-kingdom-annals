@@ -117,6 +117,7 @@ body.drawerclosed #drawertoggle{left:18px;}
 .succline.pk,.houserow.pk{cursor:pointer;}
 .succline.pk:hover,.houserow.pk:hover .hname{text-decoration:underline;}
 .note{font-size:11.5px;color:var(--ink2);font-style:italic;margin:4px 0 8px;line-height:1.35;}
+ul.tree,ol.tline{margin:2px 0 8px;padding-left:14px;font-size:12px;line-height:1.45;}ul.tree ul{padding-left:14px;border-left:1px dotted var(--ink2);margin:1px 0;}ul.tree li,ol.tline li{margin:1px 0;}ul.tree small,ol.tline small,.note small{color:var(--ink2);}.tlab{font-size:10.5px;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em;}a.tr{cursor:pointer;text-decoration:underline dotted;}
 .slrow input[type=range]:disabled{opacity:.4;}
 /* ---------- crown (sovereign) panel ---------- */
 .cstat{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);padding:1px 0;}
@@ -2534,7 +2535,7 @@ function mkNotable(o){
   const n=Object.assign({id:NID++,alive:true,spouse:null,heirs:[],grudges:[],epithet:'',
     traits:[],agenda:'bides their time',role:'courtier',house:0,dead:false},o);
   if(n.birthDay===undefined)n.birthDay=(W&&W.clock?W.clock.day:0)-(n.age||0)*360-(n.id*97)%360;
-  const ma=n.ma,pa=n.pa;delete n.ma;delete n.pa;
+  const ma=n.ma,pa=n.pa;delete n.ma;delete n.pa;n.maId=ma&&ma.id!=null&&ma.house!=null?ma.id:null;n.paId=pa&&pa.id!=null&&pa.house!=null?pa.id:null;
   if(!n.g)endow(n,ma,pa); // blood from the parents (or a stranger's), and the teaching of a lord's household
   if(!n.traits.length)n.traits=deriveTraits(n);else n.fixedTraits=true;
   nameUse(n.name.split(' ')[0],1);
@@ -2619,9 +2620,10 @@ function mkPerson(s,si,o){
   const G=genome(o.ma&&o.ma.g,o.pa&&o.pa.g);p.g=G.g;p.e=G.e;
   p.hair=o.ma&&o.pa?(frand()<0.45?o.ma.hair:frand()<0.8?o.pa.hair:hairDraw(s.cult)):hairDraw(s.cult);
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
+  if(o.ma)(o.ma.ch||(o.ma.ch=[])).push(p);if(o.pa)(o.pa.ch||(o.pa.ch=[])).push(p); // the parish book: who were whose children
   (s.folk||(s.folk=[])).push(p);return p;}
 function life(p,t){if(!p||p.merc||!t||W.prehistory)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>30)E.splice(0,1);} // the ledger of a life: what befell him, and when (kept from the reign's start; the years before are the chronicle's)
-function dropPerson(p,why){if(!p)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(p.ev&&p.ev.length>8)p.ev=[...p.ev.filter(e=>/^(Born|Married|Apprenticed|Learned|Left|Moved)/.test(e[1])).slice(-5),p.ev[p.ev.length-1]];}/* the dead keep only the bones of their story */if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.spId=p.sp.id;p.sp.spId=p.id;p.sp.sp=null;p.sp=null;}
+function dropPerson(p,why){if(!p)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(p.ev&&p.ev.length>8)p.ev=[...p.ev.filter(e=>/^(Born|Married|Apprenticed|Learned|Left|Moved)/.test(e[1])).slice(-5),p.ev[p.ev.length-1]];}/* the dead keep only the bones of their story */if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.spR=p.sp;p.sp.spR=p;p.sp.sp=null;p.sp=null;}
   if(!p.merc)archivePerson(p);}
 function archivePerson(p){ // the dead are kept as a line in the parish book: name, family, dates, parents, spouse, trade, place, the bones of the story; the working parts of a life are let go
   p.dd=day();try{p.nat=natureWords(p);p.lrn=learningWords(p);}catch(e){}
@@ -3055,7 +3057,7 @@ function waterNear(s,h){ // the nearest open water to a fisher's door: the shore
 function findPerson(id){for(const s of W.settlements){const p=(s.folk||[]).find(x=>x.id===id);if(p)return {p,s};}
   const t=(W.travellers||[]).find(x=>x.p.id===id);if(t)return {p:t.p,s:W.settlements[t.to],t};return null;}
 function notableFromFolk(p,o){ // one of the folk enters the annals, bringing their blood and schooling
-  return mkNotable(Object.assign({name:folkName(p),sex:p.sx,birthDay:p.b,age:Math.floor(ageYrs(p)),g:p.g,e:p.e,sk:p.sk,hair:p.hair,fed:p.fed,born:{fam:famName(p),tr:p.tr,si:p.si}},o));}
+  return mkNotable(Object.assign({fp:p,name:folkName(p),sex:p.sx,birthDay:p.b,age:Math.floor(ageYrs(p)),g:p.g,e:p.e,sk:p.sk,hair:p.hair,fed:p.fed,born:{fam:famName(p),tr:p.tr,si:p.si}},o));}
 function promoteFrom(s,score){ // the ablest of a town's folk, stepping out of the crowd into the annals
   if(!s||!s.folk||!s.folk.length)return null;let b=null,bv=-1e9;
   for(const p of s.folk){const a=ageYrs(p);if(a<18||a>60)continue;const v=score(p);if(v>bv){bv=v;b=p;}}
@@ -3125,6 +3127,47 @@ function makeHousesAndCast(){
   }
 }
 function notableById(id){return W.notables.find(n=>n.id===id);}
+/* ---- family trees: anyone's forebears, kin and issue, from the parish book (the folk) and the annals (the nobility); for the great, the titles they held and the line by which a crown or a seat will pass */
+const TREE=new Map();let treeN=0;
+function tKey(x){if(!x)return '';if(TREE.size>4000)TREE.clear();const k=x._tk||(x._tk='t'+(++treeN));TREE.set(k,x);return k;}
+const isN=x=>x&&x.house!==undefined&&x.heirs!==undefined; // a noble of the annals (else one of the folk)
+function tName(x){return isN(x)?fullTitle(x):folkName(x);}
+function tLife(x){const b=isN(x)?x.birthDay:x.b,d=isN(x)?(x.alive?null:x.deathDay):(x.dead?x.dd:null),y=v=>v==null?'?':String(((W&&W.startAD)||850)+Math.floor(v/360));
+  return b==null?'':`${y(b)}–${d==null&&!(isN(x)?!x.alive:x.dead)?'':d==null?'?':y(d)}`;}
+function tParents(x){if(!x)return [];
+  if(isN(x)){const P=[];for(const id of[x.paId,x.maId])if(id!=null){const m=notableById(id);if(m)P.push(m);}
+    if(!P.length){const par=W.notables.find(m=>m.heirs.includes(x.id));if(par){P.push(par);const sp=notableById(par.spouse??par.lastSpouse);if(sp&&!P.includes(sp))P.push(sp);}}
+    if(!P.length&&x.fp)return tParents(x.fp);return P;}
+  const P=[x.pa,x.ma].filter(Boolean);if(x.sire!=null){const s=notableById(x.sire);if(s&&!P.includes(s))P.unshift(s);}return P;}
+function tChildren(x){if(!x)return [];if(isN(x))return [...x.heirs.map(notableById).filter(Boolean),...(x.nat||[])];return (x.ch||[]).slice();}
+function tSpouse(x){if(!x)return null;if(isN(x))return notableById(x.spouse??x.lastSpouse)||null;return x.sp||x.spR||null;}
+function tTitles(x){return isN(x)?(x.titles||[]):[];}
+function tLink(x,bold){const k=tKey(x),dead=isN(x)?!x.alive:x.dead,t=tTitles(x),tt=t.length?' · '+esc(t[t.length-1].t):'';
+  return `<a class="tr" data-tree="${k}">${bold?'<b>':''}${esc(tName(x))}${bold?'</b>':''}</a>${dead?' †':''} <small>${tLife(x)}${tt}</small>`;}
+function lineOf(x){ // the line of succession the person stands in (the crown, or a house's seat), as the realm reckons it: the holder's children, the grown before the young and the elder before the younger, then the house's other grown kin
+  if(!isN(x))return null;const H=W.houses[x.house];if(!H)return null;const hold=x.house===0?W.monarch:notableById(H.head);if(!hold)return null;
+  const kids=hold.heirs.map(notableById).filter(k=>k&&k.alive),adult=kids.filter(k=>ageOf(k)>=16).sort((a,b)=>ageOf(b)-ageOf(a)),young=kids.filter(k=>ageOf(k)<16).sort((a,b)=>ageOf(b)-ageOf(a));
+  const kin=W.notables.filter(m=>m.alive&&m.house===x.house&&m!==hold&&!kids.includes(m)&&ageOf(m)>=16).sort((a,b)=>ageOf(b)-ageOf(a));
+  return {seat:x.house===0?'the crown':H.name,hold,line:[...adult,...young,...kin],claims:x.house===0?W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].claim&&!W.houses[i].exiled):[]};}
+function treeHTML(x){let h='';const seen=new Set();
+  const up=(p,depth,lab)=>{if(!p||depth>4||seen.has(p))return '';seen.add(p);const P=tParents(p);
+    return `<li>${lab?`<span class="tlab">${lab}</span> `:''}${tLink(p,depth===0)}${P.length&&depth<4?`<ul>${P.map(q=>up(q,depth+1,isN(q)?(q.sex==='f'?'mother':'father'):(q.sx==='f'?'mother':'father'))).join('')}</ul>`:''}</li>`;};
+  h+=`<div class="dhead">Forebears</div><ul class="tree">${up(x,0,'')}</ul>`;
+  const P=tParents(x),sib=new Set();for(const q of P)for(const c of tChildren(q))if(c!==x)sib.add(c);
+  if(sib.size)h+=`<div class="dhead">Brothers and sisters</div><div class="note">${[...sib].map(c=>tLink(c)).join(', ')}</div>`;
+  const sp=tSpouse(x);if(sp)h+=`<div class="dhead">${(isN(x)?x.sex:x.sx)==='f'?'Husband':'Wife'}</div><div class="note">${tLink(sp)}</div>`;
+  const seen2=new Set(),down=(p,depth)=>{if(!p||seen2.has(p))return '';seen2.add(p);const C=tChildren(p),s2=tSpouse(p);
+    return `<li>${tLink(p,depth===0)}${depth>0&&s2?` <small>m. ${esc(tName(s2))}</small>`:''}${C.length&&depth<3?`<ul>${C.map(c=>down(c,depth+1)).join('')}</ul>`:C.length?` <small>(${C.length} children)</small>`:''}</li>`;};
+  if(tChildren(x).length)h+=`<div class="dhead">Issue</div><ul class="tree">${down(x,0)}</ul>`;
+  const T=tTitles(x);if(T.length)h+=`<div class="dhead">Titles held</div>`+T.map(t=>`<div class="note">${dateStr(t.d)}: ${esc(t.t)}</div>`).join('');
+  const L=lineOf(x);if(L){const i=L.line.indexOf(x);
+    h+=`<div class="dhead">Line of succession to ${esc(L.seat)}</div><div class="note">Held by ${tLink(L.hold)}${x===L.hold?' (this person)':i>=0?`; this person stands ${i+1}${['st','nd','rd'][i]||'th'} in line`:'; this person is not in the line'}</div>`;
+    h+=`<ol class="tline">${L.line.slice(0,8).map(m=>`<li>${tLink(m,m===x)}</li>`).join('')}</ol>`;
+    if(L.claims.length)h+=`<div class="note">Then, by royal blood: ${L.claims.map(i=>esc(W.houses[i].name)).join(', ')}</div>`;}
+  return h;}
+function tickTitles(){ // the annals note who held what, and from when
+  if(day()%30!==13)return;for(const n of W.notables){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
+    const H=W.houses[n.house],seat=H&&W.settlements[H.seat];(n.titles||(n.titles=[])).push({d:day(),t:n.role==='monarch'?`${n.sex==='f'?'Queen':'King'} of the realm`:`Head of ${H?H.name:'the house'}${seat?', at '+seat.name:''}`});}}
 function houseOf(n){return W.houses[n.house];}
 function fullTitle(n){
   if(n.role==='monarch')return (n.sex==='f'?'Queen ':'King ')+n.name+(n.epithet?' '+n.epithet:'');
@@ -7349,12 +7392,15 @@ function showInspect(pk){
     h+=row('About',esc(e.about));
     if(e.riders&&e.riders.length)h+=row('Riders',e.riders.map(q=>`<a class="pp" data-pid="${q.id}">${esc(folkName(q))}</a>`).join(', '));
     h+=row(now<e.decide?'Answer expected':'Bearing the answer',now<e.decide?dateStr(e.decide):'to the crown');
+  }else if(pk.type==='tree'){
+    const x=pk.x;setHTML(title,esc('Family of '+tName(x)));sub.textContent=isN(x)?(houseOf(x)?houseOf(x).name:''):(famName(x)||'');
+    h+=`<div class="note">${isN(x)?`<a class="nm" data-nm="n${x.id}">Open the card</a>`:!x.dead?`<a class="pp" data-pid="${x.id}">Open the card</a>`:''}</div>`+treeHTML(x);
   }else if(pk.type==='notable'){
     const n=pk.n;
     setHTML(title,`<img src="${sigURL(n.house)}">`+esc(fullTitle(n)));
     sub.textContent=n.role+' · '+houseOf(n).name+(n.alive?'':' · deceased');
     h+=row('Age',n.alive?ageOf(n):(n.age??'—'));
-    h+=row('Traits',n.traits.join(', '));
+    h+=row('Traits',n.traits.join(', '));h+=`<div class="note"><a class="tr" data-tree="${tKey(n)}">Family tree${n.titles&&n.titles.length?', titles and the line of succession':''}</a></div>`;
     if(n.g){h+=row('Nature',natureWords(n));h+=row('Learning',learningWords(n));}
     const nl=m=>m?`<a class="nm" data-nm="n${m.id}">${esc(m.name)}</a>`:'',ppl=c=>`<a class="pp" data-pid="${c.id}">${esc(folkName(c))}</a>`;
     if(n.nat&&n.nat.length)h+=row('Natural children',n.nat.map(c=>c.dead?esc(folkName(c))+' †':ppl(c)).join(', '));
@@ -7487,6 +7533,7 @@ function showInspect(pk){
     {const hh=householdHead(p);if(hh.w!==undefined){const inc=tradeIncome(s,hh.tr),rh=hh.bh&&hh.bh.rural?(hh.bh.ownerId===hh.id?'their own farmstead out on the land':'a farmstead on the land they work, let by its owner'):null;
       h+=row('Living',`${hh.tr?esc(hh.tr):'labouring'}: about ${Math.round(inc)} crowns a year here${hh.herd&&beastsWord(hh.herd)?`; ${beastsWord(hh.herd)}`:''}${rh?`; lives in ${rh}`:''}${p!==hh&&ageYrs(p)>=18&&!p.sp?(p.own?'; has set up house':'; still under the family roof'):''}`);}}
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
+    h+=`<div class="note"><a class="tr" data-tree="${tKey(p)}">Family tree</a></div>`;
     h+=row('Nature',p.nat??natureWords(p));h+=row('Learning',p.lrn??learningWords(p));if(p.dead&&p.dd!=null)h+=row('Died',dateStr(p.dd)+`, aged ${Math.floor((p.dd-p.b)/360)}`);
     {const E=p.ev||[],L=E.slice(-14);h+=`<div class="dhead" style="margin-top:6px">Life</div><div class="note">Born ${dateStr(p.b)}${E.length>L.length?' · …':''}</div>`+L.map(([d,t])=>`<div class="note">${dateStr(d)}: ${esc(t)}</div>`).join('');}
     if(!p.dead)flyToBtn(fb,'Find and follow',()=>goPerson(p,s)); // the card has one button: the living are found where they are
@@ -8181,7 +8228,7 @@ function killNotable(n,cause,silent){
     if(pri>2||n.epithet||chance('sim',0.22))
       emit('crown',pri,pos,((T,o,g)=>vary('death',[()=>`${T} has died ${cause}, in the ${o} year of ${g} age.`,()=>`${T} passes from this world ${cause}, in the ${o} year of ${g} age.`,()=>`In the ${o} year of ${g} age, ${T} has died ${cause}.`,()=>`${T} is taken ${cause}, in the ${o} year of ${g} age.`,()=>`Death comes to ${T} ${cause}, in the ${o} year of ${g} age.`,()=>`${T} has died ${cause}; ${g==='her'?'she':'he'} was in the ${o} year of ${g} age.`]))(fullTitle(n)+(n.house>0&&n.role!=='head'?' of '+houseOf(n).name:''),ordinal(Math.max(1,n.age||ageOf(n))),n.sex==='f'?'her':'his'));
   }
-  if(n.spouse){const sp=notableById(n.spouse);if(sp)sp.spouse=null;}
+  if(n.spouse){const sp=notableById(n.spouse);if(sp){sp.lastSpouse=n.id;n.lastSpouse=sp.id;sp.spouse=null;}}
   if(wasMonarch)succession();
   else if(n.role==='head'&&h){
     const heir=n.heirs.map(notableById).find(k=>k&&k.alive&&ageOf(k)>=16);
@@ -9687,7 +9734,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();tickMarket();tickHouseholds();tickWays();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();tickMarket();tickHouseholds();tickWays();tickTitles();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -9759,6 +9806,7 @@ function goName(code){ // fly to it and open its card
   else if(t==='h'){const h=W.houses[v],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(s)flyTo(s.pos.x,s.pos.z,520);if(n)showInspect({type:'notable',n});else if(s)showInspect({type:'settlement',s});}
   else if(t==='n'){const n=notableById(v);if(n){goNotable(n);showInspect({type:'notable',n});}}}
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#crownchip')&&W&&W.monarch&&W.monarch.alive){goNotable(W.monarch);showInspect({type:'notable',n:W.monarch});return;}
+  const tq=e.target.closest&&e.target.closest('a.tr');if(tq){e.stopPropagation();e.preventDefault();const x=TREE.get(tq.dataset.tree);if(x)showInspect({type:'tree',x});return;}
   const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();const f=findPerson(+q.dataset.pid);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}return;}
   const a=e.target.closest&&e.target.closest('a.nm');if(!a)return;e.stopPropagation();e.preventDefault();goName(a.dataset.nm);},true);
 function chronicleAdd(ev){
