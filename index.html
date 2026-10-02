@@ -6898,8 +6898,21 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
       const c=new THREE.Color();if(G.land&&G.land.uni)c.copy(G.land.uni.uHouse.value[hi+1]);else c.setHex(h.sigilHue[0]);
       const st=standing(hi),sp=makeTextSprite((st.foe?'⚔ ':'')+(hi===0?'♛ ':'')+h.name.replace(/^House /,'')+(hi===(plyH()>=0?plyH():-9)?' (you)':''),1,'#'+c.clone().offsetHSL(0,0,0.18).getHexString());sp.material.sizeAttenuation=false;sp.scale.set(sp.userData.w*0.0011,sp.userData.h*0.0011,1);
       sp.position.set(x,hAt(x,z)+60,z);sp.renderOrder=7;grp.add(sp);L.push({h,hi,c,st,towns:towns.length,ha:F.reduce((t,f)=>t+f.area,0)/10000});});
+    { // the limits of each town and village: the bounds of its built ground (its streets, lots and yards, not the farmsteads out in the fields), the line of its lord's colour; a ward's own bounds dotted inside its town's
+      const N=48,outline=(c,B)=>{const R=new Array(N).fill(0);
+        for(const b of B){const pts=b.lot&&b.lot.length?b.lot:[{x:b.x,z:b.z}],pad=b.lot&&b.lot.length?6:Math.max(b.w||0,b.d||0)*0.5+8;
+          for(const q of pts){const dx=q.x-c.x,dz=q.z-c.z,k=Math.floor(((Math.atan2(dz,dx)+Math.PI*2)%(Math.PI*2))/(Math.PI*2)*N)%N,d=Math.hypot(dx,dz)+pad;if(d>R[k])R[k]=d;}}
+        for(let it=0;it<4;it++){const R2=R.slice();for(let k=0;k<N;k++)R2[k]=Math.max(R[k],(R[(k+N-1)%N]+R[(k+1)%N])*0.5*0.9);for(let k=0;k<N;k++)R[k]=R2[k];} // no notch where a lane runs out empty
+        const P=R.map((r,k)=>({x:c.x+Math.cos((k+0.5)/N*Math.PI*2)*r,z:c.z+Math.sin((k+0.5)/N*Math.PI*2)*r}));P.push(P[0]);return P;};
+      const colOf=hi=>{const c=new THREE.Color();if(G.land&&G.land.uni&&G.land.uni.uHouse.value[hi+1])c.copy(G.land.uni.uHouse.value[hi+1]);else c.setHex(0xd8c890);return c.offsetHSL(0,0,0.22).getHex();};
+      const built=t=>t.buildings.filter(b=>!b.removed&&b.state!=='gone'&&!b.rural&&b.arch!=='wall');
+      W.settlements.forEach((t,ti)=>{if(t.wardOf!=null||!t.pop)return;const W2=W.settlements.filter(o=>o.wardOf===ti),B=[...built(t),...W2.flatMap(built)];if(B.length<3)return;
+        let cx=0,cz=0;for(const b of B){cx+=b.x;cz+=b.z;}const c={x:cx/B.length,z:cz/B.length},col=colOf(t.owner);
+        ribbon(outline(c,B),t.kind==='village'?1.2:2.2,col,0.85);
+        for(const w of W2){const Bw=built(w);if(Bw.length<3)continue;let x=0,z=0;for(const b of Bw){x+=b.x;z+=b.z;}const P=outline({x:x/Bw.length,z:z/Bw.length},Bw);
+          for(let k=0;k+1<P.length;k+=2)ribbon([P[k],P[k+1]],1,col,0.7);}});} // dotted: every other side
     let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
-    el.innerHTML='<b class="lh">Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${o.hi===0?'♛ The crown ('+esc(o.h.name.replace(/^House /,''))+')':esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small><div style="font-size:11px;margin-left:18px;color:${o.st.c}">${esc(o.st.t)}</div></div>`).join('');
+    el.innerHTML='<b class="lh">Lordships</b><div style="font-size:11px;opacity:.8;margin:2px 0 4px">Lines: the limits of each town and village (a ward\'s dotted within its town)</div>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${o.hi===0?'♛ The crown ('+esc(o.h.name.replace(/^House /,''))+')':esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small><div style="font-size:11px;margin-left:18px;color:${o.st.c}">${esc(o.st.t)}</div></div>`).join('');
     el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));
     if(narrowUI()&&!document.getElementById('drawer').classList.contains('closed'))el.classList.add('min');}
   else if(overlayMode==='tongue'){ // who speaks what: each place's fields in its tongue; the legend gives places and souls, and the mixed towns
