@@ -4063,7 +4063,7 @@ function drawCourt(b,put){
 const planCellOK=(x,z)=>{const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj))return false;const i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;}; // the same test the town's own builders use
 const PLAN_YP=25; // years' purchase of a house's rent
 let planUI=null;
-const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},stopup:{c:0xb0a8a0,loop:false,n:'Stop up a street'},razewall:{c:0xc07060,loop:false,n:'Pull down wall'}}; // (the old 'new quarter' grid is retired: streets are drawn one by one)
+const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},stopup:{c:0xb0a8a0,loop:false,n:'Stop up a street'},raze:{c:0xc07060,loop:false,n:'Pull down'}}; // (the old 'new quarter' grid is retired: streets are drawn one by one)
 function planToggle(){ // the brush is the ruler's: as the crown or as the lord you play
   if(planUI){planClose();return;}
   if(!sovOn()){jot({k:'sov',on:true,hi:W.player&&W.player.house||0});setSovereign(true,W.player&&W.player.house||0);if(!sovOn())return;}
@@ -4133,6 +4133,9 @@ function razeWall(s,ks){ // the stretches come down: open ground where the curta
   let left=0;for(let k=0;k<WALLN;k++)if(K[k]!==1)left++;
   if(left<WALLN*0.08){s.oldWalls=s.oldWalls||[];s.wallRad=null;s.wallKind=null;s.walls=0;s.wallR=0;s.wallDmg=null;s.wallBuild=null;s.wallRazed=0;s.bastions=false;}
   G.wallsDirty=true;rebuildWalls();if(G.feat&&s.wallRad)featWalls(s);}
+function razeCastle(s){ // the curtain of the castle thrown down: the yard is open ground (the keep stands unless it too was pulled down)
+  const R=casRing(s);if(!R)return;if(R===s.bailey){s.bailey=null;s.baileyStone=false;}else if(R===s.ward)s.ward=null;else if(R===s.hillCastle)s.hillCastle=null;
+  if(s.cas){s.cas.towers=0;s.cas.gate=0;s.cas.outer=0;s.cas.dmg=0;}G.wallsDirty=true;rebuildWalls();}
 function lineHitsBldg(b,P,pad){ // does the line pass over the building's own footprint (rotated), with a margin?
   const c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0),hw=b.w/2+pad,hd=b.d/2+pad;
   for(const q of resample(P,1.5)){const dx=q.x-b.x,dz=q.z-b.z,ox=dx*c-dz*sn,oz=dx*sn+dz*c;if(Math.abs(ox)<=hw&&Math.abs(oz)<=hd)return true;}return false;}
@@ -4144,7 +4147,7 @@ function planDraft(kind,stroke,payer){
   if(dist2d(cx,cz,s.pos.x,s.pos.z)>reach)return no('That is too far from any town: a plan is made for a place.');
   if(s.owner!==payer)return no(`${s.name} is ${s.owner>0?W.houses[s.owner].name+'’s':'the crown’s'}: its streets are not yours to plan.`);
   if(!s._lay||!s._lay.live)return no('The surveyors cannot read the ground there.');
-  if((W.projects||[]).some(q=>q.type==='plan'&&q.si===si&&q.kind===kind&&kind!=='street'&&kind!=='stopup'&&kind!=='razewall'))return no(`A ${PLANB[kind].n.toLowerCase()} is already being made at ${s.name}.`);
+  if((W.projects||[]).some(q=>q.type==='plan'&&q.si===si&&q.kind===kind&&kind!=='street'&&kind!=='stopup'&&kind!=='razewall'&&kind!=='raze'))return no(`A ${PLANB[kind].n.toLowerCase()} is already being made at ${s.name}.`);
   const live=b=>!b.removed&&b.state!=='gone',blocks=b=>b.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','court'].includes(b.arch);
   const named=b=>buildingName(b)||ARCH[b.arch][4];
   if(kind==='street'){
@@ -4159,6 +4162,18 @@ function planDraft(kind,stroke,payer){
     const total=comp+land.c+works+gate;
     return{ok:true,kind,si,pts,hit,comp,land:land.c,works:works+gate,total,first:Math.min(total,land.c+(hit[0]?planComp(hit[0]):0)),days:Math.round(20+L/4+hit.length*5),
       title:`A street of ${Math.round(L)} m at ${s.name}`,lines:[`${hit.length} house${hit.length===1?'':'s'} bought out: ${comp.toLocaleString()} gold`,land.n?`field and meadow: ${land.c.toLocaleString()}`:'',`labour${rivers?' and a bridge':''}${gate?' and a new gate':''}: ${(works+gate).toLocaleString()}`].filter(Boolean)};}
+  if(kind==='raze'){ // pull down whatever the brush touches: houses, churches, halls, mills, the castle's curtain, stretches of the town wall (draw a line over them, or a loop round them)
+    const sp=resample(stroke,3),loop=sp.length>6&&dist2d(sp[0].x,sp[0].z,sp[sp.length-1].x,sp[sp.length-1].z)<Math.max(25,polyLen(sp)*0.2);
+    const hit=s.buildings.filter(b=>live(b)&&(lineHitsBldg(b,sp,1.5)||loop&&inPoly(sp,b.x,b.z)));
+    const ks=[];if(s.wallRad)for(let k=0;k<WALLN;k++){if(s.wallKind&&s.wallKind[k]===1)continue;const a=k/WALLN*Math.PI*2,r=s.wallRad[k],x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;if(sp.some(q=>dist2d(q.x,q.z,x,z)<12)||loop&&inPoly(sp,x,z))ks.push(k);}
+    const R=casRing(s),Rr=R?casR(s,R):0,ring=!!R&&(sp.some(q=>Math.abs(dist2d(q.x,q.z,R.x,R.z)-Rr)<9)||loop&&inPoly(sp,R.x+Rr,R.z));
+    if(!hit.length&&ks.length<2&&!ring)return no('There is nothing under the brush to pull down: draw over the buildings or the wall, or a loop round them.');
+    const per=2*Math.PI*(s.wallR||100),wl=ks.length>=2?Math.round(per*ks.length/WALLN):0,stone=s.walls>=2;
+    const comp=hit.reduce((t,b)=>t+planComp(b),0),big=hit.filter(blocks),works=Math.round(hit.length*15+big.reduce((t,b)=>t+b.w*b.d*0.3,0)+wl*(stone?0.5:0.2)+(ring?(casStone(s)?400:120):0)+20),total=comp+works;
+    const named2=b=>buildingName(b)||ARCH[b.arch][4];
+    return{ok:true,kind,si,hit,ks:ks.length>=2?ks:[],ring,pts:sp,comp,land:0,works,total,first:Math.min(total,hit[0]?planComp(hit[0]):works),days:Math.round(8+hit.length*4+big.length*20+wl/(stone?6:15)+(ring?40:0)),
+      title:`Pull down at ${s.name}: ${[hit.length?`${hit.length} building${hit.length===1?'':'s'}`:'',wl?`${wl} m of wall`:'',ring?'the castle curtain':''].filter(Boolean).join(', ')}`,
+      lines:[hit.length?`${hit.length} bought and pulled down${big.length?` (among them ${big.slice(0,3).map(named2).join(', ')})`:''}: ${comp.toLocaleString()} gold`:'',wl?`${wl} m of ${stone?'stone wall (the blocks back to the yards)':'palisade'}`:'',ring?'the castle curtain thrown down':'',`labour: ${works.toLocaleString()}`].filter(Boolean)};}
   if(kind==='razewall'){ // pull down a stretch of the town wall: where the brush runs along it, the curtain comes down and the ground is open
     if(!s.wallRad)return no(`${s.name} has no wall to pull down.`);const sp=resample(stroke,4),ks=[];
     for(let k=0;k<WALLN;k++){if(s.wallKind&&s.wallKind[k]===1)continue;const a=k/WALLN*Math.PI*2,r=s.wallRad[k],x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;if(sp.some(q=>dist2d(q.x,q.z,x,z)<14))ks.push(k);}
@@ -4225,6 +4240,7 @@ function planCommit(D,payer){const s=W.settlements[D.si],L=s._lay.live;
   else if(D.kind==='quarter')q.sts=D.grid.map(P=>L.planStreet(P,true));
   else if(D.kind==='stopup'){q.st=D.st;q.keep=D.keep;q.cut=D.pts;}
   else if(D.kind==='razewall'){q.ks=D.ks;q.cut=D.pts;}
+  else if(D.kind==='raze'){q.ks=D.ks;q.ring=D.ring;q.cut=D.pts;}
   else if(D.kind==='square'){q.place=D.place;q.mk=D.mk;}
   else if(D.kind==='wall'){q.rad=D.rad;q.stone=D.stone;q.need=D.need;}
   q.hit.sort((a,b)=>dist2d(a.x,a.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z)-dist2d(b.x,b.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z));
@@ -4248,6 +4264,7 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
   if(q.done<1)return;
   q.dead=true;const L=s._lay.live;let t='';if(q.payer===campHouse()){achGet('planner');if(q.kind==='quarter')achGet('newtown');}
   if(q.kind==='street'){L.planOpen(q.st);const nm=['New Street','Broad Street','Lord Street','Bridge Street','High Cross','Sheep Street','Castle Street','Church Lane'][randi('sim',8)];q.st.name=nm;t=`${nm} is open at ${s.name}; the plots along it are taken up`;}
+  else if(q.kind==='raze'){if(q.ks.length)razeWall(s,q.ks);if(q.ring)razeCastle(s);G.detDirty=true;syncLive(s);t=`The works at ${s.name} are pulled down as the plan ran${q.ring?'; the castle stands open':''}`;}
   else if(q.kind==='razewall'){razeWall(s,q.ks);t=s.wallRad?`The wall of ${s.name} is pulled down where the plan ran; the gap stands open`:`The last of the wall of ${s.name} is pulled down; the town stands open`;}
   else if(q.kind==='stopup'){if(!q.st.gone)L.stopUp(q.st,q.keep);t=`${q.st.name||'The lane'} at ${s.name} is stopped up${q.keep.length?' where the brush ran':''}; the ground goes back to the plots beside it`;}
   else if(q.kind==='quarter'){for(const st of q.sts)L.planOpen(st);t=`The new quarter at ${s.name} is laid out: ${q.sts.length} streets of plots for settlers`;}
@@ -4309,6 +4326,20 @@ function tickCallToArms(){ // an enemy host within a day and a half's march: the
       s.militia=s.pop*share;s.calmDays=0;if(!W.prehistory&&(s.pop>250||s.owner===plyH()))emit('war',s.owner===plyH()?6:4,s.pos,`The bells of ${s.name} ring backwards: ${Math.round(s.militia)} townsmen take up arms as ${foe.name.replace(/^Host/,'the host')} draws near.`);}
     else if(s.militia>0){s.prosperity=Math.max(0,s.prosperity-0.08); // the men on the walls are not in the fields and shops
       if(near>2600&&!s.siegeBy){s.calmDays=(s.calmDays||0)+2;if(s.calmDays>=6){s.militia=0;if(!W.prehistory&&s.owner===plyH())emit('war',3,s.pos,`The danger past, the men of ${s.name} put up their arms and go back to their work.`);}}else s.calmDays=0;}}}
+function opportunity(s){ // what a family weighs before moving: a living to be had (the land it ploughs, the market's trade and crafts), a roof or a plot to build one, and the dangers
+  const n=Math.max(10,s.pop),live=carryingCap(s)/n,room=(s._room!==undefined?s._room:housing(s))/n,o=clamp(Math.min(live,room*1.1),0.15,2.2); // work without a roof, or a roof without work, will not keep a family
+  return Math.log(o)-1.5*(s.hunger||0)-(s.unrest||0)/160-(s.infected>0?0.4*Math.min(1,s.infected/n*10):0)-(s.siegeBy||s.raidedUntil>day()?0.6:0)+0.12*Math.log(clamp((s.prosperity||30)/50,0.2,3));}
+function tickMigration(){ // monthly: families go from where life is hard or crowded to where there is a living and room, more readily the nearer it is; a few come from beyond the realm to a thriving place
+  if(day()%30!==17)return;const S=W.settlements,U=S.map(opportunity),out=new Float64Array(S.length),inn=new Float64Array(S.length);
+  for(let i=0;i<S.length;i++){const a=S[i];if(a.pop<25||a.siegeBy)continue;let tot=0;const fl=[];
+    for(let j=0;j<S.length;j++){if(j===i||S[j].siegeBy)continue;const g=U[j]-U[i]-0.12;if(g<=0)continue;const d=dist2d(a.pos.x,a.pos.z,S[j].pos.x,S[j].pos.z),w=g*Math.exp(-d/(2500*MAPK));if(w>1e-4){fl.push([j,w]);tot+=w;}}
+    if(!tot)continue;const go=a.pop*Math.min(0.02,0.006*tot); // at most a fiftieth of the place in a month
+    for(const[j,w]of fl){const m=go*w/tot;out[i]+=m;inn[j]+=m;}}
+  for(let i=0;i<S.length;i++){const s=S[i];s.pop=Math.max(5,s.pop-out[i]+inn[i]);
+    if(U[i]>0.2&&!s.siegeBy)s.pop+=s.pop*0.0008*Math.min(U[i],1); // strangers from beyond the realm, to a place that is thriving
+    s.migIn=(s.migIn||0)*0.92+inn[i];s.migOut=(s.migOut||0)*0.92+out[i]; // a running tally, for its card
+    if(!W.prehistory&&inn[i]>Math.max(8,s.pop*0.01)&&!(s._migNote>day())){s._migNote=day()+720;const from=S.reduce((b,o,k)=>out[k]>out[b]?k:b,0);
+      emit('trade',3,s.pos,`Families come to ${s.name} for the work and the ground to build on${out[from]>1?`, many from ${S[from].name}`:''}.`);}}}
 function tickWallWorks(){for(const s of W.settlements)if(s.wallBuild&&wallProg(s)>=1){delete s.wallBuild;G.wallsDirty=true;
   if(!W.prehistory)emit('trade',4,s.pos,`The ${s.bastions?'new bastioned trace':s.walls>=2?'stone walls':'palisade'} of ${s.name} ${s.walls>=2?'are':'is'} finished, the circuit closed at last.`);}}
 function wallDmgAt(s,a){const D=s.wallDmg;if(!D)return 0;const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN;return Math.max(D[i],D[(i+1)%WALLN]);}
@@ -7151,6 +7182,7 @@ function showInspect(pk){
     if(s.wardOf!=null){const b=W.settlements[s.wardOf];h+=row('Ward of',`${esc(b.name)} since ${s.wardSince}; one market, one lord`);}
     {const wd=W.settlements.filter(o=>o.wardOf!=null&&W.settlements[o.wardOf]===s);if(wd.length)h+=row('Wards',`${wd.map(o=>esc(o.name)).join(', ')}; ${Math.round(s.pop+wd.reduce((t,o)=>t+o.pop,0)).toLocaleString()} souls in all`);}
     {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
+    if((s.migIn||0)+(s.migOut||0)>0.5){const yr=v=>Math.round(v*12/12.5);h+=row('Moving',`~${yr(s.migIn||0)} newcomers and ~${yr(s.migOut||0)} leaving a year · ${opportunity(s)>0.15?'a living and room to be had':opportunity(s)<-0.15?'crowded or hard: families leave':'about even with its neighbours'}`);}
     h+=row('Garrison',`${Math.round(s.garrison)} men of the watch${s.garrison<garrisonNeed(s)*0.85?` (wants ${Math.round(garrisonNeed(s))}: mustering)`:''}${s.militia>0?`; ${Math.round(s.militia)} townsmen under arms (call to arms)`:''}`);
     if(s.harbor){const B=berthsOf(s),wf=B.filter(b=>!b.shore).length/2,sh=(W.ships||[]).filter(x=>x.port===W.settlements.indexOf(s));
       h+=row('Port',`${wf?wf+' wharf'+(wf>1?'s':''):'no wharf; boats come to the shore'}; ${B.length} berth${B.length>1?'s':''}; ${sh.filter(x=>x.phase==='dock').length} ship${sh.filter(x=>x.phase==='dock').length===1?'':'s'} alongside${sh.some(x=>x.phase==='in'&&x.waited)?', others lying off':''}; berths ${((s.portLoad||0)/Math.max(1,B.length)*100).toFixed(0)}% taken last year`);
@@ -7676,12 +7708,7 @@ function tickPopulation(){
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
     const dbase=s.kind==='capital'?0.032:s.kind==='town'?0.030:0.026;
     const deaths=s.pop*(dbase/360)*MOD.mort*(1+hunger*4)*(s.siegeBy?1.5:1)*(x>1.3?1+(x-1.3):1);
-    const draw=!s.siegeBy&&x<0.85&&hunger<0.2&&s.prosperity>30?(0.85-x)*K*(0.07/360)*pf:0; // empty houses and lots draw newcomers: from the crowded villages, from beyond the realm
-    s.pop=Math.max(5,s.pop+births-deaths+draw);if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
-    if(s.kind==='village'&&(x>0.97||s.landShort&&x>0.85)&&day()%30===0){ // the young leave for the towns when there is no room or no land
-      const town=W.settlements.filter(o=>o.kind!=='village'&&(o.hunger||0)<0.1).sort((a,b)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(b.pos.x,b.pos.z,s.pos.x,s.pos.z))[0];
-      if(town){const go=s.pop*0.012*(x-0.7);s.pop-=go;town.pop+=go;}
-    }
+    s.pop=Math.max(5,s.pop+births-deaths); // newcomers and leavers are tickMigration's: they go where livelihood and room areif(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
     if(s.recovered>0)s.recovered*=0.9995; // immunity fades over years, not overnight
     s.unrest=clamp(s.unrest+hunger*1.6+(MOD.tax-12)*0.012-(s.festivalUntil>day()?0.5:0)-0.14,0,100);
     s.prosperity=clamp(s.prosperity+(hunger>0.25?-0.35:0.06)-(s.siegeBy?0.5:0)-(s.quarantineUntil>day()?0.12:0),1,100);
@@ -7692,11 +7719,6 @@ function tickPopulation(){
       famineStrikes(s);
     }
     if(hunger<0.15)s.famineFlag=false;
-    // migration under misery
-    if((hunger>0.3||s.unrest>65)&&s.pop>60){
-      const to=W.settlements.filter(o=>o!==s&&(o.hunger||0)<0.1).sort((a,b)=>b.prosperity-a.prosperity)[0];
-      if(to){const flee=s.pop*0.002;s.pop-=flee;to.pop+=flee;} // nobody vanishes into thin air
-    }
     // plague SIR
     if(s.infected>0.3){
       const N=Math.max(1,s.pop),beta=0.22*MOD.vir,gamma=0.075;
@@ -9169,7 +9191,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();if(day()%360===0&&!REPLAYING&&!W.prehistory)setTimeout(autosave,0);
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -9643,7 +9665,7 @@ function refreshOrders(){ // a mark on everything an order is still working on: 
     else if(q.type==='clear')ring(q.x,q.z,q.r+4,q.stalled?0x5a2020:0xc0392b);
     else if(q.type==='persuade')ring(q.x,q.z,(q.r||30)+4,0xc4a24a);
     else if(q.type==='plan'){const c=q.stalled?0x8a2f22:PLANB[q.kind].c,s=W.settlements[q.si]; // the brush's line, pegged out until it is built
-      if(q.kind==='stopup'||q.kind==='razewall')band(q.cut||q.st.pts,4,c);else if(q.kind==='street')band(q.st.pts,4,c);else if(q.kind==='quarter')for(const st of q.sts)band(st.pts,3.5,c);
+      if(q.kind==='stopup'||q.kind==='razewall'||q.kind==='raze')band(q.cut||q.st.pts,4,c);else if(q.kind==='street')band(q.st.pts,4,c);else if(q.kind==='quarter')for(const st of q.sts)band(st.pts,3.5,c);
       else if(q.kind==='square'){const P=[];for(let k=0;k<=PLN;k++){const a=k/PLN*Math.PI*2;P.push({x:q.place.x+Math.cos(a)*q.place.r[k%PLN],z:q.place.z+Math.sin(a)*q.place.r[k%PLN]});}band(P,2.5,c);}
       else if(q.kind==='wall'){const P=[];for(let k=0;k<=WALLN;k+=2){const a=k/WALLN*Math.PI*2,r=q.rad[k%WALLN];P.push({x:s.pos.x+Math.cos(a)*r,z:s.pos.z+Math.sin(a)*r});}band(P,3,c);}}
   }
