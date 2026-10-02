@@ -5746,7 +5746,7 @@ function landSuccession(){
 }
 function tickDomains(){ // monthly: owners, hosts, the frontier, and private wars
   if(!G.land||day()%30!==20)return;
-  {let rent=0;for(const f of G.land.F)if(f.bought&&f.lord===0)rent+=landValue(f)*0.45;W.treasury+=rent;} // the furlongs the crown bought pay their rent
+  // (the furlongs the crown bought pay their rent in kind at harvest, like any lord's)
   if(day()%360===20)for(const h of W.houses){h.ledPrev=h.ledY||{};h.ledY={};} // the year's accounts are closed
   for(const s of W.settlements)if(s.owner===0&&!s.siegeBy){const need=garrisonNeed(s)*1.1;if(s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}} // the crown's garrisons too
   if(day()%(360*3)===20)lordsRoads();
@@ -7597,8 +7597,7 @@ function tickEconomy(){
     }
     // taxes on production (towns held by houses in arms against the crown pay nothing): the crown's own towns pay it in full;
     // a lord's towns owe the crown only its feudal aid, their rents being his
-    if(!inRevolt(s.owner)){const due=s.pop*0.0016*(MOD.tax/12)*(s.prosperity/60)*(s.owner>0?0.4:1);
-      if(s.taxBreakUntil>day()&&s.owner>0&&s.owner===s.taxBreakHouse&&W.houses[s.owner])W.houses[s.owner].gold=(W.houses[s.owner].gold||0)+due;else W.treasury+=due;} // dues remitted to a lord stay in his purse
+    // (the crown's tax is a hearth-penny paid by each household from its purse, once a year: tickTenure)
   }
   // caravans
   const carters=Math.round((12+W.settlements.reduce((t2,x)=>t2+x.pop,0)/160)*MOD.trade); // as many carts on the roads as the realm has carters for
@@ -7699,10 +7698,11 @@ function tickEconomy(){
   }
   for(const r of W.roads)r.vol=(r.vol||0)*0.995;
   // treasury upkeep drains — the predator on hoarding
-  W.treasury-=W.armies.filter(a=>a.house===0&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.02:0.05),0); // the crown pays its own hosts by the head; the household costs less than a levy
-  W.treasury-=W.settlements.reduce((t,s)=>t+(s.owner===0?s.garrison:0),0)*0.012; // the crown keeps its own garrisons; a lord keeps his
-  {const reserve=hostTarget(0)*25;if(W.treasury>reserve)W.treasury-=(W.treasury-reserve)*0.0008;} // the court spends what lies beyond a war chest for the royal host: splendour grows to meet the coin
-  W.treasury=Math.max(-500,W.treasury);
+  for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+a.strength*(a.standing?0.02:0.05); // the crown pays its own hosts by the head; the household costs less than a levy
+  for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+(s.garrison||0)*0.012; // the crown keeps its own garrisons; a lord keeps his
+  if(day()%30===0){for(const a of W.armies)if(a._payOwed>0&&!a.gone){soldiersPay(a,a._payOwed,houseAcct(a.house));a._payOwed=0;}
+    for(const s of W.settlements)if(s._watchOwed>0){payAmong(heads_(s,h=>ageYrs(h)<50),s._watchOwed,lordAcct(s),'garrisons');s._watchOwed=0;}} // paid monthly, to the men's households
+  {const reserve=hostTarget(0)*25;if(W.treasury>reserve){const v=(W.treasury-reserve)*0.0008;W.treasury-=v;W.capital._poolCash=(W.capital._poolCash||0)+v;}} // the court spends what lies beyond a war chest: with the capital's tailors, spicers, vintners and the rest
 }
 
 /* ============================ POPULATION ================================= */
@@ -9021,16 +9021,28 @@ function tickTenure(){
     settleTenure(s,si,heads);
     for(const f of T){const w=PM.get(f.wk);if(w){w._strips++;w._ha+=f.area/1e4;if(f.ten==='crop')w._crop++;}const o=PM.get(f.own);if(o)o._owned++;}
     // the year's account of every household
-    let lordTake=0,wages=0,urban=0;const landless=heads.filter(h=>tills(h,s)&&!h._strips);
-    for(const f of T){const gross=f.area/1e4*1.6*hf;
-      if(f.ten==='demesne'){lordTake+=gross*0.7;wages+=gross*0.3;continue;}
-      const w=PM.get(f.wk),sh=TEN_SHARE[f.ten]||0.6;if(w)w.w+=gross*sh;const rest=gross*(1-sh);
-      if(f.ten==='crop'&&f.own>=0&&PM.get(f.own)){PM.get(f.own).w+=rest*0.85;lordTake+=rest*0.15;}else lordTake+=rest;}
-    if(landless.length)for(const h of landless)h.w+=wages/landless.length+0.6;else lordTake+=wages; // day-labour at harvest
+    // the harvest is grain in the barns of those who grew it, offered on the market: the worker's share, the owner's, the lord's (his home farm, and his villeins' and tenants' rents in kind), the church's tithe and the mill's multure
+    let wages=0,urban=0;const landless=heads.filter(h=>tills(h,s)&&!h._strips),gp=GOODBASE.grain,church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1;
+    mktAge(s);if(church)chOf(church);
+    for(const f of T){const q=f.area/1e4*1.6*hf/gp,tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
+      if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
+      if(f.ten==='demesne'){offer(s,'grain',lordOf,net);wages+=net*0.3*gp;continue;} // the home farm's crop is the lord's: he pays the harvesters
+      const w=PM.get(f.wk),sh=clamp((TEN_SHARE[f.ten]||0.6)-(dues-1)*0.15,0.2,0.95),rest=net*(1-sh);if(w)offer(s,'grain',w,net*sh);else offer(s,'grain',lordOf,net*sh);
+      if(f.ten==='crop'&&f.own>=0&&PM.get(f.own)){offer(s,'grain',PM.get(f.own),rest*0.85);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}
+    payAmong(landless,wages,lordAcct(s),'harvest wages'); // day-labour at harvest, paid by the lord
+    { // what the fishers, woodmen, miners, smiths, weavers and vintners made this year is theirs to sell
+      const yr={fish:(s.res.fish||0)*0.8*360,timber:(s.res.forest||0)*0.05*360,ore:(s.res.ore||0)*0.05*360,tools:(s._smiths||0)*0.45*0.8*360,cloth:((s._dyers||0)*0.5+s.pop*0.0008)*0.8*360,wine:(s._vineHa||0)*0.05*90};
+      for(const g in yr){if(!(yr[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,yr[g]/L.length);else offer(s,g,lordAcct(s),yr[g]);}
+      for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,h.herd.sheep*0.55);} // the fleeces
     for(const h of heads){const b=h.bh&&!h.bh.removed?h.bh:null,n=size.get(h)||1;
-      if(!tills(h,s))h.w+=tradeIncome(s,h.tr)*(1+0.3*(b?b.tier:0))*(0.8+0.2*(h.sk?h.sk[KCr]||0:0)); // the crafts and trades: their share of what the town's families spend, a better shop and a better hand taking more
       if(b&&RESID.has(b.arch)){const own=ownerAcct(b,s);if(own!==h){const r=propValue(b)*0.12/Math.max(1,(b.hh||[]).length);transfer(h,own,r);urban+=r;}} // rent to whoever owns the roof (the lord, a landlord neighbour, the church), none if it is the family's own
-      h.w=Math.max(-30,h.w);} // (the necessaries are bought in the household's own reckoning)
+      } // (the necessaries are bought in the household's own reckoning; a family in debt owes it, and sells beasts or land to pay)
+    { // the crafts and trades share out what the town's families spent with them this past year, a better shop and a better hand taking more
+      const C=heads.filter(h=>!tills(h,s)&&h.tr&&!PRODUCE[h.tr]),wt=h=>(TRADE_W[h.tr]||0.5)*(1+0.3*(h.bh&&!h.bh.removed?h.bh.tier:0))*(0.8+0.2*(h.sk?h.sk[KCr]||0:0));let tw=0;for(const h of C)tw+=wt(h);
+      const cash=s._poolCash||0;if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);s._poolCash=0;}}
+    { // the crown's tax: a hearth-penny on every household, by its size; in a lord's town only the feudal aid
+      if(!inRevolt(s.owner))for(const h of heads){const n=size.get(h)||1,tax=n*0.58*(MOD.tax/12)*clamp(s.prosperity/60,0.3,1.6)*(s.owner>0?0.4:1);
+        const to=s.taxBreakUntil>day()&&s.owner>0&&s.owner===s.taxBreakHouse?houseAcct(s.owner):'crown';transfer(h,to,tax);}}
     const L=W.houses[s.owner]; // (the town's rents have gone to the owners of its houses above)
     // the market in land
     for(const h of heads){if(h.w>=-4)continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
@@ -9105,6 +9117,7 @@ function inherit(p){ // the dead man's purse and beasts: to his widow, else his 
    ========================================================================= */
 const TRADE_W={baker:1.2,butcher:1,brewer:1.2,cook:0.8,miller:1,smith:1,carpenter:1.2,mason:0.9,thatcher:0.8,cooper:0.6,potter:0.6,weaver:1,dyer:0.6,tailor:0.8,shoemaker:0.8,tanner:0.6,glover:0.4,
   chandler:0.6,merchant:1.6,spicer:0.7,carter:1,boatman:0.8,roper:0.5,salter:0.4,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,woodcutter:0.9,forester:0.4,fisher:1,miner:0.8,quarryman:0.7,reeve:0.3}; // the share of what families spend that comes to each trade
+const PRODUCE={fisher:'fish',boatman:'fish',woodcutter:'timber',forester:'timber',miner:'ore',smith:'tools',weaver:'cloth',dyer:'cloth'}; // trades that live by selling what they make, not by a share of the town's spending
 const foodYr=()=>(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360;
 function tradeCounts(s){if(s._tcY===year())return s._tc;const c={};for(const h of headsOf(s))if(h.tr)c[h.tr]=(c[h.tr]||0)+1;s._tc=c;s._tcY=year();return c;}
 function tradeIncome(s,tr){ // what a household in this trade may expect here in a year
