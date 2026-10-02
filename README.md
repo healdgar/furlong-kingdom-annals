@@ -485,10 +485,21 @@ What happens is decided by quantities the economy produces, not by numbers cross
     his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
     from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
     their men come from; castellans to their own; sell-swords carry their pay out of the realm.
-  - **Merchants and carters:** a merchant household (or a stranger, if no one at home can afford the
-    load) buys at the origin's price, hires the carters or boatmen, pays the tolls and the crown's aid from
-    its margin, and sells at the destination as the town buys. Foreign ships buy and sell for silver from
-    abroad, and pay the lord's customs.
+  - **Merchants and carters:** a load goes on the road only when a merchant household (or a stranger, if no
+    one at home can afford it) finds the margin and a carter (by road) or boatman (by water) of the place is
+    free; a carter who trades on his own account drives his own load. The driver is away for the trip and
+    back, and is paid his freight on delivery at the place's going rate, which rises when loads wait for want
+    of a driver and falls when drivers stand idle. The merchant pays the market toll and the crown's aid on
+    what he brings, and will not sell at the far end below what the load cost him laid down there: the
+    price at the origin, the freight and the tolls. Foreign ships buy and sell for silver from abroad.
+  - **The labour market:** each trade is paid for its own work: the millers and bakers for bread, the
+    tailors for clothes, the brewers for ale, the shoemakers, potters, coopers and the rest out of what
+    families lay out on sundries. Where a place has no one in a trade, families do the work themselves (or
+    strangers are hired, for building) and the want is noted. Each year a place reckons what its people in
+    each trade actually earned (less what their stuff cost them) and the work that wanted hands; the young
+    choose, and a man under forty changes to, the trade that would pay best here, a grown child moves to
+    where his trade pays, and a master is paid to take an apprentice (with none here, the boy goes away to
+    learn).
   - **Building is wages:** castles, churches, walls, roads, plans, new houses and rebuilds pay the masons,
     carpenters, thatchers and carters of the place (or the nearest that has them); stone is bought from
     the quarry's owner. Whoever will own a new house pays for it.
