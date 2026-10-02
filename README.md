@@ -1,4 +1,4 @@
-# Furlong: Medieval Kingdom Sim
+# Furlong: Kingdom Annals
 
 *A living medieval kingdom in a single file, from the strip of field to the crown.*
 
