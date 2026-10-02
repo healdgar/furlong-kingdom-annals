@@ -1905,7 +1905,7 @@ function layoutSettlement(s){
 
   /* ---- frontage: the lots along each street, and who builds there ---- */
   const candsOf=st=>{
-    if(st.planQ)return []; // a planned street is not built along until it is opened
+    if(st.planQ||st.kind==='alley')return []; // a planned street is not built along until it is opened; an alley is a way through, not a frontage
     if(st.cands)return st.cands;
     const out=[];const pts=st.pts;
     for(let i=0;i<pts.length-1;i++){
@@ -2433,6 +2433,23 @@ function layoutSettlement(s){
     court(take,f){ // a run of plots rebuilt as one house about a courtyard
       take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
       live=true;curE=E;take.forEach(unplace);const nb=place('court',2,f,take[0].district||'residential',1);live=false;return nb;},
+    alley(b){ // a house with no way to the street gets an easement: a narrow passage between the neighbours to the nearest street
+      if(!b||b.removed)return null;const R=Math.hypot(b.w,b.d)/2;if(nearStreet(b.x,b.z,R+3))return null; // it fronts a street already
+      let best=null,bd=1e9;for(let a=0;a<16;a++){const ang=a*Math.PI/8,ux=Math.cos(ang),uz=Math.sin(ang);for(let t=R+2;t<R+40;t+=2){const x=b.x+ux*t,z=b.z+uz*t,g=nearStreet(x,z,1);if(g){if(t<bd){bd=t;best={ux,uz,t};}break;}}}
+      if(!best)return null;
+      for(const off of[0,2.5,-2.5,5,-5]){const ox=-best.uz*off,oz=best.ux*off,P=[];for(let t=0;t<=best.t+1;t+=2)P.push({x:b.x+ox+best.ux*t,z:b.z+oz+best.uz*t});
+        const clear=P.every(q=>{if(dist2d(q.x,q.z,b.x,b.z)<R)return true;const F={x:q.x,z:q.z,w:1.6,d:1.6,rot:0};return !placed.near(q.x,q.z,12).some(o=>o!==b&&!o.removed&&o.state!=='gone'&&obbOverlap(F,o));});
+        if(!clear)continue;live=true;curE=E;const st=addStreet(P,1.1,'alley',{name:null});live=false;if(st){G.roadsDirty=true;return st;}}
+      return null;},
+    widen(b,dry){ // a terrace: the house is carried along its frontage to the neighbour, where the plot beside is free (dry: only measure)
+      const c=Math.cos(b.rot),sn=Math.sin(b.rot),ax={x:c,z:-sn},az={x:sn,z:c};
+      const g=nearStreet(b.x,b.z,Math.hypot(b.w,b.d)/2+6);if(!g)return 0;const sx=g.b.x-g.a.x,sz=g.b.z-g.a.z,sl=Math.hypot(sx,sz)||1; // the street's line
+      const alongX=Math.abs((sx*ax.x+sz*ax.z)/sl)>=Math.abs((sx*az.x+sz*az.z)/sl),u=alongX?ax:az;
+      for(const dw of[6,4,2.5])for(const sd of[1,-1]){const w=alongX?b.w+dw:b.w,d=alongX?b.d:b.d+dw,x=b.x+u.x*sd*dw/2,z=b.z+u.z*sd*dw/2,F={x,z,w:w+0.3,d:d+0.3,rot:b.rot};
+        if(placed.near(x,z,Math.hypot(w,d)/2+2).some(o=>o!==b&&!o.removed&&o.state!=='gone'&&obbOverlap(F,o)))continue;
+        const ex=b.x+u.x*sd*((alongX?b.w:b.d)/2+dw/2),ez=b.z+u.z*sd*((alongX?b.w:b.d)/2+dw/2);if(nearStreet(ex,ez,0.5)||!cellOK(ex,ez))continue;
+        if(dry)return dw;live=true;curE=E;b.x=x;b.z=z;b.w=w;b.d=d;groundBuilding(b);placed.add(b,Math.hypot(w,d)/2+1);live=false;return dw;}
+      return 0;},
     hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||trackAt(x,z,Math.hypot(a[0],a[1])/2+1.5)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
@@ -2754,10 +2771,11 @@ function tickFolk(){
 /* every household under a roof: a married man's, a widow's or an unwed adult's; children under eighteen with their mother.
    A tradesman lives over his shop; a family keeps its house from year to year; when the town is full, lodgers double up. */
 const TRADE_ARCH={smith:'smithy',baker:'bakery',tanner:'tannery',glover:'tannery',dyer:'dyer',brewer:'tavern',cook:'inn',merchant:'shop',spicer:'shop',chandler:'shop',tailor:'shop',shoemaker:'shop',weaver:'burgher'};
+function capOf(b){return (1+(b.tier||0))*Math.max(1,Math.round((b.w||8)*(b.d||7)/60));} // households a building houses: its storeys, and its frontage (a terrace of several bays houses several)
 function householdHead(p){for(let i=0;i<4;i++){if(p.sp&&!p.sp.dead&&p.sp.si===p.si)return p.sx==='f'?p.sp:p;
     if(!p.sp&&(ageYrs(p)<18||!p.own&&!(p.lb>0)&&ageYrs(p)<30)&&p.ma&&!p.ma.dead&&p.ma.si===p.si){p=p.ma;continue;}return p;}return p;} // the unwed stay under their mother's roof
 function houseFolk(s){
-  const homes=(s.buildings||[]).filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),cap=new Map();for(const b of homes){cap.set(b,1+b.tier);b.hh=[];}
+  const homes=(s.buildings||[]).filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),cap=new Map();for(const b of homes){cap.set(b,capOf(b));b.hh=[];}
   const heads=new Set();for(const p of s.folk||[])heads.add(householdHead(p));
   const later=[];for(const h of heads){const b=h.bh;if(b&&cap.get(b)>0){cap.set(b,cap.get(b)-1);b.hh.push(h);}else later.push(h);}
   let rr=0;for(const h of later){const want=TRADE_ARCH[h.tr];let b=null;
@@ -4334,7 +4352,7 @@ function tickInfill(){
       if(rich&&c.rent<YARD_WORTH*5)continue; // a rich household keeps its garden
       const sp=nearestStreetPt(s,b.x,b.z);if(!sp||sp.d<0.5)continue;const fx=(sp.x-b.x)/sp.d,fz=(sp.z-b.z)/sp.d; // the street side; the yard is behind
       const cost=c.rent*40*30; // a cottage costs some years of what it will let for
-      const r=s._lay.live.infill(b,-fx,-fz);if(!r)continue;done++;if(h&&(h.w||0)>=cost*0.6)buildWorks(s,cost*0.5,h,'building');else if(h)buildWorks(s,cost*0.5,lordAcct(s),'building'); // built by the household, or the lord's builder puts up the house and lets it
+      const r=s._lay.live.infill(b,-fx,-fz);if(!r)continue;done++;if(r&&r.arch)s._lay.live.alley(r);/* a back cottage needs its way out */if(h&&(h.w||0)>=cost*0.6)buildWorks(s,cost*0.5,h,'building');else if(h)buildWorks(s,cost*0.5,lordAcct(s),'building'); // built by the household, or the lord's builder puts up the house and lets it
       if(!s._infillNote){s._infillNote=1;s.history.push({yr:year(),t:'The yards behind the houses in the heart of the town began to fill: houses lengthened back into their tofts, cottages built at the foot of the gardens to let.'});
         emit('trade',2,s.pos,`${s.name}: ground in the heart of the town is too dear for gardens; the yards behind the houses fill with cottages and workshops.`);}}
     if(done)syncLive(s);}}
@@ -5318,12 +5336,13 @@ function buildTracks(){
     let t0=-1;for(let s=0;s<=L+0.5;s+=1){const x=A.x+ux*Math.min(s,L),z=A.z+uz*Math.min(s,L),wet=!!riverAt(x,z,0.6);
       if(wet&&t0<0)t0=s;if((!wet||s>=L)&&t0>=0){const s0=Math.max(0,t0-2.5),s1=Math.min(L,s+2.5),span=s1-s0;t0=-1;if(span<3)continue;
         const ax=A.x+ux*s0,az=A.z+uz*s0,bx=A.x+ux*s1,bz=A.z+uz*s1,mx=(ax+bx)/2,mz=(az+bz)/2,si=nearestSettlementIdx(mx,mz),st=W.settlements[si];
-        const isStone=AD()>=1200&&st&&(st.prosperity>55||(st.stores.stone||0)>=20)&&span<26,y=Math.max(hAt(ax,az),hAt(bx,bz))+(isStone?0.5:0.35);
+        const isStone=AD()>=1200&&st&&(st.prosperity>55||(st.stores.stone||0)>=20)&&span<26,y=Math.max(hAt(ax,az),hAt(bx,bz),riverSurf(mx,mz)+(isStone?0.4:0.3))+(isStone?0.5:0.35); // the deck clears the water
         const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),U,new THREE.Vector3(-uz,0,ux)).setPosition(mx,y,mz),P=isStone?stone:wood;(G.trackBridgeAt||(G.trackBridgeAt=[])).push({x:mx,z:mz,stone:isStone});
         if(isStone){P.push([new THREE.BoxGeometry(span,1.1,3.6).translate(0,-0.45,0),M]);for(const sd of[-1,1])P.push([new THREE.BoxGeometry(span,0.7,0.4).translate(0,0.35,sd*1.6),M]);}
         else{P.push([new THREE.BoxGeometry(span,0.22,2.6),M]);for(const sd of[-1,1]){P.push([new THREE.BoxGeometry(span,0.12,0.12).translate(0,0.85,sd*1.2),M]);
           for(let q=0;q<=Math.ceil(span/3);q++)P.push([new THREE.BoxGeometry(0.16,0.95,0.16).translate(-span/2+q*span/Math.ceil(span/3),0.4,sd*1.2),M]);}}}}}
   for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const m=new THREE.Mesh(mergeGeoms(P),new THREE.MeshLambertMaterial({color:col}));m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
+function riverSurf(x,z){let y=-1e9;if(!G.rivHash)return y;for(const o of G.rivHash.near(x,z,40))if(segDist(x,z,o.a,o.b)<o.hw+3)y=Math.max(y,o.y);return y;} // the water's surface where a stream runs
 function trackAt(x,z,tol){if(!G.trackSet||!G.tg)return false;const T=G.tg;for(const k of G.trackSet){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b];if(segDist(x,z,A,Bp)<tol)return true;}return false;}
 function rebuildFences(){
   if(!G.land||!G.fenceWood)return;G.fenceDirty=false;
@@ -9396,10 +9415,10 @@ function homeScore(h,s,x,z,st,wk){ // what a lot is worth to this household: the
   const means=Math.max(0,h.w||0),fear=(s.raidedUntil>day()?1:0)+(s.siegeBy?1:0)+(W.war?0.4:0)+(s.walls>0?0.2:0);
   return -dist2d(x,z,wk.x,wk.z)/80-lotRentAt(s,x,z,st)*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
 function crowding(s){ // households without a roof of their own: none at all, or lodging over another's
-  let n=0;for(const h of heads_(s,()=>true)){const b=h.bh;if(!b||b.removed||b.s!==s||b.state!=='sound'){n++;continue;}if((b.hh||[]).indexOf(h)>=1+(b.tier||0))n++;}return n;}
+  let n=0;for(const h of heads_(s,()=>true)){const b=h.bh;if(!b||b.removed||b.s!==s||b.state!=='sound'){n++;continue;}if((b.hh||[]).indexOf(h)>=capOf(b))n++;}return n;}
 function means(x){return x==='crown'?W.treasury:x&&x.gn!==undefined?(x.w||0):x&&x.ch?x.ch.fund:x&&x.buildings?(x.murage||0):x?(x.gold||0):0;} // what an account has to spend
 function houseBuyer(s,cost){ // who pays for a new house: a household that wants one and can pay, else a landlord who expects the rent to repay him within a dozen years, else the lord on the same reckoning
-  const want=heads_(s,h=>!h.bh||h.bh.removed||h.bh.s!==s||(h.bh.hh||[]).indexOf(h)>=1+(h.bh.tier||0)).sort((a,b)=>(b.w||0)-(a.w||0));
+  const want=heads_(s,h=>!h.bh||h.bh.removed||h.bh.s!==s||(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)).sort((a,b)=>(b.w||0)-(a.w||0));
   if(!want.length)return null;if((want[0].w||0)>=cost)return {acct:want[0],id:want[0].id};
   const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40),rent=R.length?R.reduce((t,b)=>t+propValue(b),0)/R.length*0.12*(W._pl||1):0;if(rent*12<cost)return null; // a house that would not pay for itself is not built
   const L=heads_(s,h=>(h.w||0)>=cost*2).sort((a,b)=>(b.w||0)-(a.w||0))[0];if(L)return {acct:L,id:L.id};
@@ -9450,7 +9469,7 @@ function tickGrowth(){ // houses are built for households that have none, as fas
       let n=Math.min(short,(1+hands)*0.25*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // as fast as its builders can (wattle and daub, slower, when there is no sawn timber)
       for(let k=0;k<n;k++){const est=45*0.8*(W._pl||1);
         { // a storey on the house where a family lodges, if that is cheaper than a new house and its owner will pay: towns add to what they have
-          const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0),lod=heads_(s,h=>h.bh&&!h.bh.removed&&h.bh.s===s&&h.bh.state==='sound'&&(h.bh.hh||[]).indexOf(h)>=1+(h.bh.tier||0)&&h.bh.tier<capT&&h.bh.arch!=='cot'&&h.bh.arch!=='court')[0];
+          const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0),lod=heads_(s,h=>h.bh&&!h.bh.removed&&h.bh.s===s&&h.bh.state==='sound'&&(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)&&h.bh.tier<capT&&h.bh.arch!=='cot'&&h.bh.arch!=='court')[0];
           if(lod){const b=lod.bh,c=b.w*b.d*0.6*(W._pl||1),own=ownerAcct(b,s);if(c<=est&&means(own)>=c){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);buildWorks(s,c,own,'building');got++;continue;}}}
         const pay=houseBuyer(s,est);if(!pay)break; // no one will pay for it: they lodge
         const b=addBuildingLive(s);if(b){got++;b.ownerId=pay.id;const tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),pay.acct,'building');purchase(s,'timber',pay.acct,tq);s.stores.timber-=tq;} // its owner pays the builders and the timber
@@ -9462,6 +9481,11 @@ function tickGrowth(){ // houses are built for households that have none, as fas
         if(b&&means(ownerAcct(b,s))>=b.w*b.d*0.6*(W._pl||1)){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);buildWorks(s,b.w*b.d*0.6*(W._pl||1),ownerAcct(b,s),'building');
           if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}}
     }
+    if(day()%360===(W.settlements.indexOf(s)*29)%360&&s._lay&&s._lay.live&&s.kind!=='village'){ // once a year: in the dear heart of a town an owner carries his house along the frontage to the next, where the rent of the new bay repays the building
+      const core=(s.extentR||s.radius||100)*0.5,C=s.buildings.filter(b=>(b.arch==='house'||b.arch==='burgher')&&b.state==='sound'&&!b.removed&&!b.rural&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core);
+      for(let k=0;k<Math.min(20,C.length);k++){const b=C[(k*7919+day())%C.length],own=ownerAcct(b,s),dw=s._lay.live.widen(b,true);if(!dw)continue;
+        const pv=propValue(b),gain=pv*(Math.sqrt((b.w*b.d+dw*Math.min(b.w,b.d))/(b.w*b.d))-1)*0.12*(W._pl||1),cost=dw*Math.min(b.w,b.d)*0.8*(W._pl||1);
+        if(gain*12>=cost&&means(own)>=cost&&s._lay.live.widen(b)){buildWorks(s,cost,own,'building');updateBuildingInstance(b);G.detDirty=true;}}}
     if(day()%360===(W.settlements.indexOf(s)*29)%360&&s.folk&&s.folk.length) // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
       for(const b of s.buildings){if(!RESID.has(b.arch)||b.state!=='sound'||b.removed||(b.hh&&b.hh.length))continue;const own=ownerAcct(b,s),up=b.w*b.d*0.03*(W._pl||1);
         { // first, another use for it: a craftsman who works from a room not made for his trade takes it and fits it out (a forge in a house, a shop in a hall)
