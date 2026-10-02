@@ -220,6 +220,26 @@ Acts are sealed while you rule; the crown's own levers take their place:
   battle is fought before the gates. A battle shows as two lines facing each
   other, surging and falling back, the dead where they fell, dust over the
   melee and a ⚔ over the field.
+- **Attack a host**: give a march order and click an enemy host (or any
+  other house's): yours pursues it, turning each day toward where it is
+  going, until they meet. If your lords are not at war, drawing the sword
+  begins it: a feud between two houses, a rising if the crown is one of them.
+- **Hosts are men**: up close a host is its soldiers. On the march it is a
+  column on the road, three abreast, in companies each under its standard;
+  it does not walk through houses or an enemy's walls (it bunches outside
+  them). Lying at a town it camps on open ground outside, by a road. Siege
+  lines stand clear of the suburbs.
+- **Gates and breaches**: when a town is besieged its gates are shut and
+  barred. The storming party masses on the road at the main gate under a ram
+  in its shed. If the storm succeeds the gate lies broken in its passage and
+  the host files in along the streets to the market.
+- **Walls take damage**: each day of a siege the engines (rams and mining,
+  then trebuchets, then guns) batter the stretch facing the lines, worst at
+  the gate; a storm throws down the gate and the wall beside it; castles are
+  battered the same way. Battered stretches are drawn lower, breaches as
+  rubble, towers broken. Damage weakens the defence until repaired: each
+  year the lord pays the masons if he can (the walls' card says what the
+  repairs wait on), and a poor town lets its walls crumble.
 - **Who wins**: each side's strength is weighed by:
   - its morale;
   - its commander (arms, riding, nerve and wits);
@@ -368,6 +388,15 @@ itself; you rule one lord's domain:
   goes depends on what the place is worth (a village fort, a town, a seat,
   the capital); each work waits on the lord's surplus and comes sooner on a
   border or in war. Each part adds to the defence a siege must overcome.
+- **The yards fill.** Behind each town house lies its toft. Where ground is
+  dear (in the heart of a town, from about 1100), a yard is worth more built
+  on than dug: the householder puts up a cottage at the foot of the garden
+  to let, or lengthens the house back into it. A rich household keeps its
+  garden. Out at the edge, where rent is cheap, the yards stay green. The
+  field strips stop at a yard's fence.
+- **Settlers on new streets.** A street or quarter laid out by a lord's plan
+  lets its plots cheap: a few households a year take them up, beyond the
+  town's own growth, and growth prefers them.
 - **Courtyard houses.** From the mid-1100s, in the dearest fifth of a town,
   the richest household (a spicer, a merchant) buys out its neighbours along
   the street (paying them their houses' worth) and rebuilds the run of plots
