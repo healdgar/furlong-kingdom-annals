@@ -2273,6 +2273,16 @@ function layoutSettlement(s){
       c.key=keyOf(c);q.push(c);});
     return q.sort((p,q2)=>p.key-q2.key);
   };
+  const fromTracks=n=>{ // the country lanes at the town's edge are made up into its new streets before any new way is cut: the land along them is bought and parcelled
+    if(!G.trackSet||!G.tg||n<=0)return 0;const T=G.tg;let made=0;const cand=[];
+    for(const k of G.trackSet){const e=T.E.get(k),A=T.pts[e.a],B=T.pts[e.b];if(Math.max(dist2d(A.x,A.z,C.x,C.z),dist2d(B.x,B.z,C.x,C.z))>Rmax*1.05)continue;
+      if(nearStreet((A.x+B.x)/2,(A.z+B.z)/2,5))continue;const ja=nearStreet(A.x,A.z,10),jb=nearStreet(B.x,B.z,10);if(!ja&&!jb)continue; // it must join the town's streets
+      cand.push([e,A,B,Math.min(dist2d(A.x,A.z,C.x,C.z),dist2d(B.x,B.z,C.x,C.z))]);}
+    cand.sort((x,y)=>x[3]-y[3]);
+    for(const[e,A,B]of cand){if(made>=n)break;const pts=resample([{x:A.x,z:A.z},{x:B.x,z:B.z}],8);if(pts.length<2||!pts.every(q=>cellOK(q.x,q.z)))continue;
+      if(liveB().some(o=>!o.removed&&o.state!=='gone'&&pts.some(q=>dist2d(o.x,o.z,q.x,q.z)<HW+Math.max(o.w,o.d)*0.5)))continue;
+      if(addStreet(pts,HW*0.78,'lane',{hidden:true,track:true})){made++;G.trackSet.delete(e.k);}}
+    if(made){G.fenceDirty=true;G.roadsDirty=true;}return made;};
   const extend=()=>{ // the town outgrows its reach: the highways are built up further out and new lanes are laid off them
     if(Rmax>=R0*2)return false;
     let room=R0*2;W.settlements.forEach((o,oi)=>{if(oi===idx||metroOf(o)===metroOf(s)||o.owner===s.owner||o.pop<s.pop*0.67)return; // a lesser place, or one of the same lord, is taken in; a rival lord's town as great is not, so the town stops short of it
@@ -2286,7 +2296,7 @@ function layoutSettlement(s){
       for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;if(liveB().some(o=>!o.removed&&o.state!=='gone'&&dist2d(o.x,o.z,p.x,p.z)<RHW+Math.max(o.w,o.d)*0.55))break;ext.push({x:p.x,z:p.z});} // stops short of a house standing in its way
       if(ext.length>=3&&addStreet(ext,RHW,'road')){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
     });
-    branch(isCap?8:isTown?5:2,true,Rmax*0.8);
+    {const n=isCap?8:isTown?5:2,t=fromTracks(n);if(n>t)branch(n-t,true,Rmax*0.8);}
     return true;
   };
   s.growSlots=queue();
@@ -2338,7 +2348,7 @@ function layoutSettlement(s){
     promote(){ // a village granted a market becomes a town: it may now reach further, and build as townsfolk do
       live=true;curE=E;isVil=false;isTown=true;R0=Math.max(R0,310);Rmax=Math.max(Rmax,200);s.kind='town';
       hist(0,'Granted a charter for a weekly market; the village became a town.');branch(4,true);live=false;},
-    lanes(n){curE=E;return branch(n,true,Rmax*0.8);},
+    lanes(n){curE=E;const t=fromTracks(n);return t+(n>t?branch(n-t,true,Rmax*0.8):0);},
     parish(){const n=parishes;live=true;curE=E;parish(E);live=false;return parishes>n;},
     friary(){if(friaryDone||!s.wallRad)return false;live=true;curE=E;friary(E);live=false;return friaryDone;},
     neustadt(){if(neuDone)return false;live=true;curE=E;neustadt(E);live=false;return neuDone;},
@@ -2423,7 +2433,7 @@ function layoutSettlement(s){
     court(take,f){ // a run of plots rebuilt as one house about a courtyard
       take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
       live=true;curE=E;take.forEach(unplace);const nb=place('court',2,f,take[0].district||'residential',1);live=false;return nb;},
-    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
+    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||trackAt(x,z,Math.hypot(a[0],a[1])/2+1.5)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
   /* the town's own streets as a network: the way a cart goes from the market to any street end */
@@ -5272,6 +5282,11 @@ function trackGraph(){
   return G.tg={V,pts,adj,E};}
 function buildTracks(){
   if(!G.land)return;const T=trackGraph(),used=new Set(),N=T.pts.length,F=G.land.F;
+  const rural=[];for(const o of W.settlements)for(const b of o.buildings)if(b.rural&&!b.removed&&b.state!=='gone')rural.push(b);
+  const SH=new Map(),sk=(i,j)=>i*100003+j;for(const o of W.settlements)for(const st of o.streets||[]){if(st.gone||st.kind==='edge')continue;const P=st.pts; // every street (made or waiting), hashed by 20 m cells
+    for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k];for(let t=0;t<=1;t+=0.25){const i=Math.floor((a.x+(b.x-a.x)*t)/20),j=Math.floor((a.z+(b.z-a.z)*t)/20),q=sk(i,j);if(!SH.has(q))SH.set(q,[]);SH.get(q).push([a,b,st.hw||3]);}}}
+  const onStreet=(x,z)=>{const i=Math.floor(x/20),j=Math.floor(z/20);for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){const L=SH.get(sk(i+di,j+dj));if(L)for(const[a,b,hw]of L)if(segDist(x,z,a,b)<hw+6)return true;}return false;};
+  const urban=(x,z)=>W.settlements.some(o=>dist2d(x,z,o.pos.x,o.pos.z)<(o.extentR||o.radius||60))||rural.some(b=>Math.abs(b.x-x)<12&&Math.abs(b.z-z)<12)||onStreet(x,z); // a town's own ground is bought and laid out in lots and yards; a farmstead's yard is its own
   W.settlements.forEach((s,si)=>{
     const fs=F.filter(f=>f.dom===si&&(f.state===LS.TILLED||f.state===LS.PASTURE)&&f.kind!==LK.NONE);if(!fs.length)return;
     const R=(s.extentR||s.radius||60)+15;let a0=-1,bd=1e18;
@@ -5283,7 +5298,7 @@ function buildTracks(){
     push(0,a0);
     while(heap.length){const[dc,v]=pop();
       if(dc>dist[v])continue;if(dc>6000)break;
-      for(const e of T.adj[v]){const w=e.a===v?e.b:e.a,P=T.pts[w];let c=e.c;
+      for(const e of T.adj[v]){const w=e.a===v?e.b:e.a,P=T.pts[w];let c=e.c;const Pv=T.pts[v];if(v!==a0&&(urban(P.x,P.z)||urban((P.x+Pv.x)/2,(P.z+Pv.z)/2)))continue; // the lanes stop at the town's edge and go round the farmyards
         for(const o of W.settlements)if(o!==s&&dist2d(P.x,P.z,o.pos.x,o.pos.z)<(o.radius||60))c*=5; // not through another village's yards
         if(dc+c<dist[w]){dist[w]=dc+c;via[w]=e;push(dist[w],w);}}}
     for(const f of fs){let t=-1,td=1e18;for(const q of furlongPoly(f)){const i=T.V.get(tgKey(q));if(i!==undefined&&dist[i]<td){td=dist[i];t=i;}}
@@ -9290,7 +9305,7 @@ function onRoad(x,z,pad){ // on (or within pad of) a king's road
     const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5)return true;}return false;}
 function placeRural(s,x,z,arch,owner){ // a farmstead or a hut out on the land
   for(let k=0;k<10;k++){const a=k*2.4,r=k*6,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r,c=cIdx(toCell(px),toCell(pz));
-    if(W.water[c]||slopeAt(toCell(px),toCell(pz))>0.35||riverAt(px,pz,8)||onRoad(px,pz,arch==='cot'?6:9))continue; // not in the river, not on the highway
+    if(W.water[c]||slopeAt(toCell(px),toCell(pz))>0.35||riverAt(px,pz,8)||onRoad(px,pz,arch==='cot'?6:9)||trackAt(px,pz,arch==='cot'?6:9))continue; // not in the river, not on the highway
     if(W.settlements.some(o=>dist2d(px,pz,o.pos.x,o.pos.z)<(o.extentR||o.radius||90)+30))continue;
     if(W.settlements.some(o=>o.buildings.some(b=>!b.removed&&Math.abs(b.x-px)<30&&Math.abs(b.z-pz)<30)))continue;
     if(!bldRoom(1))return null;const A=ARCH[arch],w=arch==='cot'?5:8,d=arch==='cot'?4:12,rot=hash01(px*0.37+pz)*Math.PI;
