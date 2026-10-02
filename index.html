@@ -2594,7 +2594,7 @@ function mkPerson(s,si,o){
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   (s.folk||(s.folk=[])).push(p);return p;}
 function life(p,t){if(!p||p.merc||!t)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>40)E.splice(0,1);} // the ledger of a life: what befell him, and when
-function dropPerson(p,why){if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);}if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
+function dropPerson(p,why){if(!p)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);}if(!p.merc&&W.settlements&&(p.w||p.herd))inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.sp.sp=null;p.sp=null;}}
 function removeAt(s,i){const a=s.folk;if(i<0||i>=a.length)return null;const p=a[i];a[i]=a[a.length-1];a.pop();return p;} // an index of -1 used to take the last soul on the roll instead
 function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
 /* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
@@ -2739,7 +2739,7 @@ function tickFolk(){
     while(k>0){k-=seedHousehold(s,si,true).length;}});
   for(const p of mig)dropPerson(p,'Left the realm, to seek a living abroad'); // gone beyond the realm's borders
   const inArms=W.armies.reduce((t,a)=>t+(a.gone?0:a.strength),0); // a host that melts away took its levies with it
-  while(W.levies.length>inArms*1.05){const i=Math.floor(frand()*W.levies.length);dropPerson(W.levies[i],'Lost in the wars, and never came home');W.levies.splice(i,1);}
+  while(W.levies.length>inArms*1.05){const i=Math.min(W.levies.length-1,Math.floor(frand()*W.levies.length));dropPerson(W.levies[i],'Lost in the wars, and never came home');W.levies.splice(i,1);}
   if(mon===0&&d%360<30)Ss.forEach(s=>{s._stat=null;});}
 /* every household under a roof: a married man's, a widow's or an unwed adult's; children under eighteen with their mother.
    A tradesman lives over his shop; a family keeps its house from year to year; when the town is full, lodgers double up. */
@@ -4279,7 +4279,7 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
     if(day()<q.next)return;q.next=day()+3+randi('sim',5);
     const b=q.hit.find(b=>!b.removed&&b.state!=='gone');
     if(b){const c=planComp(b);if(!pay(c)){stall('the householders will not go without their money');return;}q.stalled=false;
-      acct(ownerAcct(b,s),c*0.85);for(const h of b.hh||[])acct(h,c*0.15/Math.max(1,(b.hh||[]).length)); /* (paid above) */ // the owner bought out; the tenants given something for the flittings.unrest=clamp(s.unrest+0.5,0,100);if(q.payer===campHouse())achStat('razed');
+      acct(ownerAcct(b,s),c*0.85);for(const h of b.hh||[])acct(h,c*0.15/Math.max(1,(b.hh||[]).length)); /* (paid above) */ /* the owner bought out; the tenants given something for the flitting */s.unrest=clamp(s.unrest+0.5,0,100);if(q.payer===campHouse())achStat('razed');
       b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;s._hhY=-1;return;}
     q.stage='build';G.ordersDirty=true;if(q.kind==='wall'){const up=q.stone&&s.walls===1&&!!s.wallRad;s._lay.live.planWall(q.rad,q.stone);wallWorks(s,up,q.days);syncLive(s);}return;}
   const share=q.works/q.days;if(q.kind==='wall'&&q.stone){const need=q.need/q.days;if((s.stores.stone||0)>=need)s.stores.stone-=need;}
@@ -9165,9 +9165,12 @@ function tickTenure(){
    ========================================================================= */
 function lordAcct(s){return s&&s.owner>0&&W.houses[s.owner]&&!W.houses[s.owner].exiled?W.houses[s.owner]:'crown';}
 function houseAcct(hi){return hi>0&&W.houses[hi]&&!W.houses[hi].exiled?W.houses[hi]:'crown';}
-function acct(x,v){if(!v||!x||x==='out')return;if(x==='crown'){W.treasury+=v;return;}if(x.ch){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;}
+function acct(x,v){if(!v||!x||x==='out'){if(v&&!x)flow('<>lost',v);return;}
+  for(let k=0;k<6&&x.gn!==undefined&&x.dead;k++){if(x._heir)x=x._heir;else{const t=W.settlements[x.si];x=t?lordAcct(t):'crown';break;}}
+  /* a dead man's dues go to his heir */if(x==='crown'){W.treasury+=v;return;}if(x.ch){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;}
 const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&W.houses.includes(x);
-function transfer(from,to,v,why){if(!(v>0))return 0;acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
+function flow(k,v){const F=W._flow||(W._flow={});F[k]=(F[k]||0)+v;} // money that came into the realm or left it, by cause
+function transfer(from,to,v,why){if(!(v>0))return 0;if(to==='out')flow('>'+(why||'?'),v);else if(from==='out')flow('<'+(why||'?'),v);else if(!from)flow('<'+(why||'paid')+'*',v);acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
 function parishOf(s){return s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed&&!b.castle&&!b.friary)||s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed)||null;}
 const LORD_ARCH=new Set(['keep','hall','mill','windmill','granary','warehouse','toll','quarry','barn']),CHURCH_ARCH=new Set(['temple','hospital','friary']),TOWN_ARCH=new Set(['guildhall','wharf','bath','market']);
 function ownerOf(b,s){ // who owns this building: decided once (lazily), then kept until it is sold, inherited or pulled down
@@ -9189,24 +9192,25 @@ function purchase(s,g,buyer,qty,p){ // the buyer takes from his own stock first,
   let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);if(own-got>1e-6)L.set(buyer,own-got);else L.delete(buyer);if(buyer.gn!==undefined)buyer._inc=(buyer._inc||0)+got*p;} // his own grain: worth to him what it would have fetched
   let have=0;for(const[w,v]of L)if(w!==buyer&&!(R&&R.get(w)>p))have+=v;
   const take=Math.min(qty-got,have),f=have>0?take/have:0;let paid=0;
-  if(take>0)for(const[w,v]of L){if(w===buyer||R&&R.get(w)>p)continue;const q=v*f,r=v-q;if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);paid+=q*p;}
-  got+=take;acct(buyer,-paid);const S=s._sold||(s._sold={});S[g]=(S[g]||0)+got;purchase.got=got;return paid;}
+  if(take>0)for(const[w,v]of L){if(w===buyer||R&&R.get(w)>p)continue;const q=v*f,r=v-q;if(w==='out')flow('>import '+g,q*p);if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);paid+=q*p;}
+  got+=take;acct(buyer,-paid);if(buyer==='out')flow('<export '+g,paid);const S=s._sold||(s._sold={});S[g]=(S[g]||0)+got;purchase.got=got;return paid;}
 function heads_(s,pred){return s.folk?headsOf(s).filter(h=>!h.role&&pred(h)):[];}
 function payAmong(list,v,payer,why){ // wages shared among households
-  if(!(v>0))return 0;if(!list.length){if(payer)transfer(payer,'out',v,why);return v;}const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
+  if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
   if(!(cost>0)||!s)return;let B=heads_(s,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher'),C=heads_(s,h=>h.tr==='carter');
   if(!B.length){const U=s._unmet||(s._unmet={});U.mason=(U.mason||0)+cost*0.4;U.carpenter=(U.carpenter||0)+cost*0.35;const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>heads_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=heads_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=heads_(o,h=>h.tr==='carter');}}
-  payAmong(B,cost*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,cost*0.25,payer,why);}
+  if(!B.length)B=heads_(s,()=>true);payAmong(B,cost*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,cost*0.25,payer,why);}
 function levy(s,v,to,why){ // a rate laid on the households by their means; returns what was gathered
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why);}return got;}
 function wages(s,v,why){buildWorks(s,v,null,why);} // the payer's purse already debited: the money reaches the builders
 function soldiersPay(a,v,payer){ // a host's pay: to the households its men come from; the sell-swords' goes out of the realm
-  if(!(v>0))return;const M=a.men||[];if(!M.length){transfer(payer,'out',v,'hosts');return;}const each=v/M.length;
+  if(!(v>0))return;const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts');}}
 function inherit(p){ // the dead man's purse and beasts: to his widow, else his eldest grown child, else his lord
   if(!(p.w)&&!p.herd)return;const s=W.settlements[p.si];let to=null;
   if(p.sp&&!p.sp.dead)to=p.sp;else if(s&&s.folk){const kids=s.folk.filter(q=>!q.dead&&(q.pa===p||q.ma===p)).sort((a,c)=>ageYrs(c)-ageYrs(a));to=kids[0]||null;}
+  if(to)p._heir=to;else if(s)p._heir=null;
   if(to){if((p.w||0)>1||p.herd)life(to,`Inherited ${Math.round(p.w||0)} crowns${p.herd&&beastsWord(p.herd)?' and '+beastsWord(p.herd):''} from ${folkName(p)}`);to.w=(to.w||0)+(p.w||0);if(p.herd){const H=herdOf(to);for(const k of BEASTS)H[k]=(H[k]||0)+(p.herd[k]||0);}
     if(s)for(const b of s.buildings)if(b.ownerId===p.id)b.ownerId=to.id;} // and his houses and shops
   else{acct(s?lordAcct(s):'crown',p.w||0);if(s)for(const b of s.buildings)if(b.ownerId===p.id)b.ownerId='lord';} // escheat: no heir, all goes to the lord
@@ -10081,7 +10085,7 @@ function tickProjects(){ // daily: the works go forward as far as they are paid 
       const left=s.buildings.filter(b=>!b.inst&&!b.removed&&b.state!=='gone'&&dist2d(b.x,b.z,q.x,q.z)<q.r).sort((a,b)=>dist2d(b.x,b.z,q.x,q.z)-dist2d(a.x,a.z,q.x,q.z));
       const payH=q.payer>0?W.houses[q.payer]:null,fund=()=>payH?(payH.gold||0):W.treasury;
       if(left.length){const b=left[0],pay=30+40*b.tier;if(fund()<pay){if(!q.stalled){q.stalled=true;emit('crown',3,s.pos,`The clearing in ${s.name} halts: the householders will not go without their compensation.`);}continue;}
-        q.stalled=false;if(payH)payH.gold-=pay;else W.treasury-=pay;acct(ownerAcct(b,s),pay*0.85);for(const h of b.hh||[])acct(h,pay*0.15/Math.max(1,(b.hh||[]).length));q.gone++; // the owner compensated, the tenants given something to gos.unrest=clamp(s.unrest+0.8,0,100);
+        q.stalled=false;if(payH)payH.gold-=pay;else W.treasury-=pay;acct(ownerAcct(b,s),pay*0.85);for(const h of b.hh||[])acct(h,pay*0.15/Math.max(1,(b.hh||[]).length));q.gone++; /* the owner compensated, the tenants given something to go */s.unrest=clamp(s.unrest+0.8,0,100);
         b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;continue;}
       L.splice(i,1);s._lay.live.clear({x:q.x,z:q.z,r:q.r});syncLive(s); // all gone: the ground is laid out anew, and the town's own growth builds it up
       emit('crown',5,s.pos,`The condemned quarter of ${s.name} is down (${q.gone} houses); surveyors peg out a new street across the ground.`);
