@@ -6017,7 +6017,7 @@ function tickLivestock(){
       if(s.siegeBy)St[k]*=0.96; // shut in, the beasts are eaten
     }
     if(St.hay==null)St.hay=0;const si2=seasonIdx();
-    if(si2===1||si2===2)St.hay+=(g.hay*2+g.past*0.3+g.wild*0.08)*(W.drought?0.4:1); // mown in summer, stacked for the winter
+    if(si2===1||si2===2){const q=(g.hay*2+g.past*0.3+g.wild*0.08)*(W.drought?0.4:1);St.hay+=q;made(s,'hay',q);} // mown in summer, stacked for the winter
     const winterNeed=used*0.35; /* the rest of the winter's keep is the stubble and the frosted grass */s._hayWant=winterNeed*(si2===3?1:3); // three winter months' fodder, bought in autumn where the meadows fall short
     if(winter){const eat=Math.min(St.hay,winterNeed),short=winterNeed>0?1-eat/winterNeed:0;St.hay-=eat;
       if(short>0.05){const loss=Math.min(0.1,short*0.12)*(snow?1.4:1);for(const k of['sheep','cattle','horses'])St[k]*=1-loss;}} // no hay, no beasts come spring
@@ -7586,23 +7586,25 @@ function ladeIn(c,d){let m=c.m||'out';if(m!=='out'&&m.dead)m=lordAcct(W.settleme
   if(lord){transfer(m,lord,profit*0.15*(d.works&&d.works.market?1.6:1),'markets');transfer(m,'crown',profit*(MOD.tax/100)*0.4);} // a lord's market takes its toll, the crown its aid, out of the merchant's margin
   else transfer(m,'crown',profit*(MOD.tax/100));}
 /* the crafts buy the stuff they work, and the town its tools and the rich their spices, from whoever offered it */
+function made(s,g,q){if(q>0){const M=s._made||(s._made={});M[g]=(M[g]||0)+q;}}
 function buyAmong(s,g,list,qty){if(!(qty>0))return;if(!list.length){purchase(s,g,lordAcct(s),qty);return;}for(const h of list)purchase(s,g,h,qty/list.length);}
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
-    const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1);
+    const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=[s.stores.grain,s.stores.fish,s.stores.timber,s.stores.ore];
     s.stores.grain+=s.res.farm*0.92*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.landF??1)*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF*(s._wcF??1)*(waterMill(s)&&AD()>=1250?1.25:1); // the woodcutters' axes; and a water-driven saw more
     s.stores.ore+=s.res.ore*0.05*workF;
+    ['grain','fish','timber','ore'].forEach((g,i)=>made(s,g,s.stores[g]-P0[i])); // what the fields, waters, woods and mines gave today: the year's offers in the market
     if(s._shopY!==year()){s._shopY=year();let sm=0,dy=0;for(const b of s.buildings)if(b.state==='sound'&&!b.removed){if(b.arch==='smithy')sm+=1+b.tier*0.5;else if(b.arch==='dyer')dy+=1+b.tier*0.5;}
       let vine=0;for(const f of s.furl||[])if(f.kind===LK.VINE&&f.state===LS.TILLED)vine+=f.area;s._smiths=sm;s._dyers=dy;s._vineHa=vine/1e4;} // the workshops and vineyards the place has, counted once a year
     { // crafts where there are workshops and the stuff to work: iron and charcoal into tools at the smithies, wool into cloth at the looms (every cottage spins and weaves a little), grapes into wine
       const c=Math.min(s.stores.ore,s.stores.timber,s._smiths*0.45*(waterMill(s)&&AD()>=1200?1.4:1)); // a water-driven trip-hammer works more iron
-      s.stores.ore-=c*0.6;s.stores.timber-=c*0.6;s.stores.tools+=c*0.8;const U=s._used||(s._used={});U.ore=(U.ore||0)+c*0.6;U.ctimber=(U.ctimber||0)+c*0.6;
-      const w=Math.max(0,Math.min((s.stores.wool||0)-woolWant(s)*2,s._dyers*0.5+s.pop*0.0008));if(w>0){s.stores.wool-=w;s.stores.cloth+=w*0.8;U.wool=(U.wool||0)+w;}
+      s.stores.ore-=c*0.6;s.stores.timber-=c*0.6;s.stores.tools+=c*0.8;made(s,'tools',c*0.8);const U=s._used||(s._used={});U.ore=(U.ore||0)+c*0.6;U.ctimber=(U.ctimber||0)+c*0.6;
+      const w=Math.max(0,Math.min((s.stores.wool||0)-woolWant(s)*2,s._dyers*0.5+s.pop*0.0008));if(w>0){s.stores.wool-=w;s.stores.cloth+=w*0.8;made(s,'cloth',w*0.8);U.wool=(U.wool||0)+w;}
       for(const g of['tools','spice','silk','ore'])U['n'+g]=(U['n'+g]||0)+s.pop*NEED[g]; // worn out, eaten, worn
-      if(si===2)s.stores.wine+=s._vineHa*0.05*workF; // the vintage, in the autumn
+      if(si===2){s.stores.wine+=s._vineHa*0.05*workF;made(s,'wine',s._vineHa*0.05*workF);} // the vintage, in the autumn
     }
     for(const g of GOODS){
       s.stores[g]-=s.pop*NEED[g]*(g==='grain'||g==='fish'?0:1); // food eaten in population tick
@@ -9035,21 +9037,22 @@ function tickTenure(){
     // the year's account of every household
     // the harvest is grain in the barns of those who grew it, offered on the market: the worker's share, the owner's, the lord's (his home farm, and his villeins' and tenants' rents in kind), the church's tithe and the mill's multure
     let wages=0,urban=0;const landless=heads.filter(h=>tills(h,s)&&!h._strips),gp=GOODBASE.grain,church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1;
-    mktAge(s);if(church)chOf(church);
-    for(const f of T){const q=f.area/1e4*1.6*hf/gp,tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
+    mktAge(s);if(church)chOf(church);const M=s._made||{};s._made={};let tA=0;for(const f of T)tA+=f.area; // the year's real harvest and output, shared to those who made it
+    for(const f of T){const q=(M.grain||0)*f.area/Math.max(1,tA),tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
       if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
       if(f.ten==='demesne'){offer(s,'grain',lordOf,net);wages+=net*0.3*gp;continue;} // the home farm's crop is the lord's: he pays the harvesters
       const w=PM.get(f.wk),sh=clamp((TEN_SHARE[f.ten]||0.6)-(dues-1)*0.15,0.2,0.95),rest=net*(1-sh);if(w)offer(s,'grain',w,net*sh);else offer(s,'grain',lordOf,net*sh);
       if(f.ten==='crop'&&f.own>=0&&PM.get(f.own)){offer(s,'grain',PM.get(f.own),rest*0.85);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}
     payAmong(landless,wages,lordAcct(s),'harvest wages'); // day-labour at harvest, paid by the lord
     { // what the fishers, woodmen, miners, smiths, weavers and vintners made this year is theirs to sell
-      const yr={fish:(s.res.fish||0)*0.8*360,timber:(s.res.forest||0)*0.05*360,ore:(s.res.ore||0)*0.05*360,tools:(s._smiths||0)*0.45*0.8*360,cloth:((s._dyers||0)*0.5+s.pop*0.0008)*0.8*360,wine:(s._vineHa||0)*0.05*90};
+      const yr={fish:M.fish||0,timber:M.timber||0,ore:M.ore||0,tools:M.tools||0,cloth:M.cloth||0,wine:M.wine||0};
       for(const g in yr){if(!(yr[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,yr[g]/L.length);else offer(s,g,lordAcct(s),yr[g]);}
       for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,h.herd.sheep*0.55);} // the fleeces
     {const U=s._used||{},sm=heads_(s,h=>h.tr==='smith'),wv=heads_(s,h=>h.tr==='weaver'||h.tr==='dyer'),all=heads_(s,()=>true),rich=all.filter(h=>(h.w||0)>foodYr()*6);
       buyAmong(s,'ore',sm,(U.ore||0)+(U.nore||0));buyAmong(s,'timber',sm,U.ctimber||0);buyAmong(s,'wool',wv.length?wv:all,U.wool||0);buyAmong(s,'tools',all,U.ntools||0); // the smith's iron and charcoal, the weaver's wool, every household's tools
       for(const g of['spice','silk'])if(U['n'+g])buyAmong(s,g,rich.length?rich:[],U['n'+g]);s._used={};} // the Levant's goods, for the rich and the lord's table
-    for(const f of s.furl||[])if(f.dom===si&&f.kind===LK.MEADOW&&f.state===LS.TILLED){const w=PM.get(f.wk);offer(s,'hay',w&&!w.dead?w:lordAcct(s),f.area/1e4*12*hf);} // the meadows' hay, his who mows it, else the lord's
+    {const Md=(s.furl||[]).filter(f=>f.dom===si&&f.kind===LK.MEADOW&&f.state===LS.TILLED),mA=Md.reduce((t2,f)=>t2+f.area,0);
+      if(!Md.length)offer(s,'hay',lordAcct(s),M.hay||0);else for(const f of Md){const w=PM.get(f.wk);offer(s,'hay',w&&!w.dead?w:lordAcct(s),(M.hay||0)*f.area/mA);}} // the hay, his who mows the meadow (the common's, the lord's)
     for(const h of heads){const b=h.bh&&!h.bh.removed?h.bh:null,n=size.get(h)||1;
       if(b&&RESID.has(b.arch)){const own=ownerAcct(b,s);if(own!==h){const r=propValue(b)*0.12/Math.max(1,(b.hh||[]).length);transfer(h,own,r,'rents');urban+=r;}} // rent to whoever owns the roof (the lord, a landlord neighbour, the church), none if it is the family's own
       } // (the necessaries are bought in the household's own reckoning; a family in debt owes it, and sells beasts or land to pay)
