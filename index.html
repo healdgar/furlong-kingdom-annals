@@ -2371,6 +2371,7 @@ function layoutSettlement(s){
       if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse','court'].includes(o.arch)))return null;
       if(dry)return {pts,hit};
       live=true;curE=E;hit.forEach(unplace);const st=addStreet(pts,HW,'lane',{cut:AD()});live=false;return {pts,hit,st};},
+    stopUp(st,keep){live=true;curE=E;st.gone=true;st.hidden=true;for(const K of keep)addStreet(K.map(p=>({x:p.x,z:p.z})),st.hw||HW,st.kind,{name:st.name,planned:st.planned,straight:st.straight});G.roadsDirty=true;s._sg=null;live=false;},
     planStreet(pts,hid){live=true;curE=E;const st=addStreet(pts.map(p=>({x:p.x,z:p.z})),HW,'lane',{planned:AD(),hidden:!!hid,planQ:!!hid,straight:true});live=false;return st;}, // reserved while the works go on
     planOpen(st){if(!st)return;st.hidden=false;st.planQ=false;st.cands=null;live=true;curE=E; // opened: what was built on its line since comes down
       for(const o of liveB().filter(o=>!o.inst&&!o.removed))for(let k=1;k<st.pts.length;k++)if(segDist(o.x,o.z,st.pts[k-1],st.pts[k])<st.hw+Math.max(o.w,o.d)*0.45){unplace(o);break;}live=false;},
@@ -4053,7 +4054,7 @@ function drawCourt(b,put){
 const planCellOK=(x,z)=>{const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj))return false;const i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;}; // the same test the town's own builders use
 const PLAN_YP=25; // years' purchase of a house's rent
 let planUI=null;
-const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'}};
+const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'},stopup:{c:0xb0a8a0,loop:false,n:'Stop up a street'}};
 function planToggle(){ // the brush is the ruler's: as the crown or as the lord you play
   if(planUI){planClose();return;}
   if(!sovOn()){setSovereign(true,W.player&&W.player.house||0);if(!sovOn())return;}
@@ -4125,12 +4126,13 @@ function planDraft(kind,stroke,payer){
   if(dist2d(cx,cz,s.pos.x,s.pos.z)>reach)return no('That is too far from any town: a plan is made for a place.');
   if(s.owner!==payer)return no(`${s.name} is ${s.owner>0?W.houses[s.owner].name+'’s':'the crown’s'}: its streets are not yours to plan.`);
   if(!s._lay||!s._lay.live)return no('The surveyors cannot read the ground there.');
-  if((W.projects||[]).some(q=>q.type==='plan'&&q.si===si&&q.kind===kind&&kind!=='street'))return no(`A ${PLANB[kind].n.toLowerCase()} is already being made at ${s.name}.`);
+  if((W.projects||[]).some(q=>q.type==='plan'&&q.si===si&&q.kind===kind&&kind!=='street'&&kind!=='stopup'))return no(`A ${PLANB[kind].n.toLowerCase()} is already being made at ${s.name}.`);
   const live=b=>!b.removed&&b.state!=='gone',blocks=b=>b.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','court'].includes(b.arch);
   const named=b=>buildingName(b)||ARCH[b.arch][4];
   if(kind==='street'){
-    let pts=resample(smoothPath(resample(stroke,6),3),6);const L=polyLen(pts);if(L<30)return no('Too short for a street.');
-    for(const e of[0,pts.length-1]){const n=nearestStreetPt(s,pts[e].x,pts[e].z);if(n&&n.d<14)pts[e]={x:n.x,z:n.z};} // joined to the streets it meets
+    let pts=resample(smoothPath(resample(stroke,4),2),4);let joins=0;
+    for(const e of[0,pts.length-1]){const n=nearestStreetPt(s,pts[e].x,pts[e].z);if(n&&n.d<14){pts[e]={x:n.x,z:n.z};joins++;}} // joined to the streets it meets
+    const L=polyLen(pts);if(L<(joins?6:30))return no(joins?'Too short even for a link.':'Too short for a street on its own: start or end it on an existing street to make a link.');
     if(pts.some(q=>!planCellOK(q.x,q.z)&&!riverAt(q.x,q.z,0)))return no('The line runs over water or a cliff.');
     const rivers=pts.filter((q,k)=>k&&riverAt(q.x,q.z,0)&&!riverAt(pts[k-1].x,pts[k-1].z,0)).length;
     const hit=s.buildings.filter(b=>live(b)&&pts.some((q,k)=>k&&segDist(b.x,b.z,pts[k-1],q)<4.5+Math.max(b.w,b.d)*0.45));
@@ -4139,6 +4141,19 @@ function planDraft(kind,stroke,payer){
     const total=comp+land.c+works+gate;
     return{ok:true,kind,si,pts,hit,comp,land:land.c,works:works+gate,total,first:Math.min(total,land.c+(hit[0]?planComp(hit[0]):0)),days:Math.round(20+L/4+hit.length*5),
       title:`A street of ${Math.round(L)} m at ${s.name}`,lines:[`${hit.length} house${hit.length===1?'':'s'} bought out: ${comp.toLocaleString()} gold`,land.n?`field and meadow: ${land.c.toLocaleString()}`:'',`labour${rivers?' and a bridge':''}${gate?' and a new gate':''}: ${(works+gate).toLocaleString()}`].filter(Boolean)};}
+  if(kind==='stopup'){ // stop up all or part of a street: the stretch the brush runs along is taken up; houses left with no way to a street are bought out
+    const sp=resample(stroke,4),onS=(x,z)=>sp.some(q=>dist2d(q.x,q.z,x,z)<8);let best=null,bn=0;
+    for(const st of s.streets){if(st.hidden||st.gone||st.kind==='edge'||!st.pts||st.pts.length<2)continue;const P=resample(st.pts,4),cov=P.map(q=>onS(q.x,q.z)),n=cov.filter(Boolean).length;if(n>bn){bn=n;best={st,P,cov};}}
+    if(!best||bn<2)return no('Run the brush along the street (or the stub of it) you want stopped up.');
+    const{st,P,cov}=best;if(st.kind==='road')return no('That is the high road through the town: the king’s highway is not stopped up.');
+    const i0=cov.indexOf(true),i1=cov.lastIndexOf(true),cut=P.slice(i0,i1+1),len=polyLen(cut),keep=[P.slice(0,i0+1),P.slice(i1)].filter(K=>K.length>=2&&polyLen(K)>=10);
+    if(i0>0&&polyLen(P.slice(0,i0+1))<10)cut.unshift(...P.slice(0,i0));if(i1<P.length-1&&polyLen(P.slice(i1))<10)cut.push(...P.slice(i1+1)); // a scrap left at either end goes too
+    const other=(x,z)=>{let d=1e9;for(const o of s.streets)if(o!==st&&!o.hidden&&!o.gone&&o.kind!=='edge')for(let k=1;k<o.pts.length;k++)d=Math.min(d,segDist(x,z,o.pts[k-1],o.pts[k]));for(const K of keep)for(let k=1;k<K.length;k++)d=Math.min(d,segDist(x,z,K[k-1],K[k]));return d;};
+    const hit=s.buildings.filter(b=>{if(!live(b)||b.inst||b.hill)return false;const r=Math.max(b.w,b.d)/2;let dc=1e9;for(let k=1;k<cut.length;k++)dc=Math.min(dc,segDist(b.x,b.z,cut[k-1],cut[k]));return dc<r+10&&other(b.x,b.z)>r+14;});
+    const bad=hit.find(blocks);if(bad)return no(`${named(bad)} has no other way to a street: the street cannot be stopped up.`);
+    const comp=hit.reduce((t,b)=>t+planComp(b),0),works=Math.round(len*0.3+20),total=comp+works;
+    return{ok:true,kind,si,st,keep,pts:cut,hit,comp,land:0,works,total,first:Math.min(total,hit[0]?planComp(hit[0]):works),days:Math.round(6+len/12+hit.length*5),
+      title:`${len<polyLen(P)-5?'Part of ':''}${st.name||'a lane'} stopped up at ${s.name} (${Math.round(len)} m)`,lines:[hit.length?`${hit.length} house${hit.length===1?'':'s'} left without a street, bought out: ${comp.toLocaleString()} gold`:'no house fronts on it alone',`taking up the way, ditching and hedging: ${works.toLocaleString()}`]};}
   const poly=resample(stroke,5);if(poly.length<8)return no('Draw a closed loop.');
   if(dist2d(poly[0].x,poly[0].z,poly[poly.length-1].x,poly[poly.length-1].z)>Math.max(40,polyLen(poly)*0.25))return no('Close the loop: end near where you began.');
   const area=polyArea(poly),per=polyLen(poly);
@@ -4182,6 +4197,7 @@ function planCommit(D){const s=W.settlements[D.si],L=s._lay.live;
     paid:0,done:0,stage:'buy',next:day()+3,landPaid:!D.land,start:day()};
   if(D.kind==='street')q.st=L.planStreet(D.pts,true);
   else if(D.kind==='quarter')q.sts=D.grid.map(P=>L.planStreet(P,true));
+  else if(D.kind==='stopup'){q.st=D.st;q.keep=D.keep;q.cut=D.pts;}
   else if(D.kind==='square'){q.place=D.place;q.mk=D.mk;}
   else if(D.kind==='wall'){q.rad=D.rad;q.stone=D.stone;q.need=D.need;}
   q.hit.sort((a,b)=>dist2d(a.x,a.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z)-dist2d(b.x,b.z,q.st?q.st.pts[0].x:s.pos.x,q.st?q.st.pts[0].z:s.pos.z));
@@ -4205,6 +4221,7 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
   if(q.done<1)return;
   q.dead=true;const L=s._lay.live;let t='';if(q.payer===campHouse()){achGet('planner');if(q.kind==='quarter')achGet('newtown');}
   if(q.kind==='street'){L.planOpen(q.st);const nm=['New Street','Broad Street','Lord Street','Bridge Street','High Cross','Sheep Street','Castle Street','Church Lane'][randi('sim',8)];q.st.name=nm;t=`${nm} is open at ${s.name}; the plots along it are taken up`;}
+  else if(q.kind==='stopup'){if(!q.st.gone)L.stopUp(q.st,q.keep);t=`${q.st.name||'The lane'} at ${s.name} is stopped up${q.keep.length?' where the brush ran':''}; the ground goes back to the plots beside it`;}
   else if(q.kind==='quarter'){for(const st of q.sts)L.planOpen(st);t=`The new quarter at ${s.name} is laid out: ${q.sts.length} streets of plots for settlers`;}
   else if(q.kind==='square'){L.planSquare(q.place,q.mk);t=`${q.mk?'A market place':'A new square'} is opened at ${s.name}${q.mk?', with a cross and a weekly market':''}`;}
   else if(q.kind==='wall'){delete s.wallBuild;t=`The ${q.stone?'new wall':'palisade'} about ${s.name} is finished, as it was planned`;}
@@ -9595,7 +9612,7 @@ function refreshOrders(){ // a mark on everything an order is still working on: 
     else if(q.type==='clear')ring(q.x,q.z,q.r+4,q.stalled?0x5a2020:0xc0392b);
     else if(q.type==='persuade')ring(q.x,q.z,(q.r||30)+4,0xc4a24a);
     else if(q.type==='plan'){const c=q.stalled?0x8a2f22:PLANB[q.kind].c,s=W.settlements[q.si]; // the brush's line, pegged out until it is built
-      if(q.kind==='street')band(q.st.pts,4,c);else if(q.kind==='quarter')for(const st of q.sts)band(st.pts,3.5,c);
+      if(q.kind==='stopup')band(q.cut||q.st.pts,4,c);else if(q.kind==='street')band(q.st.pts,4,c);else if(q.kind==='quarter')for(const st of q.sts)band(st.pts,3.5,c);
       else if(q.kind==='square'){const P=[];for(let k=0;k<=PLN;k++){const a=k/PLN*Math.PI*2;P.push({x:q.place.x+Math.cos(a)*q.place.r[k%PLN],z:q.place.z+Math.sin(a)*q.place.r[k%PLN]});}band(P,2.5,c);}
       else if(q.kind==='wall'){const P=[];for(let k=0;k<=WALLN;k+=2){const a=k/WALLN*Math.PI*2,r=q.rad[k%WALLN];P.push({x:s.pos.x+Math.cos(a)*r,z:s.pos.z+Math.sin(a)*r});}band(P,3,c);}}
   }

@@ -220,12 +220,21 @@ Acts are sealed while you rule; the crown's own levers take their place:
   much traffic.
 - **Plan with the brush** (as the crown in its towns, or as a great house in
   its own): choose a brush and paint on the map.
-  - *Street*: drag a line; its ends join the streets they meet. *Square*: drag
+  - *Street*: drag a line; its ends join the streets they meet. A street on
+    its own must be 30 m or more; one that starts or ends on an existing
+    street can be as short as a link (6 m), to tie a dead end in.
+    *Stop up a street*: drag along a street, or the stub of one; that stretch
+    is taken up (what is left either side stays), and any house left with no
+    way to a street is bought out. The high road is not stopped up. *Square*: drag
     a loop; it becomes a market place (with a charter) or a square. *Wall*:
     drag a loop about the town's heart; the circuit follows it, along the
     bank where it meets water. *New quarter*: drag a loop; the surveyors lay
-    it out as straight streets a burgage plot apart, aligned to the nearest
-    street and tied in to the old ones.
+    it out as straight streets a burgage plot apart (cross lanes every 96 m),
+    aligned to the nearest street; every crossing is a junction, stretches
+    that would only double an old street are left out, loose ends run on to
+    old streets within 55 m, and stubs to nowhere are dropped. A quarter is
+    many streets and their land bought at once and offered to settlers; a
+    street is one line.
   - The price is what the ground holds: every house under the brush is bought
     at 25 years' rent (so the dear heart of a town costs far more than its
     edge), field and meadow at their worth, then labour, timber and stone
@@ -265,7 +274,37 @@ Acts are sealed while you rule; the crown's own levers take their place:
   walls and castle, and the danger it is in (raids, war, a border). The lord
   musters men each month toward it while the purse allows, and pays them
   off when the danger passes. Up close they stand at the gates and in the
-  castle.
+  castle (a village's at its green). A host lying in its own (or, in peace,
+  a friendly) town stands in the castle yard; *Leave in garrison* folds it
+  into the watch.
+- **More hosts**: any town you hold can *call out its watch* as a host
+  (three quarters march, a quarter keep the gates) or *levy a host* of its
+  people (300 gold).
+- **Call to arms**: when an enemy host comes within about a day and a half's
+  march, a town arms 4–15% of its people (more with walls, a castle and
+  silver for arms). They man the walls and count in its defence and
+  sorties, cost it prosperity while they are out of the fields and shops,
+  and go home a few days after the danger has passed.
+- **Reinforcements**: a host within 500 m of a battle, at war with one side
+  and not the other, comes up and joins it, forming behind the line; the
+  fight lasts a day longer for each, and the whole side wins or breaks
+  together.
+- **Why it turned back**: a host's card says why it is marching home (the
+  war over, a siege failed, beaten in battle, wagons empty, laden with
+  plunder), and you are told when one of yours does. Given new orders on
+  the march, a host turns from where it stands; in peace your own hosts stay
+  where you left them; routed, they rally after a few days and await orders.
+- **Seize land by force**: click a lord's furlong within 450 m of one of
+  your hosts. It is held by the sword: yours for good once one of your
+  places is within 1500 m, otherwise only while a host of yours stays near.
+  The lord loses loyalty (more each time) and bears you a grudge; every
+  other lord a little; the crown a little legitimacy. A town's own ground
+  goes with the town: take the town. In war your hosts take enemy furlongs
+  about them as they go.
+- **Territories**: the map's legend says how each house stands toward you:
+  at war (⚔), in revolt, your liege, or a vassal (loyal, uneasy,
+  disaffected, with its loyalty), feuding with whom, and whether it bears
+  you a grudge.
 - **Walls take time**: a new palisade, a stone wall or a bastioned trace is
   raised round the circuit from the main gate, over weeks for timber and
   years for stone; unbuilt stretches are open, half-done stone still shows
