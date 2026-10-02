@@ -418,6 +418,31 @@ itself; you rule one lord's domain:
 - **Ambitions**: three and six towns, a full strongroom, the crown's favour,
   a won private war, a village of your own, and the crown itself.
 
+## The economy drives it
+
+What happens is decided by quantities the economy produces, not by numbers crossing hand-picked lines
+(the register of what was replaced, and what remains, is [docs/SIM_DEBT.md](docs/SIM_DEBT.md)):
+
+- **Prosperity** is a town's measured surplus: what its land, trade and crafts keep beyond its people's
+  needs, less hunger, disorder and danger. Shocks knock it down; it returns to what the economy supports.
+- **A living** comes from the land a place ploughs and the waste it could still clear (discounted by the
+  clearing), its fisheries, the margin on the trade through its market, its workshops and offices, the
+  surplus of the country about it, and, for a seat, the dues of its lands. A village becomes a town when a
+  good share of it lives by its market.
+- **People move** from where life is hard or crowded to where there is a living and room (weighed against
+  rent and the length of the road); strangers come by sea and the border roads.
+- **Houses** are built for households without one, as fast as the town's means and timber allow; burned
+  plots are rebuilt first; empty houses fall vacant in proportion to the vacancy; owners rebuild in better
+  stuff where the value added repays it; lanes open as the shortfall of plots needs.
+- **Walls** are paid for by the burghers' murage and raised when the danger, weighed by what the town is
+  worth, outruns their cost; repairs come from the murage, then the lord. **Castle works** are ranked by
+  what they add to the defence of what they protect, against cost. **Churches** take gifts from what lords
+  have to spare; a new parish comes when the churches cannot seat the people.
+- **Lords** invest where the return repays the cost, sell fiefs at their rents, found towns where carts pass
+  and forts where held land is worth keeping; **risings** come when a lord's grievance, weighed by his
+  chance of winning, outruns the risk; **towns** revolt when their anger outruns the garrison's hold;
+  **wars** end when the realm wearies of them.
+
 ## How it works
 
 - **Holdings beneath the lords.** Every strip has a holder and a worker: a
