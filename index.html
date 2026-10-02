@@ -1207,6 +1207,10 @@ function seaRoute(ai,bi){ // cogs keep to the water, harbour to harbour
   const r=W.seaRoutes[key]={poly,len:polyLen(poly)};
   return ai>bi?{poly:[...poly].reverse(),len:r.len}:r;
 }
+function skirtCastles(pts){ // a later road goes round a castle's mound, ditch and ward, not through them
+  const Cs=[];for(const s of W.settlements||[])if(s.motte||s.bailey||s.hillCastle||s.ward)for(const c of castleKeepOut(s))Cs.push(c);if(!Cs.length)return pts;
+  const out=pts.map(p=>{let q={...p};for(const c of Cs){const d=dist2d(q.x,q.z,c.x,c.z),R=c.r+7;if(d<R){const k=R/Math.max(0.1,d);q={...q,x:c.x+(q.x-c.x)*k,z:c.z+(q.z-c.z)*k};}}return q;});
+  return out;}
 function roadCost(a,b){ // between neighboring cells
     const dh=Math.abs(W.h[a]-W.h[b])/CELL;
     let c=1+dh*dh*46;
@@ -1774,6 +1778,8 @@ function layoutSettlement(s){
     let best=null,bh=-1e9;
     for(const rf of[60,90,120,150])for(let a=0;a<24;a++){
       const ang=a/24*Math.PI*2,x=C.x+Math.cos(ang)*rf,z=C.z+Math.sin(ang)*rf,f={x,z,w:13,d:13,rot:rr()*Math.PI};
+      if(motteAge){const dC=Math.max(1,dist2d(x,z,C.x,C.z)),bx=x+(C.x-x)/dC*46,bz=z+(C.z-z)/dC*46; // no highway through the castle: the bailey and the motte lie beside the road, not across it
+        if(roads.some(rd=>rd.pts.some((q,k)=>k&&(segDist(bx,bz,rd.pts[k-1],q)<38||segDist(x,z,rd.pts[k-1],q)<28))))continue;}
       if(fits(f,3)&&hAt(x,z)>bh){bh=hAt(x,z);best=f;}
     }
     if(best&&motteAge){ // a motte: a heaped mound with a timber tower, and a palisaded bailey below it for the lord's hall
@@ -1784,7 +1790,7 @@ function layoutSettlement(s){
       place('hall',0,{x:bx-uz*6,z:bz+ux*6,w:16,d:8,rot:-Math.atan2(uz,ux)},'keep',0.9,{inst:true,bailey:true});
       place('longhouse',0,{x:bx+uz*10,z:bz-ux*10,w:12,d:6,rot:-Math.atan2(uz,ux)},'keep',1,{inst:true,bailey:true});
       const track=resample([{x:bx+(C.x-bx)/dC*31,z:bz+(C.z-bz)/dC*31},{x:C.x,z:C.z}],8).filter(q=>dist2d(q.x,q.z,C.x,C.z)>12);
-      if(track.length>2)addStreet(track,2.2,'lane',{straight:true,castlePath:true});
+      if(track.length>2&&!roads.some(rd=>track.filter(q=>rd.pts.some((u,k)=>k&&segDist(q.x,q.z,rd.pts[k-1],u)<18)).length>track.length*0.4))addStreet(track,2.2,'lane',{straight:true,castlePath:true}); // a track of its own, unless the road already runs that way
       if(!foundLine)foundLine=`Raised as a motte and bailey on the rise above ${roads.length>1?'the meeting of the roads':'the road'}: an earthen mound crowned by a timber tower, and a palisaded yard for the lord's hall. A hamlet gathered beneath it.`;
     }else if(best)keep=place('keep',2,best,'keep',0.85,{inst:true});
     if(!foundLine)foundLine=keep?`Raised as a tower keep on the rise above ${roads.length>1?'the meeting of the roads':'the road'}; a hamlet gathered beneath its walls.`:'Founded as a crown hall where the roads meet.';
@@ -2389,6 +2395,10 @@ function layoutSettlement(s){
       return made;},
     infill(b,bx,bz){ // into the yard behind b (bx,bz: the way out of the back door): a cottage at the foot of the toft, else the house lengthened back
       const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=bx*c-bz*sn,lz=bx*sn+bz*c,alongZ=Math.abs(lz)>=Math.abs(lx),half=alongZ?b.d/2:b.w/2;
+      { // the side yard on the street first: the plot is split and a house built beside it, sharing the frontage
+        const ax=-bz,az=bx,hw=alongZ?b.w/2:b.d/2,nw=Math.min(alongZ?b.w:b.d,7);
+        for(const sd of[1,-1]){const o=hw+0.8+nw/2,f={x:b.x+ax*sd*o,z:b.z+az*sd*o,w:alongZ?nw:b.w,d:alongZ?b.d:nw,rot:b.rot};
+          if(!fits(f,0.5))continue;live=true;curE=E;const nb=place(b.arch==='burgher'?'burgher':'house',Math.min(1,b.tier),f,b.district||'residential',1,{split:true});live=false;return nb;}}
       for(const o of[half+5.5,half+8]){const f={x:b.x+bx*o,z:b.z+bz*o,w:alongZ?Math.min(b.w,6.5):4.8,d:alongZ?4.8:Math.min(b.d,6.5),rot:b.rot};
         if(!fits(f,0.6))continue;live=true;curE=E;const nb=place(b.tier>=1?'house':'cot',Math.min(1,b.tier),f,'residential',0.85,{backOf:true});live=false;return nb;}
       const add=3.5,f={x:b.x+bx*add/2,z:b.z+bz*add/2,w:alongZ?b.w:b.w+add,d:alongZ?b.d+add:b.d,rot:b.rot},F={...f,w:f.w+0.6,d:f.d+0.6}; // no room for a cottage: the house goes back
@@ -2441,6 +2451,7 @@ function layoutSettlement(s){
       const g=nearStreet(p.x,p.z,1.5);if(g&&!g.st.hidden&&g.st.kind!=='edge'&&inPts.length>1){joined=true;break;}
     }
     if(inPts.length<2)return false;
+    {const sk=skirtCastles(inPts);inPts.length=0;inPts.push(...sk);} // round the castle, not through it
     for(const b of [...liveB()])if(!b.inst&&b.arch!=='temple'&&b.arch!=='keep'){ // the road is cut through: houses in its line come down
       for(let k=1;k<inPts.length;k++)if(segDist(b.x,b.z,inPts[k-1],inPts[k])<RHW+Math.max(b.w,b.d)*0.45){unplace(b);break;}}
     const outward=inPts.reverse(),via=townPath(C,outward[0])||[];
@@ -3327,6 +3338,14 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       const pv=st.kind==='wallst'||st.kind==='quay'&&pr>0;
       lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j));
     }
+    { // where a street meets another, or the road, the ruts and verges run together: a worn patch of the crossing
+      const jk=(s.streets||[]).length+':'+(s.streets||[]).filter(t=>t.hidden||t.gone).length+':'+W.roads.length;
+      if(s._junK!==jk){s._junK=jk;const J=s._jun=[],segs=[];for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')segs.push(st);
+        const si=W.settlements.indexOf(s),rds=W.roads.filter(r=>r.a===si||r.b===si).map(r=>({pts:r.drawn||r.path,hw:4.2}));
+        for(const st of segs)for(const e of[st.pts[0],st.pts[st.pts.length-1]]){let hit=null;
+          for(const o of[...segs,...rds]){if(o===st)continue;const P=o.pts;for(let k=1;k<P.length;k++){if(Math.abs(P[k].x-e.x)>60&&Math.abs(P[k-1].x-e.x)>60)continue;if(segDist(e.x,e.z,P[k-1],P[k])<(o.hw||3)+st.hw+1.5){hit=o;break;}}if(hit)break;}
+          if(hit&&!riverAt(e.x,e.z,4))J.push({x:e.x,z:e.z,R:Math.max(st.hw,hit.hw||3)*1.35+1});}}
+      for(const q of s._jun){const pv=dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr;placeMesh(acc,{x:q.x,z:q.z,r:new Array(PLN).fill(q.R)},0.29,(r)=>r>=5?(pv?PAVECOL:ROADCOL).verge:(pv?PAVECOL:ROADCOL).dirt);}}
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
       :(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
@@ -4195,14 +4214,13 @@ function tickInfill(){
     if(s._hhY!==year())houseFolk(s);
     if(s.wallRad&&s.pop>s._room*0.75&&s._lay.live.wallLanes(2)){syncLive(s);if(!s._laneNote){s._laneNote=1;s.history.push({yr:year(),t:'New lanes were laid out across the empty ground within the walls.'});}}
     const homes=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&RESID.has(b.arch)&&b.arch!=='court'&&b.arch!=='cot'&&!b.backOf);
-    let n=Math.max(1,Math.round(s.pop/350)),done=0;
+    let n=Math.max(1,Math.round(s.pop/150)),done=0;
     const cands=homes.map(b=>{const rent=lotRentAt(s,b.x,b.z,b.st)/56,area=b.lot&&b.lot.length>2?polyArea(b.lot)-b.w*b.d:80;return{b,rent,area};}).filter(c=>c.area>55&&c.rent>YARD_WORTH*1.5).sort((a,c)=>c.rent-a.rent);
     for(const c of cands){if(done>=n)break;const b=c.b,h=(b.hh||[])[0],rich=h&&(h.w||0)>150;
       if(rich&&c.rent<YARD_WORTH*5)continue; // a rich household keeps its garden
       const sp=nearestStreetPt(s,b.x,b.z);if(!sp||sp.d<0.5)continue;const fx=(sp.x-b.x)/sp.d,fz=(sp.z-b.z)/sp.d; // the street side; the yard is behind
       const cost=c.rent*40*30; // a cottage costs some years of what it will let for
-      if(h&&(h.w||0)<cost*0.6)continue;
-      const r=s._lay.live.infill(b,-fx,-fz);if(!r)continue;done++;if(h)h.w-=cost*0.5;
+      const r=s._lay.live.infill(b,-fx,-fz);if(!r)continue;done++;if(h&&(h.w||0)>=cost*0.6)h.w-=cost*0.5;else if(h)h.w=(h.w||0)+cost*0.15; // built by the household, or the plot sold to a builder
       if(!s._infillNote){s._infillNote=1;s.history.push({yr:year(),t:'The yards behind the houses in the heart of the town began to fill: houses lengthened back into their tofts, cottages built at the foot of the gardens to let.'});
         emit('trade',2,s.pos,`${s.name}: ground in the heart of the town is too dear for gardens; the yards behind the houses fill with cottages and workshops.`);}}
     if(done)syncLive(s);}}
@@ -4227,7 +4245,7 @@ function tickRepairs(){ // once a year: the works made good, as the lord (or the
       else if(open||D>0.3)s._repairWant=cost+carted;}}}
 /* ---------------- the game: four roads to dominance, the chronicler's verdict, and the deeds remembered ----------------
    You play a dynasty. Every house (yours and its rivals) is measured each month on four paths: Conquest (rule
-   half the realm's people from the throne, no rival able to raise a third of your host), Concord (every house
+   three in five of the realm's people from the throne, no rival able to raise a third of your host), Concord (every house
    bound to you by marriage-pact or oath, and a generation of peace), Wealth (a large share of the realm's trade
    and its gold, and a league of chartered towns) and Glory (one great city: its people, its minster, its stone
    walls, a castle ward within ward, paved roads to all its neighbours, a guildhall). A path held long enough wins
@@ -4240,8 +4258,8 @@ function vScore(hi){
   const out={};
   { // conquest
     if(hi===0){let rv=1;for(const i of L)if(i>0)rv=Math.max(rv,hostTarget(i));const f=clamp(hostTarget(0)/(3*rv),0,1);
-      out.conquest={v:Math.min(1,share/0.5)*f,why:`${Math.round(share*100)}% of the people ruled from the throne; the strongest rival could raise ${Math.round(rv/hostTarget(0)*100)}% of the crown's host`};}
-    else out.conquest={v:0.6*Math.min(1,share/0.5),why:`${Math.round(share*100)}% of the people; the crown itself must be taken to finish`};}
+      out.conquest={v:Math.min(1,share/0.6)*f,why:`${Math.round(share*100)}% of the people ruled from the throne; the strongest rival could raise ${Math.round(rv/hostTarget(0)*100)}% of the crown's host`};}
+    else out.conquest={v:0.6*Math.min(1,share/0.6),why:`${Math.round(share*100)}% of the people; the crown itself must be taken to finish`};}
   { // concord
     const others=L.filter(j=>j!==hi),pact=(a,b)=>((W.houses[a].pacts||{})[b]||0)>day()||((W.houses[b].pacts||{})[a]||0)>day();
     const bound=others.filter(j=>pact(hi,j)||hi===0&&W.houses[j].loyalty>=75||hi>0&&j===0&&W.houses[hi].loyalty>=85).length,b=others.length?bound/others.length:1;
@@ -4250,7 +4268,7 @@ function vScore(hi){
   { // wealth
     const wt=s=>s.pop*(0.5+s.prosperity/100)*(s.kind==='village'?0.6:1.3),ws=mine.reduce((t,s)=>t+wt(s),0)/Math.max(1,S.reduce((t,s)=>t+wt(s),0));
     let gold=W.treasury>0?W.treasury:0;for(const h of W.houses)if(h&&!h.exiled)gold+=Math.max(0,h.gold||0);const gs=Math.max(0,purse(hi))/Math.max(1,gold),towns=mine.filter(s=>s.kind!=='village').length;
-    out.economy={v:0.5*Math.min(1,ws/0.4)+0.3*Math.min(1,gs/0.35)+0.2*Math.min(1,towns/3),why:`${Math.round(ws*100)}% of the realm's trade, ${Math.round(gs*100)}% of its gold, ${towns} chartered town${towns===1?'':'s'}`};}
+    out.economy={v:0.5*Math.min(1,ws/0.5)+0.3*Math.min(1,gs/0.5)+0.2*Math.min(1,towns/4),why:`${Math.round(ws*100)}% of the realm's trade, ${Math.round(gs*100)}% of its gold, ${towns} chartered town${towns===1?'':'s'}`};}
   { // glory
     let best=0,bs=null,items=[];
     for(const s of mine){const T=s.buildings.filter(b=>b.arch==='temple'&&!b.removed&&b.ch);const si=S.indexOf(s),rd=W.roads.filter(r=>r.a===si||r.b===si);
@@ -4325,7 +4343,9 @@ function achPoints(){const A=W.player&&W.player.ach||{};return achList().reduce(
 function achGet(id){const P=W.player;if(!P||!P.on||!W.camp||W.camp.over)return;P.ach=P.ach||{};if(P.ach[id])return;const a=achList().find(x=>x.id===id);if(!a)return;
   P.ach[id]=AD();try{const K='furlong-ach',S=JSON.parse(localStorage.getItem(K)||'{}');if(!S[id])S[id]=AD();localStorage.setItem(K,JSON.stringify(S));}catch(e){}
   emit(a.pts<0?'fates':'crown',6,seatOf()?.pos||W.capital.pos,`${a.pts<0?'Infamy':'A deed remembered'} — ${a.n}: ${a.d}. (${a.pts>0?'+':''}${a.pts} legacy)`);}
-function achYear(){if(!W.player||!W.player.on)return;W.player.st=W.player.st||{};for(const a of achList())if(a.t&&!(W.player.ach||{})[a.id]){try{if(a.t())achGet(a.id);}catch(e){}}}
+function achYear(){if(!W.player||!W.player.on)return;const P=W.player;P.st=P.st||{};
+  if(!P.achBase){P.achBase={};for(const a of achList())if(a.t){try{if(a.t())P.achBase[a.id]=1;}catch(e){}}return;} // what stood already when the game began is inherited, not earned
+  for(const a of achList())if(a.t&&!(P.ach||{})[a.id]&&!P.achBase[a.id]){try{if(a.t())achGet(a.id);}catch(e){}}}
 function achStat(k,n){const P=W.player;if(!P||!P.on)return;P.st=P.st||{};P.st[k]=(P.st[k]||0)+(n||1);}
 function victoryHTML(){
   const C=W.camp;if(!C)return '';const me=campHouse(),V=W.vic||{},sc=(V.scores||{})[me]||vScore(me);
@@ -4530,7 +4550,7 @@ function rebuildDetails(){
       if(da<=0)out.push(a);if(da*db<0){const t=da/(da-db);out.push({x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t,e:a.e});}}return out;};
     const edges=new Map();
     for(const b of G.bldList){if(b.state==='gone'||b.removed||!b.s)continue;
-      const S=b.s,R=(S.kind==='village'?13:18)+b._r,Rx=R+(S.kind==='village'?45:70); // a croft and its toft; a burgage plot runs further back
+      const S=b.s,R=(S.kind==='village'?13:18)+b._r,Rx=R+(S.kind==='village'?45:40); // a croft and its toft; a burgage plot runs further back, but not to the town wall
       const cr=Math.cos(b.rot||0),sr=Math.sin(b.rot||0);const nb=[],hs=[R,R,R,R],nrm=[[-sr,-cr],[cr,-sr],[sr,cr],[-cr,sr]]; // each side of the plot runs on out to Rx where a neighbour, a street, a place, the wall or a castle bounds it there: no strip of ground is left between lots
       const open=(dx,dz)=>{const d=Math.hypot(dx,dz)||1;for(let k=0;k<4;k++)if(dx*nrm[k][0]+dz*nrm[k][1]>0.38*d)hs[k]=Rx;};
       for(const o of bh.near(b.x,b.z,Rx*1.5))if(o!==b&&o.state!=='gone'&&!o.removed){const dx=o.x-b.x,dz=o.z-b.z,D=Math.hypot(dx,dz);if(D<=0.1)continue;
@@ -9357,7 +9377,7 @@ const DECREES=[
 function roadPlan(ai,bi){ // the surveyors' line, and what it will cost: every slope, bridge, marsh and wood is priced
   const A=W.settlements[ai],B=W.settlements[bi],cells=roadAstar(cIdx(A.cx,A.cz),cIdx(B.cx,B.cz));if(!cells)return null;
   let c=0,bridges=0;for(let k=1;k<cells.length;k++){c+=roadCost(cells[k-1],cells[k]);if(W.water[cells[k]]===2&&W.water[cells[k-1]]!==2)bridges++;}
-  const path=resample(smoothPath(resample(cells.map(q=>({x:cellX(q%GRID),z:cellZ((q/GRID)|0)})),9),14),8);path[0]={x:A.pos.x,z:A.pos.z};path[path.length-1]={x:B.pos.x,z:B.pos.z};
+  let path=resample(smoothPath(resample(cells.map(q=>({x:cellX(q%GRID),z:cellZ((q/GRID)|0)})),9),14),8);path=resample(smoothPath(skirtCastles(path),2),8);path[0]={x:A.pos.x,z:A.pos.z};path[path.length-1]={x:B.pos.x,z:B.pos.z};
   return {cells,path,len:polyLen(path),bridges,cost:Math.round(c*14+200)};
 }
 function crownRoad(ai,bi){return orderRoad(ai,bi,0);}
@@ -9779,7 +9799,7 @@ function setSovereign(on,hi){
   if(on){
     if(document.body.classList.contains('watch'))toggleWatch();
     if(!P.started||P.startHouse!==hi){P.started=true;P.startHouse=hi;P.since=day();P.startPop=realmPop();P.peaceSince=day();P.legacy=0;P.amb={};}
-    if(!W.camp){const n=P.campLen||200;W.camp={len:n,start:year(),end:year()+n,house:hi};W.vic=null;P.ach={};P.st={};
+    if(!W.camp){const n=P.campLen||200;W.camp={len:n,start:year(),end:year()+n,house:hi};W.vic=null;P.ach={};P.st={};P.achBase=null;
       emit('crown',6,W.capital.pos,`The game begins: ${n} years to make your house the greatest in the realm, by conquest, concord, wealth or glory. The chronicle ends in AD ${AD()+n}.`);}
     P.house=hi;
     for(const a of W.armies)if(a.house===hi&&a.standing&&!a.gone)a.hold=true; // your household host waits on your word
