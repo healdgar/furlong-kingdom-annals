@@ -183,6 +183,17 @@ body.watch #uiback,body.hideui #uiback{display:block;}
 #perfbox{position:absolute;left:10px;bottom:36px;z-index:35;display:none;background:rgba(20,16,12,.82);color:#e9dcc3;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
   padding:7px 9px;border-radius:4px;max-width:min(430px,calc(100vw - 20px));pointer-events:auto;}
 #perfbox button{margin-top:4px;font:inherit;background:#e9dcc3;color:#2b2320;border:0;border-radius:3px;padding:2px 8px;cursor:pointer;}
+#endgame{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(10,8,6,.55);}
+#endgame .egbox{background:#2a2219;color:var(--parch);border:1px solid #8a6e46;border-radius:8px;padding:18px 22px;max-width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-shadow:0 6px 30px rgba(0,0,0,.6);}
+#endgame h2{margin:0 0 8px;font-family:"IM Fell English",Georgia,serif;color:#e0c070;font-weight:normal;}
+#endgame .egt{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;}#endgame .egt td,#endgame .egt th{padding:3px 6px;border-bottom:1px solid rgba(224,192,112,.2);text-align:left;}
+#endgame .egt tr.me td{color:#e0c070;font-weight:bold;}#endgame .egbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;}
+#endgame .pbb{background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;padding:5px 12px;cursor:pointer;font:inherit;}
+.vrow{display:flex;align-items:center;gap:6px;font-size:12px;margin:5px 0 1px;}.vrow .vn{width:66px;}.vrow .vp{width:96px;text-align:right;font-size:11px;opacity:.85;}
+.vbar{flex:1;position:relative;height:7px;background:rgba(90,70,40,.25);border-radius:4px;}.vbar i{display:block;height:100%;background:#b8903a;border-radius:4px;}
+.vbar b{position:absolute;top:-3px;width:2px;height:13px;background:#a8452f;}.vwhy{font-size:10.5px;opacity:.7;line-height:1.3;margin-bottom:2px;}
+.vach{margin:6px 0 4px;line-height:1.9;}.achip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:rgba(196,162,74,.25);border:1px solid rgba(196,162,74,.6);white-space:nowrap;}
+.achip.bad{background:rgba(168,69,47,.2);border-color:rgba(168,69,47,.6);}
 #planbar{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:31;display:none;max-width:min(560px,calc(100vw - 24px));
   background:rgba(32,26,18,.92);color:var(--parch);padding:8px 12px;border-radius:6px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.4);}
 #planbar .pbrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:3px 0;}
@@ -317,6 +328,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <span class="chip" id="legacychip" title="Legacy of your dynasty">✦ <b id="legacy">0</b></span>
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
+    <button id="planbtn" title="Plan works with the brush (B): paint streets, squares, a wall or a new quarter in your towns">🖌 Plan</button>
     <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in half an hour — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
@@ -364,6 +376,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 <button id="uiback" title="Show the controls again (Esc)">✕ controls</button>
 <div id="placehint">Click the map to place — Esc to cancel</div>
 <div id="planbar"></div>
+<div id="endgame"></div>
 <div id="petition"></div>
 <div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · L life pace · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
 
@@ -2363,6 +2376,17 @@ function layoutSettlement(s){
       if(s.wallRad)s.oldWalls.push(Array.from(s.wallRad));
       s.wallRad=Float32Array.from(rad);s.wallDmg=null;s.breachUntil=0;s.wallKind=kind;s.natDef=nat/WALLN;s.wallR=Math.max(...rad);s.walls=stone?Math.max(2,s.walls||0):Math.max(1,s.walls||0);s.wallKept=null;
       clearWallLine(s).forEach(unplace);live=false;},
+    wallLanes(n){ // empty ground within the walls: lanes are laid into it before the town spills outside
+      if(!s.wallRad)return 0;let made=0;
+      for(let t=0;t<n;t++){let best=null,bs=0;
+        for(let r=30;r<s.wallR;r+=14)for(let k=0;k<36;k++){const a=k/36*6.2832+r*0.01,x=C.x+Math.cos(a)*r,z=C.z+Math.sin(a)*r;if(r>wallRadAt(s,a)-12||!buildable(x,z)||inPlace(x,z,4))continue;
+          const g=nearStreet(x,z,60);const ds=g?segDist(x,z,g.a,g.b)-g.hw:60;if(ds<24)continue;let nb=1e9;for(const o of placed.near(x,z,30))if(!o.removed)nb=Math.min(nb,dist2d(x,z,o.x,o.z));if(nb<22)continue;
+          if(ds>bs){bs=ds;best={x,z,g};}}
+        if(!best||!best.g)break;const g=best.g,dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,u=clamp(((best.x-g.a.x)*dx+(best.z-g.a.z)*dz)/L2,0,1),p={x:g.a.x+dx*u,z:g.a.z+dz*u};
+        const hd=Math.atan2(best.z-p.z,best.x-p.x),sx=p.x+Math.cos(hd)*(g.hw+2),sz=p.z+Math.sin(hd)*(g.hw+2);
+        const w=walk(sx,sz,hd,dist2d(sx,sz,best.x,best.z)+40+rr()*60,g.st);if(w.pts.length<3&&!w.joined)break;
+        live=true;curE=E;addStreet([{x:p.x,z:p.z},{x:sx,z:sz},...w.pts],HW*0.85,'lane',{inner:true});live=false;made++;}
+      return made;},
     infill(b,bx,bz){ // into the yard behind b (bx,bz: the way out of the back door): a cottage at the foot of the toft, else the house lengthened back
       const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=bx*c-bz*sn,lz=bx*sn+bz*c,alongZ=Math.abs(lz)>=Math.abs(lx),half=alongZ?b.d/2:b.w/2;
       for(const o of[half+5.5,half+8]){const f={x:b.x+bx*o,z:b.z+bz*o,w:alongZ?Math.min(b.w,6.5):4.8,d:alongZ?4.8:Math.min(b.d,6.5),rot:b.rot};
@@ -4008,6 +4032,10 @@ const planCellOK=(x,z)=>{const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj))return f
 const PLAN_YP=25; // years' purchase of a house's rent
 let planUI=null;
 const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'}};
+function planToggle(){ // the brush is the ruler's: as the crown or as the lord you play
+  if(planUI){planClose();return;}
+  if(!sovOn()){setSovereign(true,W.player&&W.player.house||0);if(!sovOn())return;}
+  planOpen(plyH());}
 function planOpen(payer){planUI={payer,brush:null,stroke:null,draft:null};const el=document.getElementById('planbar');el.style.display='block';planBarHTML();setPlaceMode(null);}
 function planClose(){if(!planUI)return;planClear();planUI=null;document.getElementById('planbar').style.display='none';}
 function planBarHTML(){const P=planUI;if(!P)return;const who=P.payer>0?W.houses[P.payer].name:'The crown',fund=Math.round(purse(P.payer));
@@ -4132,14 +4160,14 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
     if(day()<q.next)return;q.next=day()+3+randi('sim',5);
     const b=q.hit.find(b=>!b.removed&&b.state!=='gone');
     if(b){const c=planComp(b);if(!pay(c)){stall('the householders will not go without their money');return;}q.stalled=false;
-      for(const h of b.hh||[])h.w=(h.w||0)+c/Math.max(1,(b.hh||[]).length);s.unrest=clamp(s.unrest+0.5,0,100);
+      for(const h of b.hh||[])h.w=(h.w||0)+c/Math.max(1,(b.hh||[]).length);s.unrest=clamp(s.unrest+0.5,0,100);if(q.payer===campHouse())achStat('razed');
       b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;s._hhY=-1;return;}
     q.stage='build';G.ordersDirty=true;return;}
   const share=q.works/q.days;if(q.kind==='wall'&&q.stone){const need=q.need/q.days;if((s.stores.stone||0)>=need)s.stores.stone-=need;}
   if(!pay(share)){stall('the purse is empty');return;}q.stalled=false;
   const was=Math.floor(q.done*10);q.done=Math.min(1,q.done+1/q.days);if(Math.floor(q.done*10)!==was)G.ordersDirty=true;
   if(q.done<1)return;
-  q.dead=true;const L=s._lay.live;let t='';
+  q.dead=true;const L=s._lay.live;let t='';if(q.payer===campHouse()){achGet('planner');if(q.kind==='quarter')achGet('newtown');}
   if(q.kind==='street'){L.planOpen(q.st);const nm=['New Street','Broad Street','Lord Street','Bridge Street','High Cross','Sheep Street','Castle Street','Church Lane'][randi('sim',8)];q.st.name=nm;t=`${nm} is open at ${s.name}; the plots along it are taken up`;}
   else if(q.kind==='quarter'){for(const st of q.sts)L.planOpen(st);t=`The new quarter at ${s.name} is laid out: ${q.sts.length} streets of plots for settlers`;}
   else if(q.kind==='square'){L.planSquare(q.place,q.mk);t=`${q.mk?'A market place':'A new square'} is opened at ${s.name}${q.mk?', with a cross and a weekly market':''}`;}
@@ -4165,6 +4193,7 @@ function tickInfill(){
   if(day()%360!==245||W.prehistory&&AD()<1100)return;if(AD()<1100)return;
   for(const s of W.settlements){if(s.kind==='village'||s.pop<300||!s._lay||!s._lay.live||s.siegeBy)continue;
     if(s._hhY!==year())houseFolk(s);
+    if(s.wallRad&&s.pop>s._room*0.75&&s._lay.live.wallLanes(2)){syncLive(s);if(!s._laneNote){s._laneNote=1;s.history.push({yr:year(),t:'New lanes were laid out across the empty ground within the walls.'});}}
     const homes=s.buildings.filter(b=>b.state==='sound'&&!b.removed&&RESID.has(b.arch)&&b.arch!=='court'&&b.arch!=='cot'&&!b.backOf);
     let n=Math.max(1,Math.round(s.pop/350)),done=0;
     const cands=homes.map(b=>{const rent=lotRentAt(s,b.x,b.z,b.st)/56,area=b.lot&&b.lot.length>2?polyArea(b.lot)-b.w*b.d:80;return{b,rent,area};}).filter(c=>c.area>55&&c.rent>YARD_WORTH*1.5).sort((a,c)=>c.rent-a.rent);
@@ -4196,6 +4225,119 @@ function tickRepairs(){ // once a year: the works made good, as the lord (or the
         const t=open?'The breach in the walls was walled up and the gate rehung; the battered stretches were patched.':'Masons made good the battered stretches of the walls.';s.history.push({yr:year(),t});
         if(!W.prehistory)emit(Lh?'house':'trade',3,s.pos,`${s.name}: ${t.charAt(0).toLowerCase()+t.slice(1)}`.replace(/^(\w)/,m=>m.toUpperCase()));}
       else if(open||D>0.3)s._repairWant=cost+carted;}}}
+/* ---------------- the game: four roads to dominance, the chronicler's verdict, and the deeds remembered ----------------
+   You play a dynasty. Every house (yours and its rivals) is measured each month on four paths: Conquest (rule
+   half the realm's people from the throne, no rival able to raise a third of your host), Concord (every house
+   bound to you by marriage-pact or oath, and a generation of peace), Wealth (a large share of the realm's trade
+   and its gold, and a league of chartered towns) and Glory (one great city: its people, its minster, its stone
+   walls, a castle ward within ward, paved roads to all its neighbours, a guildhall). A path held long enough wins
+   the realm, for you or against you; at the campaign's end the chronicler weighs every house. */
+const VPATH=[{k:'conquest',n:'Conquest',hold:5},{k:'diplomacy',n:'Concord',hold:5},{k:'economy',n:'Wealth',hold:3},{k:'glory',n:'Glory',hold:1}];
+const GLORY_POP=()=>Math.round(2500*Math.sqrt(MAPK));
+function liveHouses(){return W.houses.map((h,i)=>i).filter(i=>i===0||!W.houses[i].exiled&&W.settlements.some(s=>s.owner===i));}
+function vScore(hi){
+  const S=W.settlements,mine=S.filter(s=>s.owner===hi),rp=Math.max(1,realmPop()),share=mine.reduce((t,s)=>t+s.pop,0)/rp,L=liveHouses();
+  const out={};
+  { // conquest
+    if(hi===0){let rv=1;for(const i of L)if(i>0)rv=Math.max(rv,hostTarget(i));const f=clamp(hostTarget(0)/(3*rv),0,1);
+      out.conquest={v:Math.min(1,share/0.5)*f,why:`${Math.round(share*100)}% of the people ruled from the throne; the strongest rival could raise ${Math.round(rv/hostTarget(0)*100)}% of the crown's host`};}
+    else out.conquest={v:0.6*Math.min(1,share/0.5),why:`${Math.round(share*100)}% of the people; the crown itself must be taken to finish`};}
+  { // concord
+    const others=L.filter(j=>j!==hi),pact=(a,b)=>((W.houses[a].pacts||{})[b]||0)>day()||((W.houses[b].pacts||{})[a]||0)>day();
+    const bound=others.filter(j=>pact(hi,j)||hi===0&&W.houses[j].loyalty>=75||hi>0&&j===0&&W.houses[hi].loyalty>=85).length,b=others.length?bound/others.length:1;
+    const peace=year()-((W.vic&&W.vic.lastWar[hi])??(W.camp?W.camp.start:0));
+    out.diplomacy={v:0.75*b+0.25*Math.min(1,peace/25),why:`${bound} of ${others.length} houses bound by pact${hi===0?' or loyalty':''}; ${Math.max(0,peace)} years of peace`};}
+  { // wealth
+    const wt=s=>s.pop*(0.5+s.prosperity/100)*(s.kind==='village'?0.6:1.3),ws=mine.reduce((t,s)=>t+wt(s),0)/Math.max(1,S.reduce((t,s)=>t+wt(s),0));
+    let gold=W.treasury>0?W.treasury:0;for(const h of W.houses)if(h&&!h.exiled)gold+=Math.max(0,h.gold||0);const gs=Math.max(0,purse(hi))/Math.max(1,gold),towns=mine.filter(s=>s.kind!=='village').length;
+    out.economy={v:0.5*Math.min(1,ws/0.4)+0.3*Math.min(1,gs/0.35)+0.2*Math.min(1,towns/3),why:`${Math.round(ws*100)}% of the realm's trade, ${Math.round(gs*100)}% of its gold, ${towns} chartered town${towns===1?'':'s'}`};}
+  { // glory
+    let best=0,bs=null,items=[];
+    for(const s of mine){const T=s.buildings.filter(b=>b.arch==='temple'&&!b.removed&&b.ch);const si=S.indexOf(s),rd=W.roads.filter(r=>r.a===si||r.b===si);
+      const it=[['people',s.pop>=GLORY_POP()],['a minster',T.some(b=>(b.cathedral||b.ch.trans)&&(b.ch.spire===2||b.ch.tower===3))],['stone walls',s.walls>=2||!!s.bastions],['a castle ward within ward',!!(s.cas&&s.cas.outer)||!!s.citadel],['paved roads to every neighbour',rd.length>=2&&rd.every(r=>r.grade===1)],['a guildhall',s.buildings.some(b=>b.arch==='guildhall'&&b.state==='sound')]];
+      const n=it.filter(x=>x[1]).length;if(n>best||!bs){best=n;bs=s;items=it;}}
+    out.glory={v:best/6,why:bs?`${bs.name}: ${items.map(x=>(x[1]?'✓ ':'✗ ')+(x[0]==='people'?GLORY_POP().toLocaleString()+' people':x[0])).join(', ')}`:'no town'};}
+  return out;}
+function campHouse(){return W.player?W.player.house|0:0;}
+function tickVictory(){
+  const C=W.camp;if(!C)return;
+  W.vic=W.vic||{hold:{},lastWar:{},warned:{},scores:{}};const V=W.vic;
+  for(const hi of liveHouses())if(houseAtWar(hi))V.lastWar[hi]=year();
+  if(day()%30!==5)return;
+  const me=campHouse();V.scores={};
+  for(const hi of liveHouses()){const sc=V.scores[hi]=vScore(hi);
+    for(const P of VPATH){const key=P.k+':'+hi,v=sc[P.k].v;
+      if(v>=0.999){V.hold[key]=V.hold[key]??year();
+        if(!C.over&&year()-V.hold[key]>=P.hold){endGame(hi===me?'win':'lose',hi,P);return;}}
+      else delete V.hold[key];
+      if(hi!==me&&v>=0.85&&!V.warned[key]&&!C.over){V.warned[key]=year();emit('crown',8,W.settlements[W.houses[hi].seat]?.pos||W.capital.pos,`${hi===0?'The crown':W.houses[hi].name} draws near to dominance by ${P.n.toLowerCase()}: ${sc[P.k].why}. If it holds ${P.hold} year${P.hold>1?'s':''}, the realm is theirs.`);}
+      if(v<0.7)delete V.warned[key];}}
+  if(!C.over&&year()>=C.end){const L=liveHouses().map(hi=>[hi,legacyOf(hi)]).sort((a,b)=>b[1]-a[1]);endGame(L[0][0]===me?'verdict-win':'verdict-lose',L[0][0],null,L);return;}
+  if(!C.over&&W.player&&W.player.on&&me>0&&!W.settlements.some(s=>s.owner===me))endGame('fall',me,null);
+  achYear();}
+function legacyOf(hi){const sc=(W.vic&&W.vic.scores[hi])||vScore(hi);let L=Math.round(VPATH.reduce((t,P)=>t+sc[P.k].v,0)*100);if(hi===campHouse())L+=achPoints();return L;}
+function endGame(kind,hi,P,L){const C=W.camp;C.over=true;C.result={kind,hi,path:P&&P.k,yr:year()};
+  const who=hi===0?'The crown':W.houses[hi].name,me=campHouse(),mine=hi===me;
+  const title={win:'Victory',lose:'Eclipsed','verdict-win':'The chronicler’s verdict: yours','verdict-lose':'The chronicler’s verdict','fall':'Your line is broken'}[kind];
+  const text=kind==='win'?`${who} holds dominance by ${P.n.toLowerCase()}. The realm is yours in all but the chronicle's last word.`
+    :kind==='lose'?`${who} holds dominance by ${P.n.toLowerCase()}, and the realm is theirs. Your house is eclipsed.`
+    :kind==='fall'?(me===0?'The throne has passed from your line. Your part in the realm is played out.':`${who} holds no land and no hope. Your part in the realm is played out.`)
+    :`The years are told: AD ${AD()}. ${mine?'Your house stands highest in the chronicle.':`${who} stands highest in the chronicle; your house is outweighed.`}`;
+  const rows=(L||liveHouses().map(h=>[h,legacyOf(h)]).sort((a,b)=>b[1]-a[1])).slice(0,8).map(([h,v])=>`<tr${h===me?' class="me"':''}><td>${esc(h===0?W.houses[0].name+' (the crown)':W.houses[h].name)}</td><td>${v}</td></tr>`).join('');
+  emit('crown',10,W.capital.pos,`${title}. ${text}`);
+  const el=document.getElementById('endgame');if(!el)return;
+  setHTML(el,`<div class="egbox"><h2>${esc(title)}</h2><p>${esc(text)}</p><table class="egt"><tr><th>House</th><th>Legacy</th></tr>${rows}</table>
+    <p class="egach">${achList().filter(a=>W.player.ach&&W.player.ach[a.id]).map(a=>`<span class="achip${a.pts<0?' bad':''}">${esc(a.n)}</span>`).join(' ')||'No deeds remembered.'}</p>
+    <div class="egbtns"><button class="pbb" data-eg="on">Play on</button><button class="pbb" data-eg="close">Close</button></div></div>`);
+  el.style.display='flex';setSpeed(0);}
+/* deeds, good and ill: remembered in this game, and across games in this browser */
+const ACH=[
+  ['spire','A spire for leagues','a church of yours raises a stone spire',8,()=>mineT().some(b=>b.ch&&b.ch.spire===2)],
+  ['minster','Twin towers','a minster of yours with twin west towers',10,()=>mineT().some(b=>b.ch&&b.ch.tower===3)],
+  ['concentric','Ward within ward','a castle of yours made concentric',12,()=>mineS().some(s=>s.cas&&s.cas.outer)],
+  ['walled','Walled in stone','your seat walled in stone',6,()=>{const s=seatOf();return !!s&&s.walls>=2;}],
+  ['paved','All roads paved','every road out of your seat paved',10,()=>{const s=seatOf();if(!s)return false;const si=W.settlements.indexOf(s),R=W.roads.filter(r=>r.a===si||r.b===si);return R.length>=2&&R.every(r=>r.grade===1);}],
+  ['courts','Merchant princes','three courtyard houses in your towns',6,()=>mineS().reduce((t,s)=>t+s.buildings.filter(b=>b.arch==='court'&&!b.removed).length,0)>=3],
+  ['city','A great city','a town of yours reaches '+'the great-city mark',15,()=>mineS().some(s=>s.pop>=GLORY_POP())],
+  ['rich','A full strongroom','20,000 gold in your coffers',8,()=>purse(campHouse())>=20000],
+  ['seven','Seven battles','win seven field battles',12,()=>(W.player.st.won||0)>=7],
+  ['storm','Through the breach','storm a walled town',8,null],
+  ['held','The walls held','a town of yours beats off a storm or sallies to victory',8,null],
+  ['planner','The surveyor’s line','complete a plan of your brush',5,null],
+  ['newtown','A new town','lay out a whole new quarter by your plan',8,null],
+  ['founder','Founder','found a village',5,null],
+  ['wyrm','Wyrmslayer','the dragon slain in your time',15,null],
+  ['crown','Wear the crown','a lord’s house takes the throne',20,null],
+  ['reign50','Long live the king','a reign of fifty years',12,()=>campHouse()===0&&day()-W.reignStart>=50*360],
+  ['concord','Concord','every house loyal to the crown (65+), or pacts with three houses',8,()=>campHouse()===0?W.houses.every((h,i)=>!i||h.exiled||h.loyalty>=65):W.houses.filter((h,j)=>j&&j!==campHouse()&&((W.houses[campHouse()].pacts||{})[j]||0)>day()).length>=3],
+  ['bankrupt','Empty coffers','your treasury runs dry',-5,()=>purse(campHouse())<0],
+  ['famine','Hunger','famine in a town of yours',-5,()=>mineS().some(s=>s.famineFlag)],
+  ['plague','The pestilence','plague takes a third of a town of yours',-5,()=>mineS().some(s=>s.plagueDead>(s.pop+s.plagueDead)*0.33)],
+  ['rising','A realm in arms','a rising against your crown',-5,()=>campHouse()===0&&!!W.war],
+  ['sacked','Sackcloth','a town of yours sacked',-8,null],
+  ['wrecker','The wrecker','a hundred houses pulled down for your plans',-5,()=>(W.player.st.razed||0)>=100],
+  ['routed','Routed','three field battles lost',-5,()=>(W.player.st.lost||0)>=3]];
+function achList(){return ACH.map(a=>({id:a[0],n:a[1],d:a[2],pts:a[3],t:a[4]}));}
+function mineS(){const me=campHouse();return W.settlements.filter(s=>s.owner===me);}
+function mineT(){const T=[];for(const s of mineS())for(const b of s.buildings)if(b.arch==='temple'&&!b.removed)T.push(b);return T;}
+function seatOf(){const me=campHouse();return me===0?W.capital:W.settlements[W.houses[me].seat]&&W.settlements[W.houses[me].seat].owner===me?W.settlements[W.houses[me].seat]:mineS()[0];}
+function achPoints(){const A=W.player&&W.player.ach||{};return achList().reduce((t,a)=>t+(A[a.id]?a.pts:0),0);}
+function achGet(id){const P=W.player;if(!P||!P.on||!W.camp||W.camp.over)return;P.ach=P.ach||{};if(P.ach[id])return;const a=achList().find(x=>x.id===id);if(!a)return;
+  P.ach[id]=AD();try{const K='furlong-ach',S=JSON.parse(localStorage.getItem(K)||'{}');if(!S[id])S[id]=AD();localStorage.setItem(K,JSON.stringify(S));}catch(e){}
+  emit(a.pts<0?'fates':'crown',6,seatOf()?.pos||W.capital.pos,`${a.pts<0?'Infamy':'A deed remembered'} — ${a.n}: ${a.d}. (${a.pts>0?'+':''}${a.pts} legacy)`);}
+function achYear(){if(!W.player||!W.player.on)return;W.player.st=W.player.st||{};for(const a of achList())if(a.t&&!(W.player.ach||{})[a.id]){try{if(a.t())achGet(a.id);}catch(e){}}}
+function achStat(k,n){const P=W.player;if(!P||!P.on)return;P.st=P.st||{};P.st[k]=(P.st[k]||0)+(n||1);}
+function victoryHTML(){
+  const C=W.camp;if(!C)return '';const me=campHouse(),V=W.vic||{},sc=(V.scores||{})[me]||vScore(me);
+  let x=`<div class="dhead">The game — ${C.over?'decided':`${Math.max(0,C.end-year())} years left`} <span class="tag">AD ${W.startAD+C.start-1} – ${W.startAD+C.end-1}</span></div>`;
+  for(const P of VPATH){const v=sc[P.k].v;let lead=null,lv=-1;for(const hi of liveHouses()){if(hi===me)continue;const o=(V.scores||{})[hi];if(o&&o[P.k].v>lv){lv=o[P.k].v;lead=hi;}}
+    const held=V.hold&&V.hold[P.k+':'+me]!=null?` · holding ${year()-V.hold[P.k+':'+me]}/${P.hold} yrs`:'';
+    x+=`<div class="vrow" title="${esc(sc[P.k].why)}"><span class="vn">${P.n}</span><span class="vbar"><i style="width:${Math.round(v*100)}%"></i>${lead!=null?`<b style="left:${Math.round(lv*100)}%" title="${esc(lead===0?'the crown':W.houses[lead].name)}"></b>`:''}</span><span class="vp">${Math.round(v*100)}%${held}</span></div>`;
+    x+=`<div class="vwhy">${esc(sc[P.k].why)}${lead!=null?` · rival best: ${esc(lead===0?'the crown':W.houses[lead].name.replace('House ',''))} ${Math.round(lv*100)}%`:''}</div>`;}
+  const A=W.player.ach||{},got=achList().filter(a=>A[a.id]);
+  x+=`<div class="cstat"><span>Legacy</span><b>${legacyOf(me)}</b></div>`;
+  x+=`<div class="vach">${got.length?got.map(a=>`<span class="achip${a.pts<0?' bad':''}" title="${esc(a.d)} (AD ${A[a.id]})">${esc(a.n)}</span>`).join(' '):'<span class="vwhy">No deeds yet.</span>'} <span class="vwhy">${got.length}/${ACH.length}</span></div>`;
+  return x;}
 function chFabric(b){const ch=chOf(b),L=chLay(b),p=[];
   p.push(ch.stone?(ch.gothic?'stone, in the new pointed style':'stone, round-arched'):'timber');
   p.push(`a nave ${Math.round(L.nl)} m by ${Math.round(L.nw)}${ch.aisles?` with ${ch.aisles===2?'two aisles':'an aisle'}`:''}`);
@@ -5944,7 +6086,7 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
         continue;}}
     // the likeliest lots are near the heart and on the busy streets, but people build where they can get a plot
     const pool=s.growSlots.slice(0,24),k0=pool[0].key;
-    const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0)+(q.st.planned?0.8:0),1); // a lord's new street lets its plots cheap
+    const c=wpick(pool,q=>-(q.key-k0)/30+(q.st.kind==='road'||q.st.market?0.4:0)+(q.st.planned?0.8:0)+(s.wallRad&&inWalls(s,q.mx,q.mz)?0.7:0),1); // a lord's new street lets its plots cheap; within the walls is safer
     s.growSlots.splice(s.growSlots.indexOf(c),1);
     const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));if(!b)continue;b.grown=day();
     if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);} // the first house on a new lane: the lane appears
@@ -6635,7 +6777,8 @@ function initInput(){
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
       case 'p':case 'P':perfToggle();break;
-      case 'r':case 'R':setSovereign(!sovOn());break; // takes up again whichever house was last played
+      case 'r':case 'R':setSovereign(!sovOn());break;
+      case 'b':case 'B':planToggle();break; // takes up again whichever house was last played
       case 'Escape':
         if(document.body.classList.contains('watch'))toggleWatch();
         else if(document.body.classList.contains('hideui'))document.body.classList.remove('hideui');
@@ -7368,7 +7511,8 @@ function tickPopulation(){
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
     const dbase=s.kind==='capital'?0.032:s.kind==='town'?0.030:0.026;
     const deaths=s.pop*(dbase/360)*MOD.mort*(1+hunger*4)*(s.siegeBy?1.5:1)*(x>1.3?1+(x-1.3):1);
-    s.pop=Math.max(5,s.pop+births-deaths);if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
+    const draw=!s.siegeBy&&x<0.85&&hunger<0.2&&s.prosperity>30?(0.85-x)*K*(0.07/360)*pf:0; // empty houses and lots draw newcomers: from the crowded villages, from beyond the realm
+    s.pop=Math.max(5,s.pop+births-deaths+draw);if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
     if(s.kind==='village'&&(x>0.97||s.landShort&&x>0.85)&&day()%30===0){ // the young leave for the towns when there is no room or no land
       const town=W.settlements.filter(o=>o.kind!=='village'&&(o.hunger||0)<0.1).sort((a,b)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(b.pos.x,b.pos.z,s.pos.x,s.pos.z))[0];
       if(town){const go=s.pop*0.012*(x-0.7);s.pop-=go;town.pop+=go;}
@@ -7868,11 +8012,13 @@ function tickMilitary(){
           if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=Infinity;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;damageWalls(s,g.a,0.06,1);} // the gate and the wall beside it thrown down, until it is rebuilt
             if(!s.wallRad&&casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+0.35);}
             s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);
+            if(a.house===campHouse())achGet('storm');
             if(g)emit('war',7,{x:g.x,z:g.z},`The gate of ${s.name} gives way under the ram; ${a.name.replace(/^Host/,'the host')} pours in through the breach.`);}
           else{
             a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
             if(s.wallRad&&a.siegeArc){const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.1,0.25);}
             if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.holdUntil=day()+60;
+              if(s.owner===campHouse())achGet('held');
               emit('war',8,s.pos,vary('storm_fails',[()=>`The storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${a.name} leaves its dead in the ditch at ${s.name}; the storm fails, and the siege is raised.`,()=>`The storm of ${s.name} fails, and its ditch is filled with the dead of ${a.name.replace(/^Host/,'the host')}; the siege is raised.`,()=>`${a.name} raises the siege of ${s.name}, leaving its dead in the ditch; the storm has failed.`,()=>`Failing in the storm of ${s.name}, ${a.name} leaves its dead in the ditch and raises the siege.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the storm of ${s.name} fails: ${a.name} leaves its dead in the ditch and raises the siege.`]));
               if(inRebellion(a))warScore(a.side==='crown'?-10:10);}
             else{a.siegeUntil=now+15+Math.round(rand('sim')*15);
@@ -7884,6 +8030,7 @@ function tickMilitary(){
           emit('war',6,s.pos,vary('sortie',[()=>`A sortie from ${s.name} is beaten back with slaughter at the gates.`,()=>`The garrison of ${s.name} sallies out and is beaten back with slaughter at the gates.`,()=>`Men sally from ${s.name}, but are beaten back with slaughter at the gates.`,()=>`At the gates of ${s.name} a sortie is driven in with slaughter.`,()=>`${s.walls>=2?'From behind the walls':s.walls?'From behind the palisade':'From behind the barricades'} of ${s.name} a sortie is made, and beaten back with slaughter at the gates.`,()=>`The townsmen of ${s.name} make a sortie and are beaten back with slaughter at the gates.`,()=>`Slaughter at the gates of ${s.name}: a sortie is beaten back.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, a sortie from ${s.name} is beaten back with slaughter at the gates.`]));
         }else{
           liftSiege(a);routHome(a);
+          if(s.owner===campHouse())achGet('held');
           emit('war',8,s.pos,vary('sally',[()=>`The defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`,()=>`At dawn the defenders of ${s.name} sally forth and put the besiegers to flight!`,()=>`Out of ${s.name} at first light pour its defenders; the besiegers are put to flight!`,()=>`The besiegers of ${s.name} are put to flight when its defenders sally forth at dawn!`,()=>`The gates of ${s.name} swing open at dawn, and the defenders put the besiegers to flight!`,()=>`${a.name} breaks before the defenders of ${s.name}, who sally forth at dawn and put the besiegers to flight!`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, the defenders of ${s.name} sally forth at dawn and put the besiegers to flight!`,()=>`At dawn a sally from ${s.name} falls upon the lines of ${a.name.replace(/^Host/,'the host')}; the besiegers are put to flight!`]));
           if(inRebellion(a))warScore(a.side==='crown'?-14:14);
         }
@@ -7928,7 +8075,7 @@ function tickMilitary(){
       l.strength*=0.42;l.morale=35;w.strength*=0.85;
       const why=battleWhy(w,l);
       const deadW=musterSync(w),deadL=musterSync(l),nobles=[];
-      W.stats.battles++;
+      W.stats.battles++;if(W.player&&W.player.on){const me=campHouse();if(w.house===me)achStat('won');if(l.house===me)achStat('lost');}
       let line=(why?why+' ':'')+((f,ln,wn)=>vary('battle',[()=>`${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`,()=>`At ${a.battleName} the ${ln} is broken and flees ${f}; ${w.name} carries the field.`,()=>`${w.name} holds the field at ${a.battleName}; the ${ln} breaks and flees ${f}.`,()=>`The ${ln} gives way at ${a.battleName} and flees ${f}, and ${w.name} carries the field.`,()=>`Victory at ${a.battleName} goes to ${w.name}, which carries the field; the ${ln} breaks and flees ${f}.`,()=>`${cw?`Under ${cw.name}, the ${wn} carries the field at ${a.battleName}.`:`${w.name} carries the field at ${a.battleName}.`} The ${ln} breaks and flees ${f}.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${w.name} carries the field at ${a.battleName}. The ${ln} breaks and flees ${f}.`]))(pick('sim',['into the dusk','through the fords','into the woods']),l.name.replace(/^Host/,'host'),w.name.replace(/^Host/,'host'));
       if(cl&&chance('sim',0.22)){killNotable(cl,`at ${a.battleName}, sword in hand`,true);line+=` ${fullTitle(cl)} is slain in the rout.`;nobles.push(fullTitle(cl));}
       else if(cw&&!cw.epithet&&chance('sim',0.3)){cw.epithet='the '+pick('sim',['Ironhand','Unbroken','Lionhearted','Grim','Victorious']);line+=` Men now name the victor ${fullTitle(cw)}.`;}
@@ -8049,6 +8196,7 @@ function takeSettlement(a,s){
   const cruel=cmd&&cmd.traits.includes('cruel');
   const feud=!inRebellion(a); // a lord taking a neighbour's town in a private war wants it whole; rebels and royal hosts are less careful
   if(chance('sim',(cruel?(feud?0.4:1):(feud?0.06:0.25))*(s.walls>0?1:0.35))){ // a walled town that held out is sacked; an open village mostly just changes hands
+    if(s.owner===campHouse())achGet('sacked');
     s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;
     igniteFire(s,2,'sack');
     emit('war',9,s.pos,((q)=>vary('sack',[()=>`${s.name} is taken and given over to sack! Smoke rises from the ${q} and the chronicler weeps to record it.`,()=>`${s.name} falls, and is given over to sack; smoke stands above the ${q}, and the chronicler weeps to record it.`,()=>`The chronicler weeps to record it: ${s.name} is taken and given over to sack, and the ${q} is wrapped in smoke.`,()=>`${s.name} is taken and given over to sack; the ${q} smokes to heaven.`,()=>`${a.name} takes ${s.name} and gives it over to sack. Smoke rises from the ${q}; the chronicler weeps to record it.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${s.name} is taken and given over to sack; smoke hangs over the ${q}, and the chronicler weeps to record it.`,()=>`No mercy is shown at ${s.name}: it is taken and given over to sack, the ${q} burning, and the chronicler weeps to record it.`]))(pick('sim',['market','temple quarter','granaries'])));
@@ -8623,11 +8771,14 @@ function workOf(h,s){const si=W.settlements.indexOf(s);let x=0,z=0,n=0;
   const mk=(s.places||[]).find(p=>p.kind==='market');return mk?{x:mk.x,z:mk.z}:{x:s.pos.x,z:s.pos.z};}
 function inWalls(s,x,z){return !!s.wallRad&&dist2d(x,z,s.pos.x,s.pos.z)<wallRadAt(s,Math.atan2(z-s.pos.z,x-s.pos.x));}
 function lotRentAt(s,x,z,st){const R=Math.max(60,s.extentR||s.coreR||150),d=dist2d(x,z,s.pos.x,s.pos.z)/R;
+  let near=0;for(const b of s.buildings){if(Math.abs(b.x-x)<35&&Math.abs(b.z-z)<35&&!b.removed&&++near>=6)break;} // empty ground about: nobody bids it up
+  const thin=0.45+0.55*near/6;
   const mk=(s.places||[]).some(p=>p.kind==='market'&&dist2d(x,z,p.x,p.z)<45)?1.35:1;
-  return Math.max(0.05,1.15-d)*(inWalls(s,x,z)?1.25:1)*mk*(st&&(st.kind==='road'||st.market)?1.2:1)*Math.pow(Math.max(20,s.pop),0.3)*0.12;}
+  return Math.max(0.05,1.15-d)*(inWalls(s,x,z)?1.25:1)*mk*(st&&(st.kind==='road'||st.market)?1.2:1)*Math.pow(Math.max(20,s.pop),0.3)*0.12*thin;}
 function homeScore(h,s,x,z,st,wk){ // what a lot is worth to this household: the walk to its work, the rent against its purse, the safety of the walls
   const means=Math.max(0,h.w||0),fear=(s.raidedUntil>day()?1:0)+(s.siegeBy?1:0)+(W.war?0.4:0)+(s.walls>0?0.2:0);
-  return -dist2d(x,z,wk.x,wk.z)/80-lotRentAt(s,x,z,st)*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
+  const lord=s.keepPos&&dist2d(x,z,s.keepPos.x,s.keepPos.z)<160?0.25:0; // the lord's household buys, hires and protects
+  return -dist2d(x,z,wk.x,wk.z)/80-lotRentAt(s,x,z,st)*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+lord+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
 function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s).sort((a,b)=>(b.w||0)-(a.w||0));}
 /* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
 function tickStreets(){
@@ -8821,7 +8972,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -9576,7 +9727,7 @@ const LORD_AMB=[ // a lord's ambitions: land, wealth, standing, and in the end t
 ];
 function ambList(){return W.player&&W.player.house>0?LORD_AMB:AMBITIONS;}
 function sovAmbition(key){
-  const P=W.player;if(!P||!P.on||P.amb[key])return;
+  const P=W.player;if(!P||!P.on)return;achGet({wyrm:'wyrm',founder:'founder',found:'founder',crown:'crown'}[key]||'');if(P.amb[key])return;
   const a=ambList().find(x=>x[0]===key);if(!a)return;
   P.amb[key]=day();P.legacy+=a[2];saveBest(P.legacy);
   const ph=P.house|0,pos=ph>0&&W.settlements[W.houses[ph].seat]?W.settlements[W.houses[ph].seat].pos:W.capital.pos;
@@ -9591,6 +9742,7 @@ function dynastyChanged(oldName,winner){
       emit('crown',9,W.capital.pos,`${W.houses[0].name} wears the crown. You rule now from ${W.capital.name}.`);
       buildDrawer('crown');renderPetition();updateHUD();}
     return;}
+  if(W.camp&&!W.camp.over)endGame('fall',0,null);
   const yrs=Math.floor((day()-P.since)/360),L=P.legacy;saveBest(L);
   petition({key:'fall',title:'Your line is broken',pos:W.capital.pos,days:90,ai:0,
     text:`The dynasty you guided${oldName?' ('+oldName+')':''} has lost the throne after ${yrs} year${yrs===1?'':'s'} of your rule, with a legacy of ${L}${bestLegacy()>L?' (best for this realm: '+bestLegacy()+')':''}. ${fullTitle(W.monarch)} now wears the crown.`,
@@ -9627,6 +9779,8 @@ function setSovereign(on,hi){
   if(on){
     if(document.body.classList.contains('watch'))toggleWatch();
     if(!P.started||P.startHouse!==hi){P.started=true;P.startHouse=hi;P.since=day();P.startPop=realmPop();P.peaceSince=day();P.legacy=0;P.amb={};}
+    if(!W.camp){const n=P.campLen||200;W.camp={len:n,start:year(),end:year()+n,house:hi};W.vic=null;P.ach={};P.st={};
+      emit('crown',6,W.capital.pos,`The game begins: ${n} years to make your house the greatest in the realm, by conquest, concord, wealth or glory. The chronicle ends in AD ${AD()+n}.`);}
     P.house=hi;
     for(const a of W.armies)if(a.house===hi&&a.standing&&!a.gone)a.hold=true; // your household host waits on your word
     markManual();
@@ -9657,7 +9811,7 @@ function lordPanelHTML(){
   if(!seat)return `<div class="note">${esc(h.name)} holds no land.</div><button class="wbtn" data-cmd="sov-off">Lay down the banner</button>`;
   const head=notableById(h.head),st=(k,v)=>`<div class="cstat"><span>${k}</span><b>${v}</b></div>`;
   const hosts=W.armies.filter(a=>a.house===hi&&!a.gone),men=Math.round(hosts.reduce((t,a)=>t+a.strength,0)),cd=k=>{const d=cdLeft(k);return d?`ready in ${d} d`:'';};
-  let x=`<div class="dhead"><img src="${sigURL(hi)}" style="width:16px;height:16px;vertical-align:-3px;border-radius:2px"> ${esc(h.name)}</div>`;
+  let x=victoryHTML()+`<div class="dhead"><img src="${sigURL(hi)}" style="width:16px;height:16px;vertical-align:-3px;border-radius:2px"> ${esc(h.name)}</div>`;
   x+=st('Lord',head?esc(fullTitle(head))+(head.alive?', '+ageOf(head):''):'—');
   x+=st('Seat',esc(seat.name)+` <span class="tag">${own.length} town${own.length>1?'s':''}</span>`);
   x+=st('Purse',Math.round(h.gold||0).toLocaleString()+' g'+` <span class="tag">${(h.lastNet||0)>=0?'+':''}${Math.round(h.lastNet||0)} a month</span>`);
@@ -9817,6 +9971,8 @@ function crownPanelHTML(){
   const P=W.player,m=W.monarch;
   if(!P.on)return `<div class="note">You are the chronicler: the realm governs itself and you watch — or play Providence from the Acts tab.</div>
     <div class="note">Take the crown to rule in person: issue decrees, answer the petitions of your court, honour or break the great houses, and command the royal host in war. Build a legacy before your line is broken.</div>
+    ${W.camp?'':`<div class="dhead">The game</div><div class="note">Make your house the greatest in the realm, by conquest, concord, wealth or glory, before a rival does, or stand highest in the chronicle when the years run out.</div>
+    <div class="pbrow" style="display:flex;gap:6px;margin:4px 0 8px">${[[100,'Short · 100 years'],[200,'Standard · 200'],[400,'Long · 400']].map(([n,l])=>`<button class="cbtn" style="flex:1;${(P.campLen||200)===n?'background:#c4a24a;color:#201a12':''}" data-cmd="camp-len" data-arg="${n}"><span>${l}</span></button>`).join('')}</div>`}
     <button class="wbtn" data-cmd="sov-on">♛ Take the crown (R)</button>
     ${bestLegacy()?`<div class="note">Best legacy in this realm: ${bestLegacy()}</div>`:''}
     <div class="dhead">Or take up a great house</div>
@@ -9825,7 +9981,7 @@ function crownPanelHTML(){
       return `<div class="houserow pk" data-cmd="sov-house" data-arg="${hi}" title="Rule ${esc(h.name)}"><img src="${sigURL(hi)}"><span class="hname" style="flex:1">${esc(h.name.replace('House ',''))}</span>
         <span class="tag">${own.length} town${own.length>1?'s':''} · ${Math.round(h.gold||0).toLocaleString()} g · loyalty ${Math.round(h.loyalty)}</span></div>`;}).join('')}`;
   if(P.house>0)return lordPanelHTML();
-  let h=`<div class="dhead">The Sovereign</div>`;
+  let h=victoryHTML()+`<div class="dhead">The Sovereign</div>`;
   const st=(k,v)=>`<div class="cstat"><span>${k}</span><b>${v}</b></div>`;
   h+=st('Monarch',m?esc(fullTitle(m))+(m.alive?', '+ageOf(m):''):'—');
   h+=st('Dynasty',esc(W.houses[0].name));
@@ -9887,6 +10043,7 @@ function runCmd(cmd,arg){
     case 'lord':lordCmd(arg.split(':')[0],arg.split(':')[1]);break;
     case 'sov-off':setSovereign(false);break;
     case 'pause-toggle':W.player.pause=!W.player.pause;break;
+    case 'camp-len':W.player.campLen=+arg;break;
     case 'decree':runDecree(arg);break;
     case 'h-honour':case 'h-hostage':case 'h-match':case 'h-attaint':houseCmd(cmd.slice(2),+arg);break;
     case 'notable':{const n=notableById(+arg);if(n)showInspect({type:'notable',n});break;}
@@ -10051,6 +10208,7 @@ function initUI(){
     MOD.tax=+e.target.value;const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=Math.round(MOD.tax)+'%';
   });
   document.addEventListener('pointerdown',e=>{if(!e.target.closest('#gl'))uiDownAt=performance.now();},true);
+  document.addEventListener('click',e=>{const g=e.target.closest('[data-eg]');if(g){document.getElementById('endgame').style.display='none';e.stopPropagation();return;}});
   document.addEventListener('click',e=>{const b=e.target.closest('[data-pb]');if(b&&!b.disabled){planCmd(b.dataset.pb);e.stopPropagation();}});
   document.addEventListener('pointerup',()=>{setTimeout(()=>{uiDownAt=0;},0);},true);
   document.getElementById('petition').addEventListener('click',e=>{
@@ -10061,6 +10219,7 @@ function initUI(){
       else{const h=W.houses[+i],seat=h&&W.settlements[h.seat];if(seat)flyTo(seat.pos.x,seat.pos.z,700);const hd=h&&notableById(h.head);if(hd)showInspect({type:'notable',n:hd});}}
   });
   document.getElementById('rulebtn').addEventListener('click',()=>setSovereign(!sovOn()));
+  document.getElementById('planbtn').addEventListener('click',planToggle);
   document.getElementById('perfbox').addEventListener('click',e=>{if(e.target.id!=='perfcopy')return;const t=perfReport(false);
     (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{e.target.textContent='Copied!';},()=>prompt('Performance report:',t));});
   if(/[#&]perf/.test(location.hash))setTimeout(()=>perfToggle(true),1200);
