@@ -5851,7 +5851,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   }
   if(day()%360===250)for(let a=1;a<W.houses.length;a++){const A=W.houses[a];if(a===plyH()||A.exiled||(A.gold||0)<1500)continue; // old grudges are paid in sedition
     const foes=Object.keys(A.grudges||{}).map(Number).filter(b=>b>0&&W.houses[b]&&!W.houses[b].exiled&&!atWar(a,b));
-    if(foes.length&&chance('sim',0.2)){const b=pick('sim',foes);A.gold-=300;book(A,'intrigue',-300);incite(a,b);}}
+    if(foes.length&&chance('sim',0.2)){const b=pick('sim',foes);A.gold-=300;book(A,'intrigue',-300);{const T=W.settlements[W.houses[b]&&W.houses[b].seat];payAmong(T?heads_(T,()=>true).slice(0,6):[],300,null,'intrigue');}incite(a,b);}} // silver to malcontents in the rival's town
   if(day()%360===240){ // marriages between neighbouring houses: ten years' peace between them
     const L=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&W.settlements.some(s=>s.owner===i));
     for(const a of L)if(chance('sim',0.15)){const nb=lordNeighbours(a).filter(b=>b!==plyH()&&!atWar(a,b)&&!((W.houses[a].grudges||{})[b])&&!(((W.houses[a].pacts||{})[b]||0)>day()));
@@ -9803,7 +9803,7 @@ function aiPick(p){
 }
 function runPetition(p,i){
   const o=p.opts[i];if(!o)return;
-  if(o.cost){if((p.to|0)>0)W.houses[p.to].gold-=o.cost;else W.treasury-=o.cost;}
+  if(o.cost){if((p.to|0)>0)W.houses[p.to].gold-=o.cost;else W.treasury-=o.cost;const at=p.pos?W.settlements[nearestSettlementIdx(p.pos.x,p.pos.z)]:W.capital;wages(at||W.capital,o.cost,'petition');} // spent where it was asked for
   if(o.act)o.act();
 }
 function answerPetition(i){
@@ -10246,19 +10246,19 @@ function settlementCmd(cmd,si){
   const s=W.settlements[si],me=plyH();if(!s||inRevolt(s.owner)||s.owner!==me)return; // your writ runs in your own towns; a lord's are his (ask him)
   const pay=c=>spend(me,c);
   if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
-    s.stores.grain+=s.pop*0.4;lard(s).grain+=s.pop*0.4;s.unrest=clamp(s.unrest-6,0,100);emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
-  else if(cmd==='garrison'){if(cdLeft('s_gar'+si)||!pay(400))return;setCd('s_gar'+si,60);s.garrison+=40;emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
+    acct(houseAcct(me),250);purchase(s,'grain',houseAcct(me),s.pop*0.4);lard(s).grain+=purchase.got;s.unrest=clamp(s.unrest-6,0,100);/* the grain bought in the market and given out */emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
+  else if(cmd==='garrison'){if(cdLeft('s_gar'+si)||!pay(400))return;setCd('s_gar'+si,60);s.garrison+=40;payAmong(heads_(s,h=>ageYrs(h)<50),400,null,'garrisons');emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
   else if(cmd==='callout'||cmd==='levy'){const watch=cmd==='callout';if(cdLeft('s_lev'+si)||(watch?(s.garrison||0)<20:!pay(300)))return;setCd('s_lev'+si,watch?20:60); // every town can put men in the field: its watch, or a levy of its people
     const want=watch?s.garrison*0.75:Math.min(s.pop*0.12,40+s.pop*0.08),a=raiseArmy(me,si,want,me===0?'crown':'host');if(watch)s.garrison-=a.strength;
-    a.name=watch?`The Watch of ${s.name}`:`The Levy of ${s.name}`;a.home=si;a.hold=true;showInspect({type:"army",a});
+    a.name=watch?`The Watch of ${s.name}`:`The Levy of ${s.name}`;a.home=si;a.hold=true;if(!watch)soldiersPay(a,300,null);showInspect({type:"army",a});
     emit('war',4,s.pos,watch?`The watch of ${s.name} is called out: ${Math.round(a.strength)} men march out of the gate under ${me>0?'their lord’s':'the king’s'} banner.`:`${Math.round(a.strength)} men of ${s.name} and its fields are levied and mustered at the market cross.`);}
-  else if(cmd==='walls'){if(s.walls>=2||s.wallBuild||!pay(1500*(s.walls+1)))return;const up=s.walls>=1&&!!s.wallRad;s.walls++;s.wallDmg=null;s.breachUntil=0;
+  else if(cmd==='walls'){if(s.walls>=2||s.wallBuild||!pay(1500*(s.walls+1)))return;wages(s,1500*(s.walls+1),'walls');const up=s.walls>=1&&!!s.wallRad;s.walls++;s.wallDmg=null;s.breachUntil=0;
     if(!s.wallRad){riverStrips();traceWall(s,14);if(G.feat)featWalls(s);(s.history||(s.history=[])).push({ago:0,t:'Walled by order of the crown.'});
       for(const b of clearWallLine(s)){b.state='ruin';b.rebuildT=1e9;s.ruinCount++;updateBuildingInstance(b);}} // pulled down for the wall
     wallWorks(s,up);rebuildWalls(); // raised round the circuit over a season (timber) or years (stone), the old palisade standing until the masons reach it
     emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
   else if(cmd==='seal'){if(cdLeft('s_seal'+si))return;setCd('s_seal'+si,20);sealGates(s,!(s.quarantineUntil>day()));}
-  else if(cmd==='suppress'){if(cdLeft('s_sup'+si)||!pay(150))return;setCd('s_sup'+si,30);
+  else if(cmd==='suppress'){if(cdLeft('s_sup'+si)||!pay(150))return;payAmong(heads_(s,h=>ageYrs(h)<50),150,null,'garrisons');setCd('s_sup'+si,30);
     const hot=s.unrest>80;s.unrest=clamp(s.unrest-20,0,100);s.prosperity=clamp(s.prosperity-5,1,100);
     emit('fates',4,s.pos,`Soldiers clear the streets of ${s.name}; the ringleaders are put in the stocks.`);
     if(hot&&chance('sim',0.3)){igniteFire(s,1,'riot');emit('fates',5,s.pos,`The crowd in ${s.name} fights back, and a torch finds a thatched roof.`);}}
@@ -10540,7 +10540,7 @@ function lordCmd(cmd,arg){
       if(((h.pacts||{})[j]||0)>day()){delete h.pacts[j];if(W.houses[j].pacts)delete W.houses[j].pacts[hi];W.houses[j].grudges=W.houses[j].grudges||{};W.houses[j].grudges[hi]=true;
         emit('house',6,W.settlements[h.seat]?.pos,`${h.name} breaks its marriage pact with ${W.houses[j].name}! Its word is worth less now.`);h.loyalty=clamp(h.loyalty-6,0,100);}
       startFeud(hi,j,hi);h.loyalty=clamp(h.loyalty-(W.legitimacy>60?6:2),0,100);break;}
-    case 'incite':{const j=+arg;if(cdLeft('l_inc'+j)||!spend(hi,300))return;setCd('l_inc'+j,120);book(h,'intrigue',-300);incite(hi,j);break;}
+    case 'incite':{const j=+arg;if(cdLeft('l_inc'+j)||!spend(hi,300))return;setCd('l_inc'+j,120);book(h,'intrigue',-300);{const T=W.settlements[W.houses[j]&&W.houses[j].seat];payAmong(T?heads_(T,()=>true).slice(0,6):[],300,null,'intrigue');}incite(hi,j);break;}
     case 'peace':{const j=+arg,fd=(W.feuds||[]).find(f=>(f.a===hi&&f.b===j)||(f.b===hi&&f.a===j));
       if(fd){fd.until=day();emit('war',5,seat.pos,`${h.name} sends heralds to ${W.houses[j].name} to treat for peace.`);}break;}
     case 'rebel':{if(W.war)return;
