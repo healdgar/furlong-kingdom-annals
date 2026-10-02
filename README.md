@@ -255,6 +255,21 @@ Acts are sealed while you rule; the crown's own levers take their place:
   other house's): yours pursues it, turning each day toward where it is
   going, until they meet. If your lords are not at war, drawing the sword
   begins it: a feud between two houses, a rising if the crown is one of them.
+  Click the soldiers themselves, not just the banner; the hint under the
+  cursor says what the click will do. A host lying in a town is attacked by
+  marching on the town (a siege if it is walled).
+- **Split and join**: a host can split into two columns (half the men and
+  horse each, the second under another of the house's lords), and two of
+  your hosts within 250 m can join. Lords' hosts gather the same way.
+- **The watch**: every town keeps its own garrison, sized by its people, its
+  walls and castle, and the danger it is in (raids, war, a border). The lord
+  musters men each month toward it while the purse allows, and pays them
+  off when the danger passes. Up close they stand at the gates and in the
+  castle.
+- **Walls take time**: a new palisade, a stone wall or a bastioned trace is
+  raised round the circuit from the main gate, over weeks for timber and
+  years for stone; unbuilt stretches are open, half-done stone still shows
+  the old palisade, and the defence grows as the work goes on.
 - **Hosts are men**: up close a host is its soldiers. On the march it is a
   column on the road, three abreast, in companies each under its standard;
   it does not walk through houses or an enemy's walls (it bunches outside
