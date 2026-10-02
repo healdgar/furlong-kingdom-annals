@@ -3171,7 +3171,7 @@ function treeHTML(x){let h='';const seen=new Set();
 function chooseLandUse(s,si){ // once a year: strips go to corn or to hay as the market pays better for them, while the place grows less of that than it buys (a farmer looks at the price and at the stacks his neighbours have already made), the best-suited ground first
   if(!s._gYield||!G.land)return;const pg=price(s,'grain'),ph=price(s,'hay'),gA0=s._gYield*0.87*360,E=s._dAvg||{},wetOf=f=>f.n?clamp(f.fl/f.n/0.35,0,1):0,hY=f=>12/1e4*(0.6+0.4*wetOf(f));
   const T=(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&f.area);let haySup=0,grSup=0;for(const f of T){if(f.kind===LK.MEADOW)haySup+=hY(f)*f.area;else if(ARABLE.has(f.kind))grSup+=gA0*f.area;}
-  const hayDem=(E.hay||0)*12,grDem=(E.grain||0)*12;
+  const Y=s._dYr||E,hayDem=(Y.hay||0)*12,grDem=(Y.grain||0)*12; // a farmer lays down meadow for the year's want, not the autumn's
   if(ph*12/1e4>pg*gA0)for(const f of T.filter(f=>ARABLE.has(f.kind)&&f.kind!==LK.DEMESNE).sort((a,b)=>wetOf(b)-wetOf(a))){if(haySup>=hayDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((hA-gA)*3<=gA*0.25)continue; // hay pays, and the town is short of it
     f.kind0=f.kind;f.kind=LK.MEADOW;writeFurlong(f);G.fenceDirty=true;haySup+=hY(f)*f.area;grSup-=gA0*f.area;}
   else for(const f of T.filter(f=>f.kind===LK.MEADOW&&f.ar>=Math.max(1,f.n)*0.25).sort((a,b)=>wetOf(a)-wetOf(b))){if(grSup>=grDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((gA-hA)*3<=hA*0.25)continue; // corn pays, and the town is short of bread
@@ -6082,7 +6082,7 @@ function tickLand(){ // monthly: the countryside follows the people
       for(let k=0;k<2&&t.length;k++){const f=t.splice(randi('sim',t.length),1)[0];f.until=spring;setFurlong(f,LS.BURNT);}
     }
     // a place long out of land and doing well sends out a daughter village
-    if(s.landShort&&now-s.landShort>180&&now%90===45){if(s._fed===undefined)carryingCap(s);const press=s.pop*(s.kind==='village'?1:0.5)/Math.max(40,s._fed||40); /* land hunger: the people the place's own fields must feed (a town lives half by its market) */if(press>1&&chance('sim',clamp((press-1)*2.5,0,0.8)))foundDaughter(s,press);} // pressed for land with none left to take: some go to break new ground, the more the hungrier
+    if(s.landShort&&now-s.landShort>180&&now%90===45){let press;if(s.folk&&s.folk.length){const T=heads_(s,h=>tills(h,s)),held=T.filter(h=>h._strips>0).length;press=T.length?T.length/Math.max(1,held):0;}else{if(s._fed===undefined)carryingCap(s);press=s.pop*(s.kind==='village'?1:0.5)/Math.max(40,s._fed||40);} /* land hunger: farming households with no strip of their own to work, against those that have one (a place that buys its bread from the market is not hungry for land) */if(press>1&&chance('sim',clamp((press-1)*2.5,0,0.8)))foundDaughter(s,press);} // pressed for land with none left to take: some go to break new ground, the more the hungrier
   });
 }
 /* ---------------- beasts: every place keeps sheep, cattle, horses and swine on what its land can feed.
@@ -7858,8 +7858,8 @@ function payCrafts(s,heads){ // the crafts and trades take in what the town's fa
   for(const tr in P){const T2=C.filter(h=>h.tr===tr);let t2=0;for(const h of T2)t2+=wt(h);if(t2>0)for(const h of T2)acct(h,P[tr]*wt(h)/t2);else cash+=P[tr];} // what was paid for baking goes to the bakers, for shoes to the shoemakers
   if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);}s._poolCash=0;}
 function reprice(s){ // each price rises when buyers wanted more than was sold, and moves against the stock for sale: above half a year of what is wanted it falls, below it rises
-  const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{},E=s._dAvg||(s._dAvg={});
-  for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25; // what is usually wanted in a month
+  const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{},E=s._dAvg||(s._dAvg={}),Y=s._dYr||(s._dYr={});
+  for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25;Y[g]=(Y[g]??d)*11/12+d/12; // what is usually wanted in a month; and the year round (the hay bought in autumn is the winter's)
     if(!(S[g]>0)&&!(a>0))continue; // nothing to be had at any price: no market, and no price found
     const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*6+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));}
   s._dem={};s._sold={};}
