@@ -345,6 +345,20 @@ itself; you rule one lord's domain:
     daughter or the widow, else back to the lord.
   - Field and person cards show who holds, who works, on what terms, and
     what each household is worth.
+- **The land market.** Each year every town's ground is valued on a 16 m
+  grid for the two uses that bid for it. *To live on:* the jobs within a walk
+  (workshops, the market, wharves, the castle's household, the churches),
+  the market's nearness, the safety of the walls (worth more in war), less
+  the stink of tanners and dyers. *To trade from:* the passing trade of the
+  street at the door, the households near enough to buy, the market. Ground
+  is worth its best use, scaled by the size of the town; a building is worth
+  its ground's value for its use, by its floor and how well it is built. From
+  this alone: the town builds first on its most valuable open lots (so a
+  walled town's safe, central ground fills before its outskirts);
+  households weigh commute against rent against their purse; yards are
+  built on where a house would earn more than the garden; and where
+  valuable ground has no street to it, a lane is laid in. A lord's new
+  street lets its plots at a charter rent below the market.
 - **Where people live.** A household without a roof chooses its lot by the
   walk to its work (its strips, its workshop, the market or quay), the rent
   against its purse, and the safety of the walls (worth more after raids and
