@@ -3827,6 +3827,17 @@ function gableGeom(){
   g.computeVertexNormals();
   return g;
 }
+function bldRoom(n){ // room in the building buffers for n more: grown (doubled) when the realm outgrows them, never a limit on the world
+  if(!G.bodies||G.bldList.length+n<G.bodies.instanceMatrix.count)return true;
+  const old=G.bodies.instanceMatrix.count,cap=Math.max(old*2,G.bldList.length+n+1000);
+  for(const key of['bodies','roofs']){const M=G[key],geo=M.geometry.clone();
+    for(const a of['aKind','aFront','aBase']){const A=M.geometry.getAttribute(a);if(!A)continue;const arr=new Float32Array(cap*A.itemSize);arr.set(A.array);geo.setAttribute(a,new THREE.InstancedBufferAttribute(arr,A.itemSize));}
+    const N=new THREE.InstancedMesh(geo,M.material,cap);N.instanceMatrix.array.set(M.instanceMatrix.array);
+    if(M.instanceColor){N.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(cap*3),3);N.instanceColor.array.set(M.instanceColor.array);}
+    for(let i=old;i<cap;i++)setInst(N,i,0,-500,0,0,0.01,0.01,0.01);
+    N.count=M.count;N.castShadow=M.castShadow;N.receiveShadow=M.receiveShadow;N.frustumCulled=M.frustumCulled;N.renderOrder=M.renderOrder;N.onBeforeRender=M.onBeforeRender;N.userData=M.userData;
+    scene.remove(M);M.geometry.dispose();scene.add(N);G[key]=N;}
+  G.bodies.instanceMatrix.needsUpdate=G.roofs.instanceMatrix.needsUpdate=true;return true;}
 function buildBuildings(){
   G.bldList=[];
   for(const s of W.settlements)for(const b of s.buildings)G.bldList.push(b);
@@ -4280,12 +4291,12 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
 const YARD_WORTH=0.006; // what a square metre of garden is worth to a household in a year, in crowns
 function tickSettlers(){ // a lord's new street or quarter draws settlers to its plots, a few households a year, beyond the town's own growth
   if(day()%360!==250)return;
-  for(const s of W.settlements){if(!s._lay||!s.growSlots||s.siegeBy||G.bldList.length>=G.bodies.instanceMatrix.count-20)continue;
+  for(const s of W.settlements){if(!s._lay||!s.growSlots||s.siegeBy||!bldRoom(20))continue;
     const slots=s.growSlots.filter(c=>c.st.planned&&!c.st.planQ&&!c.st.hidden);if(!slots.length)continue;
-    const k=Math.max(1,Math.round(s.prosperity/25));let got=0;
+    const k=Math.round(clamp(opportunity(s)*4,0,4));if(!k)continue;let got=0; // as many as think it worth coming for
     for(let i=0;i<k&&slots.length;i++){const c=slots.splice(Math.floor(frand()*slots.length),1)[0];s.growSlots.splice(s.growSlots.indexOf(c),1);
       const b=s._lay.buildLot(c,Math.min(1,tierCap()));if(!b)continue;b.grown=day();b.settler=true;
-      b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);s.pop+=4;got++;}
+      b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);clearLandUnder(b);if(G.feat)featBuilding(b);got++;} // the roof is built; the families come by tickMigration, drawn by the room
     if(got&&!W.prehistory&&frand()<0.5)emit('trade',2,s.pos,`Settlers take up ${got} plot${got>1?'s':''} on the new streets of ${s.name}, drawn by the low rents.`);}}
 function tickInfill(){
   if(day()%360!==245||W.prehistory&&AD()<1100)return;if(AD()<1100)return;
@@ -5899,14 +5910,16 @@ function tickLand(){ // monthly: the countryside follows the people
     const need=s.pop*landWt(s)*ph;
     s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;
     const d=f=>dist2d(f.x,f.z,s.pos.x,s.pos.z);
+    s._needLand=tilled<need; // (a place that needs no more land does not stand in a neighbour's way)
     if(tilled<need&&!s.siegeBy){ // take in more land: old pasture, open waste, scrub, then the wood; beyond the bounds if need be
       const clearing=s.clearUntil>now,bonus={[LS.PASTURE]:0.8,[LS.WILD]:0.5,[LS.SCRUB]:clearing?0.4:-0.2,[LS.WOOD]:clearing?0.3:-0.9}; // paid assarters take the wood and scrub first
       let c=own.filter(f=>ARABLE.has(f.kind)&&f.area>0&&bonus[f.state]!==undefined&&f.lord===s.owner);
       const reach=domReach(s)*1.5*(clearing?1.35:1);
-      const nearest=f=>!W.settlements.some(o=>o!==s&&dist2d(f.x,f.z,o.pos.x,o.pos.z)<d(f));
+      const nearest=f=>!W.settlements.some(o=>o!==s&&o._needLand&&o.owner===s.owner&&dist2d(f.x,f.z,o.pos.x,o.pos.z)<d(f)*0.85); // waste goes to whichever of the lord's places needs it and lies nearer; a neighbour with land enough does not bar the way
       c=c.concat(F.filter(f=>f.ar>=f.n*0.3&&d(f)<reach&&(f.lord<0||f.lord===s.owner)&&(f.dom<0||f.dom!==si&&(f.state===LS.WILD||f.state===LS.WOOD)&&ARABLE.has(f.kind))&&nearest(f)));
       const score=f=>-d(f)/350+(f.dom!==si?(f.fo>f.ar*0.5?-0.9:0.5)-(f.dom<0?0.7:1):bonus[f.state])+0.6*f.fa/Math.max(1,f.n); // the lord grants his waste to the nearer village
       c.sort((a,b)=>score(b)-score(a));
+      {const ease={[LS.PASTURE]:0.8,[LS.WILD]:0.6,[LS.SCRUB]:0.4,[LS.WOOD]:0.25};let w=0;for(const g of c)if(g.state!==LS.TILLED&&g.state!==LS.BURNT)w+=g.area*(ease[g.state]||0.3)*Math.exp(-d(g)/1500);s.wasteHa=w;} // what is left to take, as food it could grow once cleared
       const f=wpick(c.slice(0,12),score,0.35);
       if(f){
         if(f.dom!==si){if(f.dom>=0){const o=W.settlements[f.dom];o.furl=o.furl.filter(g=>g!==f);}
@@ -5917,7 +5930,8 @@ function tickLand(){ // monthly: the countryside follows the people
         setFurlong(f,LS.TILLED);s.landShort=0;
         if(was===LS.WOOD){s.assarts=(s.assarts||0)+1;
           if(s.assarts===1||s.assarts%15===0)emit('trade',3,{x:f.x,z:f.z},`The folk of ${s.name} are clearing the wood for new fields; the assarts ${pick('sim',['smoke with burning stumps','are ploughed between the stumps','are let at a penny the acre'])}.`);}
-      }else if(!s.landShort){s.landShort=now;
+      }else{s.wasteHa=0;}
+      if(!f&&!s.landShort){s.landShort=now;
         if(s.kind!=='village'||s.pop>120)emit('trade',3,s.pos,vary('no_land',[()=>`There is no more land to plough about ${s.name}; its younger sons look elsewhere.`,()=>`The plough has reached the last of the land about ${s.name}, and its younger sons look elsewhere.`,()=>`Its younger sons look elsewhere: there is no more land to plough about ${s.name}.`,()=>`About ${s.name} every furlong is under the plough and there is no more land to be had; its younger sons look elsewhere.`,()=>`There is no land left to plough about ${s.name}, and its younger sons look elsewhere.`]));}
     }else if(tilled>need*1.25+9000){ // too few hands: the farthest and poorest fields go back to grass
       const c=own.filter(f=>ARABLE.has(f.kind)&&f.state===LS.TILLED&&f.lord===s.owner).sort((a,b)=>d(b)-d(a)).slice(0,10);
@@ -5930,7 +5944,7 @@ function tickLand(){ // monthly: the countryside follows the people
       for(let k=0;k<2&&t.length;k++){const f=t.splice(randi('sim',t.length),1)[0];f.until=spring;setFurlong(f,LS.BURNT);}
     }
     // a place long out of land and doing well sends out a daughter village
-    if(s.landShort&&now-s.landShort>360&&now%360===195&&s.prosperity>45&&s.pop>90&&chance('sim',0.25))foundDaughter(s);
+    if(s.landShort&&now-s.landShort>180&&now%90===45){const press=s.pop/Math.max(40,s.cap||carryingCap(s));if(press>1&&chance('sim',clamp((press-1)*2.5,0,0.8)))foundDaughter(s,press);} // pressed for land with none left to take: some go to break new ground, the more the hungrier
   });
 }
 /* ---------------- beasts: every place keeps sheep, cattle, horses and swine on what its land can feed.
@@ -6116,7 +6130,7 @@ function tickShips(){
       sh.phase='dock';sh.bi=bi;sh.berth=B[bi];sh.until=now+6+Math.floor(frand()*8);
       let val=0;for(const g in sh.cargo){s.stores[g]=(s.stores[g]||0)+sh.cargo[g];val+=sh.cargo[g]*GOODBASE[g];}
       const duty=val*0.08,h=W.houses[s.owner];if(s.owner>0&&h){h.gold=(h.gold||0)+duty;book(h,'customs',duty);}else W.treasury+=duty; // the lord's customs on what comes ashore
-      s.prosperity=clamp(s.prosperity+0.4,1,100);s._ships=(s._ships||0)+1;
+      s.tradeV=(s.tradeV||0)+val;s._ships=(s._ships||0)+1;
       if(!W.prehistory&&(!s._shipNote||frand()<0.12)){s._shipNote=1;const gs=Object.keys(sh.cargo).map(g=>({spice:'pepper and cinnamon',silk:'silks',wine:'wine',fish:'stockfish',timber:'masts and planking',ore:'copper',cloth:'fine cloth'}[g]||g)).join(' and ');
         emit('trade',s._ships===1?5:3,sh.berth,vary('farship',[()=>`A ${sh.kind} out of ${sh.from} ties up at ${s.name} with ${gs}.`,()=>`${s.name}: the ${sh.kind} from ${sh.from} is warped in to the ${sh.berth.shore?'shore':'wharf'}, laden with ${gs}.`,
           ()=>`Sails from ${sh.from} off ${s.name}; by evening the ${sh.kind} is unloading ${gs} ${sh.berth.shore?'onto the shingle':'on the wharf'}.`,()=>`The customs men of ${s.name} weigh ${gs} off a ${sh.kind} of ${sh.from}, and the lord's dues are paid in silver.`]));}}
@@ -6144,7 +6158,7 @@ function renderShips(){
     m.scale.setScalar(sh.kind==='carrack'?5:sh.kind==='hulk'?4.4:sh.kind==='great cog'?4:3.4);m.userData.pick.sh=sh;}
   for(;k<G.shipMeshes.length;k++)G.shipMeshes[k].visible=false;}
 function foundTown(){ // a lord founds a new market town, laid out in one stroke (Freiburg): only in an age that plans towns
-  if(AD()<1120||W.settlements.filter(o=>o.planned).length>=2||G.bldList.length+200>=G.bodies.instanceMatrix.count)return;
+  if(AD()<1120||W.settlements.filter(o=>o.planned).length>=2||!bldRoom(200))return;
   const lords=W.houses.map((h,i)=>i).filter(i=>i>0&&i!==plyH()&&!W.houses[i].exiled&&(W.houses[i].gold||0)>1500);
   if(!lords.length)return;const hi=wpick(lords,i=>W.houses[i].gold/1500,1),seat=W.settlements.find(o=>o.owner===hi);if(!seat)return;
   const sites=[];
@@ -6156,9 +6170,8 @@ function foundTown(){ // a lord founds a new market town, laid out in one stroke
   const n=W.settlements.length;
   if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;book(W.houses[hi],'founding',-1200);}
 }
-function foundDaughter(s){
-  const vill=W.settlements.filter(o=>o.kind==='village').length;
-  if(vill>=(W.villages0||0)+Math.round(6*MAPK*MAPK)||G.bldList.length+60>=G.bodies.instanceMatrix.count)return;
+function foundDaughter(s,press){
+  if(!bldRoom(60))return;
   const sites=[];
   for(let k=0;k<70;k++){
     const a=rand('sim')*Math.PI*2,r=520+rand('sim')*1100,x=s.pos.x+Math.cos(a)*r,z=s.pos.z+Math.sin(a)*r;
@@ -6173,7 +6186,7 @@ function foundDaughter(s){
   const best=wpick(sites,q=>q.sc,4);
   if(!best)return;
   const n=W.settlements.length;
-  if(doAct('village',best,{from:s})&&W.settlements.length>n)s.pop=Math.max(40,s.pop-45);
+  if(doAct('village',best,{from:s})&&W.settlements.length>n){const go=clamp((s.pop-s.pop/Math.max(1,press||1.1))*0.6,20,s.pop*0.3);s.pop=Math.max(30,s.pop-go);W.settlements[n].pop=Math.max(go,W.settlements[n].pop*0.5);} // the pioneers: as many as the parent could not feed
 }
 
 function settleLand(s){ // a new village takes up the waste nearest it, laid out in Hufen
@@ -6193,13 +6206,16 @@ function settleLand(s){ // a new village takes up the waste nearest it, laid out
 
 function addBuildingLive(s){ // growth: empty houses fill first, then the next open frontage; when there is none the town reaches further out
   const L=s._lay;if(!L||!s.growSlots)return null;
-  if(G.bldList.length>=G.bodies.instanceMatrix.count)return null;
+  if(!bldRoom(1))return null;
   const empty=s.buildings.find(b=>b.state==='ruin'&&b.deserted);
   if(empty){empty.state='sound';empty.deserted=false;s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(empty);return empty;}
+  const burnt=s.buildings.find(b=>b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120); // the rubble cleared from a burned plot: built on again before new ground is broken
+  if(burnt){burnt.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(burnt);return burnt;}
   for(let t=0;t<30;t++){
     if(!s.growSlots.length){
       if(day()<(s._extT||0)||!L.extend())return null;
-      s._extT=day()+360*2;s.growSlots=L.queue();stitchRoads();G.roadsDirty=true;
+      s._extT=day()+90; // (asked again next season, if the town still has nowhere to build)
+      s.growSlots=L.queue();stitchRoads();G.roadsDirty=true;
       if(G.feat)for(const st of s.streets)if(st.kind==='road')featStroke(2,st.pts,st.hw);
       if(!s.growSlots.length)return null;
     }
@@ -7649,8 +7665,7 @@ function tickEconomy(){
         const profit=c.value*0.35,lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;
         if(lord){const toll=profit*0.15*(d.works&&d.works.market?1.6:1);lord.gold=(lord.gold||0)+toll;book(lord,'markets',toll);W.treasury+=profit*(MOD.tax/100)*0.4;} // a lord's market pays him its dues, and the crown its aid
         else W.treasury+=profit*(MOD.tax/100);
-        d.prosperity=clamp(d.prosperity+0.4,0,100);
-        W.settlements[c.origin].prosperity=clamp(W.settlements[c.origin].prosperity+0.3,0,100);
+        d.tradeV=(d.tradeV||0)+c.value;W.settlements[c.origin].tradeV=(W.settlements[c.origin].tradeV||0)+c.value*0.7; // the trade is counted in both markets' surplus
         // plague travels the trade network
         const o=W.settlements[c.origin];
         if(o.infected/Math.max(1,o.pop)>0.02&&d.infected<1&&chance('sim',0.35*MOD.vir)){
@@ -7673,17 +7688,23 @@ function tickEconomy(){
 }
 
 /* ============================ POPULATION ================================= */
+function marketHeads(s){ // souls a place keeps by its market: the margin on trade passing through it, its workshops and offices, its share of the country's surplus, and (for a seat) the rents that come to it
+  if(s._mkY===day()-day()%30)return s._mkH;s._mkY=day()-day()%30;
+  const foodDay=NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish; // what a soul eats in a day, in coin
+  const trade=(s.tradeV||0)/120*0.35/foodDay; // the market's margin on the goods that came and went these four months
+  let craft=0;for(const q of lvJobs(s))craft+=q[2];craft*=8; // hands in its workshops, halls, wharves and at its market cross
+  let hinter=0;for(const o of W.settlements){if(o===s)continue;const dd=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);hinter+=o.pop*0.25*Math.exp(-dd/(1200*MAPK))*(o.kind==='village'?1:0.4);} // the country brings its surplus to the nearest markets
+  let rents=0;if(s===W.capital)for(const o of W.settlements){if(o!==s)rents+=o.pop*0.06;}else for(const h of W.houses)if(h&&W.settlements[h.seat]===s)for(const o of W.settlements)if(o!==s&&o.owner===W.houses.indexOf(h))rents+=o.pop*0.04; // a seat lives off the dues of its lands
+  s._mkH=trade+craft+hinter*clamp(s.prosperity/50,0.5,1.5)+rents;return s._mkH;}
 function carryingCap(s){ // souls the place can keep: the land it actually ploughs, its fisheries, and (for towns) its market
   if(G.land&&s.furl&&s.furl.length&&G.land.perHead>0){
     let bearing=0;for(const f of s.furl)if(ARABLE.has(f.kind)&&f.state===LS.TILLED&&f.lord===s.owner)bearing+=f.area;
     const yieldF=(1+Math.max(0,year()-1)*0.002)*MOD.harvest*(W.drought?0.7:1); // better ploughs and rotations, slowly, over the centuries
     const fed=bearing*yieldF/(landWt(s)*G.land.perHead)+s.res.fish*12;
-    let hinter=0; // the seat lives off the realm's rents and tolls; a market town off the surplus of its villages
-    if(s.kind==='capital')for(const o of W.settlements){if(o!==s)hinter+=o.pop*0.12;}
-    else if(s.kind==='town')for(const o of W.settlements)if(o.kind==='village'&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1600)hinter+=o.pop*0.3;
-    const market=((s.kind==='capital'?1200:s.kind==='town'?450:0)+hinter)*clamp(s.prosperity/60,0.4,1.4);
-    // while there is still land to take in, the land is no limit: people clear more as they need it; once it is gone, it is
-    return Math.max(40,s.landShort?fed+market:Math.max(fed+market,s.pop*1.35));
+    const market=marketHeads(s); // the living its trade, crafts and the country round about give: not a rank, what passes through
+    // the waste within reach that could still be taken in feeds people too, discounted by the clearing it needs (counted by the monthly land pass)
+    const waste=(s.wasteHa||0)*yieldF/(landWt(s)*G.land.perHead);
+    return Math.max(40,fed+market+waste);
   }
   const base=s.kind==='capital'?3600:s.kind==='town'?1500:320;
   const land=clamp(0.55+(s.res.farm*MOD.harvest)/160+s.res.fish/45,0.5,1.45);
@@ -7703,15 +7724,19 @@ function tickPopulation(){
        the realm now recovers from them instead of either dwindling or swelling without end. */
     if(s._room===undefined||day()%10===0)s._room=housing(s)+(s.growSlots?s.growSlots.length:0)*HOUSEHOLD*0.6+s.buildings.filter(b=>b.state==='ruin'&&!b.deserted).length*HOUSEHOLD; // free lots and burned houses can be built again (counted every ten days)
     const room=s._room;
-    const K=Math.min(carryingCap(s),room*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
+    const cap=carryingCap(s);s.cap=cap;const K=Math.min(cap,room*1.35);s.K=K; // people need roofs as well as bread: a cramped site builds upward, then stops
     const pf=clamp(s.prosperity/60,0.6,1.25),x=s.pop/K;
     const births=s.pop*(0.040/360)*MOD.birth*pf*clamp(1.6-x,0.1,1.2)*(1-hunger*0.8);
     const dbase=s.kind==='capital'?0.032:s.kind==='town'?0.030:0.026;
     const deaths=s.pop*(dbase/360)*MOD.mort*(1+hunger*4)*(s.siegeBy?1.5:1)*(x>1.3?1+(x-1.3):1);
-    s.pop=Math.max(5,s.pop+births-deaths); // newcomers and leavers are tickMigration's: they go where livelihood and room areif(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
+    s.pop=Math.max(5,s.pop+births-deaths); // newcomers and leavers are tickMigration's: they go where livelihood and room are
+    if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
     if(s.recovered>0)s.recovered*=0.9995; // immunity fades over years, not overnight
     s.unrest=clamp(s.unrest+hunger*1.6+(MOD.tax-12)*0.012-(s.festivalUntil>day()?0.5:0)-0.14,0,100);
-    s.prosperity=clamp(s.prosperity+(hunger>0.25?-0.35:0.06)-(s.siegeBy?0.5:0)-(s.quarantineUntil>day()?0.12:0),1,100);
+    { // prosperity is the place's surplus, measured: what its land and trade keep beyond its people's needs, the trade passing through, less hunger, disorder and danger; shocks knock it down and it returns toward what the economy supports
+      const lm=cap/Math.max(20,s.pop)-1,tr=(s.tradeV||0)/(s.pop+60);
+      const T=clamp(45+35*Math.tanh(1.3*lm)+20*Math.tanh(tr/3)-70*hunger-(s.unrest||0)*0.15-(s.siegeBy?25:0)-(s.quarantineUntil>day()?10:0),1,100);
+      s.prosperity=clamp(s.prosperity+(T-s.prosperity)/150,1,100);s.prosT=T;s.tradeV=(s.tradeV||0)*(1-1/120);}
     if(hunger>0.4&&!s.famineFlag&&s.pop>100){
       s.famineFlag=true;
       emit('trade',7,s.pos,((w)=>vary('famine',[()=>`Famine stalks ${s.name}; the granaries stand empty and the ${w} perish first.`,()=>`Famine comes to ${s.name}: the granaries stand empty, and the ${w} perish first.`,()=>`The granaries of ${s.name} stand empty, and famine stalks the streets; the ${w} perish first.`,()=>`${s.name} is in the grip of famine; the granaries stand empty, and the ${w} perish first.`,()=>`The ${w} of ${s.name} perish first as famine stalks the town and the granaries stand empty.`,()=>`There is famine in ${s.name}; the granaries stand empty and the ${w} are first to perish.`]))(['young','old','poor'][randi('sim',3)]));
@@ -8572,12 +8597,12 @@ function tickThreats(){
       emit('fates',8,s.pos,((wt)=>vary('fire_spreads',[()=>`Fire leaps from roof to roof in ${s.name}! The wind ${wt} the blaze.`,()=>`In ${s.name} fire leaps from roof to roof, and the wind ${wt} the blaze!`,()=>`The wind ${wt} the blaze at ${s.name}, where fire leaps from roof to roof!`,()=>`Roof to roof the fire runs in ${s.name}! The wind ${wt} the blaze.`,()=>`Fire takes one roof after another in ${s.name}! The wind ${wt} the blaze.`]))(wet?'and the rain contend with':'feeds'));}
     if(!s.fires.length)s._gfAnnounced=false;
   }
-  // rebuilding — scars heal slowly, gated on prosperity
-  if(day()%10===0)for(const s of W.settlements)for(const b of s.buildings){
-    if(b.state==='ruin'&&day()>b.rebuildT&&s.prosperity>40&&chance('sim',0.3)){
-      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(b);
+  // rebuilding: once the rubble is cleared, a burned house goes up again as soon as there are households wanting roofs and the means to pay the builders; while the town has empty houses, its ruins wait
+  if(day()%10===0)for(const s of W.settlements){const dem=s.pop/Math.max(1,housing(s)),p=clamp((dem-0.85)*1.5,0,0.6)*clamp(s.prosperity/50,0.3,1.5);if(p<=0)continue;for(const b of s.buildings){
+    if(b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120&&chance('sim',p)){
+      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(b);if(s.stores.timber>0)s.stores.timber=Math.max(0,s.stores.timber-4);
     }
-  }
+  }}
   // lightning ignition
   if(W.weather.state==='storm'&&chance('sim',0.02*dis)){
     const s=pick('sim',W.settlements);
@@ -8819,7 +8844,7 @@ const RESID=new Set(['court','cot','house','longhouse','burgher','shop','tavern'
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
   for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
-  for(const b of s.buildings)if(b.idx===undefined&&G.bldList.length<G.bodies.instanceMatrix.count){b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);if(G.land)clearLandUnder(b);}
+  for(const b of s.buildings)if(b.idx===undefined&&bldRoom(1)){b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);if(G.land)clearLandUnder(b);}
   G.bodies.count=G.roofs.count=G.bldList.length;G.bodies.instanceMatrix.needsUpdate=G.roofs.instanceMatrix.needsUpdate=true;
   if(s.wallRad)s.wallR=Math.max(...s.wallRad);
   s.growSlots=s._lay.queue();stitchRoads();G.roadsDirty=true;G.detDirty=true;rebuildWalls();
@@ -8840,7 +8865,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     if(s.pop0===undefined)s.pop0=s.pop;
     if(L.reuse)for(const b of L.reuse(Math.max(3,Math.round(s.buildings.length/25))))if(b.idx!==undefined)updateBuildingInstance(b);
     const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
-    if(s.kind==='village'&&AD()>=950&&s.pop>420&&s.prosperity>50&&(roadsN>=2||s.river||s.harbor)&&chance('sim',0.4)){
+    if(s.kind==='village'&&AD()>=950&&marketHeads(s)>Math.max(150,s.pop*0.35)&&(roadsN>=2||s.river||s.harbor)){ // a charter follows the trade: when a good share of the place lives by its market, it is made a town
       L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}
     else if(s.kind!=='village'&&!s.wallRad&&s.pop>850&&s.prosperity>48&&chance('sim',0.3)){
       L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
@@ -8859,7 +8884,10 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     if(!did&&s.kind!=='village'&&AD()>=1150)L.live.backyards();
     const nb=s.buildings.filter(b=>!b.removed&&b.state!=='gone').length;s._bPeak=Math.max((s._bPeak||0)*0.995,nb); // the most the town has been, slowly forgotten
     if(did){syncLive(s);emit('trade',6,s.pos,did);}
-    else if(s.growSlots&&s.growSlots.length<15){if(nb<s._bPeak*0.85)s.growSlots=L.queue(true);if(s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}s._room=undefined;} // the empty plots of a town that has lost its people first, then new lanes
+    { // plots enough for the households wanting houses now and for five years' growth: the empty plots of a town that has lost its people first, then new lanes as many as the shortfall needs
+      const wantH=Math.max(0,(s.pop-housing(s))/HOUSEHOLD)+s.pop*0.012*5/HOUSEHOLD+2;
+      if(s.growSlots&&s.growSlots.length<wantH*1.5){if(nb<s._bPeak*0.85)s.growSlots=L.queue(true);
+        if(s.growSlots.length<wantH*1.5){L.live.lanes(clamp(Math.ceil((wantH*1.5-s.growSlots.length)/8),1,6));s.growSlots=L.queue();}s._room=undefined;}}
     // aftermath of a siege: the suburbs burned to deny the enemy cover
     if(s._besieged&&!s.siegeBy){s._besieged=false;if(s.wallRad){L.live.siege();syncLive(s);}}
     if(s.siegeBy)s._besieged=true;
@@ -9022,35 +9050,34 @@ function tickStreets(){
     (s.history||(s.history=[])).push({yr:year(),t:`${nm} was cut through${sound.length?`; ${sound.length} house${sound.length>1?'s were':' was'} pulled down and their owners paid`:''}${burnt?' over ground the fire had cleared':''}.`});
     emit('trade',4,{x:(A.x+B.x)/2,z:(A.z+B.z)/2},vary('cut_street',[()=>`${s.name}: a new street, ${nm}, is cut straight through ${sound.length?`; ${sound.length} house${sound.length>1?'s are':' is'} pulled down, their owners paid ${Math.round(cost)} crowns`:' over the burnt ground'}. The carters bless it.`,
       ()=>`The long way round is no more: ${nm} is driven through ${s.name}${sound.length?`, and ${sound.length} house${sound.length>1?'s come':' comes'} down for it`:''}.`]));}}
-function tickGrowth(){
+function tickGrowth(){ // houses are built for households that have none, as fast as the place's means and its timber allow; empty houses fall vacant as the households thin; owners rebuild in better stuff where the value it adds repays the cost
   if(day()%6!==0)return;
   for(const s of W.settlements){
-    const room=housing(s);
-    if(s.pop>room*1.1&&s.prosperity>35&&!s.siegeBy){
-      const n=s.pop>room*1.5?3:1;let got=0; // far behind: the town fills quickly
-      for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b)got++;
-        if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`,()=>`${s.name} grows: builders are busy in the ${b.district} quarter, and new roofs rise there.`,()=>`New roofs rise in the ${b.district} quarter of ${s.name}, which grows apace.`,()=>`The ${b.district} quarter of ${s.name} spreads: new roofs rise, and the town grows.`]));}
-      if(!got&&chance('sim',0.5)){ // nowhere left to build: the town builds upward, the nearest houses first
-        const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0); // in a rich town's heart a fourth storey, jettied over the street
+    const room=housing(s),short=(s.pop-room)/HOUSEHOLD,means=clamp(s.prosperity/50,0.2,1.6); // households doubled up or lodging; what the place can pay its builders
+    if(short>0&&!s.siegeBy){
+      let n=Math.min(4,short*0.08*means*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // wattle and daub when there is no sawn timber: slower
+      for(let k=0;k<n;k++){const b=addBuildingLive(s);if(b){got++;if(s.stores.timber>0)s.stores.timber=Math.max(0,s.stores.timber-4);}
+        if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`]));}
+      if(!got&&n>0){ // nowhere left to build: the town builds upward where the rent is dearest
+        const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0);
         const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.arch!=='court'&&o.tier<capT).map(o=>[o,propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
-        const pk=wpick(low,x=>x[1]/Math.max(0.01,low[0][1])*3,1),b=pk&&pk[0]; // where the rent is dearest, it pays to build up
+        const pk=wpick(low,x=>x[1]/Math.max(0.01,low[0][1])*3,1),b=pk&&pk[0];
         if(b){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);
-          if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}
-      }
-    }else if(s.pop<room*0.5&&chance('sim',0.15)){ // too few to fill the houses: the outermost stand empty and fall in
+          if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}}
+    }else if(short<-1&&chance('sim',clamp(-short/Math.max(4,room/HOUSEHOLD)*0.8,0,0.5))){ // more roofs than households: the cheapest stand empty first, in proportion to the vacancy
       const out=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)).map(o=>[o,propValue(o)]).sort((x,y)=>x[1]-y[1]).slice(0,20);
-      const pk=wpick(out,x=>-x[1]/Math.max(0.01,out[out.length-1][1])*3,1),b=pk&&pk[0]; // the cheapest houses empty first: the outskirts, the hovels, the back lanes
+      const pk=wpick(out,x=>-x[1]/Math.max(0.01,out[out.length-1][1])*3,1),b=pk&&pk[0];
       if(b){b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}
     }
-    // prosperity slowly rebuilds in better material
-    if(s.prosperity>62&&!s.siegeBy&&chance('sim',0.25)){
+    // rebuilding in better stuff: where the value it adds over the years repays the cost, and the owner can pay
+    if(!s.siegeBy&&chance('sim',0.25*means)){
       const core=(s.extentR||s.radius||100)*0.4;
-      const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house'))); // stone for the rich heart of a town, if the stone can be had; the rest stays timber
-      if(ups.length){
-        const b=pick('sim',ups);
+      const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house')));
+      let best=null,bv=0;for(let k=0;k<Math.min(12,ups.length);k++){const b=ups[randi('sim',ups.length)],gain=propValue(b)*25*0.25/(1+0.25*b.tier),cost=b.w*b.d*(b.tier<1?0.8:2.5),v=gain-cost;if(v>bv){bv=v;best=b;}}
+      if(best){const b=best;
         b.tier++;if(b.tier===2)useStone(s,'house');
         const a=ARCH[b.arch];
-        b.h=a[2]*(0.8+b.tier*0.25); // taller and finer on the same lot (growing the footprint overlapped the neighbours)
+        b.h=a[2]*(0.8+b.tier*0.25);
         updateBuildingInstance(b);
         if(chance('sim',0.04))
           emit('trade',3,s.pos,`A ${a[4]} in ${s.name} is rebuilt in ${b.tier===2?'good stone':'timber and plaster'}; the street is the finer for it.`);
@@ -9155,7 +9182,7 @@ function doAct(act,p,opt){
       layoutSettlement(s);
       const jl=W.settlements[bj]._lay;if(jl&&jl.joinRoad(W.roads.length-1))syncLive(W.settlements[bj]); // the track enters the old place as a street
       stitchRoads();
-      for(const b of s.buildings){if(G.bldList.length>=G.bodies.instanceMatrix.count)break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
+      for(const b of s.buildings){if(!bldRoom(1))break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
       G.bodies.count=G.roofs.count=G.bldList.length;
       for(const b of s.buildings)clearLandUnder(b);
       if(G.land)settleLand(s);
