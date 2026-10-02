@@ -3973,32 +3973,35 @@ function casDesc(s){const R=casRing(s),c=casOf(s),k=casKeep(s),p=[];
 function casLvl(s){ // what the place is worth fortifying: a village's tower, a town's castle, a seat, the crown's own
   const seat=s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].seat===W.settlements.indexOf(s);
   return s.kind==='capital'?3:seat||s.role==='seat'||s.kind!=='village'&&s.role==='border'?2:s.kind!=='village'||s.role==='border'||s.role==='fort'?1:0;}
-function casNext(s,ad){const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-25),lv=casLvl(s);
-  const great=lv>=2,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
-  if((c.dmg||0)>0.08)return{k:'repair',cr:Math.round(200+c.dmg*1500),st:Math.round(c.dmg*200),t:'the battered castle repaired'};
-  if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))return{k:'keep',cr:500,st:150,t:'the keep rebuilt in stone'};
-  if(s.bailey&&!s.baileyStone&&ad>=1150)return{k:'bailey',cr:600,st:120,t:'the bailey walled in stone'};
-  if(!R&&k&&!k.motte&&ad>=1000&&lv>=1&&ok('ward'))return{k:'ward',cr:ad>=1150?900:400,st:ad>=1150?120:0,t:ad>=1150?'a curtain of stone about the keep':'a palisade about the keep'};
-  if(!R)return null;
-  if(k&&!k.motte&&!s.motte&&!s._keepRebuilt&&k.w<18&&ad>=1150&&lv>=1&&ok('keep'))return{k:'keep',cr:900,st:150,t:'the keep rebuilt as a great tower'};
-  if(R===s.ward&&!R.stone&&ad>=1150&&lv>=1)return{k:'wardStone',cr:700,st:120,t:'the palisade rebuilt in stone'};
-  if(st&&c.towers<[4,4,6,8][lv]&&ad>=1100)return{k:'towers',cr:350,st:40,t:'two more towers on the curtain'};
-  if(st&&c.gate===0&&ad>=1150&&(lv>=2||lv>=1&&(s.role==='border'||houseAtWar(s.owner))))return{k:'gate',cr:500,st:60,t:'a gatehouse'};
-  if(hall&&hall.tier<2&&ad>=1100)return{k:'hall',cr:300,st:40,t:'a hall of stone'};
-  if(!c.chapel&&ad>=1050&&lv>=2&&ok('chapel'))return{k:'chapel',cr:250,st:20,t:'a chapel in the yard'};
-  if(st&&!c.round&&ad>=1220&&c.towers>=6&&great)return{k:'round',cr:400,st:50,t:'the towers rebuilt round'};
-  if(st&&c.gate===1&&ad>=1230&&(lv>=3||great&&s.role==='border'))return{k:'barb',cr:450,st:50,t:'a barbican'};
-  if(st&&c.towers>=8&&c.gate>=1&&!c.outer&&ad>=1270&&lv>=3&&s.pop>900&&ok('outer'))return{k:'outer',cr:2200,st:220,t:'an outer curtain'};
-  return null;}
+function casNext(s,ad){ // the castle works worth doing next: each weighed by what it adds to the defence of what the castle protects, against the danger and the cost; the best that pays for itself
+  const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-10),lv=casLvl(s);
+  const hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
+  const seat=s.owner>0&&W.houses[s.owner]&&W.settlements[W.houses[s.owner].seat]===s;
+  const V=townWorth(s)*(seat||s===W.capital?1.6:1)+3000*(lv),th=townThreat(s),have=s.stores.stone||0,L=[];
+  const add=(k2,cr,stn,t2,g,dign)=>{const cost=Math.round(cr+(stn-Math.min(have,stn))*3),gain=g*th*V+(dign||0)*V;L.push({k:k2,cr,st:stn,t:t2,cost,gain,net:gain-cost});};
+  if((c.dmg||0)>0.02)add('repair',Math.round(200+c.dmg*1500),Math.round(c.dmg*200),'the battered castle repaired',c.dmg*0.6);
+  if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))add('keep',500,150,'the keep rebuilt in stone',0.06);
+  if(s.bailey&&!s.baileyStone&&ad>=1150)add('bailey',600,120,'the bailey walled in stone',0.05);
+  if(!R&&k&&!k.motte&&ad>=1000&&ok('ward'))add('ward',ad>=1150?900:400,ad>=1150?120:0,ad>=1150?'a curtain of stone about the keep':'a palisade about the keep',0.06);
+  if(R){
+    if(k&&!k.motte&&!s.motte&&!s._keepRebuilt&&k.w<18&&ad>=1150&&ok('keep'))add('keep',900,150,'the keep rebuilt as a great tower',0.05,0.01);
+    if(R===s.ward&&!R.stone&&ad>=1150)add('wardStone',700,120,'the palisade rebuilt in stone',0.05);
+    if(st&&ad>=1100)add('towers',350,40,'two more towers on the curtain',0.03/(1+c.towers/4));
+    if(st&&c.gate===0&&ad>=1150)add('gate',500,60,'a gatehouse',0.035);
+    if(hall&&hall.tier<2&&ad>=1100)add('hall',300,40,'a hall of stone',0,seat?0.02:0.006);
+    if(!c.chapel&&ad>=1050&&ok('chapel'))add('chapel',250,20,'a chapel in the yard',0,seat?0.012:0.004);
+    if(st&&!c.round&&ad>=1220&&c.towers>=4)add('round',400,50,'the towers rebuilt round',0.02);
+    if(st&&c.gate===1&&ad>=1230)add('barb',450,50,'a barbican',0.025);
+    if(st&&c.towers>=6&&c.gate>=1&&!c.outer&&ad>=1270&&ok('outer'))add('outer',2200,220,'an outer curtain',0.07);}
+  if(!L.length)return null;L.sort((a,b)=>b.net-a.net);return L[0];}
 function tickCastles(){
   const ad=AD();
   W.settlements.forEach((s,si)=>{if(day()%360!==(si*47+170)%360||!s._lay||!s._lay.live||s.siegeBy)return;
     if(!casKeep(s)&&!casRing(s))return;
     const hi=s.owner,Lh=hi>0?W.houses[hi]:null;if(Lh&&Lh.exiled)return;
     const c=casOf(s),n=casNext(s,ad);c.next=n;if(!n)return;
-    const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=Math.round(n.cr+(n.st-useS)*3); // a lord pays dear for stone carted from afar
-    const threat=(n.k==='repair'?2:0)+(s.role==='border'?1:0)+(houseAtWar(hi)?1:0)+(s.raidedUntil>day()-360*4?0.6:0)+(s.siegeBy?1:0);
-    if(purse(hi)<cost*(hi>0?2.5:4)||!chance('sim',0.14+0.14*threat))return; // built from the surplus, not the war chest; most of all when there is a threat
+    const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=n.cost; // a lord pays dear for stone carted from afar
+    if(n.net<=0||purse(hi)<cost*1.25)return; // worth it against the danger and what it protects, and within the purse (with a little held back)
     const k0motte=!!(casKeep(s)||{}).motte;let ok=true,sync=false;const L=s._lay.live,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);
     if(n.k==='keep'){ok=L.rebuildKeep();if(ok)s.motteStone=true;sync=true;}else if(n.k==='bailey')ok=L.stoneBailey();
     else if(n.k==='ward'){ok=L.ward(ad>=1150);sync=true;}else if(n.k==='outer'){ok=L.outer();sync=true;}else if(n.k==='chapel'){ok=L.chapel();sync=true;if(ok)c.chapel=true;}
@@ -4532,7 +4535,7 @@ function tickChurches(){
     let synced=false;
     for(const b of T){const ch=chOf(b);ch.cong=Math.round(s.pop*wt(b)/tot);
       ch.fund+=ch.cong*0.006*clamp(s.prosperity/50,0.3,2)+gifts*wt(b)/tot+(b.cathedral?8:0);
-      if((Lh?!Lh.exiled&&(Lh.gold||0)>3000:W.treasury>15000)&&(b.castle||b.cathedral||chance('sim',0.15))){const g=Math.min(20,purse(s.owner)*0.002);if(spend(s.owner,g)){if(Lh)book(Lh,'church works',-g);ch.fund+=g;}}
+      if(!(Lh&&Lh.exiled)){const spare=Math.max(0,purse(s.owner)-hostTarget(s.owner)*6),g=Math.min(30,spare*0.0015*(b.castle||b.cathedral?2:1)*wt(b)/tot*T.length);if(g>0.5&&spend(s.owner,g)){if(Lh)book(Lh,'church works',-g);ch.fund+=g;}} // the lord gives from what he has to spare beyond his host, more to his own chapel and the cathedral
       const n=chNext(s,b,ch,ad);ch.next=n;if(!n){ch.fund=Math.min(ch.fund,60);continue;} // nothing wanted: the surplus goes to the poor and the vestments
       const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=n.cr+(n.st-useS)*0.6; // stone the yards lack is carted in
       if(ch.fund<cost)continue;
@@ -5771,7 +5774,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     if(h.gold<-5000)h.gold=-5000; // no one lends a lord more than his lands can answer for
     const seatS=W.settlements[h.seat]||own[0];
     const dues=h.dues||1; // the player's lord may press his tenants harder, or ease them
-    const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)>1500?0.5:1); // far fiefs: the castellans skim
+    const rentOf=s=>dues*s.pop*0.06*clamp(s.prosperity/60,0.3,1.6)*(s.siegeBy?0.2:1)*(0.35+0.65*Math.exp(-dist2d(s.pos.x,s.pos.z,seatS.pos.x,seatS.pos.z)/(2000*MAPK))); // the farther the fief, the more the castellans skim
     const income=own.reduce((t,s)=>t+rentOf(s),0)*stewardship(notableById(h.head)); // a lord who can reckon and knows his fields gets more of his rents
     const castellans=own.reduce((t,s)=>t+(s===seatS?0:2+rentOf(s)*0.25),0); // each fief beyond the lord's hall keeps a castellan out of its own rents
     const hosts=W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.1:0.25),0);
@@ -5785,9 +5788,8 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     if(hi!==plyH()&&h.gold<-600&&own.length>1){
       const seat=W.settlements[h.seat]||own[0];
       const sell=own.filter(s=>s!==seat).sort((a,b)=>dist2d(b.pos.x,b.pos.z,seat.pos.x,seat.pos.z)-dist2d(a.pos.x,a.pos.z,seat.pos.x,seat.pos.z))[0];
-      const price=Math.round(sell.pop*1.6+300);
-      const crownShare=W.settlements.filter(x=>x.owner===0).length/W.settlements.length;
-      const buyers=W.houses.map((o,i)=>i).filter(i=>i!==hi&&!W.houses[i].exiled&&!atWar(i,hi)&&(i===0?W.treasury>price*3&&crownShare<0.4:W.houses[i].gold>price));
+      const price=Math.round(Math.max(150,rentOf(sell)*360*12)); // twelve years' purchase of its rents
+      const buyers=W.houses.map((o,i)=>i).filter(i=>i!==hi&&!W.houses[i].exiled&&!atWar(i,hi)&&(i===0?W.treasury>price*1.5:W.houses[i].gold>price));
       const near=i=>{let d=2500;for(const s of W.settlements)if(s.owner===i)d=Math.min(d,dist2d(s.pos.x,s.pos.z,sell.pos.x,sell.pos.z));return d;};
       const to=buyers.length?wpick(buyers,i=>-near(i)/600+((i===0?W.treasury:W.houses[i].gold)/Math.max(1,price))*0.2,0.7):-1;
       if(to>=0){if(to===0)W.treasury-=price;else{W.houses[to].gold-=price;book(W.houses[to],'land',-price);}h.gold+=price;book(h,'land',price);
@@ -5802,7 +5804,8 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
   // enfeoffment: a crown that holds too much grants its outlying towns to vassals (or recalls an exiled house to hold them)
   if(!W.war&&day()%360===(200%360)){
     const crownTowns=W.settlements.filter((s,si)=>si!==0&&s.owner===0&&!s.siegeBy);
-    if(crownTowns.length>(W.settlements.length-1)*0.4){
+    const reach=s=>Math.exp(-dist2d(s.pos.x,s.pos.z,W.capital.pos.x,W.capital.pos.z)/(3000*MAPK)); // how much of a town's dues reach the crown past its stewards
+    if(crownTowns.some(s=>reach(s)<0.45)){ // the crown grants what it cannot govern from its seat
       const far=crownTowns.sort((a,b)=>dist2d(b.pos.x,b.pos.z,W.capital.pos.x,W.capital.pos.z)-dist2d(a.pos.x,a.pos.z,W.capital.pos.x,W.capital.pos.z))[0];
       const loyal=W.houses.map((h,i)=>i).filter(i=>i>0&&!W.houses[i].exiled&&W.houses[i].loyalty>55&&!houseAtWar(i)&&(W.houses[i].gold??0)>-3000&&day()-(W.houses[i]._grantT||-1e9)>360*5);
       const exiled=W.houses.map((h,i)=>i).filter(i=>i>0&&W.houses[i].exiled&&!W.houses[i].extinct&&W.notables.some(n=>n.alive&&n.house===i&&ageOf(n)>=16)&&day()-(W.houses[i].exiledDay||0)>360*8); // only a house with someone left to recall
@@ -5820,16 +5823,16 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
       if(!son){const sx=chance('sim',0.7)?'m':'f';son=mkNotable({name:personName(sx,hi),sex:sx,age:24+randi('sim',16),house:hi,role:'cousin',traits:(twoTraits(),[]),agenda:'holds the march for the family'});son.birthDay=day()-son.age*360;}
       partition(hi,son);}}
   if(day()%360===215)for(let hi=0;hi<W.houses.length;hi++){ // lords (and the council) with silver to spare build up their towns
-    if(hi===plyH()||hi>0&&(W.houses[hi].exiled||(W.houses[hi].gold||0)<2500)||hi===0&&W.treasury<12000)continue;
+    if(hi===plyH()||hi>0&&W.houses[hi].exiled)continue;
     const own=W.settlements.filter(s=>s.owner===hi&&!s.siegeBy);
-    const opts=[];for(const t of own){const w=t.works||{};
-      if(!w.granary&&(t.hunger>0.05||t.pop>400))opts.push([t,'granary',500,2]);
-      if(!w.mill&&(t.res&&t.res.farm>6))opts.push([t,'mill',600,1.5]);
-      if(!w.market&&t.pop>350)opts.push([t,'market',800,1.2]);
-      if(!(t.clearUntil>day())&&t.landShort)opts.push([t,'clearing',400,1.8]);}
-    const o=opts.length?wpick(opts,x=>x[3]+x[0].pop/800,1):null;if(!o||purse(hi)<o[2]*2)continue;
+    const opts=[];for(const t of own){const w=t.works||{},rents=townWorth(t)/25+t.pop*0.4; // each work by what it would bring in a year, against its cost
+      if(!w.granary)opts.push([t,'granary',500,t.pop*(0.15+(t.hunger||0)*3)]);
+      if(!w.mill)opts.push([t,'mill',600,(t.res?t.res.farm:0)*t.pop*0.004+rents*0.03]);
+      if(!w.market)opts.push([t,'market',800,rents*0.08+marketHeads(t)*0.2]);
+      if(!(t.clearUntil>day())&&t.landShort)opts.push([t,'clearing',400,t.pop*0.5*clamp(t.pop/Math.max(40,t.cap||t.pop)-0.8,0,1)]);}
+    const spare=purse(hi)-hostTarget(hi)*4,o=opts.filter(x=>x[3]*15>x[2]&&x[2]*1.2<spare).sort((a,b)=>b[3]/b[2]-a[3]/a[2])[0];if(!o)continue; // the best return that pays for itself in fifteen years, from silver to spare
     const[t,k,c]=o;if(hi>0){W.houses[hi].gold-=c;book(W.houses[hi],'works',-c);}else W.treasury-=c;
-    if(k==='clearing')t.clearUntil=day()+360*3;else{(t.works||(t.works={}))[k]=day();if(k==='market')t.prosperity=clamp(t.prosperity+5,0,100);}
+    if(k==='clearing')t.clearUntil=day()+360*3;else{(t.works||(t.works={}))[k]=day();if(k==='market')t.tradeV=(t.tradeV||0)+400;} // a charter brings the fair's trade
     emit(hi>0?'house':'trade',3,t.pos,`${hi>0?W.houses[hi].name:'The crown'} ${k==='mill'?'builds a mill':k==='granary'?'builds a granary':k==='market'?'grants a market charter':'sets assarters to clear the waste'} at ${t.name}.`);
   }
   if(day()%360===250)for(let a=1;a<W.houses.length;a++){const A=W.houses[a];if(a===plyH()||A.exiled||(A.gold||0)<1500)continue; // old grudges are paid in sedition
@@ -7245,7 +7248,7 @@ function showInspect(pk){
       if(H.length>4)h+=row('Lodgers',`${H.length-4} more households`);}
     if(b.state==='sound'&&RESID.has(b.arch))h+=row('Worth',`${propValue(b).toFixed(1)} g a year in rent${b.lot?`, on a lot of ${Math.round((()=>{let a=0;const P=b.lot;for(let i=0,j=P.length-1;i<P.length;j=i++)a+=(P[j].x+P[i].x)*(P[j].z-P[i].z);return Math.abs(a/2);})())} m²`:''}`);
     if(b.wallhouse)h+=row('Built','into the old town wall, of its stone');
-    if(b.arch==='keep'){h+=row('Castle',esc(casDesc(b.s)));const c=casOf(b.s);if(c.next)h+=row('Next work',`${esc(c.next.t)} (~${Math.round(c.next.cr+c.next.st*1.5)} crowns, when the lord has them to spare)`);}
+    if(b.arch==='keep'){h+=row('Castle',esc(casDesc(b.s)));const c=casOf(b.s);if(c.next)h+=row('Next work',`${esc(c.next.t)} (~${Math.round(c.next.cost||c.next.cr)} crowns; ${c.next.net>0?'worth it against the danger, when the lord can pay':'not yet worth the cost in this peace'})`);}
     if(b.arch==='temple'&&b.state!=='gone'){const ch=chOf(b);h+=row('Fabric',esc(chFabric(b)));
       h+=row('Congregation',`room for ~${chCap(b)} standing${ch.cong?`; a parish of ${ch.cong}${chCap(b)<ch.cong*0.5?' — crowded at mass':''}`:''}`);
       h+=row('Fabric fund',`${Math.round(ch.fund)} crowns${ch.next?`; saving for ${ch.next.t} (${Math.round(ch.next.cr+ch.next.st*0.6)} if the stone is bought)`:''}${ch.cramped?'; no room to grow':''}`);}
@@ -8888,7 +8891,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
       if(L.live.wall()){s.murage-=wallCost(s,s.walls>=2);s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
       else s._wallYr=year()-30;} // the old wall still serves: ask again in fifteen years
     else if(s.walls===1&&AD()>=1150&&(s.murage||0)>=wallCost(s,true)&&townThreat(s)*townWorth(s)*0.1>wallCost(s,true)&&hasStone(s,'wall')&&L.live.stoneWall()&&(useStone(s,'wall'),s.murage-=wallCost(s,true),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
-    else if(s.kind!=='village'&&AD()>=1000&&s.pop>900&&parishNeed(s)&&chance('sim',0.3)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
+    else if(AD()>=1000&&s.pop>150&&parishNeed(s)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
     else if(s.kind!=='village'&&AD()>=1150&&(s.role==='crossing'||s.kind==='capital'&&s.river)&&s.pop>900&&chance('sim',0.1)&&L.live.neustadt())did=`The lord plants a “New Town” across the river from ${s.name}: one straight street of equal plots.`;
     else if(s.bastions&&(s.role==='border'||s.kind==='capital')&&!s.citadel&&chance('sim',0.3)&&hasStone(s,'citadel')&&L.live.citadel()&&(useStone(s,'citadel'),true))did=`A star citadel is raised astride the walls of ${s.name}, a quarter razed for it.`;
