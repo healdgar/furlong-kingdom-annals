@@ -4109,9 +4109,10 @@ function planGrid(s,poly){ // a new quarter: straight streets a burgage plot apa
     const nearOld=(x,z)=>{const n=nearestStreetPt(s,x,z);return n?n.d:1e9;},clear=(p,q)=>resample([p,q],5).every(r=>planCellOK(r.x,r.z)&&!riverAt(r.x,r.z,3));
     const kept=pieces.filter(([p,q])=>!(nearOld(p.x,p.z)<9&&nearOld(q.x,q.z)<9&&nearOld((p.x+q.x)/2,(p.z+q.z)/2)<9)); // already a street there
     const meets=(e,self)=>nearOld(e.x,e.z)<8||kept.some(P=>P!==self&&(dist2d(P[0].x,P[0].z,e.x,e.z)<8||dist2d(P[1].x,P[1].z,e.x,e.z)<8||segDist(e.x,e.z,P[0],P[1])<6));
-    lines.length=0;for(const P of kept){let pts=[P[0],P[1]];
-      for(const e of[0,1]){const q=pts[e?pts.length-1:0];if(meets(q,P))continue;const n=nearestStreetPt(s,q.x,q.z);
-        if(n&&n.d<55&&clear(q,n)){if(e)pts.push({x:n.x,z:n.z});else pts.unshift({x:n.x,z:n.z});}} // the loose end carried on to the old street it points at
+    lines.length=0;for(const P of kept){let pts=[P[0],P[1]],tied=0;
+      for(const e of[0,1]){const q=pts[e?pts.length-1:0];if(meets(q,P)){tied++;continue;}const n=nearestStreetPt(s,q.x,q.z);
+        if(n&&n.d<55&&clear(q,n)){tied++;if(e)pts.push({x:n.x,z:n.z});else pts.unshift({x:n.x,z:n.z});}} // the loose end carried on to the old street it points at
+      const len=polyLen(pts);if(!tied||(tied<2&&len<30))continue; // no stubs to nowhere
       lines.push(resample(pts,6));}}
   if(lines.length&&bd<120&&!lines.some(L=>[L[0],L[L.length-1]].some(q=>{const n=nearestStreetPt(s,q.x,q.z);return n&&n.d<8;}))){let best=null,bq=1e9;for(const L of lines)for(const q of[L[0],L[L.length-1]]){const d=nearestStreetPt(s,q.x,q.z);if(d&&d.d<bq){bq=d.d;best=[q,d];}} // tied in to the old streets
     if(best&&bq<90)lines.push(resample([{x:best[0].x,z:best[0].z},{x:best[1].x,z:best[1].z}],6));}
@@ -4256,6 +4257,13 @@ function tickGarrisons(){ // monthly: each town musters men to its watch, from i
   for(const s of W.settlements){if(s.siegeBy)continue;const need=garrisonNeed(s),g=s.garrison||0;if(g>=need*0.9||s.pop<40)continue;
     const k=Math.min((need-g)*0.25,s.pop*0.01),cost=k*1.5;if(purse(s.owner)<cost*3)continue;
     spend(s.owner,cost);if(s.owner>0)book(W.houses[s.owner],'garrisons',-cost);s.garrison=g+k;}} // the watch are townsmen serving their turn: they do not leave the town's roll
+function tickCallToArms(){ // an enemy host within a day and a half's march: the town arms its own men, as many as its means and its fear allow; they go back to work when the danger passes
+  if(day()%2)return;const H=W.armies.filter(b=>!b.gone&&b.state!=='rout'&&b.strength>=20).map(b=>({b,p:armySimPos(b)}));
+  for(const s of W.settlements){if(s.pop<40)continue;let near=1e9,foe=null;for(const{b,p}of H)if(atWar(b.house,s.owner)){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<near){near=d;foe=b;}}
+    if(near<1800&&!(s.militia>0)){const share=0.04+(s.walls>0?0.04:0)+0.05*clamp(s.prosperity/100,0,1)+(casRing(s)?0.02:0); // walls to man and silver for arms bring more men out
+      s.militia=s.pop*share;s.calmDays=0;if(!W.prehistory&&(s.pop>250||s.owner===plyH()))emit('war',s.owner===plyH()?6:4,s.pos,`The bells of ${s.name} ring backwards: ${Math.round(s.militia)} townsmen take up arms as ${foe.name.replace(/^Host/,'the host')} draws near.`);}
+    else if(s.militia>0){s.prosperity=Math.max(0,s.prosperity-0.08); // the men on the walls are not in the fields and shops
+      if(near>2600&&!s.siegeBy){s.calmDays=(s.calmDays||0)+2;if(s.calmDays>=6){s.militia=0;if(!W.prehistory&&s.owner===plyH())emit('war',3,s.pos,`The danger past, the men of ${s.name} put up their arms and go back to their work.`);}}else s.calmDays=0;}}}
 function tickWallWorks(){for(const s of W.settlements)if(s.wallBuild&&wallProg(s)>=1){delete s.wallBuild;G.wallsDirty=true;
   if(!W.prehistory)emit('trade',4,s.pos,`The ${s.bastions?'new bastioned trace':s.walls>=2?'stone walls':'palisade'} of ${s.name} ${s.walls>=2?'are':'is'} finished, the circuit closed at last.`);}}
 function wallDmgAt(s,a){const D=s.wallDmg;if(!D)return 0;const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN;return Math.max(D[i],D[(i+1)%WALLN]);}
@@ -6651,14 +6659,22 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
       pos.push(p.x+nx,y,p.z+nz,p.x-nx,y,p.z-nz);if(k)idx.push(k*2-2,k*2-1,k*2,k*2-1,k*2+1,k*2);});
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
     const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op,depthWrite:false,side:THREE.DoubleSide}));m.renderOrder=3;grp.add(m);};
-  if(overlayMode==='territory'){ // each house's name over the heart of its lands, and a legend
+  const standing=hi=>{const me=plyH()>=0?plyH():0,h=W.houses[hi],feud=(W.feuds||[]).filter(f=>f.a===hi||f.b===hi).map(f=>W.houses[f.a===hi?f.b:f.a].name.replace(/^House /,''));
+    const grudge=h.grudges&&h.grudges[me]&&hi!==me;let t,c;
+    if(hi===me){t=plyH()>=0?'you':'the crown';c='#e8c247';}
+    else if(atWar(me,hi)){t='⚔ at war with you';c='#e5534b';}
+    else if(inRevolt(hi)){t='in revolt against the crown';c='#e5534b';}
+    else if(hi===0){t='the crown, your liege';c='#e8c247';}
+    else{const l=Math.round(h.loyalty);t=(me===0?'vassal':'fellow vassal')+` · ${l>=65?'loyal':l>=40?'uneasy':'disaffected'} (${l})`;c=l>=65?'#7fbf6a':l>=40?'#d9a441':'#e5884b';}
+    if(feud.length&&!atWar(me,hi))t+=` · feuding with ${feud.join(', ')}`;if(grudge)t+=' · bears you a grudge';return{t,c,foe:atWar(me,hi)||inRevolt(hi)&&me===0};};
+  if(overlayMode==='territory'){ // each house's name over the heart of its lands, and a legend: and how it stands toward you
     const L=[];W.houses.forEach((h,hi)=>{if(h.exiled||h.extinct)return;const F=G.land?G.land.F.filter(f=>f.lord===hi):[];const towns=W.settlements.filter(s=>s.owner===hi);if(!F.length&&!towns.length)return;
       let x=0,z=0,a=0;for(const f of F){x+=f.x*(f.area+1);z+=f.z*(f.area+1);a+=f.area+1;}if(!a){x=towns[0].pos.x;z=towns[0].pos.z;a=1;}x/=a;z/=a;
       const c=new THREE.Color();if(G.land&&G.land.uni)c.copy(G.land.uni.uHouse.value[hi+1]);else c.setHex(h.sigilHue[0]);
-      const sp=makeTextSprite(h.name.replace(/^House /,''),1,'#'+c.clone().offsetHSL(0,0,0.18).getHexString());sp.material.sizeAttenuation=false;sp.scale.set(sp.userData.w*0.0011,sp.userData.h*0.0011,1);
-      sp.position.set(x,hAt(x,z)+60,z);sp.renderOrder=7;grp.add(sp);L.push({h,hi,c,towns:towns.length,ha:F.reduce((t,f)=>t+f.area,0)/10000});});
+      const st=standing(hi),sp=makeTextSprite((st.foe?'⚔ ':'')+h.name.replace(/^House /,'')+(hi===(plyH()>=0?plyH():-9)?' (you)':''),1,'#'+c.clone().offsetHSL(0,0,0.18).getHexString());sp.material.sizeAttenuation=false;sp.scale.set(sp.userData.w*0.0011,sp.userData.h*0.0011,1);
+      sp.position.set(x,hAt(x,z)+60,z);sp.renderOrder=7;grp.add(sp);L.push({h,hi,c,st,towns:towns.length,ha:F.reduce((t,f)=>t+f.area,0)/10000});});
     let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
-    el.innerHTML='<b>Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small></div>`).join('');
+    el.innerHTML='<b>Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small><div style="font-size:11px;margin-left:18px;color:${o.st.c}">${esc(o.st.t)}</div></div>`).join('');
     el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));}
   else if(overlayMode==='tongue'){ // who speaks what: each place's fields in its tongue; the legend gives places and souls, and the mixed towns
     const by={};for(const s of W.settlements){if(!s.cult)continue;const o=by[s.cult]||(by[s.cult]={n:0,pop:0,x:0,z:0});o.n++;o.pop+=s.pop;o.x+=s.pos.x*s.pop;o.z+=s.pos.z*s.pop;}
@@ -6917,6 +6933,7 @@ function onClick(e){
         if(dist2d(p.x,p.z,s.pos.x,s.pos.z)>(s.radius||90)*2)emit('crown',2,p,'The road must end at a place.');else crownRoad(arg,i);}
       else if(mode==='pave'){const g=groundPick(p.x,p.z);if(g&&g.type==='road')paveRoad(g.r);else emit('crown',2,p,'There is no road there to pave.');}
       else if(mode==='buyland'){const f=G.land&&furlongAt(p.x,p.z);if(f)buyLand(f);}
+      else if(mode==='seize'){const f=G.land&&furlongAt(p.x,p.z);if(f&&seizeLand(f))setPlaceMode('seize',null,'Click another furlong to seize (a host of yours must be within 450 m) — Esc to stop');}
       else if(mode==='clear'){if(clearDistrict(p))setCd('d_clear',90);}
       else if(/^l(road1|road2|pave|village)$/.test(mode))lordPlace(mode,p,arg);
       else doAct(mode,p);
@@ -7087,7 +7104,7 @@ function showInspect(pk){
     if(s.wardOf!=null){const b=W.settlements[s.wardOf];h+=row('Ward of',`${esc(b.name)} since ${s.wardSince}; one market, one lord`);}
     {const wd=W.settlements.filter(o=>o.wardOf!=null&&W.settlements[o.wardOf]===s);if(wd.length)h+=row('Wards',`${wd.map(o=>esc(o.name)).join(', ')}; ${Math.round(s.pop+wd.reduce((t,o)=>t+o.pop,0)).toLocaleString()} souls in all`);}
     {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
-    h+=row('Garrison',`${Math.round(s.garrison)} men of the watch${s.garrison<garrisonNeed(s)*0.85?` (wants ${Math.round(garrisonNeed(s))}: mustering)`:''}`);
+    h+=row('Garrison',`${Math.round(s.garrison)} men of the watch${s.garrison<garrisonNeed(s)*0.85?` (wants ${Math.round(garrisonNeed(s))}: mustering)`:''}${s.militia>0?`; ${Math.round(s.militia)} townsmen under arms (call to arms)`:''}`);
     if(s.harbor){const B=berthsOf(s),wf=B.filter(b=>!b.shore).length/2,sh=(W.ships||[]).filter(x=>x.port===W.settlements.indexOf(s));
       h+=row('Port',`${wf?wf+' wharf'+(wf>1?'s':''):'no wharf; boats come to the shore'}; ${B.length} berth${B.length>1?'s':''}; ${sh.filter(x=>x.phase==='dock').length} ship${sh.filter(x=>x.phase==='dock').length===1?'':'s'} alongside${sh.some(x=>x.phase==='in'&&x.waited)?', others lying off':''}; berths ${((s.portLoad||0)/Math.max(1,B.length)*100).toFixed(0)}% taken last year`);
       if((s.stores.spice||0)+(s.stores.silk||0)>=1)h+=row('From over the sea',`${Math.round(s.stores.spice||0)} spice, ${Math.round(s.stores.silk||0)} silk in the warehouses`);}
@@ -8118,7 +8135,7 @@ function tickMilitary(){
             if(a.house===campHouse())achGet('storm');
             if(g)emit('war',7,{x:g.x,z:g.z},`The gate of ${s.name} gives way under the ram; ${a.name.replace(/^Host/,'the host')} pours in through the breach.`);}
           else{
-            a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;
+            a.strength*=0.65+rand('sim')*0.15;a.morale=Math.max(20,a.morale-15);s.garrison*=0.85;if(s.militia)s.militia*=0.8;
             if(s.wallRad&&a.siegeArc){const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.1,0.25);}
             if(a.strength<D*0.6){s.siegeBy=null;liftSiege(a);a.siegeArc=null;a.state='idle';marchArmy(a,a.home);a.why=`beaten back from the walls of ${s.name}`;a.holdUntil=day()+60;
               if(s.owner===campHouse())achGet('held');
@@ -8129,7 +8146,7 @@ function tickMilitary(){
           }
         }
       }else if(chance('sim',0.01)){ // sortie
-        if(resolveClash(a,{strength:s.garrison*3+sheltered(s),morale:60,house:s.owner,name:'garrison of '+s.name})){
+        if(resolveClash(a,{strength:s.garrison*3+(s.militia||0)*1.5+sheltered(s),morale:60,house:s.owner,name:'garrison of '+s.name})){
           emit('war',6,s.pos,vary('sortie',[()=>`A sortie from ${s.name} is beaten back with slaughter at the gates.`,()=>`The garrison of ${s.name} sallies out and is beaten back with slaughter at the gates.`,()=>`Men sally from ${s.name}, but are beaten back with slaughter at the gates.`,()=>`At the gates of ${s.name} a sortie is driven in with slaughter.`,()=>`${s.walls>=2?'From behind the walls':s.walls?'From behind the palisade':'From behind the barricades'} of ${s.name} a sortie is made, and beaten back with slaughter at the gates.`,()=>`The townsmen of ${s.name} make a sortie and are beaten back with slaughter at the gates.`,()=>`Slaughter at the gates of ${s.name}: a sortie is beaten back.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, a sortie from ${s.name} is beaten back with slaughter at the gates.`]));
         }else{
           liftSiege(a);routHome(a,`the siege of ${s.name} failed`);
@@ -8143,6 +8160,14 @@ function tickMilitary(){
     else if(a.state==='rout'&&a.hold&&now>=a.departDay+4){const p=armySimPos(a);a.state='idle';a.field={x:p.x,z:p.z};a.at=nearestSettlementIdx(p.x,p.z);a.morale=Math.max(a.morale,40);a.why=null; // your captains rally the men after a few days' flight
       emit('war',4,p,`${a.name} rallies near ${W.settlements[a.at].name}${a.nextOrder!=null?' and turns as you commanded':' and awaits your word'}.`);if(a.nextOrder!=null){const n=a.nextOrder;a.nextOrder=null;marchArmy(a,n);}}
   }
+  // a battle draws in any host near enough to hear it: it comes up on the side of its friends
+  {const prim=W.armies.filter(a=>!a.gone&&a.state==='battle'&&!a.joined&&a.foe&&a.battlePos);
+   if(prim.length)for(const x of W.armies){if(x.gone||x.state==='battle'||x.state==='rout'||x.strength<5)continue;const p=armySimPos(x);if(p.sea)continue;
+    for(const P of prim){const E=P.foe;if(!E||E.gone||dist2d(p.x,p.z,P.battlePos.x,P.battlePos.z)>500||!atWar(x.house,E.house)||atWar(x.house,P.house))continue;
+      x._resume=x.state==='march'?{f:clamp((now-x.departDay)/Math.max(0.01,x.arriveDay-x.departDay),0,1)}:null;liftSiege(x);
+      x.state='battle';x.joined=P;x.foe=E;x.battlePos=P.battlePos;x.battleName=P.battleName;x.battleStart=now;x.field=null;x.chase=null;x._spos={x:P.battlePos.x,z:P.battlePos.z};
+      P.battleUntil=E.battleUntil=Math.min(P.battleUntil+1,(P.battleStart||now)+6);x.battleUntil=P.battleUntil; // a greater fight lasts longer
+      emit('war',7,P.battlePos,`${x.name} comes up at ${P.battleName} and throws ${Math.round(x.strength)} men in on the side of ${P.name.replace(/^Host/,'the host')}.`);break;}}}
   // field battles: hostile armies in contact
   for(let i=0;i<W.armies.length;i++)for(let j=i+1;j<W.armies.length;j++){
     const a=W.armies[i],b=W.armies[j];
@@ -8170,10 +8195,14 @@ function tickMilitary(){
   }
   for(const a of W.armies){
     if(a.gone)continue;
+    if(a.joined){const P=a.joined;if(P.gone||P.state!=='battle'){a.joined=null;a.foe=null;if(a.state==='battle')resumeAfterBattle(a);}continue;} // a reinforcement fights and falls with the host it came to help
     if(a.state==='battle'&&day()>=a.battleUntil&&a.foe){
       const b=a.foe;
       if(b.state!=='battle'||b.gone){resumeAfterBattle(a);continue;}
-      const aWins=resolveClash(a,b);
+      const JA=W.armies.filter(x=>x.joined===a&&!x.gone),JB=W.armies.filter(x=>x.joined===b&&!x.gone),sa=a.strength,sb=b.strength;
+      a.strength+=JA.reduce((t,x)=>t+x.strength*(x.morale/Math.max(1,a.morale)),0);b.strength+=JB.reduce((t,x)=>t+x.strength*(x.morale/Math.max(1,b.morale)),0); // the whole of each side weighed together
+      const aWins=resolveClash(a,b);a.strength=sa;b.strength=sb;
+      for(const[x,win]of[...JA.map(x=>[x,aWins]),...JB.map(x=>[x,!aWins])]){x.joined=null;x.foe=null;x.atGates=null;if(win){x.strength*=0.85;musterSync(x);resumeAfterBattle(x);}else{x.strength*=0.42;x.morale=35;musterSync(x);routFromField(x);if(x.strength<(x.standing?10:40)&&!x.gone)disbandArmy(x);}}
       const w=aWins?a:b,l=aWins?b:a;
       const cw=notableById(w.commander),cl=notableById(l.commander);
       const pos=a.battlePos||{x:a._spos.x,z:a._spos.z};
@@ -8244,7 +8273,7 @@ function fortOf(s){ // what the works and the lie of the land multiply the defen
   const pr=prominence(s);
   if(pr>8){m*=1+Math.min(0.4,pr/100);parts.push(`high ground (${Math.round(pr)} m)`);}
   return {mult:m,parts};}
-function defenceOf(s){return ((s.garrison||0)+s.pop*0.05+sheltered(s))*fortOf(s).mult;}
+function defenceOf(s){return ((s.garrison||0)+(s.militia||0)*0.7+s.pop*0.05+sheltered(s))*fortOf(s).mult;} // the watch, the townsmen under arms (less use than soldiers), every householder at need, and any host within
 function fitToCampaign(a){return a.strength>=Math.max(30,hostTarget(a.house)*0.45);}
 function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the rebellion, or a private war)?
   return atWar(a.house,s.owner);
@@ -8298,6 +8327,7 @@ function resolveClash(a,b){
   return pa*(0.7+rand('sim')*0.6)>pb*(0.7+rand('sim')*0.6);
 }
 function takeSettlement(a,s){
+  s.militia=0;
   const si=W.settlements.indexOf(s);
   const cmd=notableById(a.commander);
   const cruel=cmd&&cmd.traits.includes('cruel');
@@ -9091,7 +9121,7 @@ function simTick(){
   tickPolitics();
   tickMilitary();tickDomains();
   tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();
+  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();
   if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -9443,6 +9473,7 @@ const DECREES=[
   {k:'road',label:'Lay a road',cost:0,desc:'pick two places · priced by the ground between',place:'road1',hint:'Click the place the road starts from — Esc to cancel'},
   {k:'pave',label:'Pave a road',cost:0,desc:'click a road · carts a third faster',place:'pave',hint:'Click the road to pave — Esc to cancel'},
   {k:'buyland',label:'Buy land',cost:0,desc:'click a lord\'s furlong · it pays rent to the crown',place:'buyland',hint:'Click the furlong to buy — Esc to cancel'},
+  {k:'seize',label:'Seize land by force',cost:0,desc:'click a lord\'s furlong near one of your hosts · no price, but the lord and his peers remember',place:'seize',hint:'Click the furlong to seize (a host of yours must be within 450 m) — Esc to cancel'},
   {k:'plan',label:'Plan works with the brush',cost:0,desc:'paint streets, squares, a wall or a new quarter in a crown town · priced by the houses and ground under the brush',place:'plan'},
   {k:'clear',label:'Clear a district',cost:0,cd:90,desc:'crown towns: condemned, cleared, laid out anew · a lord\'s town: offer him a grant',place:'clear',hint:'Click the quarter to pull down — Esc to cancel'},
   {k:'host',label:'Raise the royal host',cost:1000,cd:45,ok:()=>!!W.war||'only in war',desc:'a fresh crown army musters at the capital',
@@ -9654,6 +9685,19 @@ function buyLand(f){
   emit('crown',3,{x:f.x,z:f.z},`The crown's envoys ride to ${h.name} with an offer of ${price.toLocaleString()} gold for a furlong near ${nearestPlaceName(f.x,f.z)}.`);
   return true;
 }
+function seizeLand(f){ // taking another's furlong by force: a host must stand over it; held by the sword until your own places reach it; the lord you take it from remembers
+  const me=plyH(),who=me>0?'house':'crown';if(!f||!G.land)return false;const at={x:f.x,z:f.z};
+  if(f.lord===me){emit(who,2,at,'That land is yours already.');return false;}
+  if(f.lord<0){emit(who,2,at,'No lord holds that ground: it is waste, yours to clear or settle, not to seize.');return false;}
+  if(f.core>=0){emit(who,2,at,`That is the ground of ${W.settlements[f.core].name}, and goes with the town: to have it, take the town.`);return false;}
+  const hosts=W.armies.filter(a=>!a.gone&&a.house===me&&a.state!=='battle'&&a.state!=='rout'),near=hosts.find(a=>{const p=armySimPos(a);return dist2d(p.x,p.z,f.x,f.z)<450;});
+  if(!near){emit(who,3,at,'No host of yours stands near enough to take it: march one there first (within 450 m).');return false;}
+  const hi=f.lord,h=W.houses[hi];setLord(f,me,true);f.seized={from:hi,day:day()};refreshOverlay();
+  if(h&&hi>0){h.seizures=(h.seizures||0)+1;h.loyalty=clamp(h.loyalty-(me===0?6:3)-h.seizures*2,0,100);(h.grudges||(h.grudges={}))[me]=true; // the dispossessed: the more you take, the deeper it goes
+    W.houses.forEach((o,oi)=>{if(oi>0&&oi!==hi&&oi!==me&&!o.exiled)o.loyalty=clamp(o.loyalty-(me===0?1:0.5),0,100);});} // the other lords wonder whose fields are next
+  if(me===0)W.legitimacy=clamp(W.legitimacy-0.5,0,100);
+  emit(who,5,at,`${near.name} drives off ${h?h.name+'’s':'the'} reeve and takes the furlong near ${nearestPlaceName(f.x,f.z)} by force${h&&hi>0?`; ${h.name} will not forget it`:''}.`);
+  return true;}
 function clearDistrict(p){
   const si=nearestSettlementIdx(p.x,p.z),s=W.settlements[si];if(!s||!s._lay||!s._lay.live.clear)return false;
   const R=30,gone=s.buildings.filter(b=>!b.inst&&!b.removed&&b.state!=='gone'&&dist2d(b.x,b.z,p.x,p.z)<R);
@@ -9979,6 +10023,7 @@ function lordPanelHTML(){
   x+=cbtn('lord','muster','Call out the levy',300,cd('l_muster'),'tenants take up arms; they are paid while they serve');
   if(hosts.some(a=>!a.standing))x+=cbtn('lord','dismiss','Send the levies home',0,'','they go back to their fields');
   x+=cbtn('lord','road','Lay a road… (click your town, then another)',0,'','surveyed and paid for month by month');
+  x+=cbtn('lord','seize','Seize land by force… (click a furlong near your host)',0,'','no price paid; the lord you take it from bears a grudge');
   x+=cbtn('lord','pave','Pave a road… (click a road to your town)',0,'','carts go a third faster');
   x+=cbtn('lord','plan','Plan works with the brush…',0,'','streets, squares, a wall, a new quarter in your towns');
   x+=cbtn('lord','village','Found a village… (click open ground)',1200,cd('l_vil'),'on your own land or unclaimed waste');
@@ -10019,6 +10064,7 @@ function lordCmd(cmd,arg){
     case 'dismiss':{let n=0;for(const a of [...W.armies])if(a.house===hi&&!a.standing&&!a.gone&&a.state!=='battle'&&!inRevolt(hi)){disbandArmy(a);n++;}
       if(n)emit('war',3,seat.pos,`${h.name} sends its levies home to their fields.`);break;}
     case 'plan':planOpen(hi);break;
+    case 'seize':setPlaceMode('seize',null,'Click the furlong to seize (a host of yours must be within 450 m) — Esc to cancel');break;
     case 'road':setPlaceMode('lroad1',null,'Click one of your towns to begin the road — Esc to cancel');break;
     case 'pave':setPlaceMode('lpave',null,'Click a road that runs to one of your towns — Esc to cancel');break;
     case 'village':if(!cdLeft('l_vil')&&purse(hi)>=1200)setPlaceMode('lvillage',null,'Click open ground on your land for the new village — Esc to cancel');break;
@@ -10901,9 +10947,9 @@ function animateWorld(dt,now){
       const f=(simDay-a.departDay)/Math.max(0.01,a.arriveDay-a.departDay);
       p=armyAt(a,f);
     }else if(a.state==='battle'&&a.battlePos){ // fight where the hosts met: two lines facing each other, surging together and falling back
-      const bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=a.foe&&a.foe.id<a.id?-1:1,ux=Math.cos(ax),uz=Math.sin(ax);
+      const pr=a.joined||a,bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=pr.foe&&pr.foe.id<pr.id?-1:1,ux=Math.cos(ax),uz=Math.sin(ax);
       p={x:bp.x+ux*sd*8,z:bp.z+uz*sd*8,dir:ax+(sd>0?Math.PI:0)}; // the banner just behind its front
-      if(sd<0){activeBattles.add(a.battleName);let sp=G.battleSprites.get(a.battleName);
+      if(sd<0&&!a.joined){activeBattles.add(a.battleName);let sp=G.battleSprites.get(a.battleName);
         if(!sp){sp=new THREE.Sprite(new THREE.SpriteMaterial({map:markerTex('battle',g2=>{badge(g2,'#2b2320','#e8c247');g2.fillStyle='#e8dcc2';g2.font='bold 32px serif';g2.textAlign='center';g2.fillText('⚔',32,44);}),depthTest:false,transparent:true,sizeAttenuation:false}));
           sp.renderOrder=7;sp.scale.set(0.05,0.05,1);sp.userData.pick={type:'army',a};scene.add(sp);G.battleSprites.set(a.battleName,sp);}
         sp.position.set(bp.x,surfY(bp.x,bp.z)+26+Math.sin(now*3)*1.5,bp.z);
@@ -10959,9 +11005,9 @@ function animateWorld(dt,now){
         else if(storm&&k<nStorm){const rank=Math.floor(k/3),file=k%3,d=storm.d0+rank*1.7*us;sx=storm.x+storm.ox*d-storm.oz*(file-1)*1.2*us;sz=storm.z+storm.oz*d+storm.ox*(file-1)*1.2*us;sdir=storm.a+Math.PI;lead=k===1;}
         else if(sieging){const q=sPts[(k-nStorm)%sPts.length];sx=q.x;sz=q.z;sdir=q.a+Math.PI;}
         else if(a.state==='battle'&&a.battlePos){ // the melee: the front ranks matched man against man across the line, thrusting and giving ground; the rest press behind
-          const bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=a.foe&&a.foe.id<a.id?-1:1,ux=Math.cos(ax)*sd,uz=Math.sin(ax)*sd,lx=-uz,lz=ux,wide=Math.min(per*2,24);
+          const pr=a.joined||a,bp=a.battlePos,ax=hash01(bp.x*0.013+bp.z*0.007)*Math.PI,sd=pr.foe&&pr.foe.id<pr.id?-1:1,ux=Math.cos(ax)*sd,uz=Math.sin(ax)*sd,lx=-uz,lz=ux,wide=Math.min(per*2,24),back=a.joined?2.5+Math.ceil(Math.min(160,Math.max(12,a.joined.strength/3))/wide)*1.7:0;
           const col2=k%wide-(wide-1)/2,row=Math.floor(k/wide),ph=now*5.5+Math.abs(col2)*2.3+(sd>0?0:1.7),lunge=row===0?0.45*Math.max(0,Math.sin(ph)):0,sway=row?Math.sin(now*1.3+k)*0.25:0;
-          const d=row===0?0.75-lunge:1.8+row*1.7+sway,side=row===0?col2*1.5:col2*1.5+(row%2)*0.6;
+          const d=back?back+row*1.7+sway:row===0?0.75-lunge:1.8+row*1.7+sway,side=row===0&&!back?col2*1.5:col2*1.5+(row%2)*0.6; // reinforcements form up behind the line they came to help
           sx=bp.x+(ux*d+lx*side)*us;sz=bp.z+(uz*d+lz*side)*us;sdir=Math.atan2(-uz,-ux)+(row===0?Math.sin(ph*0.7)*0.25:0);lead=row===2&&k%wide===Math.floor(wide/2);}
         else if(inYard){const q=inYard[y0+k];if(!q)break;sx=q.x;sz=q.z;sdir=q.a;lead=k%24===0;} // drawn up in the yard, as many as it holds
         else if(camp){const col2=k%per-(per-1)/2,row=Math.floor(k/per);sx=cpx+(cfx*(-row*1.9)+clx*col2*1.3)*us;sz=cpz+(cfz*(-row*1.9)+clz*col2*1.3)*us;sdir=cdir;lead=k%per===0&&row%4===0;}
@@ -10985,7 +11031,7 @@ function animateWorld(dt,now){
   for(const t of W.settlements){if(!t.siegeBy||si2>=1480)continue; // the besieged man their walls (or the castle's palisade, or barricades at the town's edge)
     const dcam=dist2d(camera.position.x,camera.position.z,t.pos.x,t.pos.z);if(dcam>2600)continue;
     const H=W.houses[t.owner]||W.houses[0],us=clamp(cam.cur.dist*0.0055,1.2,7),cT=new THREE.Color(H.sigilHue[0]),cS=new THREE.Color(H.sigilHue[1]),hsl={};cT.getHSL(hsl);cT.setHSL(hsl.h,Math.max(hsl.s,0.45),Math.max(hsl.l,0.5));
-    const men=(t.garrison||0)+sheltered(t),n=Math.min(90,Math.max(8,Math.round(men/4))),ring=t.wallRad?null:t.bailey||t.hillCastle||t.ward||null,R0=ring?casR(t,ring):(t.extentR||t.radius||90)*0.85;
+    const men=(t.garrison||0)+(t.militia||0)+sheltered(t),n=Math.min(90,Math.max(8,Math.round(men/4))),ring=t.wallRad?null:t.bailey||t.hillCastle||t.ward||null,R0=ring?casR(t,ring):(t.extentR||t.radius||90)*0.85;
     const top=t.wallRad?(t.walls>=2?7.5:4.2):ring?(t.baileyStone?5.5:3.5):0;
     for(let k=0;k<n&&si2<1500;k++){const an=(k+0.5)/n*Math.PI*2+hash01(t.pos.x)*6.28;if(t.wallRad&&wallKindAt(t,an)===1)continue; // no wall where the river or the cliff is the defence
       const rr=t.wallRad?wallRadAt(t,an):R0,cx=ring?ring.x:t.pos.x,cz=ring?ring.z:t.pos.z,sx=cx+Math.cos(an)*rr,sz=cz+Math.sin(an)*rr,ry=-an+Math.PI/2;
