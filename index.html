@@ -7722,12 +7722,12 @@ function reprice(s){ // each price rises when buyers wanted more than was sold, 
     const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*6+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));}
   s._dem={};s._sold={};}
 function tickMarket(){
-  if(day()%30!==5)return;const PM=W._pm=folkIndex();let pl=0,pp=0;
-  W.settlements.forEach((s,si)=>{const heads=heads_(s,()=>true),size=new Map();for(const p of s.folk||[]){if(p.dead)continue;const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
+  const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
+  W.settlements.forEach((s,si)=>{if(!due[si])return;const heads=heads_(s,()=>true),size=new Map();for(const p of s.folk||[]){if(p.dead)continue;const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
     shareOutput(s,si,PM,heads);reconcile(s,heads);provision(s,heads,size);payCrafts(s,heads);reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
     {const F=s.frt||(s.frt={cart:1,boat:1}),Wt=s._wait||{};for(const[mode,tr]of[['cart','carter'],['boat','boatman']]){const idle=heads.filter(h=>h.tr===tr&&!awayNow(h)).length,w=Wt[mode]||0;
       F[mode]=Math.max(0.05,(F[mode]??1)*Math.exp(0.2*Math.tanh(Math.log((w+0.2)/(idle*0.5+0.2)))));}s._wait={};} // loads waiting for a driver raise the going rate; idle drivers lower it
-  });if(pp>0)W._pl=pl/pp;} // the price level: rents, taxes, fees and wages are reckoned in it
+  });pl=0;pp=0;for(const s of W.settlements){pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;}if(pp>0)W._pl=pl/pp;} // the price level: rents, taxes, fees and wages are reckoned in it
 function made(s,g,q){if(q>0){const M=s._made||(s._made={});M[g]=(M[g]||0)+q;}}
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
@@ -9158,12 +9158,13 @@ function settleTenure(s,si,heads){ // strips without a holder are given out: the
   for(const f of F){if(dem<all.length*share||!tillers.length){f.ten='demesne';f.own=-1;f.wk=-1;dem++;continue;}
     let best=tillers[0];for(const h of tillers)if((h._strips||0)<(best._strips||0))best=h;best._strips=(best._strips||0)+1;
     const tn=tenureNew();f.ten=tn;f.own=tn==='lease'?-1:best.id;f.wk=best.id;}}
+const dueOn=(si,period,salt)=>(day()+si*salt)%period===0; // each place keeps its own day in each round, so the realm's reckonings are spread across the year
 function tickTenure(){
-  if(day()%360!==215||!G.land)return;
+  if(!G.land)return;const due=W.settlements.map((s,si)=>dueOn(si,360,37));if(!due.some(Boolean))return; // each place's year of tenure falls on its own day
   const PM=folkIndex(),kids=new Map(),spouse=new Map();
   for(const p of PM.values()){for(const par of[p.pa,p.ma])if(par){const L=kids.get(par.id)||[];L.push(p);kids.set(par.id,L);}if(p.sp)spouse.set(p.sp.id,p);}
   const hf=(W.drought?0.4:1)*(MOD.harvest||1);let sales=0,bigBuyer=null;
-  W.settlements.forEach((s,si)=>{
+  W.settlements.forEach((s,si)=>{if(!due[si])return;
     const heads=headsOf(s),size=new Map();for(const p of s.folk||[]){const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
     for(const h of heads){h._strips=0;h._crop=0;h._ha=0;h._owned=0;if(h.w===undefined)h.w=0;}
     const T=tilledOf(s,si);
@@ -9347,8 +9348,8 @@ function placeRural(s,x,z,arch,owner){ // a farmstead or a hut out on the land
     groundBuilding(b);s.buildings.push(b);b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);if(G.feat)featBuilding(b);G.detDirty=true;return b;}
   return null;}
 function tickHouseholds(){
-  if(day()%30!==19||!W.fams)return;W._pm=folkIndex();{const K=new Map();for(const p of W._pm.values())if(!p.dead)for(const par of[p.ma,p.pa])if(par){const L=K.get(par.id);if(L)L.push(p);else K.set(par.id,[p]);}W._kids=K;} /* who is whose child, for the pull of kin */const mon=(day()/30|0)%12,Ss=W.settlements;
-  Ss.forEach((s,si)=>{if(si%12!==mon||!s.folk||!s.folk.length)return;
+  if(!W.fams)return;const due=W.settlements.map((s,si)=>dueOn(si,360,29));if(!due.some(Boolean))return;W._pm=folkIndex();{const K=new Map();for(const p of W._pm.values())if(!p.dead)for(const par of[p.ma,p.pa])if(par){const L=K.get(par.id);if(L)L.push(p);else K.set(par.id,[p]);}W._kids=K;} /* who is whose child, for the pull of kin */const Ss=W.settlements;
+  Ss.forEach((s,si)=>{if(!due[si]||!s.folk||!s.folk.length)return;
     const pr=g=>price(s,g)/GOODBASE[g];let pool=0;const lux={};
     // grown children set up house
     for(const p of s.folk){if(p.dead||p.own||p.sp)continue;const a=ageYrs(p);if(a<18)continue;const par=householdHead(p);if(par===p)continue;
@@ -9441,14 +9442,14 @@ function houseBuyer(s,cost){ // who pays for a new house: a household that wants
 /* the ways, once a year: a lane with no house on it is not kept and grasses over (it comes back with the first house built on it);
    a king's road is mended by the lords at either end while the carts on it pay the tolls that repay the roadmen, else it wears to a rutted track: slower, narrower, never quite gone */
 function tickWays(){
-  if(day()%360!==300)return;let dirty=false;
-  for(const s of W.settlements){const on=new Set();for(const b of s.buildings)if(!b.removed&&b.state!=='gone'&&b.st)on.add(b.st);
-    for(const st of s.streets||[]){if(st.hidden||st.gone||st.planned||st.cut||(st.kind!=='lane'&&st.kind!=='grid'))continue;if(!on.has(st)){st.hidden=true;dirty=true;}}}
-  for(const r of W.roads){const A=W.settlements[r.a],B=W.settlements[r.b];if(!A||!B)continue;const up=(r.len||1000)/1000*2*PL(),tolls=(r.vol||0)*GOODBASE.grain*PL()*0.5,c0=r.cond??1;
+  let dirty=false;
+  W.settlements.forEach((s,si)=>{if(!dueOn(si,360,41))return;const on=new Set();for(const b of s.buildings)if(!b.removed&&b.state!=='gone'&&b.st)on.add(b.st);
+    for(const st of s.streets||[]){if(st.hidden||st.gone||st.planned||st.cut||(st.kind!=='lane'&&st.kind!=='grid'))continue;if(!on.has(st)){st.hidden=true;dirty=true;}}});
+  W.roads.forEach((r,ri)=>{if(!dueOn(ri,360,53))return;const A=W.settlements[r.a],B=W.settlements[r.b];if(!A||!B)return;const up=(r.len||1000)/1000*2*PL(),tolls=(r.vol||0)*GOODBASE.grain*PL()*0.5,c0=r.cond??1;
     const la=lordAcct(A),lb=lordAcct(B);
     if(tolls>=up&&means(la)+means(lb)>=up){const fa=means(la)/Math.max(1e-9,means(la)+means(lb));buildWorks(A,up*fa,la,'roads');buildWorks(B,up*(1-fa),lb,'roads');r.cond=Math.min(1,c0+0.2);}
     else r.cond=Math.max(0.15,c0-0.15);
-    if(Math.abs((r.cond??1)-c0)>1e-6)dirty=true;}
+    if(Math.abs((r.cond??1)-c0)>1e-6)dirty=true;});
   if(dirty){W.routes={};G.roadsDirty=true;}}
 function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s).sort((a,b)=>(b.w||0)-(a.w||0));}
 /* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
