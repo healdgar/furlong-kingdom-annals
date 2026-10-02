@@ -66,7 +66,9 @@ realm, answers for its workings from this README, and suggests how to play until
 
 **Played on Claude** (the shared artifact link), click 🗣 and **Talk to your advisor here**: the advisor answers
 in a panel beside the map, on your own Claude account (you are asked once to allow it, and what you ask uses your
-Claude usage). It has the same tools an agent gets through the bridge, run in the page.
+Claude usage). It has the same tools an agent gets through the bridge, run in the page, and its replies link every place, house,
+lord, host and person it names: click one to fly there and open its card. It asks Claude's default (balanced) tier;
+the page cannot pick a named model.
 
 **Anywhere else**, click 🗣 and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program

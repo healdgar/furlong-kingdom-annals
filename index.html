@@ -336,7 +336,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-02 22:43 UTC · after 866e05e</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-02 22:50 UTC · after b726cc9</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -9904,7 +9904,9 @@ function goName(code){ // fly to it and open its card
   const t=code[0],v=+code.slice(1);markManual();
   if(t==='s'){const s=W.settlements[v];if(s){flyTo(s.pos.x,s.pos.z,420);showInspect({type:'settlement',s});}}
   else if(t==='h'){const h=W.houses[v],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(s)flyTo(s.pos.x,s.pos.z,520);if(n)showInspect({type:'notable',n});else if(s)showInspect({type:'settlement',s});}
-  else if(t==='n'){const n=notableById(v);if(n){goNotable(n);showInspect({type:'notable',n});}}}
+  else if(t==='n'){const n=notableById(v);if(n){goNotable(n);showInspect({type:'notable',n});}}
+  else if(t==='a'){const a=W.armies.find(x=>x.id===v&&!x.gone);if(a){const p=a._rpos||armySimPos(a);flyTo(p.x,p.z,260);cam.follow=a;showInspect({type:'army',a});}}
+  else if(t==='p'){const f=findPerson(v);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}}}
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#crownchip')&&W&&W.monarch&&W.monarch.alive){goNotable(W.monarch);showInspect({type:'notable',n:W.monarch});return;}
   const tq=e.target.closest&&e.target.closest('a.tr');if(tq){e.stopPropagation();e.preventDefault();const x=TREE.get(tq.dataset.tree);if(x)showInspect({type:'tree',x});return;}
   const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();const f=findPerson(+q.dataset.pid);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}return;}
@@ -12135,7 +12137,8 @@ const ADV={muted:false,
     for(const e of ADV.entities())if(hit(e.name))out.push({thing:e.name,kind:e.kind,code:e.code});
     return out.slice(0,60);},
   entities(){const E=[];W.settlements.forEach((s,i)=>E.push({name:s.name,kind:s.kind,code:'s'+i}));W.houses.forEach((h,i)=>{if(!h.extinct)E.push({name:h.name,kind:'house',code:'h'+i});});
-    for(const n of W.notables||[])if(n.alive)E.push({name:fullTitle(n),kind:'person',code:'n'+n.id});return E;},
+    for(const n of W.notables||[])if(n.alive)E.push({name:fullTitle(n),kind:'person',code:'n'+n.id});
+    for(const a of W.armies)if(!a.gone)E.push({name:a.name,kind:'host',code:'a'+a.id});return E;},
   byName(name){const t=String(name||'').toLowerCase(),E=ADV.entities();return E.find(e=>e.name.toLowerCase()===t)||E.find(e=>e.name.toLowerCase().includes(t))||null;},
   safe(v,depth){depth=depth??2;if(v==null||typeof v==='number'||typeof v==='boolean')return typeof v==='number'?Math.round(v*100)/100:v;if(typeof v==='string')return v.slice(0,300);
     if(typeof v==='function'||v.isObject3D||v.isMaterial||v.isTexture||v instanceof Float32Array||v instanceof Uint8Array)return undefined;
@@ -12145,16 +12148,16 @@ const ADV={muted:false,
   place(s){if(!s)return null;const pr={};for(const g of GOODS)pr[g]=+(price(s,g)/GOODBASE[g]).toFixed(2);
     return{name:s.name,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),prosperity:Math.round(s.prosperity),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),
       plague:s.infected>0.5,besieged:!!s.siegeBy,walls:s.walls||0,garrison:Math.round(s.garrison||0),murage:Math.round(s.murage||0),stores:ADV.safe(s.stores,1),prices_vs_usual:pr,trades:tradeCounts(s),wardOf:s.wardOf!=null?W.settlements[s.wardOf]?.name:undefined};},
-  state(path){const p=String(path||'realm'),[k,arg]=[p.split(':')[0],p.split(':').slice(1).join(':')],H=h=>({name:h.name,gold:Math.round(h.gold||0),loyalty:Math.round(h.loyalty??0),might:+(h.might||1).toFixed(2),seat:W.settlements[h.seat]?.name,places:W.settlements.filter(s=>s.owner===W.houses.indexOf(h)).map(s=>s.name),head:h.head!=null?fullTitle(notableById(h.head)||{name:'?'}):undefined,exiled:!!h.exiled});
+  state(path){const p=String(path||'realm'),[k,arg]=[p.split(':')[0],p.split(':').slice(1).join(':')],H=h=>({name:h.name,code:'h'+W.houses.indexOf(h),gold:Math.round(h.gold||0),loyalty:Math.round(h.loyalty??0),might:+(h.might||1).toFixed(2),seat:W.settlements[h.seat]?.name,places:W.settlements.filter(s=>s.owner===W.houses.indexOf(h)).map(s=>s.name),head:h.head!=null?fullTitle(notableById(h.head)||{name:'?'}):undefined,exiled:!!h.exiled});
     if(k==='realm')return{date:dateStr(),year:AD(),monarch:W.monarch&&fullTitle(W.monarch),treasury:Math.round(W.treasury),people:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),legitimacy:Math.round(W.legitimacy),places:W.settlements.length,
       war:!!W.war,feuds:(W.feuds||[]).map(f=>[W.houses[f.a]?.name,W.houses[f.b]?.name]),plague:!!W.plagueActive,priceLevel:+(W._pl||1).toFixed(2),player:W.player&&W.player.on?{house:W.houses[W.player.house|0]?.name,legacy:W.player.legacy}:null,petitions:(W.petitions||[]).length,speed:speedIdx};
-    if(k==='settlements')return W.settlements.map(s=>({name:s.name,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),besieged:!!s.siegeBy}));
+    if(k==='settlements')return W.settlements.map((s,i)=>({name:s.name,code:'s'+i,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),besieged:!!s.siegeBy}));
     if(k==='settlement'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]):{error:'no such place: '+arg};}
     if(k==='houses')return W.houses.map(H);
     if(k==='house'){const e=ADV.byName(arg);return e&&e.code[0]==='h'?H(W.houses[+e.code.slice(1)]):{error:'no such house: '+arg};}
     if(k==='monarch')return ADV.safe(W.monarch,1);
     if(k==='player')return W.player?ADV.safe(W.player,1):null;
-    if(k==='armies')return W.armies.filter(a=>!a.gone).map(a=>({house:W.houses[a.house]?.name,strength:Math.round(a.strength),state:a.state,at:W.settlements[a.at]?.name,target:W.settlements[a.target]?.name,arrears:Math.round(a._arrears||0)}));
+    if(k==='armies')return W.armies.filter(a=>!a.gone).map(a=>({name:a.name,code:'a'+a.id,house:W.houses[a.house]?.name,strength:Math.round(a.strength),state:a.state,at:W.settlements[a.at]?.name,target:W.settlements[a.target]?.name,arrears:Math.round(a._arrears||0)}));
     if(k==='wars')return{war:ADV.safe(W.war,1),feuds:ADV.safe(W.feuds,1)};
     if(k==='victory')return W.vic?{scores:Object.fromEntries(Object.entries(W.vic.scores).map(([h,sc])=>[W.houses[h]?.name,Object.fromEntries(VPATH.map(P=>[P.n,{progress:+sc[P.k].v.toFixed(2),why:sc[P.k].why}]))])),yourHouse:W.houses[campHouse()]?.name,endsAD:W.camp&&W.camp.end+W.startAD}:null;
     if(k==='prices'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]).prices_vs_usual:{error:'no such place: '+arg};}
@@ -12170,7 +12173,8 @@ const ADV={muted:false,
     if(name.startsWith('game:')){const v=name.slice(5);
       if(v==='state')return ADV.state(args.path);
       if(v==='find')return ADV.entities().filter(e=>e.name.toLowerCase().includes(String(args.name||'').toLowerCase())).slice(0,30);
-      if(v==='inspect'){const e=ADV.byName(args.name);if(!e)return{error:'nothing by that name'};goName(e.code);const I=document.getElementById('insp');return{card:(document.getElementById('insptitle').textContent+' — '+document.getElementById('inspsub').textContent+'\n'+document.getElementById('inspbody').innerText).slice(0,4000),tools:ADV.discover('card').tools};}
+      if(v==='inspect'){const e=ADV.byName(args.name);if(!e)return{error:'nothing by that name'};goName(e.code);const B=document.getElementById('inspbody'),lk=[];for(const x of B.querySelectorAll('a.nm,a.pp'))if(lk.length<60&&x.textContent.trim()!=='Open the card')lk.push({name:x.textContent.trim(),code:x.dataset.nm||'p'+x.dataset.pid});
+        return{code:e.code,card:(document.getElementById('insptitle').textContent+' — '+document.getElementById('inspsub').textContent+'\n'+B.innerText).slice(0,4000),links:lk,tools:ADV.discover('card').tools};}
       if(v==='chronicle')return allLines.slice(-(+args.n||20));
       if(v==='persona')return ADV.persona();
       if(v==='advise')return{muted:ADV.muted};
@@ -12238,7 +12242,7 @@ state:'none',ready:null,
       {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   brief(){const P=ADV.persona(),st=ADV.state('realm'),ch=allLines.slice(-6).join('\n');
     return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
-Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to.${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
+Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to. Write in Markdown. Whenever you name a place, house, lord, host or any of the folk, make it a link the player can click to go there: [[Name]] with the name exactly as the tools give it, or [words](game:CODE) with the code the tools give (s… places, h… houses, n… lords and ladies, a… hosts, p… the folk; inspect lists a card's links with their codes).${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
 
 The realm now: ${JSON.stringify(st)}
 Latest in the annals:
@@ -12253,9 +12257,16 @@ ${ch}`;},
       document.getElementById('achin').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ADVCHAT.send();}});}
     const P=ADV.persona();document.getElementById('achwho').textContent=P.name?`${P.name}, ${P.role}`:'The game master';
     el.style.display='flex';document.getElementById('achin').focus();},
-  md(src){ // a little Markdown, safely: headings, bold, italics, code, lists, quotes, rules (no raw HTML, no links out of the sealed page)
-    const e=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const inl=t=>e(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/__([^_]+)__/g,'<b>$1</b>').replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\w)/g,'$1<i>$2</i>').replace(/(^|[^_\w])_([^_\s][^_]*)_(?!\w)/g,'$1<i>$2</i>').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1');
+  code(name){ // the code of a thing named in the realm (place, house, lord, host, or one of the folk), or null
+    const t=String(name||'').trim().toLowerCase();if(t.length<3)return null;const E=ADV.entities();
+    let x=E.find(e=>e.name.toLowerCase()===t)||E.find(e=>e.kind==='person'&&notableById(+e.code.slice(1))?.name?.toLowerCase()===t);
+    if(!x&&t.length>=4)x=E.find(e=>e.name.toLowerCase().includes(t));if(x)return x.code;
+    for(const s of W.settlements)for(const p of s.folk||[])if(folkName(p).toLowerCase()===t)return 'p'+p.id;return null;},
+  md(src){ // a little Markdown, safely: headings, bold, italics, code, lists, quotes, rules (no raw HTML, no links out of the sealed page; [[Name]] and [text](game:code) become links into the realm)
+    const e=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),u=t=>t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&'),memo=new Map();
+    const go=(label,c)=>{if(!/^[shnap]\d+$/.test(c||''))return label;return `<a class="nm" data-nm="${c}">${label}</a>`;},
+      who=n=>{if(!memo.has(n))memo.set(n,ADVCHAT.code(u(n)));return memo.get(n);};
+    const inl=t=>e(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(m,n,l)=>go(l||n,who(n))).replace(/\[([^\]]+)\]\(game:([a-z]\d+)\)/g,(m,l,c)=>go(l,c)).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/__([^_]+)__/g,'<b>$1</b>').replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\w)/g,'$1<i>$2</i>').replace(/(^|[^_\w])_([^_\s][^_]*)_(?!\w)/g,'$1<i>$2</i>').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1');
     const out=[],L=String(src).split('\n');let list=null,para=[];
     const flush=()=>{if(para.length){out.push('<p>'+para.map(inl).join('<br>')+'</p>');para=[];}if(list){out.push(`<${list.t}>`+list.items.map(x=>'<li>'+inl(x)+'</li>').join('')+`</${list.t}>`);list=null;}};
     for(let i=0;i<L.length;i++){const l=L[i];
@@ -12273,7 +12284,7 @@ ${ch}`;},
   async send(){const box=document.getElementById('achin'),q=box.value.trim();if(!q||ADVCHAT.busy||!ADVCHAT.sample)return;box.value='';
     ADVCHAT.bubble('me',q);ADVCHAT.turns.push({role:'user',content:q});while(ADVCHAT.turns.length>16)ADVCHAT.turns.splice(0,2); // the oldest exchanges drop away; the brief is written fresh each time
     const out=ADVCHAT.bubble('ai','Thinking…'),ctl=new AbortController();ADVCHAT.busy=ctl;document.getElementById('achstop').style.display='';document.getElementById('achsend').disabled=true;
-    const opts={cache:false,signal:ctl.signal,onText:({text})=>{out.innerHTML=ADVCHAT.md(text);document.getElementById('achlog').scrollTop=1e9;}};if(ADVCHAT.tools)opts.tools=ADVCHAT.toolList();
+    const opts={cache:false,modelTier:'default',signal:ctl.signal,onText:({text})=>{out.innerHTML=ADVCHAT.md(text);document.getElementById('achlog').scrollTop=1e9;}};if(ADVCHAT.tools)opts.tools=ADVCHAT.toolList();
     try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
       out.innerHTML=ADVCHAT.md(text)+(truncated?'<p><i>(cut short: ask for less at a time)</i></p>':'');ADVCHAT.turns.push({role:'assistant',content:text});}
     catch(e){const code=e&&e.code;out.innerHTML=e&&e.text?ADVCHAT.md(e.text):'';
@@ -12512,7 +12523,9 @@ realm, answers for its workings from this README, and suggests how to play until
 
 **Played on Claude** (the shared artifact link), click 🗣 and **Talk to your advisor here**: the advisor answers
 in a panel beside the map, on your own Claude account (you are asked once to allow it, and what you ask uses your
-Claude usage). It has the same tools an agent gets through the bridge, run in the page.
+Claude usage). It has the same tools an agent gets through the bridge, run in the page, and its replies link every place, house,
+lord, host and person it names: click one to fly there and open its card. It asks Claude's default (balanced) tier;
+the page cannot pick a named model.
 
 **Anywhere else**, click 🗣 and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
