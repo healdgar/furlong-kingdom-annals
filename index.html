@@ -4343,15 +4343,16 @@ function tickCallToArms(){
       if(near>2600&&!s.siegeBy){s.calmDays=(s.calmDays||0)+2;if(s.calmDays>=6){s.militia=0;if(!W.prehistory&&s.owner===plyH())emit('war',3,s.pos,`The danger past, the men of ${s.name} put up their arms and go back to their work.`);}}else s.calmDays=0;}}}
 function opportunity(s){ // what a family weighs before moving: a living to be had (the land it ploughs, the market's trade and crafts), a roof or a plot to build one, and the dangers
   const n=Math.max(10,s.pop),live=carryingCap(s)/n,room=(s._room!==undefined?s._room:housing(s))/n,o=clamp(Math.min(live,room*1.1),0.15,2.2); // work without a roof, or a roof without work, will not keep a family
-  return Math.log(o)-1.5*(s.hunger||0)-(s.unrest||0)/160-(s.infected>0?0.4*Math.min(1,s.infected/n*10):0)-(s.siegeBy||s.raidedUntil>day()?0.6:0)+0.12*Math.log(clamp((s.prosperity||30)/50,0.2,3));}
+  const rentPH=townWorth(s)/25/n,foodYr=(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360; // rent per head against a year's bread
+  return Math.log(o)-0.25*Math.log(1+rentPH/foodYr)-1.5*(s.hunger||0)-(s.unrest||0)/160-(s.infected>0?0.4*Math.min(1,s.infected/n*10):0)-(s.siegeBy||s.raidedUntil>day()?0.6:0)+0.12*Math.log(clamp((s.prosperity||30)/50,0.2,3));}
 function tickMigration(){ // monthly: families go from where life is hard or crowded to where there is a living and room, more readily the nearer it is; a few come from beyond the realm to a thriving place
   if(day()%30!==17)return;const S=W.settlements,U=S.map(opportunity),out=new Float64Array(S.length),inn=new Float64Array(S.length);
-  for(let i=0;i<S.length;i++){const a=S[i];if(a.pop<25||a.siegeBy)continue;let tot=0;const fl=[];
-    for(let j=0;j<S.length;j++){if(j===i||S[j].siegeBy)continue;const g=U[j]-U[i]-0.12;if(g<=0)continue;const d=dist2d(a.pos.x,a.pos.z,S[j].pos.x,S[j].pos.z),w=g*Math.exp(-d/(2500*MAPK));if(w>1e-4){fl.push([j,w]);tot+=w;}}
-    if(!tot)continue;const go=a.pop*Math.min(0.02,0.006*tot); // at most a fiftieth of the place in a month
+  for(let i=0;i<S.length;i++){const a=S[i];if(a.pop<6||a.siegeBy)continue;let tot=0;const fl=[];
+    for(let j=0;j<S.length;j++){if(j===i||S[j].siegeBy)continue;const d=dist2d(a.pos.x,a.pos.z,S[j].pos.x,S[j].pos.z),g=U[j]-U[i]-(0.03+d/(9000*MAPK));if(g<=0)continue;const w=g*Math.exp(-d/(2500*MAPK));if(w>1e-4){fl.push([j,w]);tot+=w;}} // the move must be worth its road: the farther, the more it must promise
+    if(!tot)continue;const go=a.pop*0.025*(1-Math.exp(-tot*0.25)); // the more there is to gain, the more go, never all at once
     for(const[j,w]of fl){const m=go*w/tot;out[i]+=m;inn[j]+=m;}}
   for(let i=0;i<S.length;i++){const s=S[i];s.pop=Math.max(5,s.pop-out[i]+inn[i]);
-    if(U[i]>0.2&&!s.siegeBy)s.pop+=s.pop*0.0008*Math.min(U[i],1); // strangers from beyond the realm, to a place that is thriving
+    if(U[i]>0&&!s.siegeBy&&(s.harbor||s.role==='border'))s.pop+=s.pop*0.0008*Math.min(U[i],1); // strangers from beyond the realm come by sea or by the border roads
     s.migIn=(s.migIn||0)*0.92+inn[i];s.migOut=(s.migOut||0)*0.92+out[i]; // a running tally, for its card
     if(!W.prehistory&&inn[i]>Math.max(8,s.pop*0.01)&&!(s._migNote>day())){s._migNote=day()+720;const from=S.reduce((b,o,k)=>out[k]>out[b]?k:b,0);
       emit('trade',3,s.pos,`Families come to ${s.name} for the work and the ground to build on${out[from]>1?`, many from ${S[from].name}`:''}.`);}}}
@@ -7677,7 +7678,7 @@ function tickEconomy(){
   // treasury upkeep drains — the predator on hoarding
   W.treasury-=W.armies.filter(a=>a.house===0&&!a.gone).reduce((t,a)=>t+a.strength*(a.standing?0.02:0.05),0); // the crown pays its own hosts by the head; the household costs less than a levy
   W.treasury-=W.settlements.reduce((t,s)=>t+(s.owner===0?s.garrison:0),0)*0.012; // the crown keeps its own garrisons; a lord keeps his
-  if(W.treasury>15000)W.treasury-=(W.treasury-15000)*0.0012; // the court's splendor grows to meet the coin
+  {const reserve=hostTarget(0)*25;if(W.treasury>reserve)W.treasury-=(W.treasury-reserve)*0.0008;} // the court spends what lies beyond a war chest for the royal host: splendour grows to meet the coin
   W.treasury=Math.max(-500,W.treasury);
 }
 
@@ -7829,16 +7830,20 @@ function tickPolitics(){
       emit('fates',5,s.pos,vary('riot',[()=>`Riot in ${s.name}! The mob overturns the market stalls and cries against the crown.`,()=>`The mob of ${s.name} overturns the market stalls, crying against the crown: there is riot in the streets!`,()=>`${s.name} is in riot; the mob overturns the market stalls and cries against the crown.`,()=>`Riot! In ${s.name} the mob cries against the crown and overturns the market stalls.`,()=>`Market stalls are overturned in ${s.name} by a mob crying against the crown.`,()=>`The mob in ${s.name} cries against the crown, and the market stalls go over; there is riot in the streets.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, riot breaks out in ${s.name}: the mob overturns the market stalls and cries against the crown.`]));
       if(chance('sim',0.3))igniteFire(s,1,'riot');
     }
-    if(s.unrest>90&&!s.revolted&&s.owner===0&&s.kind!=='capital'&&chance('sim',0.05)){
-      let nh=0,bd=2600; // it looks to a near lord who is himself no friend of the crown; if there is none, the rising has nowhere to go
-      W.houses.forEach((h,hi)=>{if(hi&&!h.exiled&&h.loyalty<55&&W.settlements[h.seat]){const d=dist2d(s.pos.x,s.pos.z,W.settlements[h.seat].pos.x,W.settlements[h.seat].pos.z);if(d<bd){bd=d;nh=hi;}}});
-      if(nh&&nh===plyH()){const h=W.houses[nh];s.revolted=true;
+    const hold=((s.garrison||0)+sheltered(s))/Math.max(20,s.pop)*8,isSeat=W.houses.some(h=>h&&W.settlements[h.seat]===s); // the watch and any host within keep the town down
+    const prRev=clamp((s.unrest-60)/40-hold,0,1)*0.05;
+    if(prRev>0&&!s.revolted&&s.kind!=='capital'&&!isSeat&&chance('sim',prRev)){ // any town, the crown's or a lord's, rises when its anger outruns the hand that holds it
+      let nh=-1,bd=2600*MAPK;const ow=s.owner; // it looks to a near power at odds with its master; if there is none, the rising has nowhere to go
+      W.houses.forEach((h,hi)=>{if(hi===ow||h.exiled)return;const at=hi===0?W.capital:W.settlements[h.seat];if(!at)return;
+        const odds=ow===0?h.loyalty<55:(hi===0||atWar(hi,ow)||(h.grudges||{})[ow]);if(!odds)return;const d=dist2d(s.pos.x,s.pos.z,at.pos.x,at.pos.z);if(d<bd){bd=d;nh=hi;}});
+      if(nh<0)nh=0;if(nh===ow)nh=0;
+      if(nh!==ow&&nh===plyH()){const h=W.houses[nh];s.revolted=true;
         petition({key:'offer'+W.settlements.indexOf(s),to:nh,title:`${s.name} offers itself to you`,pos:s.pos,days:20,ai:1,
           text:`The townsmen of ${s.name} have driven out the crown’s bailiffs and send to ${h.name}: take us under your banner. The crown will call it theft.`,
-          opts:[{label:`Take ${s.name} under your banner`,act:()=>{if(s.owner!==0)return;s.owner=nh;s.unrest=45;syncOwner(s);h.loyalty=clamp(h.loyalty-15,0,100);refreshOverlay();
+          opts:[{label:`Take ${s.name} under your banner`,act:()=>{if(s.owner!==ow)return;s.owner=nh;s.unrest=45;syncOwner(s);h.loyalty=clamp(h.loyalty-15,0,100);refreshOverlay();
               emit('war',8,s.pos,`${s.name} hoists the banner of ${h.name}!`);}},
             {label:'Send them back to their king',act:()=>{h.loyalty=clamp(h.loyalty+5,0,100);s.revolted=false;emit('house',3,s.pos,`${h.name} will not receive the rebels of ${s.name}.`);}}]});}
-      else if(nh){s.owner=nh;s.revolted=true;s.unrest=45;syncOwner(s);
+      else if(nh!==ow&&(nh>0||ow>0)){s.owner=nh;s.revolted=true;s.unrest=45;syncOwner(s);
         emit('war',8,s.pos,`${s.name} rises in revolt and hoists the banner of ${W.houses[nh].name}!`);
         refreshOverlay();
       }
@@ -8316,8 +8321,9 @@ function tickMilitary(){
       a.foe=b.foe=null;a.atGates=b.atGates=null;
       resumeAfterBattle(w); // the victor carries on from the field, not from where it set out
       routFromField(l);
-      if(l.strength<(l.standing?10:40)&&!l.gone)disbandArmy(l); // a broken household scatters; the lord gathers a new one at his seat
-      if(w.strength<40&&!w.standing)disbandArmy(w);
+      if(l.strength<hostTarget(l.house)*(l.standing?0.06:0.15)&&!l.gone)disbandArmy(l); // a broken host scatters, by what it is to its house; the lord gathers a new one at his seat
+      if(w.strength<hostTarget(w.house)*0.1&&!w.standing)disbandArmy(w);
+      if(W.war)W.war.weary=(W.war.weary||0)+0.06; // every battle wearies the realm of the war
     }
   }
   // war score over time & exhaustion
@@ -8330,7 +8336,7 @@ function tickMilitary(){
     else if(!crownAlive&&day()-W.war.start>40)endWar(-1);
     else if(W.war.score>=100)endWar(1);
     else if(W.war.score<=-100)endWar(-1);
-    else if(day()-W.war.start>1400)endWar(0);
+    else if((W.war.weary=(W.war.weary||0)+0.0006+(W.treasury<0?0.002:0))>1&&chance('sim',clamp((W.war.weary-1)*0.01,0,0.05)))endWar(0); // the realm wearies of a war no one is winning: the dead, the unpaid men, the burned fields
     // crown reinforcements if it can pay
     if(W.war&&!crownAlive&&W.treasury>1500&&chance('sim',0.05)){
       W.treasury-=800;raiseArmy(0,0,W.capital.pop*0.08,'crown');
