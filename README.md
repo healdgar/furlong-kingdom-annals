@@ -505,6 +505,12 @@ What happens is decided by quantities the economy produces, not by numbers cross
     the quarry's owner. Whoever will own a new house pays for it.
   - **Death and marriage:** a dead man's purse, beasts and buildings pass to his widow or eldest grown
     child, else escheat to the lord; a bride brings her purse and beasts to her husband's household.
+  - **Spoils of war:** a sacked town loses half (a raided one a fifth) of its households' coin, its church
+    plate and its town chest. By the custom of thirds a man keeps two thirds of the coin he takes himself
+    and his lord a third; the chests go to the lord, and the crown takes a third of all the lord's gains.
+    Goods come home only as far as they can be carried (spice and silk well, cloth and tools some, grain
+    hardly at all); the rest is burned, spilled or trampled. Driven herds go two thirds to the men's own
+    families and a third to their lord.
   - **Ways are kept up by use:** a lane with no house on it grasses over (and comes back with the first
     house); a king's road is mended by the lords at either end while the tolls of its carts repay the
     roadmen, else it wears to a rutted track, narrower and slower, never quite gone.

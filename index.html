@@ -6073,10 +6073,27 @@ function tickLivestock(){
   if(!W.prehistory&&G.herdMesh)G.herdsDirty=true;} // the flocks are laid out again when someone is near enough to see them
 const grazed=f=>{const s=W.settlements[f.dom];if(s&&s.hm)return (s.hm.press||0)>0.25; // grass the beasts keep short does not go back to scrub
   return W.settlements.some(o=>dist2d(o.pos.x,o.pos.z,f.x,f.z)<(o.kind==='village'?800:1000));};
-function driveOffHerds(s,a){ // raiders take the beasts home with them
-  if(!s.hm)return 0;const home=W.settlements[a.home];let n=0;
-  for(const k of['sheep','cattle','swine']){const t=(s.stores[k]||0)*0.35;s.stores[k]-=t;n+=t;if(home)home.stores[k]=(home.stores[k]||0)+t;}
+function lootTo(a){ // the households the host's men come from (or, with no men named, the young households of its home country)
+  const M=(a.men||[]).filter(p=>!p.merc&&!p.dead);if(M.length)return M.map(p=>p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));
+  const t=W.settlements[a.home];return t?heads_(t,h=>ageYrs(h)<50):[];}
+function driveOffHerds(s,a){ // raiders take the beasts home with them: two thirds to the men's own families, a third to their lord's herd
+  if(!s.hm)return 0;const home=W.settlements[a.home],R=lootTo(a);let n=0;
+  for(const k of['sheep','cattle','swine']){const t=(s.stores[k]||0)*0.35;s.stores[k]-=t;n+=t;const men=R.length?t*2/3:0;
+    if(home)home.stores[k]=(home.stores[k]||0)+(t-men); // the lord's third, unowned in the home byres: his
+    for(const h of R){const q=men/R.length,hs=W.settlements[h.si];if(!hs)continue;hs.stores[k]=(hs.stores[k]||0)+q;herdOf(h)[k]=(herdOf(h)[k]||0)+q;}}
   return Math.round(n);}
+function spoils(a,s,sack){ // what is taken from a fallen or raided town: coin passes whole, goods only as far as they can be carried
+  const f=sack?0.5:0.2,lord=houseAcct(a.house),R=lootTo(a),home=W.settlements[a.home];let coin=0,chest=0;
+  for(const h of heads_(s,()=>true))if((h.w||0)>0){const t=h.w*f;h.w-=t;coin+=t;if(t>foodYr()*0.5)life(h,`Plundered when ${a.name} ${sack?'sacked':'raided'} ${s.name}: ${Math.round(t)} crowns taken`);}
+  for(const b of s.buildings)if(b.ch&&b.ch.fund>0){const t=b.ch.fund*f;b.ch.fund-=t;chest+=t;} // the church plate
+  if((s.murage||0)>0){const t=s.murage*f;s.murage-=t;chest+=t;} // the town chest
+  // the custom of thirds: a man keeps two thirds of what he takes himself, his lord a third; the lord has the chests, and the crown a third of all the lord's gains
+  const men=R.length?coin*2/3:0,lordC=coin-men+chest,crownC=lord!=='crown'?lordC/3:0;
+  if(men>0)payAmong(R,men,null,'spoils');acct(lord,lordC-crownC);if(isHouse(lord))book(lord,'spoils',lordC-crownC);acct('crown',crownC);
+  const CARRY={cloth:0.5,tools:0.4,wine:0.3,spice:0.8,silk:0.8,wool:0.2,grain:0.05}; // what a man can carry off; the rest is burned, spilled, trampled
+  for(const g in CARRY){const q=(s.stores[g]||0)*f;if(!(q>0))continue;s.stores[g]-=q;const c=q*CARRY[g];if(!home||!(c>0))continue;home.stores[g]=(home.stores[g]||0)+c;
+    if(R.length){const mc=c*2/3;for(const h of R)offer(home,g,h,mc/R.length);offer(home,g,lord,c-mc);}else offer(home,g,lord,c);}
+  return coin+chest;}
 function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s?Math.min(riders,Math.floor((s.stores.horses||0)*0.6)):0;if(s)s.stores.horses=(s.stores.horses||0)-h;a.horses=(a.horses||0)+h;}
 /* the herds on the map: each beast drawn stands for a few head, on the grass its village grazes; click one to learn whose it is */
 const HERDDRAW={sheep:{per:8,cap:3000},cattle:{per:2,cap:1600},horses:{per:1.5,cap:700},swine:{per:4,cap:1400}};
@@ -8401,7 +8418,7 @@ function tickMilitary(){
         if(s.wallRad){damageWalls(s,a.siegeArc.c,a.siegeArc.w*0.6,amt);const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.08,amt*2);}
         else if(casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+amt*0.8);}}
       if(now>=a.siegeUntil){
-        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;driveOffHerds(s,a);a.state='idle';liftSiege(a);marchArmy(a,a.home);a.why='laden with plunder';a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
+        if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;driveOffHerds(s,a);spoils(a,s,false);a.state='idle';liftSiege(a);marchArmy(a,a.home);a.why='laden with plunder';a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
           const cm=notableById(a.commander),A=a.strength*(a.morale/70)*generalship(cm),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
           if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=Infinity;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;s.takenFrom=s.owner;s.takenMen=(s.garrison||0)+12;damageWalls(s,g.a,0.06,1);} // the gate and the wall beside it thrown down, until it is rebuilt
@@ -8610,7 +8627,7 @@ function takeSettlement(a,s){
   const feud=!inRebellion(a); // a lord taking a neighbour's town in a private war wants it whole; rebels and royal hosts are less careful
   if(chance('sim',(cruel?(feud?0.4:1):(feud?0.06:0.25))*(s.walls>0?1:0.35))){ // a walled town that held out is sacked; an open village mostly just changes hands
     if(s.owner===campHouse())achGet('sacked');
-    s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;
+    s.prosperity=clamp(s.prosperity-25,1,100);s.pop*=0.9;spoils(a,s,true);
     igniteFire(s,2,'sack');
     emit('war',9,s.pos,((q)=>vary('sack',[()=>`${s.name} is taken and given over to sack! Smoke rises from the ${q} and the chronicler weeps to record it.`,()=>`${s.name} falls, and is given over to sack; smoke stands above the ${q}, and the chronicler weeps to record it.`,()=>`The chronicler weeps to record it: ${s.name} is taken and given over to sack, and the ${q} is wrapped in smoke.`,()=>`${s.name} is taken and given over to sack; the ${q} smokes to heaven.`,()=>`${a.name} takes ${s.name} and gives it over to sack. Smoke rises from the ${q}; the chronicler weeps to record it.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${s.name} is taken and given over to sack; smoke hangs over the ${q}, and the chronicler weeps to record it.`,()=>`No mercy is shown at ${s.name}: it is taken and given over to sack, the ${q} burning, and the chronicler weeps to record it.`]))(pick('sim',['market','temple quarter','granaries'])));
   }else{
