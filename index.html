@@ -183,7 +183,14 @@ body.watch #uiback,body.hideui #uiback{display:block;}
 #perfbox{position:absolute;left:10px;bottom:36px;z-index:35;display:none;background:rgba(20,16,12,.82);color:#e9dcc3;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
   padding:7px 9px;border-radius:4px;max-width:min(430px,calc(100vw - 20px));pointer-events:auto;}
 #perfbox button{margin-top:4px;font:inherit;background:#e9dcc3;color:#2b2320;border:0;border-radius:3px;padding:2px 8px;cursor:pointer;}
-#endgame{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(10,8,6,.55);}
+#endgame,#savebox{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(10,8,6,.55);}
+#savebox .egbox{background:#2a2219;color:var(--parch);border:1px solid #8a6e46;border-radius:8px;padding:16px 20px;width:min(560px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-shadow:0 6px 30px rgba(0,0,0,.6);font-size:13px;}
+#savebox h2{margin:0 0 6px;font-family:"IM Fell English",Georgia,serif;color:#e0c070;font-weight:normal;}
+#savebox .pbb{background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px;}
+#savebox .pbb:hover{background:#6e5639;}#savebox input[type=text],#savebox textarea{background:#1b1610;color:var(--parch);border:1px solid #6e5639;border-radius:4px;padding:5px;font:inherit;font-size:12px;box-sizing:border-box;}
+#savebox .sv{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid rgba(224,192,112,.18);flex-wrap:wrap;}#savebox .sv .sn{flex:1 1 200px;min-width:0;}
+#savebox .sv small,#savebox .note{opacity:.75;font-size:11px;}#savebox .row{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;}
+#savebtn{pointer-events:auto;}
 #endgame .egbox{background:#2a2219;color:var(--parch);border:1px solid #8a6e46;border-radius:8px;padding:18px 22px;max-width:min(520px,calc(100vw - 32px));max-height:85vh;overflow:auto;box-shadow:0 6px 30px rgba(0,0,0,.6);}
 #endgame h2{margin:0 0 8px;font-family:"IM Fell English",Georgia,serif;color:#e0c070;font-weight:normal;}
 #endgame .egt{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;}#endgame .egt td,#endgame .egt th{padding:3px 6px;border-bottom:1px solid rgba(224,192,112,.2);text-align:left;}
@@ -329,6 +336,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
   <div id="timec">
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
     <button id="planbtn" title="Plan works with the brush (B): paint streets, squares, a wall or a new quarter in your towns">🖌 Plan</button>
+    <button id="savebtn" title="Save, resume or share this game">💾</button>
     <button data-s="0" title="Pause (Space)">⏸</button><button data-s="6" title="Life (L): a day in half an hour — the folk walk, the carts roll and the ships sail at near their true pace">🚶</button><button data-s="1">▶</button><button data-s="2" class="on">▶▶</button><button data-s="3">▶▶▶</button><button data-s="4">▶▶▶▶</button><button data-s="5" title="A year a second (5): reel through the ages">⏩</button>
   </div>
 </div>
@@ -377,6 +385,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 <div id="placehint">Click the map to place — Esc to cancel</div>
 <div id="planbar"></div>
 <div id="endgame"></div>
+<div id="savebox"></div>
 <div id="petition"></div>
 <div id="hint">drag pan · right-drag turn &amp; tilt · scroll zoom · click to inspect · Space pause · L life pace · 1–5 speed · R rule · M map · C watch · H hide UI · P performance</div>
 
@@ -2252,10 +2261,10 @@ function layoutSettlement(s){
   // what the future may build: gaps in today's frontage first, then lanes not yet laid (hidden until someone builds on them)
   curE=E;
   branch(isCap?10:isTown?6:3,true);
-  const queue=()=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first
+  const queue=again=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first; again: plots whose houses have since gone (burned, sacked, deserted, cleared) are open once more
     const q=[];
     for(const st of s.streets)if(!st.gone)candsOf(st).forEach((c,i)=>{
-      if(c.done)return;
+      if(c.done&&!(again&&!((i>>1)&1)))return;
       if((i>>1)&1||!fits(frontFoot(c,'house',0,rr),gapFor(c))){c.done=true;return;}
       c.key=keyOf(c);q.push(c);});
     return q.sort((p,q2)=>p.key-q2.key);
@@ -4057,7 +4066,7 @@ let planUI=null;
 const PLANB={street:{c:0xe0c070,loop:false,n:'Street'},square:{c:0x9ad0e0,loop:true,n:'Square'},wall:{c:0xd08a6a,loop:true,n:'Wall'},quarter:{c:0xa6d08a,loop:true,n:'New quarter'},stopup:{c:0xb0a8a0,loop:false,n:'Stop up a street'}};
 function planToggle(){ // the brush is the ruler's: as the crown or as the lord you play
   if(planUI){planClose();return;}
-  if(!sovOn()){setSovereign(true,W.player&&W.player.house||0);if(!sovOn())return;}
+  if(!sovOn()){jot({k:'sov',on:true,hi:W.player&&W.player.house||0});setSovereign(true,W.player&&W.player.house||0);if(!sovOn())return;}
   planOpen(plyH());}
 function planOpen(payer){planUI={payer,brush:null,stroke:null,draft:null};const el=document.getElementById('planbar');el.style.display='block';planBarHTML();setPlaceMode(null);}
 function planClose(){if(!planUI)return;planClear();planUI=null;document.getElementById('planbar').style.display='none';}
@@ -4075,7 +4084,7 @@ function planBarHTML(){const P=planUI;if(!P)return;const who=P.payer>0?W.houses[
 function planCmd(k){const P=planUI;if(!P)return;
   if(k==='x'){planClose();return;}
   if(k==='no'){P.draft=null;planClear();planBarHTML();return;}
-  if(k==='go'){if(P.draft&&P.draft.ok)planCommit(P.draft);P.draft=null;planClear();planBarHTML();return;}
+  if(k==='go'){if(P.draft&&P.draft.ok){jot({k:'plan',kind:P.brush,st:(P.stroke||[]).map(q=>({x:+q.x.toFixed(2),z:+q.z.toFixed(2)})),p:P.payer});planCommit(P.draft,P.payer);}P.draft=null;planClear();planBarHTML();return;}
   P.brush=P.brush===k?null:k;P.draft=null;planClear();planBarHTML();}
 function planClear(){if(planUI&&planUI.line){scene.remove(planUI.line);planUI.line.geometry.dispose();planUI.line=null;}if(planUI)planUI.stroke=null;}
 function planDraw(){const P=planUI;if(!P||!P.stroke||P.stroke.length<2)return;if(P.line){scene.remove(P.line);P.line.geometry.dispose();}
@@ -4192,8 +4201,8 @@ function planDraft(kind,stroke,payer){
     return{ok:true,kind,si,grid:lines,hit,comp,land:land.c,works,total,first:Math.min(total,land.c),days:Math.round(60+len/6),
       title:`A new quarter at ${s.name}: ${lines.length} streets, ${Math.round(len)} m`,lines:[`ground bought: ${land.c.toLocaleString()} gold`,hit.length?`${hit.length} house${hit.length===1?'':'s'} in the way: ${comp.toLocaleString()}`:'',`surveying and laying the streets: ${works.toLocaleString()}`,'plots to be taken up by settlers as the town grows'].filter(Boolean)};}
   return no('Unknown brush.');}
-function planCommit(D){const s=W.settlements[D.si],L=s._lay.live;
-  const q={type:'plan',kind:D.kind,si:D.si,payer:planUI?planUI.payer:s.owner,title:D.title,hit:D.hit.slice(),comp:D.comp,land:D.land,works:D.works,total:D.total,days:D.days,
+function planCommit(D,payer){const s=W.settlements[D.si],L=s._lay.live;
+  const q={type:'plan',kind:D.kind,si:D.si,payer:payer!=null?payer:planUI?planUI.payer:s.owner,title:D.title,hit:D.hit.slice(),comp:D.comp,land:D.land,works:D.works,total:D.total,days:D.days,
     paid:0,done:0,stage:'buy',next:day()+3,landPaid:!D.land,start:day()};
   if(D.kind==='street')q.st=L.planStreet(D.pts,true);
   else if(D.kind==='quarter')q.sts=D.grid.map(P=>L.planStreet(P,true));
@@ -6908,7 +6917,7 @@ function initInput(){
       case 'c':case 'C':toggleWatch();break;
       case 'm':case 'M':toggleMap();break;
       case 'p':case 'P':perfToggle();break;
-      case 'r':case 'R':setSovereign(!sovOn());break;
+      case 'r':case 'R':jot({k:'sov',on:!sovOn()});setSovereign(!sovOn());break;
       case 'b':case 'B':planToggle();break; // takes up again whichever house was last played
       case 'Escape':
         if(document.body.classList.contains('watch'))toggleWatch();
@@ -6938,8 +6947,19 @@ function onClick(e){
   if(placeMode){
     const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
-    if(p){
-      if(mode==='order'){const pk=resolvePick(e.clientX,e.clientY);if(pk&&pk.type==='army'&&pk.a&&pk.a!==arg){orderArmyAt(arg,pk.a);return;} // pointed at a host: go and fight it
+    if(p){let pkA=null;if(mode==='order'){const pk=resolvePick(e.clientX,e.clientY);if(pk&&pk.type==='army'&&pk.a)pkA=pk.a.id;}
+      jot({k:'place',m:mode,x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA});doPlace(mode,arg,p,pkA);}
+    return;
+  }
+  const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
+  raycaster.setFromCamera(m,camera);
+  if(overlayMode==='production'&&G.prodSprites&&G.prodSprites.length){ // a production card: click to enlarge it, again to shrink
+    const ph=raycaster.intersectObjects(G.prodSprites,false);
+    if(ph.length){const si=ph[0].object.userData.prod;G.prodBig=G.prodBig===si?null:si;refreshOverlayNow();return;}}
+  {const pk=resolvePick(e.clientX,e.clientY);if(pk)showInspect(pk);else{hideInspect();if(cam.follow)cam.follow=null;}return;}
+}
+function doPlace(mode,arg,p,pkA){ // a click on the map in a placing mode: the same in play and when a save is read again
+      if(mode==='order'){const pk=pkA!=null?W.armies.find(x=>x.id===pkA&&!x.gone):null;if(pk&&pk!==arg){orderArmyAt(arg,pk);return;} // pointed at a host: go and fight it
         const i=nearestSettlementIdx(p.x,p.z),t=W.settlements[i];
         if(dist2d(p.x,p.z,t.pos.x,t.pos.z)<(t.radius||90)*1.4)orderArmy(arg,i);else orderArmyTo(arg,p.x,p.z);}
       else if(mode==='charter'){if(W.treasury>=arg&&doAct('village',p)){W.treasury-=arg;setCd('d_charter',360);sovAmbition('founder');}}
@@ -6954,15 +6974,6 @@ function onClick(e){
       else if(mode==='clear'){if(clearDistrict(p))setCd('d_clear',90);}
       else if(/^l(road1|road2|pave|village)$/.test(mode))lordPlace(mode,p,arg);
       else doAct(mode,p);
-    }
-    return;
-  }
-  const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
-  raycaster.setFromCamera(m,camera);
-  if(overlayMode==='production'&&G.prodSprites&&G.prodSprites.length){ // a production card: click to enlarge it, again to shrink
-    const ph=raycaster.intersectObjects(G.prodSprites,false);
-    if(ph.length){const si=ph[0].object.userData.prod;G.prodBig=G.prodBig===si?null:si;refreshOverlayNow();return;}}
-  {const pk=resolvePick(e.clientX,e.clientY);if(pk)showInspect(pk);else{hideInspect();if(cam.follow)cam.follow=null;}return;}
 }
 /* ---------------- picking: ONE resolver shared by click and hover ----------------
    Order (first match wins):  1 badges drawn over the map (hosts, camps, dragon, envoys, battles, caravan dots), exactly where they show
@@ -8805,8 +8816,9 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     if(!did&&s.harbor&&AD()>=950&&(s.portLoad||0)>berthsOf(s).length*0.3&&s.prosperity>38&&chance('sim',0.4)&&L.live.wharf())
       did=vary('wharf',[()=>`The waterfront of ${s.name} is too crowded for the ships that come: a new wharf is run out from the quay.`,()=>`Ships lie off ${s.name} waiting for a berth; the merchants pay for a new wharf.`,()=>`Piles are driven into the harbour mud at ${s.name}, and a new wharf goes out over the water.`]);
     if(!did&&s.kind!=='village'&&AD()>=1150)L.live.backyards();
+    const nb=s.buildings.filter(b=>!b.removed&&b.state!=='gone').length;s._bPeak=Math.max((s._bPeak||0)*0.995,nb); // the most the town has been, slowly forgotten
     if(did){syncLive(s);emit('trade',6,s.pos,did);}
-    else if(s.growSlots&&s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}
+    else if(s.growSlots&&s.growSlots.length<15){if(nb<s._bPeak*0.85)s.growSlots=L.queue(true);if(s.growSlots.length<15){L.live.lanes(s.kind==='village'?2:4);s.growSlots=L.queue();}s._room=undefined;} // the empty plots of a town that has lost its people first, then new lanes
     // aftermath of a siege: the suburbs burned to deny the enemy cover
     if(s._besieged&&!s.siegeBy){s._besieged=false;if(s.wallRad){L.live.siege();syncLive(s);}}
     if(s.siegeBy)s._besieged=true;
@@ -10304,7 +10316,7 @@ function buildDrawer(tab){
       row.innerHTML=`<label><span>${label}</span><b id="rv_${key}">${MOD[key]}</b></label>`;
       const inp=document.createElement('input');inp.type='range';
       inp.min=min;inp.max=max;inp.step=key==='tax'?1:(max-min)/100;inp.value=MOD[key];inp.disabled=sealed;
-      inp.addEventListener('input',()=>{MOD[key]=+inp.value;
+      inp.addEventListener('input',()=>{MOD[key]=+inp.value;jot({k:'set',n:'mod:'+key,v:MOD[key]});
         document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(MOD[key])+'%':('×'+(+inp.value).toFixed(2));});
       row.appendChild(inp);body.appendChild(row);
       document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(MOD[key])+'%':('×'+(+MOD[key]).toFixed(2));
@@ -10398,28 +10410,29 @@ function initUI(){
   buildDrawer('rates');
   document.getElementById('drawertoggle').addEventListener('click',toggleDrawer);
   // one delegated handler for every data-cmd control (crown panel, inspector, house & succession rows)
-  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;runCmd(t.dataset.cmd,t.dataset.arg);};
+  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;jot({k:'c',c:t.dataset.cmd,a:t.dataset.arg});runCmd(t.dataset.cmd,t.dataset.arg);}; // every command is written in the journal, so a save can be read again
   document.getElementById('dbody').addEventListener('click',cmdClick);
   document.getElementById('dbody').addEventListener('pointerover',e=>{uiHover=!!(e.target.closest&&e.target.closest('button,select,input'));});
   document.getElementById('dbody').addEventListener('pointerleave',()=>{uiHover=false;});
   document.getElementById('inspacts').addEventListener('click',cmdClick);
   document.getElementById('dbody').addEventListener('input',e=>{
-    if(e.target.id==='lorddues'){const h=W.houses[plyH()];if(!h)return;h.dues=+e.target.value/100;const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=e.target.value+'%';return;}
+    if(e.target.id==='lorddues'){const h=W.houses[plyH()];if(!h)return;h.dues=+e.target.value/100;jot({k:'set',n:'dues',v:h.dues});const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=e.target.value+'%';return;}
     if(e.target.id!=='sovtax')return;
-    MOD.tax=+e.target.value;const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=Math.round(MOD.tax)+'%';
+    MOD.tax=+e.target.value;jot({k:'set',n:'tax',v:MOD.tax});const lb=e.target.parentNode.querySelector('b');if(lb)lb.textContent=Math.round(MOD.tax)+'%';
   });
   document.addEventListener('pointerdown',e=>{if(!e.target.closest('#gl'))uiDownAt=performance.now();},true);
   document.addEventListener('click',e=>{const g=e.target.closest('[data-eg]');if(g){document.getElementById('endgame').style.display='none';e.stopPropagation();return;}});
   document.addEventListener('click',e=>{const b=e.target.closest('[data-pb]');if(b&&!b.disabled){planCmd(b.dataset.pb);e.stopPropagation();}});
   document.addEventListener('pointerup',()=>{setTimeout(()=>{uiDownAt=0;},0);},true);
   document.getElementById('petition').addEventListener('click',e=>{
-    const b=e.target.closest('[data-pi]');if(b&&!b.disabled){answerPetition(+b.dataset.pi);return;}
+    const b=e.target.closest('[data-pi]');if(b&&!b.disabled){jot({k:'pet',i:+b.dataset.pi});answerPetition(+b.dataset.pi);return;}
     if(e.target.closest('[data-pv]')){const p=W.petitions[0];if(p&&p.pos){markManual();flyTo(p.pos.x,p.pos.z,480);}}
     const pk=e.target.closest('[data-pk]');if(pk){const[k,i]=pk.dataset.pk.split(':');markManual(); // a name in the petition: show it
       if(k==='s'){const t=W.settlements[+i];if(t){flyTo(t.pos.x,t.pos.z,520);showInspect({type:'settlement',s:t});}}
       else{const h=W.houses[+i],seat=h&&W.settlements[h.seat];if(seat)flyTo(seat.pos.x,seat.pos.z,700);const hd=h&&notableById(h.head);if(hd)showInspect({type:'notable',n:hd});}}
   });
-  document.getElementById('rulebtn').addEventListener('click',()=>setSovereign(!sovOn()));
+  document.getElementById('rulebtn').addEventListener('click',()=>{jot({k:'sov',on:!sovOn()});setSovereign(!sovOn());});
+  document.getElementById('savebtn').addEventListener('click',saveUI);
   document.getElementById('planbtn').addEventListener('click',planToggle);
   document.getElementById('perfbox').addEventListener('click',e=>{if(e.target.id!=='perfcopy')return;const t=perfReport(false);
     (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{e.target.textContent='Copied!';},()=>prompt('Performance report:',t));});
@@ -11235,6 +11248,7 @@ function perfReport(html){
   if(!html)return L.join('\n');
   return L.map(l=>`<div>${l}</div>`).join('')+(PERF.shared==='on'?'<div style="opacity:.7">shared with Claude every 10 s</div>':'')+`<button id="perfcopy">Copy report</button>`;}
 async function boot(){
+  {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
   START_AD=clamp(ym?+ym[1]:em&&em[1]==='high'?1250:850,850,1500);
@@ -11271,11 +11285,94 @@ async function boot(){
   cam.cur.focus.copy(cam.focus);
   cam.dist=3200*MAPK;cam.cur.dist=4200*MAPK;cam.yaw=rand('sim')*Math.PI*2;cam.cur.yaw=cam.yaw-0.4;
   cam.mode='director';
+  if(RESUME_CODE){try{const o=await unpackSave(RESUME_CODE);await replaySave(o,progress);setSpeed(0);}catch(e){console.error(e);emit('crown',4,W.capital.pos,'The save could not be read; a fresh chronicle begins from the same seed.');}}
   document.getElementById('loading').style.opacity='0';
   setTimeout(()=>document.getElementById('loading').remove(),900);
-  {const hm=location.hash.match(/[#&]h=(\d+)/);if(hm)setTimeout(()=>setSovereign(true,+hm[1]),1000);} // #…&h=2: begin as that house (0 the crown)
+  {const hm=location.hash.match(/[#&]h=(\d+)/);if(hm&&!RESUMED)setTimeout(()=>{jot({k:'sov',on:true,hi:+hm[1]});setSovereign(true,+hm[1]);},1000);} // #…&h=2: begin as that house (0 the crown)
   requestAnimationFrame(animate);
 }
+/* =========================================================================
+   SAVES: a save is the world's seed and every command its ruler gave, with the day each was given.
+   The world is grown again from the seed and the days run forward, each command given again on its
+   day: the same realm, to the man. Small enough to share as a code or a link.
+   ========================================================================= */
+let JOURNAL=[],REPLAYING=false,RESUME_CODE=null,RESUMED=false;
+function jot(e){if(REPLAYING||!W||W.prehistory)return;e.d=day();const L=JOURNAL[JOURNAL.length-1];
+  if(e.k==='set'&&L&&L.k==='set'&&L.n===e.n&&L.d===e.d){L.v=e.v;return;} // a slider dragged: only where it came to rest that day
+  JOURNAL.push(e);}
+function applySetting(n,v){if(n==='tax')MOD.tax=v;else if(n==='dues'){const h=W.houses[plyH()];if(h)h.dues=v;}else if(n.startsWith('mod:'))MOD[n.slice(4)]=v;}
+function replayEntry(e){try{switch(e.k){
+  case 'c':runCmd(e.c,e.a);break;
+  case 'sov':setSovereign(e.on,e.hi);break;
+  case 'pet':answerPetition(e.i);break;
+  case 'set':applySetting(e.n,e.v);break;
+  case 'place':{const m=e.m,arg=placeArg;setPlaceMode(null);doPlace(m,arg,{x:e.x,z:e.z},e.pk);break;}
+  case 'plan':{const D=planDraft(e.kind,e.st,e.p);if(D.ok)planCommit(D,e.p);break;}}}
+  catch(err){console.warn('annals: a command could not be given again',e,err);}}
+function worldHash(){return location.hash.replace(/^#/,'').split('&').filter(p=>p&&!/^(h|save|perf)(=|$)/.test(p)).join('&');}
+function buildId(){const el=document.getElementById('buildstamp');return el?el.textContent.trim():'dev';}
+function makeSave(name){return{v:1,name:name||'',hash:worldHash(),build:buildId(),day:day(),ad:AD(),realm:W.name,saved:Date.now(),
+  who:sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle',cam:{x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)},j:JOURNAL};}
+const b64u=s=>btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),unb64u=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');return atob(s+'==='.slice((s.length+3)%4));};
+async function packSave(o){const s=JSON.stringify(o);
+  try{if(window.CompressionStream){const buf=new Uint8Array(await new Response(new Blob([s]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer());let b='';for(let i=0;i<buf.length;i+=8192)b+=String.fromCharCode.apply(null,buf.subarray(i,i+8192));return 'F1'+b64u(b);}}catch(e){}
+  return 'J1'+b64u(unescape(encodeURIComponent(s)));}
+async function unpackSave(code){code=String(code||'').trim().replace(/^[\s\S]*[#&]save=/,'').replace(/[&\s][\s\S]*$/,'');const kind=code.slice(0,2),bin=unb64u(code.slice(2));
+  if(kind==='F1'){const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text());}
+  if(kind==='J1')return JSON.parse(decodeURIComponent(escape(bin)));throw new Error('That is not a Furlong save.');}
+const SAVEK='furlong-saves';
+function savesList(){try{return JSON.parse(localStorage.getItem(SAVEK)||'[]');}catch(e){return[];}}
+function savesPut(L){try{localStorage.setItem(SAVEK,JSON.stringify(L));return true;}catch(e){return false;}}
+function saveNow(name,auto){const o=makeSave(name);o.auto=!!auto;o.id=auto?'auto:'+o.hash:'s'+Date.now();
+  const L=savesList().filter(x=>x.id!==o.id);L.unshift(o);while(L.length>14){let k=-1;for(let i=L.length-1;i>=0;i--)if(!L[i].auto){k=i;break;}L.splice(k>=0?k:L.length-1,1);}
+  return savesPut(L)?o:null;}
+async function resumeSave(o){const code=await packSave(o);location.hash='#'+o.hash+'&save='+code;location.reload();}
+function autosave(){if(REPLAYING||!W||W.prehistory)return;saveNow('',true);}
+async function shelf(){try{if(!window.claude||!claude.use)return null;return await claude.use('db');}catch(e){return null;}}
+function saveUI(){const el=document.getElementById('savebox');if(el.style.display==='flex'){el.style.display='none';return;}el.style.display='flex';saveUIRender();}
+function saveUIRender(msg){const el=document.getElementById('savebox'),L=savesList(),when=t=>new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
+  const row=(o,i)=>`<div class="sv"><div class="sn"><b>${esc(o.auto?'Autosave':o.name||o.realm)}</b> · AD ${o.ad} · ${esc(o.who)}<br><small>${esc(o.realm)} · ${when(o.saved)} · ${o.j.length} command${o.j.length===1?'':'s'}${o.build!==buildId()?' · older build':''}</small></div>
+    <button class="pbb" data-sv="load:${i}">Resume</button><button class="pbb" data-sv="code:${i}">Share</button><button class="pbb" data-sv="file:${i}">⇩</button><button class="pbb" data-sv="del:${i}" title="Delete">✕</button></div>`;
+  el.innerHTML=`<div class="egbox"><h2>Save · Resume · Share</h2>
+    <div class="note">${esc(W.name)}, AD ${AD()} · ${esc(sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle')} · ${JOURNAL.length} command${JOURNAL.length===1?'':'s'} given</div>
+    <div class="row"><input type="text" id="svname" placeholder="Name this save" style="flex:1" maxlength="60"><button class="pbb" data-sv="save">Save</button><button class="pbb" data-sv="sharenow">Share this game</button></div>
+    ${msg?`<div class="note" style="opacity:1;color:#e0c070;margin:4px 0">${msg}</div>`:''}
+    <div>${L.length?L.map(row).join(''):'<div class="note">No saves kept in this browser yet. The game saves itself each year.</div>'}</div>
+    <div style="margin-top:10px"><b>Load a shared game</b><div class="row"><textarea id="svcode" rows="2" style="flex:1" placeholder="Paste a save code or link"></textarea></div>
+    <div class="row"><button class="pbb" data-sv="loadcode">Load the code</button><label class="pbb">Open a save file<input type="file" id="svfile" accept=".furlong,.txt,text/plain" style="display:none"></label><span style="flex:1"></span><button class="pbb" data-sv="shelf">Shared on this page</button><button class="pbb" data-sv="close">Close</button></div></div>
+    <div id="svshelf"></div>
+    <div class="note" style="margin-top:8px">A save is the world's seed and every command you gave, with its day. Resuming grows the world again and gives each command again on its day (a few seconds for every ten years played). A save made in an older build of the game may unfold differently.</div></div>`;
+  const fi=document.getElementById('svfile');if(fi)fi.onchange=async()=>{const f=fi.files&&fi.files[0];if(!f)return;try{const o=await unpackSave(await f.text());await resumeSave(o);}catch(e){saveUIRender('That file is not a save: '+esc(e.message));}};}
+async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=document.getElementById('savebox');
+  if(k==='close'){el.style.display='none';return;}
+  if(k==='save'){const nm=(document.getElementById('svname')||{}).value||'';const s=saveNow(nm.trim(),false);saveUIRender(s?'Saved.':'This browser will not keep it (a private window, or storage is full): use Share and keep the code.');return;}
+  if(k==='load'&&o){await resumeSave(o);return;}
+  if(k==='del'&&o){L.splice(+i,1);savesPut(L);saveUIRender();return;}
+  if(k==='code'||k==='sharenow'){const code=await packSave(k==='code'?o:makeSave((document.getElementById('svname')||{}).value||''));const link=location.href.replace(/#.*$/,'')+'#'+(k==='code'?o.hash:worldHash())+'&save='+code;
+    let ok=false;try{await navigator.clipboard.writeText(code);ok=true;}catch(e){}
+    saveUIRender(`${ok?'The save code is copied.':'Copy the save code below.'} Anyone can paste it into <b>Load a shared game</b>; where the game is opened from a file or a server, the link works too.<textarea rows="3" style="width:100%;margin-top:4px" readonly onclick="this.select()">${code}</textarea>
+      <div class="row"><button class="pbb" data-sv="post:${k==='code'?i:'now'}">Post it to this page's shared shelf</button></div><small style="word-break:break-all;opacity:.6">${esc(link.length<400?link:link.slice(0,120)+'…')}</small>`);return;}
+  if(k==='file'&&o){const code=await packSave(o),filename=(o.name||o.realm).toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-ad'+o.ad+'.furlong';
+    const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;if(dl){try{await dl.save({filename,data:code});}catch(e){}return;}
+    const A=document.createElement('a');A.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));A.download=filename;A.click();setTimeout(()=>URL.revokeObjectURL(A.href),2000);return;}
+  if(k==='loadcode'){try{const o2=await unpackSave((document.getElementById('svcode')||{}).value);await resumeSave(o2);}catch(e){saveUIRender('That is not a save code: '+esc(e.message));}return;}
+  if(k==='post'){const db=await shelf();if(!db){saveUIRender('This page has no shared shelf here (open it on claude.ai to share that way); the code works anywhere.');return;}
+    const s=i==='now'?makeSave((document.getElementById('svname')||{}).value||''):L[+i];try{await db.collection('saves').add({name:s.name||'',realm:s.realm,ad:s.ad,who:s.who,build:s.build,at:Date.now(),code:await packSave(s)});saveUIRender('Posted: anyone who opens this page can resume it from <b>Shared on this page</b>.');}
+    catch(e){saveUIRender('It could not be posted ('+esc(e.code||e.message||'refused')+'); the code still works.');}return;}
+  if(k==='shelf'){const db=await shelf(),box=document.getElementById('svshelf');if(!db){box.innerHTML='<div class="note">No shared shelf here (it works when the game is opened on claude.ai).</div>';return;}
+    try{const q=await db.collection('saves').orderBy('at','desc').limit(30).get();window._shelf=q.docs.map(d=>d.data());
+      box.innerHTML='<b>Shared on this page</b>'+(window._shelf.length?window._shelf.map((s,j)=>`<div class="sv"><div class="sn"><b>${esc(s.name||s.realm)}</b> · AD ${s.ad} · ${esc(s.who)}<br><small>${new Date(s.at).toLocaleDateString()}${s.build!==buildId()?' · older build':''}</small></div><button class="pbb" data-sv="shelfload:${j}">Resume</button></div>`).join(''):'<div class="note">Nothing shared yet.</div>');}
+    catch(e){box.innerHTML='<div class="note">The shelf could not be read ('+esc(e.code||e.message||'')+').</div>';}return;}
+  if(k==='shelfload'){const s=(window._shelf||[])[+i];if(s)try{await resumeSave(await unpackSave(s.code));}catch(e){saveUIRender('That shared save could not be read.');}return;}}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-sv]');if(b){e.stopPropagation();saveAct(b.dataset.sv);}});
+async function replaySave(o,progress){ // grow the days again, giving each command on the day it was given
+  REPLAYING=true;const J=o.j||[],d0=day(),tgt=o.day;let i=0,n=0;
+  while(true){while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;try{simTick();}catch(e){simErr(e);}
+    if(++n%60===0)await progress(`Reading the annals again… AD ${AD()} of ${o.ad}`,clamp((day()-d0)/Math.max(1,tgt-d0),0,1));}
+  REPLAYING=false;JOURNAL=J.slice();RESUMED=true;setPlaceMode(null);
+  buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
+  if(o.cam){cam.focus.set(o.cam.x,hAt(o.cam.x,o.cam.z),o.cam.z);cam.cur.focus.copy(cam.focus);cam.dist=cam.cur.dist=o.cam.d;cam.yaw=cam.cur.yaw=o.cam.yaw;cam.mode='free';}
+  emit('crown',4,W.capital.pos,`The annals are taken up again in AD ${AD()}${o.name?` (“${o.name}”)`:''}.`+(o.build!==buildId()?' This save was made in another build of the game: the realm may have unfolded differently.':''));}
 boot();
 </script>
 </body>
