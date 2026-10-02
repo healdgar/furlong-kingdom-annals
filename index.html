@@ -3988,7 +3988,7 @@ function casNext(s,ad){ // the castle works worth doing next: each weighed by wh
   const hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
   const seat=s.owner>0&&W.houses[s.owner]&&W.settlements[W.houses[s.owner].seat]===s;
   const V=townWorth(s)*(seat||s===W.capital?1.6:1)+3000*(lv),th=townThreat(s),have=s.stores.stone||0,L=[];
-  const add=(k2,cr,stn,t2,g,dign)=>{const cost=Math.round(cr+(stn-Math.min(have,stn))*3),gain=g*th*V+(dign||0)*V;L.push({k:k2,cr,st:stn,t:t2,cost,gain,net:gain-cost});};
+  const add=(k2,cr,stn,t2,g,dign)=>{const cost=Math.round((cr+(stn-Math.min(have,stn))*3)*PL()),gain=g*th*V+(dign||0)*V;L.push({k:k2,cr,st:stn,t:t2,cost,gain,net:gain-cost});};
   if((c.dmg||0)>0.02)add('repair',Math.round(200+c.dmg*1500),Math.round(c.dmg*200),'the battered castle repaired',c.dmg*0.6);
   if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))add('keep',500,150,'the keep rebuilt in stone',0.06);
   if(s.bailey&&!s.baileyStone&&ad>=1150)add('bailey',600,120,'the bailey walled in stone',0.05);
@@ -4341,7 +4341,7 @@ function garrisonNeed(s){ // the watch a town keeps: by its people, its walls an
 function tickGarrisons(){ // monthly: each town musters men to its watch, from its own people, at its lord's charge
   if(day()%30!==11)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const need=garrisonNeed(s),g=s.garrison||0;if(g>=need*0.9||s.pop<40)continue;
-    const k=Math.min((need-g)*0.25,s.pop*0.01),cost=k*1.5;if(purse(s.owner)<cost*3)continue;
+    const k=Math.min((need-g)*0.25,s.pop*0.01),cost=k*1.5*PL();if(purse(s.owner)<cost*3)continue;
     spend(s.owner,cost);if(s.owner>0)book(W.houses[s.owner],'garrisons',-cost);payAmong(heads_(s,h=>ageYrs(h)<50),cost,null);s.garrison=g+k;}} // the watch are townsmen serving their turn: they do not leave the town's roll
 function tickCallToArms(){
   for(const s of W.settlements)if(s.siegeBy)s.lastSiegeDay=day(); // an enemy host within a day and a half's march: the town arms its own men, as many as its means and its fear allow; they go back to work when the danger passes
@@ -4379,7 +4379,7 @@ function townThreat(s){ // how much danger the burghers feel: raids, sieges and 
   for(const c of W.banditCamps||[])if(dist2d(c.x,c.z,s.pos.x,s.pos.z)<2000*MAPK)th+=0.15;return Math.min(th,2);}
 function townWorth(s){ // what the town's houses and shops are worth (25 years' rents): what a wall protects
   if(s._worthY===year())return s._worth;let v=0;for(const b of s.buildings)if(b.state==='sound'&&!b.inst)v+=propValue(b);s._worthY=year();s._worth=v*25;return s._worth;}
-function wallCost(s,stone,R){const per=2*Math.PI*(R||s.wallR||Math.max(80,(s.extentR||s.radius||90)));return per*(stone?2.4:0.8);}
+function wallCost(s,stone,R){const per=2*Math.PI*(R||s.wallR||Math.max(80,(s.extentR||s.radius||90)));return per*(stone?2.4:0.8)*PL();}
 function tickRepairs(){ // once a year: the works made good, as the lord (or the burghers) can pay; neglected walls crumble
   if(day()%360!==262)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const hi=s.owner,Lh=hi>0?W.houses[hi]:null;
@@ -4548,7 +4548,7 @@ function tickChurches(){
       ch.fund+=gifts*wt(b)/tot; // (the tithe comes in as the parish's share of the harvest is sold)
       if(!(Lh&&Lh.exiled)){const spare=Math.max(0,purse(s.owner)-hostTarget(s.owner)*6),g=Math.min(30,spare*0.0015*(b.castle||b.cathedral?2:1)*wt(b)/tot*T.length);if(g>0.5&&spend(s.owner,g)){if(Lh)book(Lh,'church works',-g);ch.fund+=g;}} // the lord gives from what he has to spare beyond his host, more to his own chapel and the cathedral
       const n=chNext(s,b,ch,ad);ch.next=n;if(!n){if(ch.fund>60){const poor=heads_(s,()=>true).sort((a,c)=>(a.w||0)-(c.w||0)).slice(0,12);payAmong(poor,ch.fund-60,b,'alms');}continue;} // nothing wanted: the surplus goes to the poor
-      const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=n.cr+(n.st-useS)*0.6; // stone the yards lack is carted in
+      const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=(n.cr+(n.st-useS)*0.6)*PL(); // stone the yards lack is carted in
       if(ch.fund<cost+useS*price(s,'stone'))continue;
       let grew=0;
       if(n.k==='long')grew=s._lay.live.grow(b,b.w,b.d+n.dl,-ch.W*n.dl/2);
@@ -5671,7 +5671,7 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
     }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
       const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
       const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/1.5:1e9);
-      if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0){h.gold-=add*1.5;book(h,'recruits',-add*1.5);payAmong(heads_(s,q=>ageYrs(q)<50),add*1.5,null);}}
+      if(add>0){a.strength+=add;s.pop-=add*0.7;if(hi>0){const c=add*1.5*PL();h.gold-=c;book(h,'recruits',-c);payAmong(heads_(s,q=>ageYrs(q)<50),c,null);}}
     }
   });
 }
@@ -5774,7 +5774,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const n=W.settlements.length;
     for(let k=0;k<12&&W.settlements.length===n;k++){const a=k*2.4,r=k*40;
       doAct('village',{x:cx+Math.cos(a)*r,z:cz+Math.sin(a)*r},{from:seat,fort:true,owner:hi});}
-    if(W.settlements.length>n){spend(hi,900);book(h,'castles',-900);wages(seat,900,'castles');}
+    if(W.settlements.length>n){const c=900*PL();spend(hi,c);book(h,'castles',-c);wages(seat,c,'castles');}
     h._fortT=day()+360*10;
   });
   // the purse: rents and tolls in, hosts and castellans out; a house in debt sells its outlying lands
@@ -5791,8 +5791,8 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const stew=stewardship(notableById(h.head));let castellans=0,hosts=0,gar=0;
     for(const s of own){if(s===seatS)continue;const v=(2+rentOf(s)*(0.25+0.65*far(s)))/stew,C=heads_(s,()=>true).sort((a,c)=>(c.w||0)-(a.w||0)); // the castellan's household, the steadiest in the place
       castellans+=v;transfer(h,C[0]||'out',v,'castellans');}
-    for(const a of W.armies)if(a.house===hi&&!a.gone){const v=a.strength*(a.standing?0.1:0.25);hosts+=v;soldiersPay(a,v,h);}
-    for(const s of own){const v=(s.garrison||0)*0.2;gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
+    for(const a of W.armies)if(a.house===hi&&!a.gone){const v=a.strength*(a.standing?0.1:0.25)*PL();hosts+=v;soldiersPay(a,v,h);}
+    for(const s of own){const v=(s.garrison||0)*0.2*PL();gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
     for(const s of own){const need=garrisonNeed(s)*1.1; // a garrison beyond what the town needs goes home unless the enemy is at the gate
       if(!s.siegeBy&&s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}}
     h.lastNet=h.gold-g0;h._g0=h.gold; // what the month actually brought in, less what went out
@@ -5840,10 +5840,10 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     if(hi===plyH()||hi>0&&W.houses[hi].exiled)continue;
     const own=W.settlements.filter(s=>s.owner===hi&&!s.siegeBy);
     const opts=[];for(const t of own){const w=t.works||{},rents=townWorth(t)/25+t.pop*0.4; // each work by what it would bring in a year, against its cost
-      if(!w.granary)opts.push([t,'granary',500,t.pop*(0.15+(t.hunger||0)*3)]);
-      if(!w.mill)opts.push([t,'mill',600,(t.res?t.res.farm:0)*t.pop*0.004+rents*0.03]);
-      if(!w.market)opts.push([t,'market',800,rents*0.08+marketHeads(t)*0.2]);
-      if(!(t.clearUntil>day())&&t.landShort)opts.push([t,'clearing',400,t.pop*0.5*clamp(t.pop/Math.max(40,t.cap||t.pop)-0.8,0,1)]);}
+      if(!w.granary)opts.push([t,'granary',500*PL(),t.pop*(0.15+(t.hunger||0)*3)]);
+      if(!w.mill)opts.push([t,'mill',600*PL(),(t.res?t.res.farm:0)*t.pop*0.004+rents*0.03]);
+      if(!w.market)opts.push([t,'market',800*PL(),rents*0.08+marketHeads(t)*0.2]);
+      if(!(t.clearUntil>day())&&t.landShort)opts.push([t,'clearing',400*PL(),t.pop*0.5*clamp(t.pop/Math.max(40,t.cap||t.pop)-0.8,0,1)]);}
     const spare=purse(hi)-hostTarget(hi)*4,o=opts.filter(x=>x[3]*15>x[2]&&x[2]*1.2<spare).sort((a,b)=>b[3]/b[2]-a[3]/a[2])[0];if(!o)continue; // the best return that pays for itself in fifteen years, from silver to spare
     const[t,k,c]=o;if(hi>0){W.houses[hi].gold-=c;book(W.houses[hi],'works',-c);}else W.treasury-=c;if(k==='clearing')payAmong(heads_(t,h=>tills(h,t)),c,null);else wages(t,c,'works');
     if(k==='clearing')t.clearUntil=day()+360*3;else{(t.works||(t.works={}))[k]=day();if(k==='market')t.tradeV=(t.tradeV||0)+400;} // a charter brings the fair's trade
@@ -6200,7 +6200,7 @@ function foundTown(){ // a lord founds a new market town, laid out in one stroke
     sites.push({x:q.x,z:q.z,d:dist2d(q.x,q.z,seat.pos.x,seat.pos.z),v:(r.vol||0)});}
   const site=sites.map(q=>({...q,val:q.v*60*12-q.d/30})).sort((a,b)=>b.val-a.val)[0];if(!site||site.val<1200)return; // a town where the carts pass: its tolls and stallage over a dozen years must repay the founding
   const n=W.settlements.length;
-  if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){W.houses[hi].gold-=1200;book(W.houses[hi],'founding',-1200);wages(seat,1200,'founding');}
+  if(doAct('village',site,{from:seat,owner:hi,planned:true})&&W.settlements.length>n){const c=1200*PL();W.houses[hi].gold-=c;book(W.houses[hi],'founding',-c);wages(seat,c,'founding');}
 }
 function foundDaughter(s,press){
   if(!bldRoom(60))return;
@@ -7810,8 +7810,8 @@ function tickEconomy(){
   }
   for(const r of W.roads)r.vol=(r.vol||0)*0.995;
   // treasury upkeep drains — the predator on hoarding
-  for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+a.strength*(a.standing?0.02:0.05); // the crown pays its own hosts by the head; the household costs less than a levy
-  for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+(s.garrison||0)*0.012; // the crown keeps its own garrisons; a lord keeps his
+  for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+a.strength*(a.standing?0.02:0.05)*PL(); // the crown pays its own hosts by the head; the household costs less than a levy
+  for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+(s.garrison||0)*0.012*PL(); // the crown keeps its own garrisons; a lord keeps his
   if(day()%30===0){for(const a of W.armies)if(a._payOwed>0&&!a.gone){soldiersPay(a,a._payOwed,houseAcct(a.house));a._payOwed=0;}
     for(const s of W.settlements)if(s._watchOwed>0){payAmong(heads_(s,h=>ageYrs(h)<50),s._watchOwed,lordAcct(s),'garrisons');s._watchOwed=0;}} // paid monthly, to the men's households
   {const reserve=hostTarget(0)*25;if(W.treasury>reserve){const v=(W.treasury-reserve)*0.0008;W.treasury-=v;W.capital._poolCash=(W.capital._poolCash||0)+v;}} // the court spends what lies beyond a war chest: with the capital's tailors, spicers, vintners and the rest
@@ -8232,7 +8232,7 @@ function marchArmy(a,toS){
   const r=route(a.at,toS,true);
   if(!r){a.state='idle';return;}
   if(r.sea){ // the host must take ship: transports chartered at so much a man for each crossing
-    const cost=Math.round(80+a.strength*0.6*(r.seaLen/1500));
+    const cost=Math.round((80+a.strength*0.6*(r.seaLen/1500))*PL());
     if(spend(a.house,cost)){const P=W.settlements[a.at];payAmong(P?heads_(P,h=>h.tr==='boatman'||h.tr==='fisher'):[],cost,null,'shipping');}else{a.state='idle';if(!a._noShips||day()-a._noShips>90){a._noShips=day();emit('war',4,W.settlements[a.at].pos,`${a.name} lies at ${W.settlements[a.at].name}: ${houseName(a.house)} cannot pay for the ships to carry it over the water.`);}return;}
     if(a.house>0)book(W.houses[a.house],'shipping',-cost);
     if(!W.prehistory)emit('war',5,W.settlements[a.at].pos,vary('embark',[()=>`${a.name} takes ship for ${W.settlements[toS].name}; ${cost.toLocaleString()} crowns for the hire of the transports.`,()=>`Cogs are hired at ${cost.toLocaleString()} crowns to carry ${a.name} over the water toward ${W.settlements[toS].name}.`,()=>`${a.name} embarks, horses and all, for ${W.settlements[toS].name}.`]));}
@@ -9103,6 +9103,7 @@ const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
 function folkIndex(){const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);return M;}
 function headsOf(s){const H=new Set();for(const p of s.folk||[])if(ageYrs(p)>=16)H.add(householdHead(p));return [...H];}
+function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant';
 function heirOf(id,f,kids,spouse,si){
@@ -9969,7 +9970,7 @@ function roadPlan(ai,bi){ // the surveyors' line, and what it will cost: every s
   const A=W.settlements[ai],B=W.settlements[bi],cells=roadAstar(cIdx(A.cx,A.cz),cIdx(B.cx,B.cz));if(!cells)return null;
   let c=0,bridges=0;for(let k=1;k<cells.length;k++){c+=roadCost(cells[k-1],cells[k]);if(W.water[cells[k]]===2&&W.water[cells[k-1]]!==2)bridges++;}
   let path=resample(smoothPath(resample(cells.map(q=>({x:cellX(q%GRID),z:cellZ((q/GRID)|0)})),9),14),8);path=resample(smoothPath(skirtCastles(path),2),8);path[0]={x:A.pos.x,z:A.pos.z};path[path.length-1]={x:B.pos.x,z:B.pos.z};
-  return {cells,path,len:polyLen(path),bridges,cost:Math.round(c*14+200)};
+  return {cells,path,len:polyLen(path),bridges,cost:Math.round((c*14+200)*PL())};
 }
 function crownRoad(ai,bi){return orderRoad(ai,bi,0);}
 /* works are orders, not miracles: a project is set on foot, paid month by month, and the world carries it out */
