@@ -9065,6 +9065,13 @@ function tradeIncome(s,tr){ // what a household in this trade may expect here in
   const tc=tradeCounts(s),pool=Math.min(s._poolLast||s.pop*foodYr()*0.5,s.pop*foodYr()*4),n=Math.max(1,(tc[tr]||0)); // (what families spend can never be more than they have: a cap against any runaway)
   let sumW=TRADE_W[tr]||0.5;for(const k in tc)if(k!==tr&&!TILLERS.has(k))sumW+=TRADE_W[k]||0.5; // shared among the trades the place actually has
   return pool*(TRADE_W[tr]||0.5)/sumW/n+foodYr()*0.8;} // a share of what the town spends, among those who follow the trade (and odd jobs besides)
+function amenity(s,h,mem){ // what living in a place is worth to a family beyond its trade, in a year's coin: matches for its grown children, protection, nearness to power, church and market
+  const fy=foodYr(),unwed=(mem||[]).filter(p=>!p.sp&&ageYrs(p)>=15&&ageYrs(p)<32).length;
+  const mates=unwed*fy*0.5*Math.log10(1+s.pop)/3; // the more people, the better the match a son or daughter can make
+  const prot=fy*(fortOf(s).mult-1)*0.6*townThreat(s)+fy*0.15*Math.min(1,(s.garrison||0)/30); // walls, a castle and the watch, as the times make them worth having
+  const seat=s===W.capital?1.2:W.houses.some(o=>o&&!o.exiled&&W.settlements[o.seat]===s)?0.6:0; // the court or a lord's hall: patronage, service, a word in the right ear
+  const civic=((s.places||[]).some(p=>p.kind==='market')?0.25:0)+(s.buildings.some(b=>b.arch==='temple'&&b.state==='sound')?0.2:0);
+  return mates+prot+fy*(seat+civic);}
 function hhMembers(s,h){return (s.folk||[]).filter(p=>!p.dead&&householdHead(p)===h);}
 function rentOfHome(s,h){const b=h.bh&&!h.bh.removed?h.bh:null;return b?(b.rural?(b.ownerId&&b.ownerId!==h.id?foodYr()*0.4:0):lotRentAt(s,b.x,b.z,b.st)*4):foodYr()*0.5;}
 function ruralSite(s,h){ // where this household's work lies out of the place: its strips, the wood, the water
@@ -9116,9 +9123,9 @@ function tickHouseholds(){
       if(best&&frand()<0.3){h.w-=foodYr()*1.5;h.tr=best;if(h.sp&&!h.sp.dead)h.sp.tr=best;}}
     // a family goes where it would do better, if the road is worth it (one choice in a few years)
     if(!W.prehistory||AD()>=W.startAD)for(const h of heads){if(h.role||(h._movedY||-99)>year()-5||s.siegeBy)continue;const mem=hhMembers(s,h);if(!mem.length)continue;
-      const here=tradeIncome(s,h.tr)-rentOfHome(s,h)-((s.raidedUntil>day()||s.siegeBy)?foodYr()*2:0)-(s.hunger||0)*foodYr()*4;let best=-1,bg=0;
+      const here=tradeIncome(s,h.tr)+amenity(s,h,mem)-rentOfHome(s,h)-((s.raidedUntil>day()||s.siegeBy)?foodYr()*2:0)-(s.hunger||0)*foodYr()*4;let best=-1,bg=0;
       for(let j=0;j<Ss.length;j++){const o=Ss[j];if(j===si||o.siegeBy||closedToTrade(o))continue;const d=dist2d(s.pos.x,s.pos.z,o.pos.x,o.pos.z);if(d>7000*MAPK)continue;
-        const there=tradeIncome(o,h.tr)-lotRentAt(o,o.pos.x,o.pos.z)*2-(o.hunger||0)*foodYr()*4,cost=(d/1000*0.4+2)*mem.length/5*foodYr()*0.3,g2=there-here-cost; // its trade there, the rent of a modest house, against the road and the cost of setting up anew
+        const there=tradeIncome(o,h.tr)+amenity(o,h,mem)-lotRentAt(o,o.pos.x,o.pos.z)*2-(o.hunger||0)*foodYr()*4,cost=(d/1000*0.4+2)*mem.length/5*foodYr()*0.3,g2=there-here-cost; // its trade there, the rent of a modest house, against the road and the cost of setting up anew
         if(g2>bg){bg=g2;best=j;}}
       if(best>=0&&frand()<clamp(bg/Math.max(1,Math.abs(here))*0.25,0,0.25)){const o=Ss[best];h._movedY=year();
         for(const p of mem){const i=s.folk.indexOf(p);if(i>=0)removeAt(s,i);journey(p,si,best,'migrant');}
@@ -9128,7 +9135,7 @@ function tickHouseholds(){
     for(const h of heads){if(h.role||!h.bh||h.bh.rural)continue;const site=ruralSite(s,h);if(!site)continue;
       const d=dist2d(h.bh.x,h.bh.z,site.x,site.z);if(d<250*MAPK)continue;
       const inc=tradeIncome(s,h.tr),walk=0.1157*d/2500*inc,eye=site.kind==='farm'?inc*0.08*Math.min(1,site.ha/6):inc*0.05; // the hours walked, and the crops better kept by a man who lives among them
-      const fear=(s.raidedUntil>day()-1800?1:0)+(W.war?0.5:0)+(houseAtWar(s.owner)?0.5:0),amen=foodYr()*(0.25+0.6*fear),cost=foodYr()*(site.kind==='farm'?4:2);
+      const dv=dist2d(site.x,site.z,s.pos.x,s.pos.z),amen=amenity(s,h,hhMembers(s,h))*(1-Math.exp(-dv/(1500*MAPK)))+foodYr()*0.15,cost=foodYr()*(site.kind==='farm'?4:2); // what the family gives up by living out there: the farther, the more
       if((walk+eye-amen)*12<cost)continue;
       if(site.kind==='farm'&&site.own<0.5){ // a tenant: his landlord builds it, if it pays him in rent
         const L=W._pm&&[...W._pm.values()].find(q=>(s.furl||[]).some(f=>f.wk===h.id&&f.own===q.id&&q.id!==h.id));if(!L||(L.w||0)<cost*1.3)continue;
