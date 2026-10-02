@@ -12080,6 +12080,13 @@ async function replaySave(o,progress){ // grow the days again, giving each comma
    says, so a new button is a new tool with no upkeep. A few verbs no button carries: read the state, find a thing by
    name, open its card, read the chronicle, speak as whom. An agent reaches it through the connect dialog (a local MCP
    bridge), or, where the game runs in the agent's own browser, as window.FURLONG. */
+const ADV_PROMPT=`Be my advisor in Furlong, a medieval kingdom simulation I am playing in my browser on this computer. Set yourself up, then stay in role.
+
+1. Check Node 18 or later is installed (node --version); install it if not.
+2. Get the advisor bridge: clone https://github.com/healdgar/kingdom-annals (branch claude/game-review-bugs-k0axdk) into a sensible folder, or pull it if it is already there. The bridge is tools/advisor-mcp.mjs: one file, no dependencies.
+3. Register it with this app as a local (stdio) MCP server named "furlong", command: node <full path>/tools/advisor-mcp.mjs (in Claude Code: claude mcp add furlong -- node <full path>/tools/advisor-mcp.mjs). Reload if needed so its tools search, discover and execute are available. If you cannot change your own MCP settings, tell me exactly what to paste where, and wait.
+4. Call search with any query. It answers with a six-letter pairing code: tell me the code, and I will enter it in the game's 🗣 dialog. Call search again once I say I have.
+5. Then call execute with tool "game:persona" and take on that role for the rest of our talk: my closest confidant at court (a named person in the game) if I rule, else the game master. Read the realm (game:state, game:chronicle, game:inspect, search for the rules) before you answer, explain why things happen from the game's workings, suggest how to play, and change the game only when I ask. If game:advise says muted, answer only what I ask.`;
 const ADV={muted:false,
   slug(t){return String(t||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^\w ]+/g,' ').trim().toLowerCase().replace(/\s+/g,'-').slice(0,48)||'x';},
   labelOf(el){const r=el.closest('.slrow,.wrow,label');let t=el.getAttribute('aria-label')||'';
@@ -12175,11 +12182,12 @@ const ADV={muted:false,
   status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
   dialog(){const box=document.getElementById('savebox');box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
     box.innerHTML=`<div class="egbox"><h2>An advisor</h2><div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
-      <ol style="margin:8px 0 8px 18px;padding:0;line-height:1.5"><li>Get the game's folder (git clone the repository) and Node 18+.</li><li>Register the bridge in your agent app as a local MCP server. Claude Code: <code style="user-select:all">claude mcp add furlong -- node /path/to/kingdom-annals/tools/advisor-mcp.mjs</code>. Claude Desktop, Cursor and others: an MCP server with command <code>node</code> and argument <code>/path/to/kingdom-annals/tools/advisor-mcp.mjs</code> (the README has the exact config).</li><li>Ask your agent about the realm: it answers with a pairing code.</li><li>Enter the code here, on this machine.</li></ol>
+      <div style="margin:8px 0 4px">Paste this into your agent app (Claude Code, Claude Cowork, Cursor, or any app that can run commands and local MCP servers); it sets itself up and gives you a pairing code:</div><textarea id="advprompt" readonly style="width:100%;height:150px;font-size:11px">${esc(ADV_PROMPT)}</textarea><div class="row"><button class="pbb" id="advcopy">Copy the prompt</button></div>
       <div class="row" style="align-items:center">Pairing code <input type="text" id="advcode" placeholder="e.g. K7Q2PX" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
       <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
       <div id="advstat" style="color:#e0c070;margin-top:4px">${on?'Connected: your advisor can see the realm.':'Not connected.'}</div>
       <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
+    document.getElementById('advcopy').onclick=()=>{const t=document.getElementById('advprompt');t.select();(navigator.clipboard?navigator.clipboard.writeText(ADV_PROMPT):Promise.reject()).catch(()=>document.execCommand('copy'));document.getElementById('advcopy').textContent='Copied';};
     document.getElementById('advgo').onclick=()=>{const c=document.getElementById('advcode').value.trim().toUpperCase();if(c)ADV.connect(c);};
     document.getElementById('advmute').onchange=e=>{ADV.muted=e.target.checked;};
     document.getElementById('advclose').onclick=()=>{box.style.display='none';};}};

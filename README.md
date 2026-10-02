@@ -64,23 +64,13 @@ OpenRouter-backed client: your choice). When you rule, it is your closest confid
 in the game (your spouse, else the ablest of your kin); otherwise it is the game master. It sees the whole
 realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
 
-You need the game's folder on your machine (`git clone`, or download the repository) and Node 18 or later. The
-bridge is one file with no installs; it talks only to a game open in a browser on the same machine.
-
-1. **Register the bridge with your agent app** as a local (stdio) MCP server whose command is
-   `node /full/path/to/kingdom-annals/tools/advisor-mcp.mjs`:
-   - **Claude Code:** `claude mcp add furlong -- node /full/path/to/kingdom-annals/tools/advisor-mcp.mjs`
-   - **Claude Desktop:** Settings › Developer › Edit Config, add to `claude_desktop_config.json`, restart:
-     ```json
-     { "mcpServers": { "furlong": { "command": "node", "args": ["/full/path/to/kingdom-annals/tools/advisor-mcp.mjs"] } } }
-     ```
-   - **Cursor, Windsurf, VS Code, Cline, other MCP clients:** the same `command`/`args` in that app's MCP settings
-     (Cursor: `~/.cursor/mcp.json`). Clients that reach OpenRouter or a local model work the same way: the model
-     is the app's choice.
-2. **Open the game** in a browser on the same machine (served locally as above, or from its hosted page).
-3. **Ask the agent anything** about your realm. Until it is paired it answers with a six-letter pairing code.
-4. **In the game, click 🗣** in the top bar, enter the code, press Connect. It stays paired while the bridge runs
-   and the page is open; `FURLONG_PORT` changes the port (default 7357).
+Click 🗣 in the game's top bar and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
+Cursor, or any app that can run commands and local MCP servers). The agent checks for Node 18+, fetches this
+repository, registers `tools/advisor-mcp.mjs` as a local MCP server (one file, no dependencies; in Claude Code,
+`claude mcp add furlong -- node <path>/tools/advisor-mcp.mjs`), and answers with a six-letter pairing code. Enter
+the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP settings tells you what to
+paste where. The bridge talks only to a game open in a browser on the same machine (`FURLONG_PORT` changes its
+port, default 7357).
 
 It has three tools. `search` finds controls, places, houses, people and rules. `discover` lists what can be done
 now: every button, slider and list the interface shows, read off the live page, so new buttons need no upkeep,
