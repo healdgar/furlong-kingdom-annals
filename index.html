@@ -6665,7 +6665,8 @@ function onClick(e){
     const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
     if(p){
-      if(mode==='order'){const i=nearestSettlementIdx(p.x,p.z),t=W.settlements[i];
+      if(mode==='order'){const pk=resolvePick(e.clientX,e.clientY);if(pk&&pk.type==='army'&&pk.a&&pk.a!==arg){orderArmyAt(arg,pk.a);return;} // pointed at a host: go and fight it
+        const i=nearestSettlementIdx(p.x,p.z),t=W.settlements[i];
         if(dist2d(p.x,p.z,t.pos.x,t.pos.z)<(t.radius||90)*1.4)orderArmy(arg,i);else orderArmyTo(arg,p.x,p.z);}
       else if(mode==='charter'){if(W.treasury>=arg&&doAct('village',p)){W.treasury-=arg;setCd('d_charter',360);sovAmbition('founder');}}
       else if(mode==='road1'){const i=nearestSettlementIdx(p.x,p.z),s=W.settlements[i];
@@ -7801,6 +7802,10 @@ function tickMilitary(){
   for(const a of W.armies)if(!a.gone&&a.men&&a.men.length!==Math.round(a.strength)&&a.state!=='battle')musterSync(a);
   if(!W.war&&W.armies.length===0)return;
   const now=day();
+  for(const a of W.armies){if(!a.chase||a.gone)continue;const b=W.armies.find(x=>x.id===a.chase); // in pursuit: each day the host turns toward where the foe now is
+    if(!b||b.gone||!atWar(a.house,b.house)||a.state==='rout'){a.chase=null;continue;}if(a.state==='battle'||b.state==='battle')continue;
+    const p=armySimPos(a),q=b.state==='march'?armyAt(b,clamp((now-b.departDay+1.5)/Math.max(0.01,b.arriveDay-b.departDay),0,1)):armySimPos(b); // where it will be: cut it off
+    if(q&&dist2d(p.x,p.z,q.x,q.z)>110)marchToPoint(a,q.x,q.z);}
   for(const a of W.armies){a._ppos=a._spos||armySimPos(a);a._spos=armySimPos(a);}
   for(const a of W.armies){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
@@ -9511,6 +9516,18 @@ function orderArmy(a,si){
   emit('war',3,s.pos,`By the crown's command, ${a.name} marches on ${s.name}.`);
   refreshInspect();
 }
+function orderArmyAt(a,b){ // set one host on another: it follows the foe until they meet; if their lords are not at war, this begins one
+  if(!a||a.gone||!b||b.gone||a===b)return;
+  if(a.state==='battle'){emit('war',2,null,`${a.name} is locked in battle and cannot heed new orders.`);return;}
+  if(b.house===a.house){emit('war',2,null,`${b.name} marches under the same banner.`);return;}
+  if(!atWar(a.house,b.house)){const me=a.house,them=b.house; // drawing the sword is a declaration
+    if((me===0||them===0)&&!W.war)startWar(me===0?them:me,me===0?'is set upon by the crown’s host':'raises its hand against the crown');
+    else startFeud(me,them,me);
+    if(!atWar(a.house,b.house)){emit('war',3,null,`${a.name} cannot be brought against ${b.name} now.`);return;}
+    emit('war',7,armySimPos(b),`${W.houses[me].name} sends ${a.name} against ${b.name} of ${W.houses[them].name}: it is war between them.`);}
+  if(a.state==='siege')liftSiege(a);
+  a.hold=true;a.chase=b.id;a.nextOrder=null;const q=armySimPos(b);marchToPoint(a,q.x,q.z);
+  emit('war',4,q,`${a.name} marches to bring ${b.name} to battle.`);refreshInspect();}
 function orderArmyTo(a,x,z){
   if(!a||a.gone)return;
   if(a.state==='battle'){emit('war',2,null,`${a.name} is locked in battle and cannot heed new orders.`);return;}
@@ -9519,7 +9536,7 @@ function orderArmyTo(a,x,z){
   emit('war',3,{x,z},`${a.name} marches across country towards ${nearestPlaceName(x,z)}.`);refreshInspect();}
 function armyCmd(cmd,id){
   const a=W.armies.find(x=>x.id===+id);if(!a||a.house!==plyH())return;
-  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a town to march ${a.name} there, or open ground to camp there — Esc to cancel`);}
+  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a town to march ${a.name} there, a host to attack it, or open ground to camp there — Esc to cancel`);}
   else if(cmd==='hold'){a.hold=true;if(a.state==='march'){a.nextOrder=null;}emit('war',2,null,`${a.name} is ordered to hold and await the crown's word.`);}
   else if(cmd==='release'){a.hold=false;a.nextOrder=null;emit('war',2,null,`${a.name} is given leave to make war as its captains see fit.`);}
   else if(cmd==='disband'){if(a.state==='battle')return;disbandArmy(a);hideInspect();
