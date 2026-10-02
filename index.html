@@ -2738,7 +2738,9 @@ function houseFolk(s){
   const later=[];for(const h of heads){const b=h.bh;if(b&&cap.get(b)>0){cap.set(b,cap.get(b)-1);b.hh.push(h);}else later.push(h);}
   let rr=0;for(const h of later){const want=TRADE_ARCH[h.tr];let b=null;
     if(want)b=homes.find(x=>x.arch===want&&cap.get(x)>0);
-    if(!b){const wk=workOf(h,s);let bs=-1e9;for(const x of homes){if(!(cap.get(x)>0))continue;const v=homeScore(h,s,x.x,x.z,x.st,wk)+(TILLERS.has(h.tr)&&(x.arch==='house'||x.arch==='longhouse'||x.arch==='cot')?0.4:0);if(v>bs){bs=v;b=x;}}} // the nearest to its work it can afford
+    if(!b){const wk=workOf(h,s);let bs=-1e9;const st=Math.max(1,Math.floor(homes.length/40)),o0=(h.id>>>0)%st; // a household looks over some forty houses with room, not every one in a great town
+      for(let ii=o0;ii<homes.length;ii+=st){const x=homes[ii];if(!(cap.get(x)>0))continue;const v=homeScore(h,s,x.x,x.z,x.st,wk)+(TILLERS.has(h.tr)&&(x.arch==='house'||x.arch==='longhouse'||x.arch==='cot')?0.4:0);if(v>bs){bs=v;b=x;}}} // the nearest to its work it can afford
+    if(!b)b=homes.find(x=>cap.get(x)>0)||null; // none with room among those it looked at: the first that has any
     if(!b&&homes.length)b=homes[(rr++)%homes.length]; // no room left: they lodge with another household
     if(b){cap.set(b,(cap.get(b)||0)-1);b.hh.push(h);}h.bh=b;}
   s._hhY=year();}
@@ -4240,7 +4242,7 @@ function tickGarrisons(){ // monthly: each town musters men to its watch, from i
   if(day()%30!==11)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const need=garrisonNeed(s),g=s.garrison||0;if(g>=need*0.9||s.pop<40)continue;
     const k=Math.min((need-g)*0.25,s.pop*0.01),cost=k*1.5;if(purse(s.owner)<cost*3)continue;
-    spend(s.owner,cost);if(s.owner>0)book(W.houses[s.owner],'garrisons',-cost);s.garrison=g+k;s.pop-=k*0.8;}}
+    spend(s.owner,cost);if(s.owner>0)book(W.houses[s.owner],'garrisons',-cost);s.garrison=g+k;}} // the watch are townsmen serving their turn: they do not leave the town's roll
 function tickWallWorks(){for(const s of W.settlements)if(s.wallBuild&&wallProg(s)>=1){delete s.wallBuild;G.wallsDirty=true;
   if(!W.prehistory)emit('trade',4,s.pos,`The ${s.bastions?'new bastioned trace':s.walls>=2?'stone walls':'palisade'} of ${s.name} ${s.walls>=2?'are':'is'} finished, the circuit closed at last.`);}}
 function wallDmgAt(s,a){const D=s.wallDmg;if(!D)return 0;const f=((a/(Math.PI*2))%1+1)%1*WALLN,i=Math.floor(f)%WALLN;return Math.max(D[i],D[(i+1)%WALLN]);}
