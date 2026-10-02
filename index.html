@@ -255,7 +255,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 @media (max-width:760px){#terrlegend{right:8px;bottom:auto;top:110px;max-height:30vh;font-size:12px;}}
 #terrlegend .lh{cursor:pointer;display:block;}#terrlegend.min>:not(.lh){display:none;}#terrlegend.min .lh::after{content:' ▸';}
 #petition.min>:not(h4){display:none;}#petition h4{cursor:pointer;}
-@media (max-width:760px),(pointer:coarse) and (max-width:1100px){#petition{max-height:46vh;overflow:auto;}#planbar{top:calc(104px + env(safe-area-inset-top));max-height:40vh;overflow:auto;}#savebox .egbox{max-height:80vh;}}
+@media (max-width:760px),(pointer:coarse) and (max-width:1100px){#drawer{top:calc(var(--hudH,100px) + 6px) !important;z-index:18;}#drawertoggle{top:calc(var(--hudH,100px) + 10px) !important;z-index:19;}#terrlegend{top:calc(var(--hudH,100px) + 8px) !important;z-index:16;}#petition{top:calc(var(--hudH,100px) + 6px) !important;}#planbar{top:calc(var(--hudH,100px) + 6px) !important;}#petition{max-height:46vh;overflow:auto;}#planbar{max-height:40vh;overflow:auto;}#savebox .egbox{max-height:80vh;}}
 /* ---- readability and small screens (a pass over the whole UI) ---- */
 #insp{width:340px;max-height:calc(100% - 70px);overflow-y:auto;scrollbar-width:thin;}
 #insp h3{font-size:19px;}#insp .sub{font-size:12.5px;}
@@ -6794,7 +6794,8 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
       sp.position.set(x,hAt(x,z)+60,z);sp.renderOrder=7;grp.add(sp);L.push({h,hi,c,st,towns:towns.length,ha:F.reduce((t,f)=>t+f.area,0)/10000});});
     let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
     el.innerHTML='<b class="lh">Lordships</b>'+L.sort((p,q)=>q.ha-p.ha).map(o=>`<div class="li" data-nm="h${o.hi}"><i style="background:#${o.c.getHexString()}"></i>${o.hi===0?'♛ The crown ('+esc(o.h.name.replace(/^House /,''))+')':esc(o.h.name.replace(/^House /,''))} <small>· ${o.towns} place${o.towns===1?'':'s'}, ${Math.round(o.ha)} ha</small><div style="font-size:11px;margin-left:18px;color:${o.st.c}">${esc(o.st.t)}</div></div>`).join('');
-    el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));}
+    el.querySelectorAll('.li').forEach(d=>d.addEventListener('click',()=>goName(d.dataset.nm)));
+    if(narrowUI()&&!document.getElementById('drawer').classList.contains('closed'))el.classList.add('min');}
   else if(overlayMode==='tongue'){ // who speaks what: each place's fields in its tongue; the legend gives places and souls, and the mixed towns
     const by={};for(const s of W.settlements){if(!s.cult)continue;const o=by[s.cult]||(by[s.cult]={n:0,pop:0,x:0,z:0});o.n++;o.pop+=s.pop;o.x+=s.pos.x*s.pop;o.z+=s.pos.z*s.pop;}
     for(const k in by){const o=by[k];const x=o.x/Math.max(1,o.pop),z=o.z/Math.max(1,o.pop),col='#'+new THREE.Color(TONGUE_PAL[k]||0x888888).offsetHSL(0,0,0.15).getHexString();
@@ -6948,7 +6949,7 @@ function initInput(){
     else if(planUI&&planUI.brush&&e.button===0&&touches.size===1&&!e.shiftKey&&!e.altKey&&planDown(e)){drag=null;return;}
     if(touches.size===2){
       const[a,b]=[...touches.values()];
-      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist,ang:Math.atan2(b.y-a.y,b.x-a.x),yaw:cam.yaw};drag=null;return;
+      pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,dist:cam.dist,ang:Math.atan2(b.y-a.y,b.x-a.x),yaw:cam.yaw,my:(a.y+b.y)/2,pb:cam.pitchBias};drag=null;return;
     }
     const rotate=e.button===2||e.button===1||e.shiftKey||e.altKey;
     drag={x:e.clientX,y:e.clientY,b:e.button,moved:false,rotate,g:rotate?null:grabStart(e.clientX,e.clientY)};
@@ -6960,6 +6961,7 @@ function initInput(){
       markManual();
       cam.dist=clamp(pinch.dist*pinch.d/(Math.hypot(a.x-b.x,a.y-b.y)||1),6,4200*MAPK);
       cam.yaw=pinch.yaw-(Math.atan2(b.y-a.y,b.x-a.x)-pinch.ang); // twist to turn
+      cam.pitchBias=clamp(pinch.pb-((a.y+b.y)/2-pinch.my)*0.004,-0.6,0.5); // both fingers up or down together: tilt
       return;
     }
     if(planUI&&planUI.painting){planMove(e);return;}
@@ -10485,6 +10487,7 @@ function selectTab(t){
   document.querySelectorAll('#dtabs .t').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
   buildDrawer(t);
 }
+{const hud=document.getElementById('hud'),setH=()=>{if(hud)document.documentElement.style.setProperty('--hudH',hud.getBoundingClientRect().bottom+'px');};if(window.ResizeObserver&&hud)new ResizeObserver(setH).observe(hud);addEventListener('resize',setH);setTimeout(setH,0);} // panels below the top bar start where it actually ends, however many rows it wraps to
 const narrowUI=()=>matchMedia('(max-width:760px),(pointer:coarse) and (max-width:1100px)').matches;
 function sheet(which){ // on a small screen one panel at a time: opening one tucks the others away
   if(!narrowUI())return;
