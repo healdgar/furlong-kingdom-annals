@@ -5685,7 +5685,7 @@ function armyLand(a){ // occupation, foraging and supply, once a day
   if(a.state!=='march'&&s&&s.owner===a.house&&dist2d(p.x,p.z,s.pos.x,s.pos.z)<60){ // in its own town: fed from the granary
     const want=a.strength*0.01;purchase(s,'grain',houseAcct(a.house),want);const got=Math.min(purchase.got,s.stores.grain);s.stores.grain-=got; // the lord buys the host's bread in the market
     a.supply=Math.min(100,a.supply+(want>0?got/want:0)*Math.max(3,100-a.supply));} // as much as was bought
-  else if(here&&here.lord===a.house&&here.state===LS.TILLED)a.supply=Math.min(100,a.supply+1.2);
+  else if(here&&here.lord===a.house&&here.state===LS.TILLED){const m=W.settlements[nearestSettlementIdx(p.x,p.z)];if(m&&!m.siegeBy){const want=a.strength*0.004;purchase(m,'grain',houseAcct(a.house),want);const got=Math.min(purchase.got,m.stores.grain);m.stores.grain-=got;a.supply=Math.min(100,a.supply+1.2*(want>0?got/want:0));}} // on his own land the lord's purveyors buy from the nearest market
   a.supply-=use;
   if(!G.land||!houseAtWar(a.house))return;
   // take the land about it, if no enemy host is near enough to dispute it
@@ -7661,6 +7661,8 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
     sf+=fill*n;sn+=n;sw+=Math.max(0,h.w||0);
     if(h.gn!==undefined&&cash>0){const sund=Math.min(cash*0.5,n*foodYr()*0.3/12);for(const tr in SUNDRY)craftWork(s,h,[tr],sund*SUNDRY[tr]/SUNDRY_W);}} // pots, shoes, candles, barrels, a hired hand
   s._fill=sn>0?sf/sn:1;s._wealth=heads.length?sw/heads.length:0; // how well the place lives, as others hear of it
+  {let lu=0;for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too
+    if(lu>0){purchase(s,'hay',lordAcct(s),lu*10/12);Ld.hay=(Ld.hay||0)+purchase.got;}}
   // the crafts buy their stuff when the work pays
   const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30;
   if(cap>0&&price(s,'tools')*0.8>0.6*(price(s,'ore')+price(s,'timber'))){const sm=heads.filter(h=>h.tr==='smith'),by=sm.length?sm:[lordAcct(s)];
@@ -8356,7 +8358,6 @@ function tickMilitary(){
     }
     if(a.state==='siege'){
       const s=W.settlements[a.at];if(a.siegeArc)siegeArc(a,s);
-      s.stores.grain=Math.max(0,s.stores.grain-s.pop*0.004);
       if(!a.raid&&a.siegeArc){const amt=siegeEngines()*clamp(a.strength/600,0.3,2); // the engines batter the works day by day
         if(s.wallRad){damageWalls(s,a.siegeArc.c,a.siegeArc.w*0.6,amt);const g=siegeGate(s,a.siegeArc);if(g)damageWalls(s,g.a,0.08,amt*2);}
         else if(casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+amt*0.8);}}
@@ -9417,7 +9418,11 @@ function tickGrowth(){ // houses are built for households that have none, as fas
     const short=s.folk&&s.folk.length?crowding(s):Math.max(0,(s.pop-housing(s))/HOUSEHOLD),hands=heads_(s,h=>h.tr==='carpenter'||h.tr==='mason'||h.tr==='thatcher').length; // households lodging or with no roof; the builders the place has
     if(short>0&&!s.siegeBy){
       let n=Math.min(short,(1+hands)*0.25*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // as fast as its builders can (wattle and daub, slower, when there is no sawn timber)
-      for(let k=0;k<n;k++){const est=45*0.8*(W._pl||1),pay=houseBuyer(s,est);if(!pay)break; // no one will pay for it: they lodge
+      for(let k=0;k<n;k++){const est=45*0.8*(W._pl||1);
+        { // a storey on the house where a family lodges, if that is cheaper than a new house and its owner will pay: towns add to what they have
+          const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0),lod=heads_(s,h=>h.bh&&!h.bh.removed&&h.bh.s===s&&h.bh.state==='sound'&&(h.bh.hh||[]).indexOf(h)>=1+(h.bh.tier||0)&&h.bh.tier<capT&&h.bh.arch!=='cot'&&h.bh.arch!=='court')[0];
+          if(lod){const b=lod.bh,c=b.w*b.d*0.6*(W._pl||1),own=ownerAcct(b,s);if(c<=est&&means(own)>=c){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);buildWorks(s,c,own,'building');got++;continue;}}}
+        const pay=houseBuyer(s,est);if(!pay)break; // no one will pay for it: they lodge
         const b=addBuildingLive(s);if(b){got++;b.ownerId=pay.id;const tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),pay.acct,'building');purchase(s,'timber',pay.acct,tq);s.stores.timber-=tq;} // its owner pays the builders and the timber
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`]));}
       if(!got&&n>0&&(s.growSlots||[]).length===0){ // nowhere left to build: the town builds upward where the rent is dearest
@@ -9429,6 +9434,10 @@ function tickGrowth(){ // houses are built for households that have none, as fas
     }
     if(day()%360===(W.settlements.indexOf(s)*29)%360&&s.folk&&s.folk.length) // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
       for(const b of s.buildings){if(!RESID.has(b.arch)||b.state!=='sound'||b.removed||(b.hh&&b.hh.length))continue;const own=ownerAcct(b,s),up=b.w*b.d*0.03*(W._pl||1);
+        { // first, another use for it: a craftsman who works from a room not made for his trade takes it and fits it out (a forge in a house, a shop in a hall)
+          const C=heads_(s,h=>TRADE_ARCH[h.tr]&&TRADE_ARCH[h.tr]!==b.arch&&(!h.bh||h.bh.arch!==TRADE_ARCH[h.tr])&&b.arch!=='court'&&b.arch!=='hospital'&&b.arch!=='toll').sort((a,c)=>(c.w||0)-(a.w||0))[0],fit=b.w*b.d*0.12*(W._pl||1);
+          if(C&&means(C)>=fit){const was=ARCH[b.arch][4],want=TRADE_ARCH[C.tr];buildWorks(s,fit,C,'refitting');const old=C.bh;if(old&&old.hh)old.hh=old.hh.filter(x=>x!==C);
+            b.arch=want;b.h=ARCH[want][2]*(0.8+0.25*(b.tier||0));b.hh=[C];C.bh=b;b._vac=0;updateBuildingInstance(b);G.detDirty=true;life(C,`Took the empty ${was} in the ${b.district||'town'} quarter and fitted it out as a ${ARCH[want][4]}`);continue;}}
         b._vac=(b._vac||0)+1;const rent=propValue(b)*0.12*(W._pl||1);if(means(own)>=up&&rent*Math.pow(0.7,b._vac)>up)buildWorks(s,up,own,'repairs'); // worth keeping while a tenant may yet be found
         else{b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}}
     // rebuilding in better stuff: where the value it adds over the years repays the cost, and the owner can pay
