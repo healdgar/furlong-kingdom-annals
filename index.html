@@ -9743,6 +9743,10 @@ function settlementCmd(cmd,si){
   if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
     s.stores.grain+=s.pop*0.4;s.unrest=clamp(s.unrest-6,0,100);emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
   else if(cmd==='garrison'){if(cdLeft('s_gar'+si)||!pay(400))return;setCd('s_gar'+si,60);s.garrison+=40;emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
+  else if(cmd==='callout'||cmd==='levy'){const watch=cmd==='callout';if(cdLeft('s_lev'+si)||(watch?(s.garrison||0)<20:!pay(300)))return;setCd('s_lev'+si,watch?20:60); // every town can put men in the field: its watch, or a levy of its people
+    const want=watch?s.garrison*0.75:Math.min(s.pop*0.12,40+s.pop*0.08),a=raiseArmy(me,si,want,me===0?'crown':'host');if(watch)s.garrison-=a.strength;
+    a.name=watch?`The Watch of ${s.name}`:`The Levy of ${s.name}`;a.home=si;a.hold=true;showInspect({type:"army",a});
+    emit('war',4,s.pos,watch?`The watch of ${s.name} is called out: ${Math.round(a.strength)} men march out of the gate under ${me>0?'their lord’s':'the king’s'} banner.`:`${Math.round(a.strength)} men of ${s.name} and its fields are levied and mustered at the market cross.`);}
   else if(cmd==='walls'){if(s.walls>=2||s.wallBuild||!pay(1500*(s.walls+1)))return;const up=s.walls>=1&&!!s.wallRad;s.walls++;s.wallDmg=null;s.breachUntil=0;
     if(!s.wallRad){riverStrips();traceWall(s,14);if(G.feat)featWalls(s);(s.history||(s.history=[])).push({ago:0,t:'Walled by order of the crown.'});
       for(const b of clearWallLine(s)){b.state='ruin';b.rebuildT=1e9;s.ruinCount++;updateBuildingInstance(b);}} // pulled down for the wall
@@ -9772,6 +9776,8 @@ function settlementActsHTML(s){
   const rel=cdLeft('s_rel'+si),gar=cdLeft('s_gar'+si),sup=cdLeft('s_sup'+si),sl=cdLeft('s_seal'+si),rd=d=>d?`ready in ${d} d`:'';
   return cbtn('s-relief',si,'Send relief grain',250,rd(rel))+
     cbtn('s-garrison',si,'Reinforce the garrison (+40)',400,rd(gar))+
+    cbtn('s-callout',si,`Call out the watch as a host (${Math.round((s.garrison||0)*0.75)} men)`,0,rd(cdLeft('s_lev'+si))||((s.garrison||0)<20?'too few':''),'a host you command; a quarter stay to keep the gates')+
+    cbtn('s-levy',si,`Levy a host here (~${Math.round(Math.min(s.pop*0.12,40+s.pop*0.08,s.pop*0.25))} men)`,300,rd(cdLeft('s_lev'+si)),'townsmen and villagers called from their work')+
     cbtn('s-walls',si,s.wallBuild?`Masons at work (${Math.round(wallProg(s)*100)}%)`:s.walls>=2?'Walls are stone':(s.walls?'Rebuild the walls in stone':'Raise a palisade'),1500*(s.walls+1),s.wallBuild?'building':s.walls>=2?'complete':'')+
     cbtn('s-seal',si,s.quarantineUntil>day()?'Open the gates':'Seal the gates (quarantine)',0,rd(sl))+
     cbtn('s-suppress',si,'Suppress unrest (−20)',150,rd(sup))+worksHTML(s);
@@ -10181,7 +10187,7 @@ function runCmd(cmd,arg){
     case 'notable':{const n=notableById(+arg);if(n)showInspect({type:'notable',n});break;}
     case 'army':{const a=W.armies.find(x=>x.id===+arg);if(a){showInspect({type:'army',a});flyTo(a._rpos.x,a._rpos.z,420);markManual();}break;}
     case 's-work':{const[a,b]=arg.split(':');settlementWork(+a,b);break;}
-    case 's-relief':case 's-garrison':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
+    case 's-relief':case 's-garrison':case 's-callout':case 's-levy':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
     case 'a-order':case 'a-hold':case 'a-release':case 'a-disband':case 'a-split':case 'a-merge':case 'a-garrison':armyCmd(cmd.slice(2),arg);break;
   }
   uiDownAt=0;
