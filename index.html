@@ -319,8 +319,9 @@ body[data-layout=desktop] #petition,body[data-layout=tablet] #petition{left:8px;
 #petition [data-pv]{min-height:44px;display:flex;align-items:center;}
 #planbar{left:8px;top:calc(var(--hudH) + 8px);bottom:auto;transform:none;width:var(--dockW);max-width:calc(100vw - 16px);max-height:calc(100dvh - var(--hudH) - 80px);overflow:auto;background:#201a12;}
 #planbar .pbb{min-height:44px;}.pbhint{font-size:14px;opacity:1;line-height:1.4;}
-#placehint{left:50%;top:calc(var(--hudH) + 8px);transform:translateX(-50%);max-width:calc(100vw - 16px);white-space:normal;background:#201a12;color:var(--parch);z-index:32;}
-#placehint button{margin-left:8px;min-height:44px;padding:6px 10px;cursor:pointer;}
+#placehint{position:fixed;left:8px;right:auto;top:calc(var(--hudH) + 8px);bottom:auto;transform:none;width:min(560px,calc(100vw - 16px));max-width:calc(100vw - 16px);box-sizing:border-box;align-items:center;gap:12px;padding:8px 10px;white-space:normal;background:#201a12;color:var(--parch);border:1px solid #75613a;box-shadow:0 3px 15px #0005;font-size:14px;line-height:1.4;z-index:32;}
+#placetext{flex:1;min-width:0;overflow-wrap:anywhere;}
+#placehint button{flex:none;margin:0;min-height:44px;padding:6px 10px;background:#5a4630;color:var(--parch);border:1px solid #8a6e46;border-radius:4px;font:inherit;cursor:pointer;}
 #hint{display:none;}
 #mapguide{position:absolute;left:50%;bottom:68px;transform:translateX(-50%);z-index:14;background:#201a12ed;color:var(--parch);border:1px solid #75613a;border-radius:5px;padding:6px 10px;display:none;font-size:13px;width:max-content;max-width:calc(100vw - 16px);}
 #mapguide button{background:transparent;border:1px solid #9a835a;color:var(--parch);min-height:44px;margin-left:6px;padding:6px;cursor:pointer;}
@@ -356,6 +357,7 @@ body[data-layout=phone] #chron{left:8px;right:8px;top:auto;bottom:calc(8px + env
 body[data-layout=phone] #chron.min{height:auto;}
 body[data-layout=phone] #chronfilters .f{min-height:44px;}
 body[data-layout=phone] #planbar{top:auto;bottom:calc(64px + env(safe-area-inset-bottom));max-height:min(42dvh,calc(100dvh - var(--hudH) - 80px));}
+body[data-layout=phone] #placehint{left:8px;right:8px;top:auto;bottom:calc(64px + env(safe-area-inset-bottom));width:auto;max-height:min(33dvh,calc(100dvh - var(--hudH) - 80px));overflow:auto;}
 body[data-layout=phone] #petition{left:8px;right:8px;transform:none;width:auto;top:calc(var(--hudH) + 8px);max-height:calc(100dvh - var(--hudH) - 80px);}
 body[data-layout=phone] #beat{max-width:calc(100vw - 16px);bottom:68px;}
 body[data-layout=phone].drawerclosed.chronclosed:not(.inspecting):not(.planning):not(.placing):not(.guideclosed) #beat{bottom:180px;}
@@ -7500,7 +7502,7 @@ function initInput(){
   el.addEventListener('pointermove',e=>{if(drag||e.pointerType==='touch')return;const t=performance.now();if(t-hoverAt<90)return;hoverAt=t;
     let pk=null;try{if(!placeMode||placeMode==='order')pk=resolvePick(e.clientX,e.clientY);}catch(_){}
     if(placeMode==='order'){const a=placeArg,foe=pk&&pk.type==='army'&&pk.a!==a?pk.a:null,town=pk&&pk.type==='settlement'?pk.s:null; // say what the click will do
-      const ph=document.getElementById('placehint');ph.textContent=foe?(foe.house===a.house?`${foe.name} is your own`:`Attack ${foe.name} (${Math.round(foe.strength)} men${atWar(a.house,foe.house)?'':' — this means war'})`):town?`March on ${town.name}${town.owner!==a.house&&!atWar(a.house,town.owner)?' (not at war: they will hold the gates)':''}`:`Camp on open ground — or point at a host to attack it`;
+      setPlaceHint(foe?(foe.house===a.house?`${foe.name} is your own`:`Attack ${foe.name} (${Math.round(foe.strength)} men${atWar(a.house,foe.house)?'':' — this means war'})`):town?`March on ${town.name}${town.owner!==a.house&&!atWar(a.house,town.owner)?' (not at war: they will hold the gates)':''}`:`Choose open ground to camp, a town to march, or an enemy host to attack.`);
       el.style.cursor=foe&&foe.house!==a.house?'crosshair':'cell';hoverPick=null;return;}
     hoverPick=pk;el.style.cursor=placeMode?'crosshair':pk&&pk.type!=='land'?'pointer':'';});
   el.addEventListener('pointercancel',endPtr); // a cancelled touch must not leave a drag stuck on
@@ -7702,14 +7704,18 @@ function riverName(st){ // rivers are named from the land they drain, the same n
   return st.name[0].toUpperCase()+st.name.slice(1);
 }
 let placeArg=null;
+function setPlaceHint(hint){
+  const text=document.getElementById('placetext');if(text)text.textContent=String(hint||'Click the map to place').replace(/ — Esc to (cancel|stop)/g,'').replace(/click/gi,uiLayout()==='phone'||matchMedia('(pointer:coarse)').matches?'tap':'click');
+}
 function setPlaceMode(mode,arg,hint){
   placeMode=mode;placeArg=arg??null;document.body.classList.toggle('placing',!!mode);
   if(mode)hideBeat();
   const ph=document.getElementById('placehint');
-  ph.innerHTML='<span>'+esc((hint||'Click the map to place').replace(/ — Esc to cancel/g,'').replace(/click/gi,matchMedia('(pointer:coarse)').matches?'tap':'click'))+'</span> <button id="placecancel">Cancel</button>';
+  ph.innerHTML='<span id="placetext" role="status"></span><button id="placecancel">Cancel</button>';
+  setPlaceHint(hint);
   document.getElementById('placecancel').onclick=()=>setPlaceMode(null);
   if(mode)sheet('place');
-  ph.style.display=mode?'block':'none';
+  ph.style.display=mode?'flex':'none';
 }
 function nearestSettlementIdx(x,z){
   let bi=0,bd=1e18;
@@ -11017,7 +11023,7 @@ function armyCmd(cmd,id){
   const[ia,ib]=String(id).split(':'),a=W.armies.find(x=>x.id===+ia);if(!a||a.house!==plyH())return;
   if(cmd==='split'){const b=splitArmy(a);if(b){emit('war',3,armySimPos(a),`${a.name} is divided: ${Math.round(b.strength)} men march off as ${b.name}${notableById(b.commander)?' under '+fullTitle(notableById(b.commander)):''}.`);showInspect({type:'army',a:b});}return;}
   if(cmd==='merge'){const b=W.armies.find(x=>x.id===+ib);if(mergeArmies(a,b))emit('war',3,armySimPos(a),`${b.name} joins ${a.name}: ${Math.round(a.strength)} men under one banner.`);refreshInspect();return;}
-  if(cmd==='order'){markManual();setPlaceMode('order',a,`Click a town to march ${a.name} there, a host to attack it, or open ground to camp there — Esc to cancel`);}
+  if(cmd==='order'){markManual();setPlaceMode('order',a,`March ${a.name}: click a town, an enemy host, or open ground to camp — Esc to cancel`);}
   else if(cmd==='hold'){a.hold=true;if(a.state==='march'){a.nextOrder=null;}emit('war',2,null,`${a.name} is ordered to hold and await the crown's word.`);}
   else if(cmd==='release'){a.hold=false;a.nextOrder=null;emit('war',2,null,`${a.name} is given leave to make war as its captains see fit.`);}
   else if(cmd==='garrison'){const s=W.settlements[a.at],n=Math.round(a.strength);if(leaveGarrison(a)){hideInspect();emit('war',3,s.pos,`${a.name} marches into ${s.name}'s castle: ${n} men added to its watch.`);}}
