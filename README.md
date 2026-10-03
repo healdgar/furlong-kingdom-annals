@@ -57,6 +57,13 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   browser exposes a GPU timer, draw calls, triangles, memory and scene size.
   *Copy report* puts it on the clipboard.
 
+## Automated checks
+
+`node --test tools/provision.test.mjs` checks food replenishment, ownership,
+credit and payment conservation against the functions in `index.html`.
+`tools/soak.mjs` measures longer histories in isolated Chrome instances using
+the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md).
+
 ## An advisor
 
 Bring an AI to your side, on any model, through any agent app that speaks MCP (Claude, a coding agent, an
@@ -515,7 +522,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   beyond the realm. Every building has an owner (a household, the lord, the church, the town); rent goes to
   the owner, and an owner who lives in his own house pays none.
   - **The market:** every unit in a town's stores belongs to someone: a seller who has offered it, or a
-    household that has bought it and not yet used it. Each month the harvest is offered by those who grew
+    household that has bought it and not yet used it. Each household has a stable account and its own
+    pantry; community population and hunger aggregate household cohorts. Grain and fish are assigned daily,
+    and other output at the monthly market, to those who grew
     it (the tiller's share, the landowner's, the lord's home farm and his tenants' rents in kind, the
     church's tithe, the mill's multure), and the catch, timber, ore, tools, cloth, wine, hay and stone by
     those who made them. Households buy the month's bread, fish, fuel, cloth and tools with what is in their
@@ -561,8 +570,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
   - **Building is wages:** castles, churches, walls, roads, plans, new houses and rebuilds pay the masons,
     carpenters, thatchers and carters of the place (or the nearest that has them); stone is bought from
     the quarry's owner. Whoever will own a new house pays for it.
-  - **Death and marriage:** a dead man's purse, beasts and buildings pass to his widow or eldest grown
-    child, else escheat to the lord; a bride brings her purse and beasts to her husband's household.
+  - **Death and marriage:** stable household accounts survive their head. Creditors are paid before
+    movable estates are divided among widow and kin; later English presets preserve widow/children/soul
+    shares. Land follows its own local custom, including minor heirs and widow dower. Marriage combines
+    independent estates; dependent children bring a portion. [Rules and historical limits](docs/HOUSEHOLDS.md).
   - **Wards:** when a place grows into a greater neighbour, it becomes its ward (keeping its name and its
     church: the parish stays its own); under one lord it is simply taken in, else the greater lord buys the
     rights at a dozen years' purchase of what the ward actually yields its lord (rents, his share of the
