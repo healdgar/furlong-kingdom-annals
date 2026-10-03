@@ -64,6 +64,9 @@ credit and payment conservation against the functions in `index.html`.
 `tools/soak.mjs` measures longer histories in isolated Chrome instances using
 the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md).
 
+Population/census caching and shared route trees reduce repeated computation.
+A background routing worker retains the same synchronous fallback. [Implementation and matched-history checks](docs/PERFORMANCE.md).
+
 ## An advisor
 
 Bring an AI to your side, on any model, through any agent app that speaks MCP (Claude, a coding agent, an

@@ -58,3 +58,37 @@ test('a wedding invalidates the same-day household census',()=>{const r=realm({h
 test('property assigned to a newly registered household resolves beyond a stale person index',()=>{const r=realm({households:2,cash:0});init(r);r.s.buildings=[{ownerId:1}];r.eval("bindPropertyRights(s);const q={id:99,gn:'new',si:0,age:30};s.folk.push(q);householdAccount(q);s.buildings[0].ownerId=99");assert.equal(r.s.buildings[0].title.owner,r.eval('householdAccount(s.folk[2])'));});
 
 test('monthly provisioning for an unnamed cohort credits that cohort pantry',()=>{const r=realm({households:0,cash:0});init(r);r.eval('provision(s,[],new Map())');assert.ok(r.eval("pantry(s,s.households[0]).grain>0"));near(r.eval("pantry(s,'crown').grain||0"),0);});
+
+test('population totals invalidate on direct ledger set, delete and clear',()=>{const r=realm({households:3});init(r);
+  const check=()=>assert.equal(r.s.pop,r.eval('s.households.reduce((n,h)=>n+(h.population.get(s)||0),0)'));
+  check();r.eval('s.households[1].population.set(s,0.1)');check();r.eval('s.households[0].population.delete(s)');check();r.eval('s.households[2].population.clear()');check();r.s.pop=17;check();});
+test('population cache preserves summation order and invalidates after household recomposition',()=>{const r=realm({households:3});init(r);
+  r.eval('s.households[0].population.set(s,1e16);s.households[1].population.set(s,1);s.households[2].population.set(s,1)');assert.equal(r.s.pop,1e16);
+  r.eval('marryHouseholds(H[0],H[1]);householdsOf(s)');assert.equal(r.s.pop,r.eval('s.households.reduce((n,h)=>n+(h.population.get(s)||0),0)'));});
+test('markets retain owner order across direct writes, deletion and whole-inventory replacement',()=>{const r=realm({households:70});init(r);
+  r.eval("for(const h of H)stockOf(s,h);for(const i of [69,32,31,2,0])stockOf(s,H[i]).sale.tools=i+1");
+  assert.deepEqual(Array.from(r.eval("[...mkt(s,'tools')].map(([w])=>w.id)")),[1,3,32,33,70]);
+  r.eval("delete stockOf(s,H[31]).sale.tools;stockOf(s,H[2]).sale={wine:2};stockOf(s,H[31]).sale.tools=32");
+  assert.deepEqual(Array.from(r.eval("[...mkt(s,'tools')].map(([w])=>w.id)")),[1,32,33,70]);
+  r.eval("const discarded=stockOf(s,H[31]).sale;stockOf(s,H[31]).sale={tools:4};delete discarded.tools");near(r.eval("mkt(s,'tools').get(H[31])"),4);assert.equal(r.eval("mkt(s,'tools').size"),4);});
+test('market iterator sees forward additions and new owners while skipping removed entries',()=>{const r=realm({households:4});init(r);
+  r.eval("for(const h of H)stockOf(s,h);offer(s,'tools',H[0],1);offer(s,'tools',H[2],3);const it=mkt(s,'tools').entries();it.next();offer(s,'tools',H[1],2);mkt(s,'tools').delete(H[2]);offer(s,'tools',H[3],4);offer(s,'tools','late',5)");
+  assert.deepEqual(Array.from(r.eval("[...it].map(([w,v])=>[w.gn?w.id:w,v])"),x=>Array.from(x)),[[2,2],[4,4],['late',5]]);});
+test('held totals preserve owner order after replacement and defined zero or undefined entries',()=>{const r=realm({households:3});init(r);
+  r.eval("stockOf(s,H[2]).held.tools=1;stockOf(s,H[0]).held.tools=1e16;stockOf(s,H[1]).held.tools=1");assert.equal(r.eval("heldTotal(s,'tools')"),1e16);
+  r.eval("stockOf(s,H[0]).held={tools:0};stockOf(s,H[1]).held.tools=undefined");assert.equal(r.eval("heldTotal(s,'tools')"),1);});
+test('person index is reused between changes and refreshed after removal or household registration',()=>{const r=realm();init(r);
+  assert.equal(r.eval('folkIndex()===folkIndex()'),true);r.eval('const oldIndex=folkIndex();removeAt(s,0);dropPerson(H[0]);const q={id:99,gn:"new",si:0};householdAccount(q)');
+  assert.equal(r.eval('folkIndex()===oldIndex'),false);assert.equal(r.eval('folkIndex().has(1)'),false);assert.equal(r.eval('folkIndex().has(99)'),true);});
+test('a census is reused across quiet days and recomputed after parish membership changes',()=>{const r=realm({households:2});init(r);const first=r.s.households;
+  r.eval('day=()=>2;householdsOf(s)');assert.equal(r.s.households,first);r.eval('removeAt(s,0);day=()=>3;householdsOf(s)');assert.notEqual(r.s.households,first);assert.equal(r.s.households.length,1);near(r.s.pop,150);});
+test('own-stock purchases retain demand, sale and income accounting',()=>{const r=realm({households:2});init(r);r.eval("mkt(s,'tools').clear();offer(s,'tools',H[0],4);offer(s,'tools',H[1],9);const cash0=means(H[0]);purchase(s,'tools',H[0],3,2)");
+  near(r.eval('purchase.got'),3);near(r.eval('means(H[0])'),r.eval('cash0'));near(r.eval("mkt(s,'tools').get(H[1])"),9);near(r.eval("s._dem.tools"),3);near(r.eval("s._sold.tools"),3);near(r.eval('H[0]._inc'),6);});
+test('market settlement reads live quantities when two inventory owners project the same head',()=>{
+  // Freeze existing alias behavior: ownership repair is separate from performance work.
+  for(const bulk of [false,true]){const r=realm({households:3,cash:100});init(r);
+    r.eval("mkt(s,'tools').clear();const old=householdAccount(H[0]);bindHousehold(H[1],old);offer(s,'tools',H[0],10);householdPortion(H[0]);offer(s,'tools',H[0],20)");
+    if(bulk)r.eval("clearMarket(s,'tools',[[H[2],15]],1)");else near(r.eval("purchase(s,'tools',H[2],15,1)"),7.5);
+    near(r.eval("mkt(s,'tools').get(H[0])"),2.5);
+  }
+});

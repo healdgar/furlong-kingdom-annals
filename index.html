@@ -1427,16 +1427,41 @@ function roadTraffic(){ // share of the realm's journeys (place to place, weight
   const mx=Math.max(1,...T);W._traf=T.map(v=>v/mx);W._trafK=key;return W._traf;
 }
 const PORT_DELAY=1200; // a crossing costs the days of finding and loading the ships, in road-metres: some three days' march
+/* One exact shortest-path tree serves every destination from an origin. The background worker
+   reads only a versioned graph; it cannot change the world or draw random numbers. The same kernel
+   handles synchronous misses, including browsers which disallow workers on a local file. */
+function routingGraph(){const roads=W.roads.map(r=>(r.len||1)/(1+0.5*(r.grade||0))/(0.6+0.4*(r.cond??1))),lanes=W.seaLanes||[];
+  return {n:W.settlements.length,adj:W.settlements.map((_,i)=>(W.adj[i]||[]).map(e=>[e.to,roads[e.ri],e.ri])),
+    sea:lanes.map((L,li)=>[L.a,L.b,L.len*MARCH_MPD/COG_MPD+PORT_DELAY,li])};}
+function routingTree(graph,ai,sea){const n=graph.n,g=new Float64Array(n).fill(Infinity),prev=new Int32Array(n).fill(-2),via=new Int32Array(n).fill(-1),done=new Uint8Array(n),open=[ai];g[ai]=0;prev[ai]=-1;
+  while(open.length){let mi=0;for(let k=1;k<open.length;k++)if(g[open[k]]<g[open[mi]])mi=k;const c=open.splice(mi,1)[0];if(done[c])continue;done[c]=1;
+    const edges=graph.adj[c]||[],relax=(to,w,edge)=>{const nd=g[c]+w;if(prev[to]===-2||nd<g[to]){g[to]=nd;prev[to]=c;via[to]=edge;open.push(to);}};
+    for(const e of edges)relax(e[0],e[1],e[2]);if(sea)for(const L of graph.sea){if(L[0]===c)relax(L[1],L[2],~L[3]);else if(L[1]===c)relax(L[0],L[2],~L[3]);}}
+  return {g,prev,via};}
+const ROUTING={cache:null,graph:null,trees:new Map(),worker:null,version:0,busy:false,queued:null,disabled:/(?:^|[&#])worker=off(?:&|$)/.test(location.hash),stats:{syncTrees:0,workerTrees:0,workerHits:0,stale:0,failures:0}};
+function routingReset(){if(ROUTING.cache===W.routes)return;ROUTING.cache=W.routes;ROUTING.graph=routingGraph();ROUTING.trees.clear();ROUTING.version++;routingQueue();}
+function routingWorker(){if(ROUTING.worker||ROUTING.disabled)return ROUTING.worker;
+  if(typeof Worker==='undefined'){ROUTING.disabled=true;return null;}
+  let url;try{const code='const routingTree='+routingTree.toString()+`;onmessage=({data})=>{try{const trees=[],buffers=[];for(let a=0;a<data.graph.n;a++)for(const sea of (data.graph.sea.length?[false,true]:[false])){const tree=routingTree(data.graph,a,sea);trees.push([a+(sea?'s':''),tree]);buffers.push(tree.g.buffer,tree.prev.buffer,tree.via.buffer);}postMessage({version:data.version,trees},buffers);}catch(e){postMessage({version:data.version,error:String(e)});}};`;
+    url=URL.createObjectURL(new Blob([code],{type:'text/javascript'}));const worker=new Worker(url);ROUTING.worker=worker;
+    const fail=()=>{worker.terminate();ROUTING.worker=null;ROUTING.disabled=true;ROUTING.busy=false;ROUTING.queued=null;ROUTING.stats.failures++;};
+    worker.onerror=e=>{e.preventDefault();fail();};worker.onmessageerror=fail;
+    worker.onmessage=({data})=>{ROUTING.busy=false;if(data.error){fail();return;}
+      if(data.version===ROUTING.version&&ROUTING.cache===W.routes){for(const[k,t]of data.trees)if(!ROUTING.trees.has(k)){t.worker=true;ROUTING.trees.set(k,t);ROUTING.stats.workerTrees++;}}else ROUTING.stats.stale++;
+      const next=ROUTING.queued;ROUTING.queued=null;if(next)routingSend(next);};
+    return worker;
+  }catch(e){ROUTING.disabled=true;ROUTING.stats.failures++;return null;}finally{if(url)URL.revokeObjectURL(url);}}
+function routingSend(job){const worker=routingWorker();if(!worker)return;try{ROUTING.busy=true;worker.postMessage(job);}catch(e){worker.terminate();ROUTING.worker=null;ROUTING.disabled=true;ROUTING.busy=false;ROUTING.queued=null;ROUTING.stats.failures++;}}
+function routingQueue(){if(ROUTING.disabled)return;const job={version:ROUTING.version,graph:ROUTING.graph};if(ROUTING.busy)ROUTING.queued=job;else routingSend(job);}
+function routingPrepare(){routingReset();}
+function routingFrom(ai,sea){routingReset();const key=ai+(sea&&ROUTING.graph.sea.length?'s':'');let tree=ROUTING.trees.get(key);
+  if(!tree){tree=routingTree(ROUTING.graph,ai,sea);ROUTING.trees.set(key,tree);ROUTING.stats.syncTrees++;}else if(tree.worker)ROUTING.stats.workerHits++;return tree;}
 function route(ai,bi,sea){
   const key=ai+'_'+bi+(sea?'s':'');
-  if(W.routes[key])return W.routes[key];
-  // the quickest way by the roads (a paved road is quicker going); a new road the crown lays is used at once; with sea, the lanes between lands too
-  const adj=c=>{const E=W.adj[c]||[];if(!sea||!W.seaLanes||!W.seaLanes.length)return E;const o=E.slice();W.seaLanes.forEach((L,li)=>{if(L.a===c)o.push({to:L.b,li});else if(L.b===c)o.push({to:L.a,li});});return o;};
-  const prev={},via={},g={};prev[ai]=null;g[ai]=0;const open=[ai],done=new Set();
-  while(open.length){let mi=0;for(let k=1;k<open.length;k++)if(g[open[k]]<g[open[mi]])mi=k;const c=open.splice(mi,1)[0];if(done.has(c))continue;done.add(c);if(c===bi)break;
-    for(const e of adj(c)){const w=e.li!==undefined?W.seaLanes[e.li].len*MARCH_MPD/COG_MPD+PORT_DELAY:(r=>(r.len||1)/(1+0.5*(r.grade||0))/(0.6+0.4*(r.cond??1)))(W.roads[e.ri]),nd=g[c]+w;if(!(e.to in g)||nd<g[e.to]){g[e.to]=nd;prev[e.to]=c;via[e.to]=e;open.push(e.to);}}}
-  if(!(bi in prev))return null;
-  const hops=[];let c=bi;while(prev[c]!==null){hops.push([prev[c],c,via[c]]);c=prev[c];}hops.reverse();
+  if(Object.prototype.hasOwnProperty.call(W.routes,key))return W.routes[key];
+  if(!Number.isInteger(ai)||!Number.isInteger(bi)||ai<0||bi<0||ai>=W.settlements.length||bi>=W.settlements.length)return null;
+  const {prev,via,g}=routingFrom(ai,sea);if(prev[bi]===-2)return W.routes[key]=null;
+  const hops=[];let c=bi;while(prev[c]!==-1){const v=via[c],e=v<0?{li:~v}:{ri:v};hops.push([prev[c],c,e]);c=prev[c];}hops.reverse();
   let poly=[],seaLen=0;
   for(const[f,t,e]of hops){
     let seg;
@@ -2723,15 +2748,15 @@ function mkPerson(s,si,o){
   p.hair=o.ma&&o.pa?(frand()<0.45?o.ma.hair:frand()<0.8?o.pa.hair:hairDraw(s.cult)):hairDraw(s.cult);
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   if(o.ma)(o.ma.kids||(o.ma.kids=[])).push(p);if(o.pa)(o.pa.kids||(o.pa.kids=[])).push(p); // the parish book: who were whose children
-  (s.folk||(s.folk=[])).push(p);return p;}
+  (s.folk||(s.folk=[])).push(p);invalidateFolkIndex();return p;}
 function life(p,t){if(!p||p.merc||!t||W.prehistory)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>30)E.splice(0,1);} // the ledger of a life: what befell him, and when (kept from the reign's start; the years before are the chronicle's)
 function dropPerson(p,why){if(!p||p.dead)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(p.ev&&p.ev.length>8)p.ev=[...p.ev.filter(e=>/^(Born|Married|Apprenticed|Learned|Left|Moved)/.test(e[1])).slice(-5),p.ev[p.ev.length-1]];}/* the dead keep only the bones of their story */if(!p.merc&&W.settlements)inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.spR=p.sp;p.sp.spR=p;p.sp.sp=null;p.sp=null;}
-  if(!p.merc)archivePerson(p);}
+  invalidateFolkIndex();if(!p.merc)archivePerson(p);}
 function archivePerson(p){ // the dead are kept as a line in the parish book: name, family, dates, parents, spouse, trade, place, the bones of the story; the working parts of a life are let go
   p.dd=day();try{p.nat=natureWords(p);p.lrn=learningWords(p);}catch(e){}
   for(const k of['g','e','sk','kn','herd','w','_inc','_fill','away','lb','own','_hungY','_movedY','trChosen','fed','home','bh','_strips','_crop','_ha','_owned'])delete p[k];}
-function removeAt(s,i){const a=s.folk;if(i<0||i>=a.length)return null;const p=a[i];a[i]=a[a.length-1];a.pop();return p;} // an index of -1 used to take the last soul on the roll instead
-function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);}
+function removeAt(s,i){const a=s.folk;if(i<0||i>=a.length)return null;const p=a[i];a[i]=a[a.length-1];a.pop();invalidateFolkIndex();return p;} // an index of -1 used to take the last soul on the roll instead
+function moveTo(p,from,to,ti){const i=from.folk.indexOf(p);if(i>=0)removeAt(from,i);p.si=ti;(to.folk||(to.folk=[])).push(p);invalidateFolkIndex();}
 /* a year's teaching: what the place, the trade and the rank offer, taken up by wits and diligence */
 function eduPlace(s){
   if(s._edu&&s._eduY===year())return s._edu;
@@ -2869,7 +2894,7 @@ function tickFolk(){
   Ss.forEach((s,si)=>{ // too few: the levies home, the newborn, the newcomers
     if(!Number.isFinite(s.pop)){(W._dbg||(W._dbg=[])).push([day(),s.name,'pop not finite',s.folk.length]);s.pop=s.folk.length;}
     let k=Math.round(s.pop)-s.folk.length-(inb.get(si)||0);if(k<=0)return;
-    for(let i=W.levies.length-1;i>=0&&k>0;i--)if(W.levies[i].home===si&&!W.levies[i].dead){const p=W.levies[i];W.levies.splice(i,1);p.si=si;s.folk.push(p);k--;}
+    for(let i=W.levies.length-1;i>=0&&k>0;i--)if(W.levies[i].home===si&&!W.levies[i].dead){const p=W.levies[i];W.levies.splice(i,1);p.si=si;s.folk.push(p);invalidateFolkIndex();k--;}
     const mothers=s.folk.filter(p=>p.sx==='f'&&p.sp&&!p.sp.dead&&p.sp.si===si&&d-p.lb>450&&ageYrs(p)>=16&&ageYrs(p)<45);
     const pb=Math.min(0.09,k/Math.max(1,mothers.length)*1.2);
     for(const m of mothers){if(k<=0)break;if(frand()>=pb*Math.exp(0.35*trait(m,GF)))continue;
@@ -2891,9 +2916,18 @@ function capOf(b){return (1+(b.tier||0))*Math.max(1,Math.round((b.w||8)*(b.d||7)
 const HH_FIELDS=['w','herd','bh','_debt','_owe','_inc','_fill','_keep','_strips','_crop','_ha','_owned'];
 function oldHouseholdHead(p){for(let i=0;i<8;i++){if(p.sp&&!p.sp.dead&&p.sp.si===p.si)return p.sx==='f'?p.sp:p;
   if(!p.sp&&(ageYrs(p)<18||!p.own&&!(p.lb>0)&&ageYrs(p)<30)&&p.ma&&!p.ma.dead&&p.ma.si===p.si){p=p.ma;continue;}return p;}return p;}
-function newHousehold(p){const h={household:true,id:'hh'+((W._hhID=(W._hhID||0)+1)),head:p,members:new Set(),assets:{w:0,_debt:0,_owe:[]},population:new Map(),hunger:0};
+function invalidateFolkIndex(){W._folkIndex=null;W._folkRevision=(W._folkRevision||0)+1;}
+/* Population is authoritative in the household ledger. Invalidate its settlement total on every
+   write; sum lazily in the original household order (incremental sums would change rounding). */
+class HouseholdPopulation extends Map{
+  set(s,n){super.set(s,n);s._popValid=false;return this;}
+  delete(s){const removed=super.delete(s);if(removed)s._popValid=false;return removed;}
+  clear(){for(const s of this.keys())s._popValid=false;super.clear();}
+}
+function populationOf(s){if(!s._popValid){let n=0;for(const h of s.households||[])n+=h.population.get(s)||0;s._popTotal=n;s._popValid=true;}return s._popTotal;}
+function newHousehold(p){const h={household:true,id:'hh'+((W._hhID=(W._hhID||0)+1)),head:p,members:new Set(),assets:{w:0,_debt:0,_owe:[]},population:new HouseholdPopulation(),hunger:0};
   h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});(W.households||(W.households=new Map())).set(h.id,h);return h;}
-function bindHousehold(p,h){if(p._hh===h)return h;const old=p._hh;if(old)old.members.delete(p);
+function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)old.members.delete(p);
   if(!old)for(const k of HH_FIELDS){const d=Object.getOwnPropertyDescriptor(p,k);if(d&&'value'in d&&d.value!=null){if(k==='w'||k==='_debt'||k==='_inc')h.assets[k]=(h.assets[k]||0)+d.value;
     else if(k==='_owe')(h.assets._owe||(h.assets._owe=[])).push(...d.value);else if(k==='herd'){const H=h.assets.herd||(h.assets.herd={});for(const g of BEASTS)H[g]=(H[g]||0)+(d.value[g]||0);}else h.assets[k]=d.value;}}
   p._hh=h;h.members.add(p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
@@ -2905,16 +2939,17 @@ function householdHead(p){const h=householdAccount(p);return h&&h.head&&!h.head.
 function accountOwner(x){return x&&x.gn!==undefined&&!x.merc?householdAccount(x):x;}
 function householdHeadsChanged(s){s._householdsD=-1;s._hdC=null;s._tcY=-1;s._hbC=null;}
 function householdsOf(s){if(s._householdsD===day()&&s._householdsN===(s.folk||[]).length)return s.households||[];
+  if(s._householdsD>=0&&s._householdsV===(W._folkRevision||0)&&s._householdsN===(s.folk||[]).length){s._householdsD=day();return s.households||[];}
   const H=new Set();for(const p of s.folk||[])if(!p.dead){const h=householdAccount(p);if(h)H.add(h);}
   if(!H.size){const h=s._cohort||(s._cohort=newHousehold(null));H.add(h);}
-  const old=s.households||[],total=s._populationReady?s.pop:s.pop||0;s.households=[...H];
+  const old=s.households||[],total=s._populationReady?s.pop:s.pop||0;s.households=[...H];s._popValid=false;
   for(const h of old)if(!H.has(h))h.population.delete(s);
-  let weights=0;const sizes=new Map();for(const h of H){let n=0;for(const p of h.members)if(!p.dead&&p.si===W.settlements.indexOf(s))n++;sizes.set(h,Math.max(1,n));h.census=h.census||new Map();weights+=Math.max(1,n);}
+  let weights=0;const sizes=new Map(),si=W.settlements.indexOf(s);for(const h of H){let n=0;for(const p of h.members)if(!p.dead&&p.si===si)n++;sizes.set(h,Math.max(1,n));h.census=h.census||new Map();weights+=Math.max(1,n);}
   const changed=old.length!==H.size||[...H].some(h=>!h.population.has(s)||(h.census||(h.census=new Map())).get(s)!==sizes.get(h));
   if(changed)for(const h of H)h.population.set(s,total*sizes.get(h)/Math.max(1,weights));for(const h of H)h.census.set(s,sizes.get(h));
-  if(!s._populationReady){Object.defineProperty(s,'pop',{configurable:true,enumerable:true,get(){let n=0;for(const h of this.households||[])n+=h.population.get(this)||0;return n;},
+  if(!s._populationReady){Object.defineProperty(s,'pop',{configurable:true,enumerable:true,get(){return populationOf(this);},
     set(v){if(!Number.isFinite(v)||v<0)return;const H=this.households||[],old=H.reduce((n,h)=>n+(h.population.get(this)||0),0);for(const h of H)h.population.set(this,old>0?v*(h.population.get(this)||0)/old:v/Math.max(1,H.length));}});s._populationReady=true;}
-  s._householdsD=day();s._householdsN=(s.folk||[]).length;return s.households;}
+  s._householdsD=day();s._householdsN=(s.folk||[]).length;s._householdsV=W._folkRevision||0;return s.households;}
 function householdSize(s,p){const h=householdAccount(p);householdsOf(s);return h?h.population.get(s)||0:0;}
 function householdPortion(p,f=0){const old=householdAccount(p);if(!old)return null;if(old.members.size===1)return old;
   const h=newHousehold(p);bindHousehold(p,h);p.own=true;
@@ -3065,7 +3100,7 @@ function hireMen(a,k){ // sell-swords: their own tongue, their own names
     const p={id:PID++,sx:'m',b:day()-(20+frand()*18)*360,si:-1,home:-1,fam:-1,sk:new Float32Array(9),sp:null,tr:'soldier',fed:0,lb:-9999,merc:c,g:G.g,e:G.e,hair:hairDraw(c)};
     p.gn=givenPick(c,'m',null);p.sur=X?(frand()<0.5?X.patr(givenPick(c,'m',null)):X.nick[['tall','strong','bold','dark','red','young','quick','stout'][Math.floor(frand()*8)]]):'';
     p.sk[KA]=0.35+frand()*0.45;p.sk[KRi]=frand()*0.7;if(p.sk[KRi]>=0.45)a.horses=(a.horses||0)+1;a.men.push(p);}} // a sell-sword who rides brings his own horse
-function sendHome(p){const s=p.merc?null:W.settlements[p.home];if(!s||!s.folk){dropPerson(p);return;}p.si=p.home;s.folk.push(p);}
+function sendHome(p){const s=p.merc?null:W.settlements[p.home];if(!s||!s.folk){dropPerson(p);return;}p.si=p.home;s.folk.push(p);invalidateFolkIndex();}
 function musterSync(a){ // the roll follows the host's numbers: the released go home, the rest of the missing are dead
   if(!a.men)return [];const want=Math.max(0,Math.round(a.strength)),dead=[];let k=a.men.length-want;
   if(k>0){const rel=Math.min(k,Math.round(a._rel||0));a._rel=0;
@@ -3080,7 +3115,7 @@ function musterSync(a){ // the roll follows the host's numbers: the released go 
    realm's scale (750 map metres), are away from home while they go, and can be met on the road. */
 const WALK_MPD=750;
 function journey(p,from,to,why){ // p leaves `from` (already off its roll) and joins `to` when it arrives
-  if(!W.settlements[from]||!W.settlements[to]){if(W.settlements[to]){p.si=to;W.settlements[to].folk.push(p);}return;}
+  if(!W.settlements[from]||!W.settlements[to]){if(W.settlements[to]){p.si=to;W.settlements[to].folk.push(p);invalidateFolkIndex();}return;}
   departHousehold(p,from,to,why);const r=from>=0&&to>=0?route(from,to):null,A=W.settlements[from],Bt=W.settlements[to];
   const poly=r?r.poly:[{x:A.pos.x,z:A.pos.z},{x:Bt.pos.x,z:Bt.pos.z}],len=r?r.len:dist2d(A.pos.x,A.pos.z,Bt.pos.x,Bt.pos.z);
   p.si=-1;(W.travellers||(W.travellers=[])).push({p,from,to,why,poly,len,depart:day(),arrive:day()+Math.max(0.3,len/WALK_MPD)});}
@@ -3104,7 +3139,7 @@ function tickTravel(){ // arrivals: the traveller takes their place in the new t
   const T=W.travellers;if(!T||!T.length)return;const d=day();
   for(let i=T.length-1;i>=0;i--){const t=T[i];if(t.p.dead){T.splice(i,1);continue;}
     if(t.errand){if(d>=t.arrive)T.splice(i,1);continue;} // an errand ends where it began; they never left the roll
-    if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);arriveHousehold(t.p,t.from,t.to);
+    if(d>=t.arrive){const s=W.settlements[t.to];T.splice(i,1);if(!s){dropPerson(t.p);continue;}t.p.si=t.to;(s.folk||(s.folk=[])).push(t.p);invalidateFolkIndex();arriveHousehold(t.p,t.from,t.to);
       const o=W.settlements[t.from];if(o&&o.cult&&s.cult)speakers(s,o.cult,1);}}} // the incomer brings their own speech
 /* the tongues of a place: a mix of speakers that shifts as people come and go and as lords hold it; the majority is the place's tongue */
 function tongueMix(s){if(!s.tg){s.tg={};if(s.cult)s.tg[s.cult]=1;}return s.tg;}
@@ -8310,8 +8345,9 @@ function tickEconomy(){
       for(let di=0;di<W.settlements.length;di++){
         if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
+        const distance=dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z),carriage=freight(o,1,distance*1.2,'cart');
         for(const g of sell){
-          const margin=price(d,g)-po[g],carry=freight(o,1,dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z)*1.2,'cart')+price(d,g)*(0.05+MOD.tax/100*0.14); // the freight at the going rate, the tolls, a little lost on the way
+          const quote=price(d,g),margin=quote-po[g],carry=carriage+quote*(0.05+MOD.tax/100*0.14); // the freight at the going rate, the tolls, a little lost on the way
           if(margin>carry){
             const r=route(oi,di);if(!r)continue;
             const fear=(1-Math.min(1,o.infected/Math.max(1,o.pop)*5))*(1-Math.min(1,d.infected/Math.max(1,d.pop)*5)); // carters shun a town with the pestilence in it, the more the worse
@@ -9692,7 +9728,7 @@ const PARTIBLE=new Set(['celtic','german','slavic','norse']);
 const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'freehold, for a small quit-rent',lease:'on lease, for a money rent',crop:'as a sharecropper, for half the crop',demesne:'the lord\'s demesne, worked by hired hands'};
 const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
-function folkIndex(){const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of (W.households||new Map()).values())for(const p of h.members)if(!p.dead)M.set(p.id,p);return M;}
+function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of (W.households||new Map()).values())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
 function headsOf(s){return householdsOf(s).map(h=>h.head).filter(p=>p&&!p.dead);} // an orphan household remains an owner even before its heir is grown
 function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
@@ -9844,7 +9880,7 @@ function wages(s,v,why){buildWorks(s,v,null,why);} // the payer's purse already 
 function soldiersPay(a,v,payer){ // a host's pay: to the households its men come from; the sell-swords' goes out of the realm; what the purse cannot meet is owed them
   if(!(v>0))return;if(payer){const can=Math.max(0,means(payer));if(can<v){a._arrears=(a._arrears||0)+(v-can);v=can;}else if(a._arrears>0){const back=Math.min(a._arrears,can-v);a._arrears-=back;v+=back;}if(!(v>0))return;}const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts');}}
-function inherit(p){p._dying=true;const h=householdAccount(p);if(!h)return;const s=W.settlements[p.si]||W.settlements.find(x=>h.population.has(x))||W.capital;
+function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount(p);if(!h)return;const s=W.settlements[p.si]||W.settlements.find(x=>h.population.has(x))||W.capital;
   const isHead=h.head===p,servile=(s.furl||[]).some(f=>f.ten==='villein'&&(f.wk===p.id||f.own===p.id)),survivors=[...h.members].filter(q=>q!==p&&!q.dead),widow=p.sp&&!p.sp.dead?p.sp:null,heirs=landHeirs(p,s),shares=isHead?estateShares(p,s):[];
   // Land, occupation and movables are different rights. A minor's holding is not forfeited for want of an adult.
   for(const t of W.settlements){for(const f of t.furl||[]){if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;
@@ -10289,6 +10325,7 @@ function simTick(){
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
   }
   tickSovereign();
+  routingPrepare();
 }
 /* =========================================================================
    CHRONICLE — the product. Dated entries in annalist voice; click to fly.
@@ -12520,8 +12557,8 @@ async function boot(){
   const fm=location.hash.match(/f=(\d+)/);FATE=fm?parseInt(fm[1],10)>>>0:1+Math.floor(Math.random()*1e9); // a new history each time, unless the link names one
   {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:'')+(MAPKM!==9?'&km='+MAPKM:'')+(REALMAP_ID?'&map='+REALMAP_ID:''));}
   const line=document.getElementById('loadline'),bar=document.querySelector('#loadbar>div');
-  const progress=(txt,f)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
-    return new Promise(r=>setTimeout(r,30));};
+  const progress=(txt,f,delay=30)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
+    return new Promise(r=>setTimeout(r,delay));};
   await progress('Forging the realm…',0.02);
   await generateWorld(seed,progress);
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
@@ -12530,9 +12567,9 @@ async function boot(){
   buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   simInit();
   if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
-    W.prehistory=true;const yrs=START_AD-W.startAD;
-    for(let y=0;y<yrs;y++){for(let i=0;i<360;i++){try{simTick();}catch(e){simErr(e);}} // a fault in the unseen centuries is reported, not a frozen loading screen
-      if(y%3===0)await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*(y/yrs));}
+    W.prehistory=true;const target=(START_AD-W.startAD)*360;let yieldAt=performance.now()+40;
+    while(day()<target){try{simTick();}catch(e){simErr(e);} // every day still runs; yield by elapsed time rather than blocking for three whole years
+      if(performance.now()>=yieldAt){await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*day()/target,0);yieldAt=performance.now()+40;}}
     W.prehistory=false;buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
     for(const s of W.settlements)s.pop0=s.pop;
   }
