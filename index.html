@@ -12741,22 +12741,30 @@ const ADV={muted:false,
     document.getElementById('advmute').onchange=e=>{ADV.muted=e.target.checked;};document.getElementById('advclose').onclick=()=>{box.style.display='none';};
     if(st==='pending'&&ADVCHAT.ready)ADVCHAT.ready.then(()=>{if(box.style.display==='flex'&&document.getElementById('advclose'))ADV.claudeDialog(box);});},
   dialog(){const box=document.getElementById('savebox');if(window.claude&&window.claude.use){ADV.claudeDialog(box);return;}box.style.display='flex';const on=ADV.ws&&ADV.ws.readyState===1;
-    box.innerHTML=`<div class="egbox"><h2>An advisor</h2>${ADVCHAT.sample?`<div class="row" style="align-items:center;gap:10px;margin:6px 0 10px"><button class="pbb" id="advhere" style="font-size:14px;padding:6px 14px">Talk to your advisor here</button><small style="opacity:.8">${ADVCHAT.provider==='OpenAI API'?'Uses your OpenAI API key · '+esc(ADVCHAT.apiModel):'on your own Claude account: you are asked once, and your questions use your Claude usage'}</small></div><div style="opacity:.7;margin-bottom:4px">Or bring your own agent app:</div>`:''}<div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
-      <details${ADVCHAT.sample?'':' open'}><summary>Use an OpenAI API key</summary>
-      <p class="note">Your key stays in this tab's memory and is sent directly to OpenAI. Reloading forgets it. Questions use your API billing.</p>
-      <div class="row"><label for="advapikey">API key</label><input id="advapikey" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="Paste your OpenAI API key"></div>
-      <div class="row"><label for="advmodel">Model</label><input id="advmodel" type="text" autocomplete="off" spellcheck="false" value="${esc(ADVCHAT.apiModel)}"></div>
-      <div class="row"><button class="pbb" id="advapiuse">Use API key</button>${ADVCHAT.provider==='OpenAI API'&&ADVCHAT.sample?'<button class="pbb" id="advapiclear">Disconnect API key</button>':''}</div><div id="advapistatus" role="status"></div></details>
+    box.innerHTML=`<div class="egbox"><h2>An advisor</h2>${ADVCHAT.sample?`<div class="row" style="align-items:center;gap:10px;margin:6px 0 10px"><button class="pbb" id="advhere" style="font-size:14px;padding:6px 14px">Talk to your advisor here</button><small style="opacity:.8">${ADVCHAT.provider!=='Claude'?'Uses your '+esc(ADVCHAT.provider)+' key · '+esc(ADVCHAT.apiModel):'on your own Claude account: you are asked once, and your questions use your Claude usage'}</small></div><div style="opacity:.7;margin-bottom:4px">Or bring your own agent app:</div>`:''}<div style="opacity:.9">Bring an AI to your side: your ${W.player&&W.player.on?'closest confidant at court':'game master'}, who can see the whole realm, answer for its workings, and suggest how to play, until you bid it be quiet. Any agent app that speaks MCP will do, on any model.</div>
+      <details${ADVCHAT.sample?'':' open'}><summary>Use an API key</summary>
+      <div class="row"><label for="advprovider">Provider</label><select id="advprovider"><option value="openai"${ADVCHAT.apiProvider==='openai'?' selected':''}>OpenAI</option><option value="openrouter"${ADVCHAT.apiProvider==='openrouter'?' selected':''}>OpenRouter</option></select></div>
+      <p class="note" id="advapiprivacy">Your key stays in this tab's memory and is sent directly to ${ADVAPI[ADVCHAT.apiProvider].name}. Reloading forgets it. Questions use your API billing.</p>
+      <div class="row"><label for="advapikey">API key</label><input id="advapikey" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="Paste your ${ADVAPI[ADVCHAT.apiProvider].name} API key"></div>
+      <div class="row"><label for="advmodel">Model</label><input id="advmodel" type="text" autocomplete="off" spellcheck="false" value="${esc(ADVCHAT.apiModel)}" aria-describedby="advmodelhint"></div><p class="note" id="advmodelhint">${ADVAPI[ADVCHAT.apiProvider].hint}</p>
+      <div class="row"><button class="pbb" id="advapiuse">Use API key</button>${ADVCHAT.provider!=='Claude'&&ADVCHAT.sample?'<button class="pbb" id="advapiclear">Disconnect API key</button>':''}</div><div id="advapistatus" role="status"></div></details>
       <p class="note" style="margin-top:8px">For a desktop agent, the game and agent app must run on the same computer. Use an API key above to talk here on a phone or iPad.</p><details><summary>Set up a desktop advisor</summary><div style="margin:8px 0 4px">Copy this into your agent app (Claude Code, Claude Cowork, Cursor, or any app that can run commands and local MCP servers). It carries the advisor's small program; the agent saves it, sets itself up and gives you a pairing code:</div><textarea id="advprompt" aria-label="Desktop advisor setup prompt" readonly style="width:100%;height:150px;font-size:11px">${esc(ADV_PROMPT())}</textarea><div class="row"><button class="pbb" id="advcopy">Copy the prompt</button></div></details>
       <div class="row" style="align-items:center"><label for="advcode">Pairing code</label> <input type="text" id="advcode" placeholder="e.g. KQRPX0" style="width:10em;text-transform:uppercase"> <button class="pbb" id="advgo">${on?'Reconnect':'Connect'}</button></div>
       <div class="row"><label><input type="checkbox" id="advmute"${ADV.muted?' checked':''}> Be quiet: answer when asked, offer no counsel unasked</label></div>
       <div id="advstat" style="color:#e0c070;margin-top:4px">${on?'Connected: your advisor can see the realm.':'Not connected.'}</div>
       <div style="text-align:right;margin-top:8px"><button class="pbb" id="advclose">Close</button></div></div>`;
     {const h=document.getElementById('advhere');if(h)h.onclick=()=>{box.style.display='none';queueMicrotask(()=>ADVCHAT.open());};}
+    const provider=document.getElementById('advprovider'),models={[ADVCHAT.apiProvider]:ADVCHAT.apiModel};let selected=provider.value;
+    provider.onchange=()=>{
+      models[selected]=document.getElementById('advmodel').value;selected=provider.value;const config=ADVAPI[selected],field=document.getElementById('advapikey');
+      field.value='';field.placeholder='Paste your '+config.name+' API key';document.getElementById('advmodel').value=models[selected]||config.model;
+      document.getElementById('advmodelhint').textContent=config.hint;document.getElementById('advapiprivacy').textContent="Your key stays in this tab's memory and is sent directly to "+config.name+". Reloading forgets it. Questions use your API billing.";
+      document.getElementById('advapistatus').textContent='Provider changed. Enter its API key.';
+    };
     document.getElementById('advapiuse').onclick=()=>{
       const field=document.getElementById('advapikey'),key=field.value.trim(),model=document.getElementById('advmodel').value.trim();
-      if(!key||/\s/.test(key)||!model||!/^[a-zA-Z0-9._:-]+$/.test(model)){document.getElementById('advapistatus').textContent='Enter an API key and model name.';return;}
-      ADVCHAT.useAPI(key,model);field.value='';box.style.display='none';queueMicrotask(()=>ADVCHAT.open());
+      if(!key||/\s/.test(key)||!validAdvisorModel(provider.value,model)){document.getElementById('advapistatus').textContent='Enter an API key and model name.';return;}
+      ADVCHAT.useAPI(key,model,provider.value);field.value='';box.style.display='none';queueMicrotask(()=>ADVCHAT.open());
     };
     const clear=document.getElementById('advapiclear');if(clear)clear.onclick=()=>{ADVCHAT.disconnectAPI();ADV.dialog();};
     document.getElementById('advcopy').onclick=()=>{const t=document.getElementById('advprompt');t.select();(navigator.clipboard?navigator.clipboard.writeText(ADV_PROMPT()):Promise.reject()).catch(()=>document.execCommand('copy'));document.getElementById('advcopy').textContent='Copied';};
@@ -12765,9 +12773,16 @@ const ADV={muted:false,
     document.getElementById('advclose').onclick=()=>{box.style.display='none';};}};
 /* The advisor in the page itself: inside a Claude viewer, the player talks to the advisor on their own Claude
    account (the artifact's `sample` capability: they are asked once, and pay for what they ask). Claude gets the
-   same tools an agent gets through the bridge, run here in the page. Elsewhere this stays hidden. */
-/* ---------- OpenAI API-key advisor (key stays in this tab's closure) ---------- */
-function createOpenAIAdvisor(key,model){
+   same tools an agent gets through the bridge, run here in the page. Elsewhere the same advisor can use a player-supplied API key. */
+/* ---------- API-key advisor (key stays in this tab's closure) ---------- */
+const ADVAPI={
+  openai:{name:'OpenAI',url:'https://api.openai.com/v1/responses',model:'gpt-5-mini',hint:'Use an OpenAI model ID, e.g. gpt-5-mini.'},
+  openrouter:{name:'OpenRouter',url:'https://openrouter.ai/api/v1/responses',model:'openai/gpt-5-mini',hint:'Use a provider/model ID, e.g. openai/gpt-5-mini. Choose a model that supports tools.'}
+};
+function validAdvisorModel(provider,model){return Object.hasOwn(ADVAPI,provider)&&typeof model==='string'&&(provider==='openrouter'?/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._:-]+$/:/^[a-zA-Z0-9._:-]+$/).test(model);}
+function createAPIAdvisor(key,model,provider='openai'){
+  if(!validAdvisorModel(provider,model))throw new Error('Choose a supported provider and model ID.');
+  const config=ADVAPI[provider];
   return async(messages,opts={})=>{
     const input=messages.map(m=>({role:m.role,content:m.content})),tools=opts.tools||[];
     const fail=(code,message)=>Object.assign(new Error(message),{code});
@@ -12775,13 +12790,13 @@ function createOpenAIAdvisor(key,model){
     let used=0;
     for(let round=0;round<8;round++){
       alive();let response;
-      try{response=await fetch('https://api.openai.com/v1/responses',{method:'POST',credentials:'omit',redirect:'error',signal:opts.signal,
+      try{response=await fetch(config.url,{method:'POST',credentials:'omit',redirect:'error',signal:opts.signal,
         headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},
-        body:JSON.stringify({model,input,store:false,max_output_tokens:4096,include:['reasoning.encrypted_content'],
+        body:JSON.stringify({model,input,store:false,max_output_tokens:4096,...(provider==='openai'?{include:['reasoning.encrypted_content']}:{}),
           ...(tools.length?{parallel_tool_calls:false,tools:tools.map(t=>({type:'function',name:t.name,description:t.description,parameters:t.inputSchema,strict:false}))}:{})})});}
-      catch(e){if(opts.signal?.aborted)throw fail('cancelled','Stopped.');throw fail('api_network','Could not reach OpenAI. Check your connection and whether this viewer allows API requests.');}
-      alive();if(!response.ok){const code=response.status===401?'api_key_invalid':response.status===429?'api_limit':response.status===403?'api_access':response.status===404?'api_model':'api_request';throw fail(code,'OpenAI request failed.');}
-      let data;try{data=await response.json();}catch(e){throw fail('api_response','OpenAI returned an unreadable response.');}
+      catch(e){if(opts.signal?.aborted)throw fail('cancelled','Stopped.');throw fail('api_network','Could not reach '+config.name+'. Check your connection and whether this viewer allows API requests.');}
+      alive();if(!response.ok){const code=response.status===401?'api_key_invalid':response.status===402?'api_credit':response.status===429?'api_limit':response.status===403?'api_access':response.status===404?'api_model':'api_request';throw fail(code,config.name+' request failed.');}
+      let data;try{data=await response.json();}catch(e){throw fail('api_response',config.name+' returned an unreadable response.');}
       alive();if(data.status!=='completed'||!Array.isArray(data.output))throw fail('api_incomplete','The advisor did not finish. Ask a shorter question.');
       const calls=data.output.filter(x=>x.type==='function_call');
       if(!calls.length){
@@ -12802,14 +12817,15 @@ function createOpenAIAdvisor(key,model){
     }
   };
 }
-/* ---------- end OpenAI API-key advisor ---------- */
-const ADVCHAT={sample:null,turns:[],busy:null,tools:false,provider:'Claude',apiModel:'gpt-5-mini',
+/* ---------- end API-key advisor ---------- */
+const ADVCHAT={sample:null,turns:[],busy:null,tools:false,provider:'Claude',apiProvider:'openai',apiModel:'gpt-5-mini',
 state:'none',ready:null,
   async init(){try{if(!window.claude||!claude.use)return;ADVCHAT.state='pending';const s=await claude.use('sample');if(!s){ADVCHAT.state='none';return;}ADVCHAT.sample=s;ADVCHAT.state='ready';ADVCHAT.provider='Claude';
     const L=await s.limits().catch(()=>null);ADVCHAT.tools=!!(L&&L.tools);}catch(_){}},
-  useAPI(key,model){
+  useAPI(key,model,provider='openai'){
+    const sample=createAPIAdvisor(key,model,provider);
     if(ADVCHAT.busy)ADVCHAT.busy.abort();
-    ADVCHAT.sample=createOpenAIAdvisor(key,model);ADVCHAT.provider='OpenAI API';ADVCHAT.apiModel=model;ADVCHAT.tools=true;ADVCHAT.state='ready';ADVCHAT.turns=[];
+    ADVCHAT.sample=sample;ADVCHAT.provider=ADVAPI[provider].name;ADVCHAT.apiProvider=provider;ADVCHAT.apiModel=model;ADVCHAT.tools=true;ADVCHAT.state='ready';ADVCHAT.turns=[];
     const log=document.getElementById('achlog');if(log)log.replaceChildren();
   },
   disconnectAPI(){
@@ -12846,7 +12862,7 @@ ${ch}`;},
       document.getElementById('achstop').onclick=()=>{if(ADVCHAT.busy)ADVCHAT.busy.abort();};
       document.getElementById('achin').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ADVCHAT.send();}});}
     const P=ADV.persona();document.getElementById('achwho').textContent=P.name?`${P.name}, ${P.role}`:'The game master';
-    document.getElementById('achaccount').textContent=ADVCHAT.provider==='OpenAI API'?'Uses your OpenAI API key · '+ADVCHAT.apiModel:'Uses your own Claude account';
+    document.getElementById('achaccount').textContent=ADVCHAT.provider!=='Claude'?'Uses your '+ADVCHAT.provider+' key · '+ADVCHAT.apiModel:'Uses your own Claude account';
     el.style.display='flex';document.getElementById('achin').focus();},
   code(name){ // the code of a thing named in the realm (place, house, lord, host, or one of the folk), or null
     const t=String(name||'').trim().toLowerCase();if(t.length<3)return null;const E=ADV.entities();
@@ -12879,7 +12895,7 @@ ${ch}`;},
     try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
       out.innerHTML=ADVCHAT.md(text)+(truncated?'<p><i>(cut short: ask for less at a time)</i></p>':'');ADVCHAT.turns.push({role:'assistant',content:text});}
     catch(e){if(ctl.signal.aborted){if(out.isConnected)out.remove();if(ADVCHAT.busy===ctl)ADVCHAT.turns.pop();return;}const code=e&&e.code;out.innerHTML=e&&e.text?ADVCHAT.md(e.text):'';
-      const why={api_key_invalid:'OpenAI did not accept this key. Open Advisor to change it.',api_limit:'OpenAI API quota or rate limit reached. Check your API billing and try later.',api_access:'This key cannot use the requested model. Check its project permissions.',api_model:'That model was not found. Change the model in Advisor.',api_request:'OpenAI rejected the request. Check the model and key permissions.',api_network:e.message,api_response:e.message,api_incomplete:e.message,api_tool_limit:e.message,cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??(ADVCHAT.provider==='OpenAI API'?'Something went wrong reaching OpenAI; try again.':'Something went wrong reaching Claude; try again.');
+      const why={api_key_invalid:ADVCHAT.provider+' did not accept this key. Open Advisor to change it.',api_credit:ADVCHAT.provider+' needs more API credits. Check your API billing.',api_limit:ADVCHAT.provider+' API quota or rate limit reached. Check your API billing and try later.',api_access:'This key cannot use the requested model. Check its project permissions.',api_model:'That model was not found. Change the model in Advisor.',api_request:ADVCHAT.provider+' rejected the request. Check that the model supports tools and that the key can use it.',api_network:e.message,api_response:e.message,api_incomplete:e.message,api_tool_limit:e.message,cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??(ADVCHAT.provider!=='Claude'?'Something went wrong reaching '+ADVCHAT.provider+'; try again.':'Something went wrong reaching Claude; try again.');
       if(why)ADVCHAT.bubble('sys',why);if(!out.textContent)out.remove();ADVCHAT.turns.pop();}
     finally{if(ADVCHAT.busy===ctl){ADVCHAT.busy=null;const stop=document.getElementById('achstop'),send=document.getElementById('achsend');if(stop)stop.style.display='none';if(send)send.disabled=false;}}}};
 ADVCHAT.ready=ADVCHAT.init().finally(()=>{if(ADVCHAT.state==='pending')ADVCHAT.state='none';});
