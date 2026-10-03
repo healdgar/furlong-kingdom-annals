@@ -486,7 +486,8 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 'use strict';
 
 /* ---------------- RNG: sfc32, separate streams for gen & history -------- */
-function sfc32(a,b,c,d){return function(){a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=(a+b)|0;a=b^b>>>9;b=c+(c<<3)|0;c=(c<<21|c>>>11);d=d+1|0;t=t+d|0;c=c+t|0;return(t>>>0)/4294967296;};}
+function sfc32(a,b,c,d){const next=function(){a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=(a+b)|0;a=b^b>>>9;b=c+(c<<3)|0;c=(c<<21|c>>>11);d=d+1|0;t=t+d|0;c=c+t|0;return(t>>>0)/4294967296;};
+  next.state=()=>[a,b,c,d];next.restore=s=>{[a,b,c,d]=s;};return next;}
 function seedStreams(seed,fate){ // the map seed shapes the land; the fate seed (if any) the history lived on it
   function mix(n){n=Math.imul(n^n>>>15,n|1);n^=n+Math.imul(n^n>>>7,n|61);return(n^n>>>14)>>>0;}
   const s=seed>>>0,f=fate?mix((fate>>>0)+0x51ed):0;
@@ -1535,6 +1536,7 @@ let HASH_STAMP=0;
 function makeHash(cs){ // tiny spatial hash for footprints and street segments
   const m=new Map(),key=(i,j)=>i*100003+j;
   return{
+    historyCells:m,
     add(o,r){for(let i=Math.floor((o.x-r)/cs);i<=Math.floor((o.x+r)/cs);i++)for(let j=Math.floor((o.z-r)/cs);j<=Math.floor((o.z+r)/cs);j++){
       const k=key(i,j);let a=m.get(k);if(!a)m.set(k,a=[]);a.push(o);}},
     near(x,z,r){const out=[],st=++HASH_STAMP; // an array, each object once (stamped): no Set to allocate on every call
@@ -2632,6 +2634,10 @@ function layoutSettlement(s){
   for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
     if(!b.inst&&Math.abs(dist2d(b.x,b.z,R.x,R.z)-R.r)<Math.hypot(b.w,b.d)/2+2)unplace(b);
   s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,live:liveOps};
+  // History owns a stable context object; observing it never advances a random stream.
+  const context={};s._lay.historyState=()=>Object.assign(context,{idx,role,C,count,HW,RHW,era,early,motteAge,E,FRAC,roads,t0x,t0z,rAng,mode,ux,uz,vx,vz,quay,vilName,HOME,TRADES,wallAges,bastioned,
+    isCap,isTown,isVil,R0,Rmax,curE,live,foundLine,oldVil,plazaC,church,keep,focus,built,parishes,friaryDone,neuDone});
+  s._lay.historyRng=rng;
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   for(const s of W.settlements)if(s._lay&&s._lay.rejoin)s._lay.rejoin();
@@ -2749,8 +2755,8 @@ function mkPerson(s,si,o){
   p.gn=givenPick(s.cult||W.crownCult,p.sx,o.avoid);nameUse(p.gn,1);
   if(o.ma)(o.ma.kids||(o.ma.kids=[])).push(p);if(o.pa)(o.pa.kids||(o.pa.kids=[])).push(p); // the parish book: who were whose children
   (s.folk||(s.folk=[])).push(p);invalidateFolkIndex();return p;}
-function life(p,t){if(!p||p.merc||!t||W.prehistory)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(E.length>30)E.splice(0,1);} // the ledger of a life: what befell him, and when (kept from the reign's start; the years before are the chronicle's)
-function dropPerson(p,why){if(!p||p.dead)return;if(!p.merc){const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(p.ev&&p.ev.length>8)p.ev=[...p.ev.filter(e=>/^(Born|Married|Apprenticed|Learned|Left|Moved)/.test(e[1])).slice(-5),p.ev[p.ev.length-1]];}/* the dead keep only the bones of their story */if(!p.merc&&W.settlements)inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.spR=p.sp;p.sp.spR=p;p.sp.sp=null;p.sp=null;}
+function life(p,t){if(!p||!t)return;const E=p.ev||(p.ev=[]);E.push([day(),t]);if(typeof HISTORY!=='undefined')HISTORY.event('life',{person:p.id,text:t});} // the complete ledger of a life, including the years before play begins
+function dropPerson(p,why){if(!p||p.dead)return;const s=W.settlements&&W.settlements[p.si];life(p,why||`Died at ${s?s.name:'home'}, aged ${Math.floor(ageYrs(p))}`);if(!p.merc&&W.settlements)inherit(p);p.dead=true;if(!p.merc)nameUse(p.gn,-1);if(p.sp){p.spR=p.sp;p.sp.spR=p;p.sp.sp=null;p.sp=null;}
   invalidateFolkIndex();if(!p.merc)archivePerson(p);}
 function archivePerson(p){ // the dead are kept as a line in the parish book: name, family, dates, parents, spouse, trade, place, the bones of the story; the working parts of a life are let go
   p.dd=day();try{p.nat=natureWords(p);p.lrn=learningWords(p);}catch(e){}
@@ -6449,7 +6455,7 @@ function buildFields(){
 }
 function tickLand(){ // monthly: the countryside follows the people
   if(!G.land||day()%30!==15)return;
-  if(G.fenceDirty&&!W.prehistory&&(speedIdx<4||speedIdx===LIFE||day()%180<30))setTimeout(()=>{buildTracks();rebuildFences();},0); // reeling through the years: the hedges are redrawn twice a year, not monthly // after the month's claims and ploughing: the lanes first, then the fences along them
+  if(G.fenceDirty&&!W.prehistory&&(speedIdx<4||speedIdx===LIFE||day()%180<30))setTimeout(historyDeferred('tracks-and-fences',()=>{buildTracks();rebuildFences();}),0); // reeling through the years: the hedges are redrawn twice a year, not monthly // after the month's claims and ploughing: the lanes first, then the fences along them
   const now=day(),spring=Math.ceil((now+1)/360)*360+20,F=G.land.F,ph=G.land.perHead;
   {let nd=0;for(const f of F)if(f.dirt&&nd<14){f.dirt=0;refreshArea(f);nd++;}}
   W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]);
@@ -8004,7 +8010,7 @@ function showInspect(pk){
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
     h+=`<div class="note"><a class="tr" data-tree="${tKey(p)}">Family tree</a></div>`;
     h+=row('Nature',p.nat??natureWords(p));h+=row('Learning',p.lrn??learningWords(p));if(p.dead&&p.dd!=null)h+=row('Died',dateStr(p.dd)+`, aged ${Math.floor((p.dd-p.b)/360)}`);
-    {const E=p.ev||[],L=E.slice(-14);h+=`<div class="dhead" style="margin-top:6px">Life</div><div class="note">Born ${dateStr(p.b)}${E.length>L.length?' · …':''}</div>`+L.map(([d,t])=>`<div class="note">${dateStr(d)}: ${esc(t)}</div>`).join('');}
+    {const E=p.ev||[];h+=`<div class="dhead" style="margin-top:6px">Life</div><div class="note">Born ${dateStr(p.b)}</div>`+E.map(([d,t])=>`<div class="note">${dateStr(d)}: ${esc(t)}</div>`).join('');}
     if(!p.dead)flyToBtn(fb,'Find and follow',()=>goPerson(p,s)); // the card has one button: the living are found where they are
     else if(home)flyToBtn(fb,'Show home',()=>{flyTo(home.x,home.z,60);showInspect({type:'building',b:home});});
   }else if(pk.type==='track'){
@@ -10355,6 +10361,7 @@ function vary(key,list){ // one way of saying a thing, dealt from a shuffled dec
   const k=d.o[d.i++];d.last=k;const v=list[k];return typeof v==='function'?v():v;}
 function emit(cat,pri,pos,text,opts){
   const ev={day:day(),cat,pri,pos:pos?{x:pos.x,z:pos.z}:null,text,opts:opts||{}};
+  HISTORY.event('annal',{cat,pri,pos:ev.pos,text});
   if(W&&W.houses)for(const h of W.houses)if(text&&text.includes(h.name))h._news={d:day(),t:text}; // what was last said of each house: the reason a sudden change of heart is remembered by
   if(W.prehistory)return ev; // the centuries before play begins leave their marks on the land and in each town's history, not in the annals
   chronicleAdd(ev);
@@ -12507,6 +12514,7 @@ function animate(t){
   if(PERF.on)perfGpuBegin();
   renderer.render(scene,camera);
   if(PERF.on){perfGpuEnd();const tR1=performance.now();perfFrame(rawDt,ticks,tSim-tb,tWorld-tSim,tR0-tWorld,tR1-tR0,tR1-tb);}
+  if(ticks&&HISTORY.active&&!HISTORY.fault)HISTORY.capture('frame-after-days');
 }
 /* ---- performance monitor (P, or #perf): frame, sim, world, rebuild and render times, GPU time where the browser can tell, scene size ---- */
 const PERF={on:false,f:[],q:[],gpu:[],ext:null,t:0};
@@ -12547,6 +12555,181 @@ function perfReport(html){
     `${W.settlements.length} places · ${G.bldList.length} buildings · ${W.armies.length} hosts · ${(W.caravans||[]).length} caravans · speed ${SPEEDS[speedIdx]} d/s · ${innerWidth}×${innerHeight}@${devicePixelRatio}`].filter(Boolean);
   if(!html)return L.join('\n');
   return L.map(l=>`<div>${l}</div>`).join('')+(PERF.shared==='on'?'<div style="opacity:.7">shared with Claude every 10 s</div>':'')+`<button id="perfcopy">Copy report</button>`;}
+/* ============================ EXACT HISTORY =============================
+   A data archive, never executable code. Nodes retain identity and insertion
+   order; each committed boundary carries both sides of every changed node.
+   Getter bodies are recorded without invoking them (some allocate inventory).
+   GPU objects are projection handles; the simulation and land remain data.
+   ENGINE CONTINUATION IS NOT YET SUPPORTED BY THIS ARCHIVE FORMAT.
+   ========================================================================= */
+// HISTORY CORE BEGIN (also exercised independently by tools/history.test.mjs)
+class HistoryGraph{
+  constructor(){this.ids=new WeakMap();this.next=1;this.state=new Map();this.code=[];this.codes=new Map();this.buffers=new WeakMap();}
+  ref(v){let id=this.ids.get(v);if(!id){id=this.next++;this.ids.set(v,id);}return id;}
+  capture(root){
+    const pending=[],seen=new Set(),changes=[],bufferUpdates=[],codeStart=this.code.length;
+    const value=v=>{
+      if(v===undefined)return ['u'];if(typeof v==='number'){if(Object.is(v,-0))return ['n','-0'];if(!Number.isFinite(v))return ['n',String(v)];}
+      if(typeof v==='bigint')return ['b',String(v)];
+      if(typeof v==='symbol')throw new Error('History cannot record a symbol value');
+      if(v===null||typeof v!=='object'&&typeof v!=='function')return v;
+      const id=this.ref(v);if(!seen.has(id)){seen.add(id);pending.push([id,v]);}return ['r',id];
+    };
+    const rootRef=value(root);
+    const props=v=>Reflect.ownKeys(v).map(k=>{
+      if(typeof k==='symbol')throw new Error('History cannot record a symbol property');
+      const d=Object.getOwnPropertyDescriptor(v,k);if(!d)throw new Error('History property disappeared');
+      const flags=(d.enumerable?1:0)|(d.configurable?2:0)|(d.writable?4:0);
+      return [k,flags,'value'in d?value(d.value):['a',value(d.get),value(d.set)]];
+    });
+    try{for(let i=0;i<pending.length;i++){
+      const[id,v]=pending[i];let node;
+      if(typeof v==='function'){
+        const source=Function.prototype.toString.call(v);let code=this.codes.get(source);
+        if(code===undefined){code=this.code.length;this.codes.set(source,code);this.code.push(source);}
+        node=['function',code,typeof v.state==='function'?v.state():null];
+      }else if(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.nodeType)node=['projection',v.constructor.name];
+      else if(v instanceof ArrayBuffer){
+        // Byte pages preserve exact floating-point bits and avoid rewriting a
+        // whole terrain/mask buffer when only a small patch changes.
+        let pages=this.buffers.get(v);if(!pages){pages=[];this.buffers.set(v,pages);}
+        const ids=[];
+        for(let offset=0,i=0;offset<v.byteLength;offset+=4096,i++){
+          const bytes=new Uint8Array(v,offset,Math.min(4096,v.byteLength-offset));let p=pages[i];
+          if(!p){p={id:this.next++,bytes:new Uint8Array(bytes.length)};pages[i]=p;}
+          let changed=!this.state.has(p.id);if(!changed)for(let j=0;j<bytes.length;j++)if(bytes[j]!==p.bytes[j]){changed=true;break;}
+          if(changed){const after=JSON.stringify(['bytes',btoa(String.fromCharCode(...bytes))]);changes.push([p.id,this.state.get(p.id)??null,after]);bufferUpdates.push([p,bytes.slice()]);}
+          ids.push(p.id);
+        }
+        node=['buffer',v.byteLength,ids];
+      }
+      else if(ArrayBuffer.isView(v))node=['view',v.constructor.name,value(v.buffer),v.byteOffset,v instanceof DataView?v.byteLength:v.length];
+      else if(v instanceof Map)node=['map',v.constructor.name,[...Map.prototype.entries.call(v)].map(([k,x])=>[value(k),value(x)]),props(v)];
+      else if(v instanceof Set)node=['set',[...Set.prototype.values.call(v)].map(value),props(v)];
+      else if(v instanceof Date)node=['date',value(v.getTime()),props(v)];
+      else if(v instanceof RegExp)node=['regexp',v.source,v.flags,props(v)];
+      else node=[Array.isArray(v)?'array':'object',Object.getPrototypeOf(v)===null?null:v.constructor?.name||'Object',props(v)];
+      const after=JSON.stringify(node),before=this.state.get(id)??null;
+      if(after!==before)changes.push([id,before,after]);
+    }}catch(error){for(const s of this.code.splice(codeStart))this.codes.delete(s);throw error;}
+    // Only commit after the entire graph has encoded successfully.
+    for(const[id,,after]of changes)this.state.set(id,after);
+    for(const[p,bytes]of bufferUpdates)p.bytes.set(bytes);
+    return {root:rootRef,changes,code:this.code.slice(codeStart)};
+  }
+}
+class HistoryArchive{
+  constructor(archive){
+    if(archive?.format!=='furlong-history'||archive.version!==1||!Array.isArray(archive.steps))throw new Error('Unsupported history archive');
+    this.archive=archive;this.nodes=new Map();this.cursor=-1;this.root=null;
+    this.code=archive.steps.flatMap(s=>s.code||[]);
+  }
+  seek(seq){
+    if(!Number.isInteger(seq)||seq<0||seq>=this.archive.steps.length)throw new Error('History position out of range');
+    while(this.cursor<seq)this.apply(this.archive.steps[this.cursor+1],false);
+    while(this.cursor>seq)this.apply(this.archive.steps[this.cursor],true);
+    return this.read();
+  }
+  apply(step,reverse){
+    const expected=reverse?this.cursor:this.cursor+1;
+    if(step.seq!==expected)throw new Error('History sequence gap');
+    // Validate the whole transaction before changing the cursor.
+    for(const[id,before,after]of step.changes){const wanted=reverse?after:before;if((this.nodes.get(id)??null)!==wanted)throw new Error('History diverged at node '+id);}
+    for(const[id,before,after]of step.changes){const v=reverse?before:after;if(v===null)this.nodes.delete(id);else this.nodes.set(id,v);}
+    this.cursor+=reverse?-1:1;this.root=this.cursor<0?null:this.archive.steps[this.cursor].root;
+  }
+  read(){
+    const objects=new Map(),defs=new Map();
+    for(const[id,json]of this.nodes){const n=JSON.parse(json);defs.set(id,n);let o;
+      switch(n[0]){
+        case 'array':o=[];break;case 'map':o=new Map();break;case 'set':o=new Set();break;
+        case 'bytes':{const b=atob(n[1]);o=Uint8Array.from(b,c=>c.charCodeAt(0));break;}
+        case 'buffer':o=new ArrayBuffer(n[1]);break;
+        case 'view':continue;
+        case 'date':o=new Date(n[1]);break;case 'regexp':o=new RegExp(n[1],n[2]);break;
+        case 'function':o=Object.freeze({historyBehavior:true,source:this.code[n[1]],state:n[2]});break;
+        case 'projection':o=Object.freeze({historyProjection:true,type:n[1]});break;
+        case 'object':o=Object.create(null);break;
+        default:throw new Error('Unknown history node type');
+      }objects.set(id,o);
+    }
+    const value=v=>{
+      if(!Array.isArray(v))return v;
+      switch(v[0]){case 'r':if(!objects.has(v[1]))throw new Error('History reference missing: '+v[1]);return objects.get(v[1]);case 'u':return undefined;
+        case 'n':return v[1]==='-0'?-0:Number(v[1]);case 'b':return BigInt(v[1]);default:throw new Error('Unknown history value');}
+    };
+    const views={Int8Array,Uint8Array,Uint8ClampedArray,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array,BigInt64Array,BigUint64Array,DataView};
+    for(const[id,n]of defs)if(n[0]==='buffer'){const bytes=new Uint8Array(objects.get(id));let offset=0;for(const page of n[2]){const b=objects.get(page);if(!(b instanceof Uint8Array))throw new Error('History byte page missing');bytes.set(b,offset);offset+=b.length;}if(offset!==bytes.length)throw new Error('History buffer length differs');}
+    for(const[id,n]of defs)if(n[0]==='view'){
+      if(!views[n[1]])throw new Error('Unknown history view');objects.set(id,new views[n[1]](value(n[2]),n[3],n[4]));
+    }
+    for(const[id,n]of defs){const o=objects.get(id);let p=[];
+      if(n[0]==='map'){for(const[k,x]of n[2])o.set(value(k),value(x));p=n[3];}
+      else if(n[0]==='set'){for(const x of n[1])o.add(value(x));p=n[2];}
+      else if(n[0]==='array'||n[0]==='object')p=n[2];else if(n[0]==='regexp')p=n[3];else if(n[0]==='date')p=n[2];
+      for(const[k,flags,v]of p){
+        // Accessor bindings are retained as inert metadata, never run from a file.
+        if(Array.isArray(v)&&v[0]==='a'){Object.defineProperty(o,k,{value:Object.freeze({historyAccessor:true,get:value(v[1]),set:value(v[2])}),enumerable:!!(flags&1),configurable:!!(flags&2)});}
+        else Object.defineProperty(o,k,{value:value(v),enumerable:!!(flags&1),configurable:!!(flags&2),writable:!!(flags&4)});
+      }
+    }
+    return value(this.root);
+  }
+}
+// HISTORY CORE END
+async function historyZip(value){const text=JSON.stringify(value);return new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));}
+async function historyUnzip(blob){return JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());}
+class HistoryStore{
+  constructor(){this.chain=Promise.resolve();this.pendingBytes=0;this.pending=new Map();this.chunk=0;this.stats={serializeMs:0,compressMs:0,commitMs:0,commits:0,bytes:0};}
+  async open(id,meta){this.id=id;this.db=await new Promise((resolve,reject)=>{
+    const r=indexedDB.open('furlong-history',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('History database is blocked by another tab'));r.onsuccess=()=>resolve(r.result);
+  });await this.write('games',id,meta);}
+  write(store,key,value){const start=performance.now();return new Promise((resolve,reject)=>{const t=this.db.transaction(store,'readwrite');t.objectStore(store).put(value,key);t.oncomplete=()=>{this.stats.commitMs+=performance.now()-start;this.stats.commits++;resolve();};t.onabort=t.onerror=()=>reject(t.error||new Error('History storage failed'));});}
+  append(steps){const start=performance.now(),key=[this.id,this.chunk++],text=JSON.stringify(steps);this.pending.set(key[1],text);this.stats.serializeMs+=performance.now()-start;this.stats.bytes+=text.length;this.pendingBytes+=text.length*2;
+    this.chain=this.chain.then(async()=>{const start=performance.now(),blob=await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();this.stats.compressMs+=performance.now()-start;await this.write('chunks',key,blob);this.pending.delete(key[1]);this.pendingBytes-=text.length*2;});
+    this.chain.catch(e=>HISTORY.fail(e));
+  }
+  async export(meta){await this.chain.catch(()=>{});const blobs=await new Promise((resolve,reject)=>{const r=this.db.transaction('chunks').objectStore('chunks').getAll(IDBKeyRange.bound([this.id,0],[this.id,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    const steps=[];for(const b of blobs)steps.push(...await historyUnzip(b));for(const[,text]of [...this.pending].sort((a,b)=>a[0]-b[0]))steps.push(...JSON.parse(text));return {...meta,steps};}
+}
+const HISTORY={requested:/(?:^|[&#])history=full(?:&|$)/.test(location.hash),active:false,depth:0,fault:null,seq:0,batch:[],events:[],layouts:new Map(),root:{},globals:{},rng:{},projection:{},land:{},store:null,stats:{captureMs:0,captures:0,workMs:0},
+  async begin(){
+    this.graph=new HistoryGraph();this.store=new HistoryStore();
+    const code=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n');
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code));
+    this.meta={format:'furlong-history',version:1,id:crypto.randomUUID(),sourceSHA256:[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join(''),world:worldHash(),created:Date.now(),resolution:'simulation-day and transaction boundaries',continuation:false};
+    await this.store.open(this.meta.id,this.meta);this.active=true;this.capture('founding');this.flush();await this.store.chain;
+  },
+  roots(){
+    Object.assign(this.globals,{SEED,FATE,COAST_PREF,START_AD,PID,NID,armyN,campN,HASH_STAMP,entryCount,JOURNAL,MOD,allLines,speedIdx,lastSpeed,sovPausedFrom,simAccum,REPLAYING});
+    for(const[k,f]of Object.entries(RS||{})){const a=this.rng[k]||(this.rng[k]=[]);a.splice(0,a.length,...f.state());}
+    for(const s of W.settlements)if(s._lay?.historyState)this.layouts.set(s,s._lay.historyState());
+    // These projection-side records feed simulation geometry, construction and movement.
+    for(const k of ['bldList','treeSpots','treeHash','trackSet','tg','rivStrips','rivHash','cairnDead','citList','herdPos','herdOwner','citIdx','travIdx'])this.projection[k]=G[k];
+    for(const k of ['F','mask','flood','perHead'])this.land[k]=G.land?.[k];this.projection.land=this.land;
+    Object.assign(this.root,{world:W,globals:this.globals,rng:this.rng,layouts:this.layouts,geography:this.projection});return this.root;
+  },
+  capture(kind,error){if(!this.active)return;if(this.fault)throw this.fault;
+    try{const start=performance.now(),frame=this.graph.capture(this.roots());this.stats.captureMs+=performance.now()-start;this.stats.captures++;if(!frame.changes.length&&!this.events.length)return;
+      const step={seq:this.seq++,day:day(),kind,root:frame.root,changes:frame.changes,code:frame.code,events:this.events.splice(0),error:error?String(error.message||error):null};
+      this.batch.push(step);if(this.batch.length>=8)this.flush();
+      if(this.store.pendingBytes>64*1024*1024)throw new Error('History storage cannot keep up; export the archive before continuing');
+    }catch(e){this.fail(e);throw e;}
+  },
+  event(kind,data){if(this.active)this.events.push({kind,day:day(),...data});},
+  transact(kind,fn){if(!this.active)return fn();if(this.fault)throw this.fault;if(this.depth)return fn();
+    this.capture('before:'+kind);this.depth++;let error;const start=performance.now();
+    try{return fn();}catch(e){error=e;throw e;}finally{this.stats.workMs+=performance.now()-start;this.depth--;this.capture(kind,error);}
+  },
+  flush(){if(this.batch.length){this.store.append(this.batch);this.batch=[];}},
+  fail(error){if(this.fault)return;this.fault=error instanceof Error?error:new Error(String(error));setSpeed(0);console.error('History recording stopped:',this.fault);
+    const el=document.getElementById('histfault')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'histfault'}));el.setAttribute('role','alert');el.style.cssText='position:fixed;inset:auto 12px 12px;z-index:2000;padding:12px;background:#481c16;color:#fff';el.textContent='History recording stopped. The game is paused: '+this.fault.message;},
+  async export(){if(!this.fault)this.capture('export');this.flush();return this.store.export(this.meta);},
+  async download(){const archive=await this.export(),blob=await new Response(await historyZip(archive)).blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='furlong-history-'+this.meta.id+'.json.gz';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);},
+  status(){return {id:this.meta?.id,steps:this.seq,day:W&&day(),fault:this.fault?.message||null,pendingBytes:this.store?.pendingBytes||0,continuation:false,capture:{...this.stats},storage:this.store?{...this.store.stats}:null};}
+};
+function historyBind(name){const original=window[name];window[name]=function(...args){return HISTORY.transact(name,()=>original.apply(this,args));};}
+function historyDeferred(kind,fn){return ()=>HISTORY.transact(kind,fn);}
 async function boot(){
   {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
@@ -12566,9 +12749,12 @@ async function boot(){
   initGraphics();
   buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   simInit();
+  // The exhaustive recorder is still too costly for normal fast-forward.
+  // Life ledgers are always complete; opt in locally to audit the archive.
+  if(HISTORY.requested)try{await HISTORY.begin();}catch(e){HISTORY.fail(e);throw e;}
   if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
     W.prehistory=true;const target=(START_AD-W.startAD)*360;let yieldAt=performance.now()+40;
-    while(day()<target){try{simTick();}catch(e){simErr(e);} // every day still runs; yield by elapsed time rather than blocking for three whole years
+    while(day()<target){if(HISTORY.fault)throw HISTORY.fault;try{simTick();}catch(e){simErr(e);} // every day still runs; yield by elapsed time rather than blocking for three whole years
       if(performance.now()>=yieldAt){await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*day()/target,0);yieldAt=performance.now()+40;}}
     W.prehistory=false;buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
     for(const s of W.settlements)s.pop0=s.pop;
@@ -12590,6 +12776,7 @@ async function boot(){
   document.getElementById('loading').style.opacity='0';
   setTimeout(()=>document.getElementById('loading').remove(),900);
   {const hm=location.hash.match(/[#&]h=(\d+)/);if(hm&&!RESUMED)setTimeout(()=>{jot({k:'sov',on:true,hi:+hm[1]});setSovereign(true,+hm[1]);},1000);} // #…&h=2: begin as that house (0 the crown)
+  if(HISTORY.active)HISTORY.capture('boot-ready');
   requestAnimationFrame(animate);
 }
 /* =========================================================================
@@ -12960,6 +13147,12 @@ ${ch}`;},
     finally{if(ADVCHAT.busy===ctl){ADVCHAT.busy=null;const stop=document.getElementById('achstop'),send=document.getElementById('achsend');if(stop)stop.style.display='none';if(send)send.disabled=false;}}}};
 ADVCHAT.ready=ADVCHAT.init().finally(()=>{if(ADVCHAT.state==='pending')ADVCHAT.state='none';});
 window.FURLONG={search:q=>ADV.call('search',{q}).result,discover:s=>ADV.call('discover',{scope:s}).result,execute:(t,a)=>ADV.call('execute',{tool:t,args:a}).result};
+for(const n of ['simTick','runCmd','answerPetition','setSovereign','doPlace','planCommit','applySetting'])historyBind(n);
+for(const type of ['click','input','change','keydown','pointerup'])document.addEventListener(type,()=>{
+  if(HISTORY.active&&!HISTORY.depth&&!HISTORY.fault)queueMicrotask(()=>{if(!HISTORY.fault)HISTORY.capture('input:'+type);});
+},true);
+window.FURLONG_HISTORY={status:()=>HISTORY.status(),export:()=>HISTORY.export(),download:()=>HISTORY.download(),open:archive=>new HistoryArchive(archive)};
+window.addEventListener('pagehide',()=>{if(HISTORY.active)HISTORY.flush();});
 boot();
 </script>
 <script type="text/plain" id="advbridge">

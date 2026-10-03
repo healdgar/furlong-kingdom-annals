@@ -37,7 +37,7 @@ async function launch(){const profile=fs.mkdtempSync(path.join(os.tmpdir(),'furl
 // Canonical graph encoding retains Map/Set and array order, reference identity, numeric precision,
 // genomes, parish records, ownership, food, coin, terrain, and land. Only derived caches/graphics
 // are excluded. DOM/UI intervals are suppressed equally; deferred simulation work is still flushed.
-const SERIALIZE=`(()=>{const seen=new Map(),pending=[],nodes=[],omit=new Set(['_pm','_folkIndex','_folkRevision','_householdsV','_popTotal','_popValid','routes']);
+const SERIALIZE=`(()=>{const seen=new Map(),pending=[],nodes=[],omit=new Set(${JSON.stringify(['_pm','_folkIndex','_folkRevision','_householdsV','_popTotal','_popValid','routes',...(args['ignore-life-ledger']?['ev','historyCells']:[])])});
   const walk=v=>{if(v===undefined)return['undefined'];if(typeof v==='function')return['function'];if(typeof v==='number'&&!Number.isFinite(v))return['number',String(v)];if(v===null||typeof v!=='object')return v;
     if(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.nodeType)return['graphic'];if(!seen.has(v)){seen.set(v,pending.length);pending.push(v);}return['ref',seen.get(v)];};
   const root=walk({world:W,land:{F:G.land.F,mask:G.land.mask,flood:G.land.flood,perHead:G.land.perHead},annals:allLines,journal:JOURNAL,mod:MOD,personID:PID,notableID:NID});
