@@ -255,7 +255,8 @@ Acts are sealed while you rule; the crown's own levers take their place:
   offer; he answers weeks later); clear a quarter of a crown town (condemned,
   pulled down house by house as leases end, laid out anew and rebuilt by the
   town's own growth). In a lord's town the crown cannot order it, only
-  persuade: a grant of gold, a grant of crown land beside his, a remission of
+  persuade: a grant of gold (the envoys carry it; it comes home if he
+  refuses), a grant of crown land beside his, a remission of
   his dues, the royal host at his gates (he yields or rises), or plain
   asking. Lords build roads of their own where a long way round carries
   much traffic.
@@ -476,7 +477,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   plots are rebuilt first; empty houses fall vacant in proportion to the vacancy; owners rebuild in better
   stuff where the value added repays it; lanes open as the shortfall of plots needs.
 - **Walls** are paid for by the burghers' murage and raised when the danger, weighed by what the town is
-  worth, outruns their cost; repairs come from the murage, then the lord. **Castle works** are ranked by
+  worth, outruns the cost of the line they would actually build (by the metre of curtain, nothing where a
+  cliff is the wall; a wider circuit pays only for its new stretches); repairs come from the murage, then the
+  lord, and a breach is walled up once what has gone to it, year by year, covers the work. **Castle works** are ranked by
   what they add to the defence of what they protect, against cost. **Churches** take gifts from what lords
   have to spare; a new parish comes when the churches cannot seat the people.
 - **Lords** invest where the return repays the cost, sell fiefs at their rents, found towns where carts pass
@@ -868,8 +871,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
   growth: houses ribbon out along the roads, back lanes branch where there is
   room, bend with the ground, stop at water and walls and join older streets.
   Each wall is traced around the dense core of its age (keeping to the near
-  bank of a river, riding hill crests, left open at cliffs, pulling down the
-  houses in its way); later suburbs spill past the gates and across bridges.
+  bank of a river, riding hill crests, left open at cliffs, going round a
+  house where that costs less than pulling it down); the first wall leaves
+  the old village outside, and farmsteads out in the fields are never
+  walled; later suburbs spill past the gates and across bridges.
   A wall never runs through a keep, hall, church, bailey or close; it goes
   round them. When a city outgrows its wall the new circuit reuses the old
   wherever the town has not spilled past it and runs out only around the
@@ -968,7 +973,8 @@ What happens is decided by quantities the economy produces, not by numbers cross
   assart, spray for a flood). Lasting states show while they last:
   festivals, plague haze, besiegers' campfires, riot torches, famine dust.
 - Town walls are placed by a trade-off rather than a set shape: each house
-  left outside is a loss, each metre of wall a cost, a falling slope is
+  left outside is a loss, each house on the line a greater one (it is pulled
+  down: five times the loss), each metre of wall a cost, a falling slope is
   cheaper to wall and water cannot be walled. The cheapest closed line is
   found by dynamic programming, so ribbons of houses along roads stay
   outside the gates. Bastion ditches are wet only where a river, pond or

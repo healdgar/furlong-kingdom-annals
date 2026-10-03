@@ -336,7 +336,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-02 23:37 UTC · after 5d56e57</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-03 01:03 UTC · after 3b2eaed</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -1485,10 +1485,23 @@ function traceWall(s,margin,old){ // old: the standing circuit, if any — reusi
     if(across(b))continue; // the far bank is a bridge-foot suburb: the wall keeps to the near bank
     if(s.villageOut&&b.q==='village')continue; // the old village stays outside the first wall
     if(b.hill)continue; // the castle on the hill has walls of its own
+    if(b.rural)continue; // a farmstead out on its land is no part of the town: walling it would ring the fields
     const a=Math.atan2(b.z-C.z,b.x-C.x),d=dist2d(b.x,b.z,C.x,C.z)+Math.max(b.w,b.d)*0.6;
     items[((Math.round(a/dA))%WALLN+WALLN)%WALLN].push({d,v:worth(b)});maxD=Math.max(maxD,d);
   }
   const nR=Math.max(2,Math.ceil((maxD+margin+12-rMin)/RS)+1),val=new Float32Array(WALLN*nR),mul=new Float32Array(WALLN*nR),minJ=new Int16Array(WALLN);
+  /* a house standing on the line is pulled down for it (clearWallLine): lost whole, where a house left outside loses only
+     its protection, which the burghers reckon at a fifth of its worth. So a line through a house costs five times its value */
+  const dem=new Float32Array(WALLN*nR),DEM=5,demAt=(k,r)=>dem[k*nR+clamp(Math.round((r-rMin)/RS),0,nR-1)];
+  const gapH=Array.from({length:WALLN},()=>[]); // houses between sector g and g+1: a stretch of wall there sweeps the radii between its two ends
+  for(const b of s.buildings){
+    if(b.removed||b.inst||b.hill)continue;
+    const D=dist2d(b.x,b.z,C.x,C.z),h=Math.hypot(b.w,b.d)/2,a=Math.atan2(b.z-C.z,b.x-C.x),da=Math.atan2(h,Math.max(D,1));
+    const j0=Math.max(0,Math.ceil((D-h-7-rMin)/RS)),j1=Math.min(nR-1,Math.floor((D+h+7-rMin)/RS));if(j0>j1)continue;
+    for(let q=Math.round((a-da)/dA);q<=Math.round((a+da)/dA);q++){const k=(q%WALLN+WALLN)%WALLN;for(let j=j0;j<=j1;j++)dem[k*nR+j]+=worth(b)*DEM;}
+    for(let g=Math.floor((a-da)/dA);g<=Math.floor((a+da)/dA);g++)gapH[(g%WALLN+WALLN)%WALLN].push([j0,j1,worth(b)*DEM]);
+  }
+  const gapPen=(g,i,j)=>{let p=0;const lo=Math.min(i,j),hi=Math.max(i,j);for(const H of gapH[g])if(H[0]<=hi&&H[1]>=lo)p+=H[2];return p;};
   for(let k=0;k<WALLN;k++){
     for(const it of items[k]){const j0=clamp(Math.ceil((it.d+margin-rMin)/RS),0,nR-1);val[k*nR+j0]+=it.v;}
     for(let j=1;j<nR;j++)val[k*nR+j]+=val[k*nR+j-1];
@@ -1497,6 +1510,7 @@ function traceWall(s,margin,old){ // old: the standing circuit, if any — reusi
     for(let j=0;j<nR;j++){const r=rMin+j*RS,x=C.x+ca*r,z=C.z+sa*r;
       if(W.water[cIdx(toCell(x),toCell(z))]===1||riverAt(x,z,2)||lakeAt(s,x,z,0)||solid.some(o=>dist2d(x,z,o.x,o.z)<o.r)){mul[k*nR+j]=Infinity;continue;} // no wall through water, a keep, a church or a castle's yard
       const drop=hAt(x,z)-hAt(x+ca*22,z+sa*22);mul[k*nR+j]=1-clamp(drop/20,0,0.6);}
+    let top=nR-1;while(top>=0&&mul[k*nR+top]===Infinity)top--;if(top>=0&&top<minJ[k])minJ[k]=top; // a green or market at the water's edge: the water guards that side, the wall need not stand in it
   }
   const lam=0.35,MAXJ=10; // value of a house in metres of wall; how far the line may step out between sectors
   const solve=fix=>{ // forward pass round the circle; with fix set, it must close where it began
@@ -1507,7 +1521,7 @@ function traceWall(s,margin,old){ // old: the standing circuit, if any — reusi
         const r=rMin+j*RS;
         for(let i=Math.max(0,j-MAXJ);i<=Math.min(nR-1,j+MAXJ);i++){if(cost[i]===Infinity)continue;const r0=rMin+i*RS,m0=mul[(k-1)*nR+i];
           const standing=old&&Math.abs(r-old[kk])<=RS*0.75&&Math.abs(r0-old[k-1])<=RS*0.75; // the old wall already runs here
-          const c=cost[i]+lam*Math.hypot(dA*(r+r0)/2,r-r0)*(m+m0)/2*(standing?0.25:1)-(k<WALLN?val[kk*nR+j]:0);
+          const c=cost[i]+lam*Math.hypot(dA*(r+r0)/2,r-r0)*(m+m0)/2*(standing?0.25:1)-(k<WALLN?val[kk*nR+j]:0)+gapPen(k-1,i,j);
           if(c<nc[j]){nc[j]=c;fr[j]=i;}}}
       cost=nc;from.push(fr);}
     let bj=-1,bc=Infinity;for(let j=0;j<nR;j++)if(cost[j]<bc){bc=cost[j];bj=j;}
@@ -1515,12 +1529,13 @@ function traceWall(s,margin,old){ // old: the standing circuit, if any — reusi
     const path=new Int16Array(WALLN);let j=bj;for(let k=WALLN;k>=1;k--){if(k<WALLN)path[k]=j;j=from[k-1][j];}path[0]=j;
     return{path,cost:bc};
   };
-  const open=solve(null),closed=open&&solve(open.path[0]);
+  let open=solve(null),closed=open&&solve(open.path[0]);
+  if(!open){minJ.fill(0);open=solve(null);closed=open&&solve(open.path[0]);} // no dry line keeps every square inside: let the water guard them rather than fall back to a circle through it
   const best=closed||open;
   for(let k=0;k<WALLN;k++)raw[k]=best?rMin+best.path[k]*RS:Math.max(maxD+margin,rMin);
   const keepOld=new Uint8Array(WALLN);if(old)for(let k=0;k<WALLN;k++)if(Math.abs(raw[k]-old[k])<=RS*0.75){keepOld[k]=1;raw[k]=old[k];}
   let rad=raw.slice();
-  for(let pass=0;pass<6;pass++){const o=rad.slice();for(let k=0;k<WALLN;k++)rad[k]=keepOld[k]?raw[k]:Math.max(raw[k],(o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4);}
+  for(let pass=0;pass<6;pass++){const o=rad.slice();for(let k=0;k<WALLN;k++){if(keepOld[k]){rad[k]=raw[k];continue;}const v=Math.max(raw[k],(o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4);if(demAt(k,v)<=demAt(k,o[k]))rad[k]=v;}} // smoothed, but never onto a house
   const kind=new Uint8Array(WALLN),lo=new Float32Array(WALLN),hi=new Float32Array(WALLN).fill(1e9);
   const wet=(x,z)=>W.water[cIdx(toCell(x),toCell(z))]===1||!!riverAt(x,z,2)||lakeAt(s,x,z,0);
   for(let k=0;k<WALLN;k++){
@@ -1531,11 +1546,11 @@ function traceWall(s,margin,old){ // old: the standing circuit, if any — reusi
     let best=rad[k];
     if(dw<1e8&&dw-10>=need&&dw-10<rad[k]+40){best=Math.min(rad[k],dw-10);kind[k]=2;hi[k]=dw-10;} // along the bank
     else if(dw>=1e8||dw-8>rad[k]+40){                                                          // up to the crest
-      let bs=-1e9;for(let r=rad[k];r<=rad[k]+40;r+=3){const sc=(H(r)-H(r+22))+(H(r)-H(r+60))*0.5-(r-rad[k])*0.07;if(sc>bs){bs=sc;best=r;}}
+      let bs=-1e9;for(let r=rad[k];r<=rad[k]+40;r+=3){const sc=(H(r)-H(r+22))+(H(r)-H(r+60))*0.5-(r-rad[k])*0.07-demAt(k,r);if(sc>bs){bs=sc;best=r;}} // a crest is not worth a house
     }
     rad[k]=best;
   }
-  for(let pass=0;pass<3;pass++){const o=rad.slice();for(let k=0;k<WALLN;k++)rad[k]=clamp((o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4,lo[k],hi[k]);}
+  for(let pass=0;pass<3;pass++){const o=rad.slice();for(let k=0;k<WALLN;k++){const v=clamp((o[(k+WALLN-1)%WALLN]+2*o[k]+o[(k+1)%WALLN])/4,lo[k],hi[k]);if(keepOld[k]||demAt(k,v)<=demAt(k,o[k]))rad[k]=v;}}
   let nat=0;
   for(let k=0;k<WALLN;k++){
     const a=k/WALLN*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a),r=rad[k];
@@ -2313,15 +2328,21 @@ function layoutSettlement(s){
   /* the same processes, driven by the live history instead of the generated past */
   const liveOps={
     wall(){ // raise the first wall, or a wider one when the town has outgrown the old
-      live=true;curE=E;const first=!s.wallRad;
-      if(s.wallRad&&s.villageOut){s.villageOut=false;hist(0,'The old village was at last taken within the walls.');}
+      live=true;curE=E;const first=!s.wallRad,vo=s.villageOut;
+      if(first){if(oldVil)s.villageOut=true;}else s.villageOut=false; // the first wall leaves the old village outside, as in the generated past; a wider circuit takes it in
       const stone=AD()>=1150&&hasStone(s,'wall'),bast=bastioned&&!first&&AD()>=1500&&stone; // a circuit in stone only if the stone is in the yards
-      const oc=newCircuit(bast?20:14);if(oc==='same'){live=false;return false;}
+      const oc=newCircuit(bast?20:14);if(oc==='same'){s.villageOut=vo;live=false;return false;}
+      if(!first&&vo)hist(0,`The old village${vilName?' of '+vilName:''} was at last taken within the walls.`);
       s.bastions=bast;s.walls=stone?Math.max(2,s.walls+1):1;if(stone)useStone(s,'wall');s.wallDmg=null;s.breachUntil=0;wallWorks(s,false);
       const cleared=clearWallLine(s);cleared.forEach(unplace);
       let gl=[];if(bast){gl=liveB().filter(b=>!b.inst&&wallSide(b.x,b.z)>0&&wallSide(b.x,b.z)<70);gl.forEach(unplace);}
-      hist(0,(first?(s.walls===1?'A palisade and ditch were raised about the town':'Walled in stone'):(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':circuitLine(oc,false)))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for the new line`:'')+'.');
+      hist(0,(first?(s.walls===1?'A palisade and ditch were raised about the town':'Walled in stone')+(s.villageOut&&vilName?`, the old village of ${vilName} left outside`:''):(bast?'The walls were rebuilt on the new trace, with angled bastions and a ditch':circuitLine(oc,false)))+(cleared.length+gl.length>2?`; ${cleared.length+gl.length} houses were pulled down for the new line`:'')+'.');
       live=false;return true;},
+    wallPlan(){ // what wall() would raise now, traced on a copy of the town: the metres of new curtain and whether in stone (null: the old circuit still serves)
+      const first=!s.wallRad,stone=AD()>=1150&&hasStone(s,'wall'),bast=bastioned&&!first&&AD()>=1500&&stone;
+      const t=Object.assign({},s,{villageOut:first?(oldVil?true:s.villageOut):false});traceWall(t,bast?20:14,s.wallRad);
+      if(!first&&Array.from(t.wallKept).reduce((a,v)=>a+v,0)>WALLN*0.96)return null;
+      return{len:circuitLen(t,true),stone};},
     fire(at){live=true;curE=E;fire(at);live=false;},
     clear(at){live=true;curE=E;fire({...at,clear:true});live=false;},
     siege(){live=true;curE=E;siege(0);live=false;},
@@ -4428,7 +4449,7 @@ function tickInfill(){
 /* ---------------- damage to the works: battered in a siege, breached in a storm, crumbling when neglected, made good when paid for ---------------- */
 const sstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 function wallWorks(s,upgrade,days){ // the circuit goes up from the main gate both ways round, a season for a palisade, years for stone
-  const per=2*Math.PI*(s.wallR||100),g=wallGates(s);
+  const per=circuitLen(s),g=wallGates(s);
   s.wallBuild={start:day(),days:days||(s.bastions?360*(3+per/400):s.walls>=2?360*(1.5+per/500):60+per/15),a0:g.length?g[0]:0,upgrade:!!upgrade};}
 function wallProg(s){const B=s.wallBuild;return B?clamp((day()-B.start)/B.days,0,1):1;}
 function wallBuilt(s,a){const B=s.wallBuild;if(!B)return true;return Math.abs(Math.atan2(Math.sin(a-B.a0),Math.cos(a-B.a0)))<=Math.PI*wallProg(s)+0.001;}
@@ -4476,19 +4497,24 @@ function townThreat(s){ // how much danger the burghers feel: raids, sieges and 
   for(const c of W.banditCamps||[])if(dist2d(c.x,c.z,s.pos.x,s.pos.z)<2000*MAPK)th+=0.15;return Math.min(th,2);}
 function townWorth(s){ // what the town's houses and shops are worth (25 years' rents): what a wall protects
   if(s._worthY===year())return s._worth;let v=0;for(const b of s.buildings)if(b.state==='sound'&&!b.inst)v+=propValue(b);s._worthY=year();s._worth=v*25;return s._worth;}
-function wallCost(s,stone,R){const per=2*Math.PI*(R||s.wallR||Math.max(80,(s.extentR||s.radius||90)));return per*(stone?2.4:0.8)*PL();}
+function circuitLen(s,fresh){ // metres of curtain a circuit needs: none where a cliff is the wall; fresh: only the stretches not already standing
+  if(!s.wallRad)return 2*Math.PI*Math.max(80,(s.extentR||s.radius||90));let L=0;
+  for(let k=0;k<WALLN;k++){if(s.wallKind&&s.wallKind[k]===1||fresh&&s.wallKept&&s.wallKept[k])continue;const k1=(k+1)%WALLN,a0=k/WALLN*Math.PI*2,a1=(k+1)/WALLN*Math.PI*2;
+    L+=Math.hypot(Math.cos(a0)*s.wallRad[k]-Math.cos(a1)*s.wallRad[k1],Math.sin(a0)*s.wallRad[k]-Math.sin(a1)*s.wallRad[k1]);}
+  return L;}
+function wallCost(s,stone,len){return (len!=null?len:circuitLen(s))*(stone?2.4:0.8)*PL();} // len: the metres to build (default: the whole standing circuit)
 function tickRepairs(){ // once a year: the works made good, as the lord (or the burghers) can pay; neglected walls crumble
   if(day()%360!==262)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const hi=s.owner,Lh=hi>0?W.houses[hi]:null;
     if(s.kind!=='village')levy(s,townWorth(s)/25*0.04*clamp(s.prosperity/50,0.3,1.5)*(0.5+townThreat(s)),s,'murage'); // the murage: a toll and a rate the burghers lay on themselves for their walls, more when they feel the danger
     if(s.wallRad)damageWalls(s,frand()*6.283,0.5,0.015*clamp(1.6-s.prosperity/50,0.2,1.6)); // weather and neglect: every year a little, more in a poor town
     const D=wallDamage(s),open=s.breachUntil>day();
-    if(s.wallRad&&(D>0.02||open)){const per=2*Math.PI*(s.wallR||100),cost=Math.round(D*per*(s.walls>=2?3:1)+(open?150:0)),st=Math.round(D*per*(s.walls>=2?0.3:0));
+    if(s.wallRad&&(D>0.02||open)){const per=circuitLen(s),gap=open?150-(s._breachPaid||0):0,cost=Math.round(D*per*(s.walls>=2?3:1)+gap),st=Math.round(D*per*(s.walls>=2?0.3:0));
       const have=s.stores.stone||0,carted=Math.max(0,st-have)*0.6;
       const tot=cost+carted,fromTown=Math.min(s.murage||0,tot),fromLord=Math.min(Math.max(0,purse(hi)-tot*0.5),tot-fromTown)*(0.4+0.4*townThreat(s)),paid=fromTown+Math.max(0,fromLord),fr=clamp(paid/tot,0,1); // the town's murage first, then the lord as he can and as he fears
-      if(fr>0.02){s.murage=(s.murage||0)-fromTown;if(fromLord>0){spend(hi,fromLord);if(Lh)book(Lh,'repairs',-fromLord);}wages(s,paid,'repairs');s.stores.stone=Math.max(0,have-st*fr);for(let k=0;k<WALLN;k++)s.wallDmg[k]*=1-fr;if(open&&paid>=150)s.breachUntil=0;
+      if(fr>0.02){s.murage=(s.murage||0)-fromTown;if(fromLord>0){spend(hi,fromLord);if(Lh)book(Lh,'repairs',-fromLord);}wages(s,paid,'repairs');s.stores.stone=Math.max(0,have-st*fr);for(let k=0;k<WALLN;k++)s.wallDmg[k]*=1-fr;let shut=false;if(open){s._breachPaid=(s._breachPaid||0)+gap*fr;if(150-s._breachPaid<1.5){s.breachUntil=0;s._breachPaid=0;shut=true;}} // the breach is walled up when what has gone to it, year by year, covers the work
         if(fr<1)s._repairWant=Math.round(tot*(1-fr));
-        const t=open?'The breach in the walls was walled up and the gate rehung; the battered stretches were patched.':'Masons made good the battered stretches of the walls.';s.history.push({yr:year(),t});
+        const t=shut?'The breach in the walls was walled up and the gate rehung; the battered stretches were patched.':open?'Masons patched the battered stretches, but the breach still gapes for want of money.':'Masons made good the battered stretches of the walls.';s.history.push({yr:year(),t});
         if(!W.prehistory&&fr>0.5)emit(Lh?'house':'trade',3,s.pos,`${s.name}: ${t.charAt(0).toLowerCase()+t.slice(1)}`.replace(/^(\w)/,m=>m.toUpperCase()));}
       else s._repairWant=tot;}}}
 /* ---------------- the game: four roads to dominance, the chronicler's verdict, and the deeds remembered ----------------
@@ -8556,7 +8582,7 @@ function tickMilitary(){
         if(a.raid){s.siegeBy=null;a.siegeArc=null;a.raid=false;s.raidedUntil=now+330;driveOffHerds(s,a);spoils(a,s,false);a.state='idle';liftSiege(a);marchArmy(a,a.home);a.why='laden with plunder';a.holdUntil=day()+40;emit('war',4,s.pos,vary('withdraw',[()=>`${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`Laden with plunder, ${a.name.replace(/^Host/,'the host')} withdraws from ${s.name}, driving off the cattle.`,()=>`${a.name} draws off from ${s.name}, its wagons heavy with plunder and the cattle driven before it.`,()=>`The raid on ${s.name} is ended: ${a.name} withdraws, laden with plunder and driving off the cattle.`,()=>`${s.name} is left behind as ${a.name} turns for home, laden with plunder and driving off the cattle.`,()=>{const c=notableById(a.commander);return `${c?`${c.name} leads ${a.name.replace(/^Host/,'the host')} away from ${s.name}`:`${a.name} withdraws from ${s.name}`}, laden with plunder and driving off the cattle.`;},()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, ${a.name} withdraws from ${s.name}, laden with plunder and driving off the cattle.`,()=>`With the plunder loaded and the cattle driven off, ${a.name.replace(/^Host/,'the host')} quits ${s.name}.`]));}
         else{ // the storm: the works and the ground weigh against the assault, hunger for it
           const cm=notableById(a.commander),A=a.strength*(a.morale/70)*generalship(cm),D=defenceOf(s)*(s.stores.grain>0?1:0.4);
-          if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=Infinity;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;s.takenFrom=s.owner;s.takenMen=(s.garrison||0)+12;damageWalls(s,g.a,0.06,1);} // the gate and the wall beside it thrown down, until it is rebuilt
+          if(chance('sim',A/(A+D*1.2))){const g=s.wallRad&&a.siegeArc?siegeGate(s,a.siegeArc):null;if(g){s.breachUntil=Infinity;s._breachPaid=0;s.breachA=g.a;s.takenBy=a.id;s.takenDay=now;s.takenFrom=s.owner;s.takenMen=(s.garrison||0)+12;damageWalls(s,g.a,0.06,1);} // the gate and the wall beside it thrown down, until it is rebuilt
             if(!s.wallRad&&casRing(s)){const c=casOf(s);c.dmg=Math.min(1,(c.dmg||0)+0.35);}
             s.siegeBy=null;a.siegeArc=null;takeSettlement(a,s);
             if(a.house===campHouse())achGet('storm');
@@ -9190,22 +9216,27 @@ function syncLive(s){ // after a structural change: buildings in and out of the 
 }
 function outsideFrac(s){ // how much of the town now stands outside its wall
   if(!s.wallRad)return 1;let o=0,n=0;
-  for(const b of s.buildings)if(b.state==='sound'&&RESID.has(b.arch)){n++;const a=Math.atan2(b.z-s.pos.z,b.x-s.pos.x);if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>wallRadAt(s,a)+4)o++;}
+  for(const b of s.buildings)if(b.state==='sound'&&RESID.has(b.arch)&&!b.rural){n++; /* farmsteads in the fields are not suburbs */const a=Math.atan2(b.z-s.pos.z,b.x-s.pos.x);if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>wallRadAt(s,a)+4)o++;}
   return n?o/n:0;
 }
+function wallBid(s,L){ // the burghers' reckoning for a circuit: the line wall() would raise, priced by the metre, against what it protects weighed by the danger
+  const first=!s.wallRad,stake=townThreat(s)*townWorth(s)*(first?1:outsideFrac(s))*0.2,floor=wallCost(s,false,60);
+  if(stake<floor||(s.murage||0)<floor)return null; // not even a stretch of palisade is worth it, or the murage could not pay for one: no survey
+  const P=L.live.wallPlan();if(!P)return{same:true}; // the old circuit still serves
+  const cost=wallCost(s,P.stone,P.len);return stake>cost&&(s.murage||0)>=cost?{cost}:null;}
 function tickHistory(){ // once a year for each place (staggered): the town's own history continues
   W.settlements.forEach((s,si)=>{
     const L=s._lay;if(!L||!L.live||day()%360!==(si*47+90)%360)return;
     if(s.pop0===undefined)s.pop0=s.pop;
     if(L.reuse)for(const b of L.reuse(Math.max(3,Math.round(s.buildings.length/25))))if(b.idx!==undefined)updateBuildingInstance(b);
-    const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null;
+    const roadsN=W.roads.filter(r=>r.a===si||r.b===si).length;let did=null,bid=null;
     if(s.kind==='village'&&AD()>=950&&marketHeads(s)>Math.max(150,s.pop*0.35)&&(roadsN>=2||s.river||s.harbor)){ // a charter follows the trade: when a good share of the place lives by its market, it is made a town
       L.live.promote();did=`${s.name} is granted a market charter; the village is a town now, and its fair draws the countryside.`;}
-    else if(s.kind!=='village'&&!s.wallRad&&(s.murage||0)>=wallCost(s,false)&&townThreat(s)*townWorth(s)*0.2>wallCost(s,false)){ // the burghers wall their town when what they stand to lose, weighed by the danger, is more than the wall costs, and the murage can pay
-      s.murage-=wallCost(s,false);wages(s,wallCost(s,false),'walls');L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
-    else if(s.wallRad&&s.kind!=='village'&&!s.siegeBy&&(s.murage||0)>=wallCost(s,s.walls>=2,(s.extentR||s.wallR)*1.1)&&townThreat(s)*townWorth(s)*outsideFrac(s)*0.2>wallCost(s,s.walls>=2,(s.extentR||s.wallR)*1.1)&&year()-(s._wallYr||-99)>=10){ // a new circuit when the suburbs outside are worth walling and the murage can pay
-      if(L.live.wall()){s.murage-=wallCost(s,s.walls>=2);wages(s,wallCost(s,s.walls>=2),'walls');s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
-      else s._wallYr=year()-30;} // the old wall still serves: ask again in fifteen years
+    else if(s.kind!=='village'&&!s.wallRad&&(bid=wallBid(s,L))&&!bid.same){ // the burghers wall their town when what they stand to lose, weighed by the danger, is more than the wall they would build costs, and the murage can pay
+      s.murage-=bid.cost;wages(s,bid.cost,'walls');L.live.wall();s._wallPop=s.pop;s._wallYr=year();did=`The burghers of ${s.name} raise a wall about their town${s.natDef>0.2?', the river guarding one side':''}.`;}
+    else if(s.wallRad&&s.kind!=='village'&&!s.siegeBy&&year()-(s._wallYr||-99)>=10&&(bid=wallBid(s,L))){ // a new circuit when the suburbs outside are worth walling and the murage can pay for the new stretches
+      if(!bid.same&&L.live.wall()){s.murage-=bid.cost;wages(s,bid.cost,'walls');s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
+      else s._wallYr=year()+5;} // the old wall still serves: ask again in fifteen years
     else if(s.walls===1&&AD()>=1150&&(s.murage||0)>=wallCost(s,true)&&townThreat(s)*townWorth(s)*0.1>wallCost(s,true)&&hasStone(s,'wall')&&L.live.stoneWall()&&(purchase(s,'stone',s,Math.min(s.stores.stone||0,stoneFor(s,'wall'))),useStone(s,'wall'),s.murage-=wallCost(s,true),wages(s,wallCost(s,true),'walls'),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
     else if(AD()>=1000&&s.pop>150&&parishNeed(s)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
@@ -9796,7 +9827,7 @@ function doAct(act,p,opt){
         else s.name=culturedName(s.cult,siteKeys(s,siteFeatures(p.x,p.z)),nameRng(day()*7+si),fr&&!(opt.fort||opt.planned)?fr.name:null);
       }
       layoutSettlement(s);
-      const jl=W.settlements[bj]._lay;if(jl&&jl.joinRoad(W.roads.length-1))syncLive(W.settlements[bj]); // the track enters the old place as a street
+      const jl=bj>=0&&W.settlements[bj]._lay;if(jl&&jl.joinRoad(W.roads.length-1))syncLive(W.settlements[bj]); // the track enters the old place as a street (none when it stands alone on its land)
       stitchRoads();
       for(const b of s.buildings){if(!bldRoom(1))break;b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);}
       G.bodies.count=G.roofs.count=G.bldList.length;
@@ -10061,7 +10092,7 @@ function aiPick(p){
 }
 function runPetition(p,i){
   const o=p.opts[i];if(!o)return;
-  if(o.cost){if((p.to|0)>0)W.houses[p.to].gold-=o.cost;else W.treasury-=o.cost;const at=p.pos?W.settlements[nearestSettlementIdx(p.pos.x,p.pos.z)]:W.capital;wages(at||W.capital,o.cost,'petition');} // spent where it was asked for
+  if(o.cost){if((p.to|0)>0)W.houses[p.to].gold-=o.cost;else W.treasury-=o.cost;if(!o.escrow){const at=p.pos?W.settlements[nearestSettlementIdx(p.pos.x,p.pos.z)]:W.capital;wages(at||W.capital,o.cost,'petition');}} // spent where it was asked for; escrow: carried by the act (a grant in the envoys' saddlebags), not spent here
   if(o.act)o.act();
 }
 function answerPetition(i){
@@ -10264,15 +10295,15 @@ function persuade(req){ // req: {hi, title, text, value (what it costs him, in g
   const hungry=own.some(o=>o.landShort)?0.25:0,host=royalHost(),hs=lordHost(req.hi),odds=o=>Math.round(clamp(o,0.03,0.97)*100)+'%';
   const grant=Math.round(v*1.4/10)*10;
   const L=[
-    {label:`A grant of gold (${odds(0.25+(grant/v-1)*0.8+debt+loyal+war)} likely)`,cost:grant,p:0.25+(grant/v-1)*0.8+debt+loyal+war,lever:'gold',pay:grant},
+    {label:`A grant of gold (${odds(0.25+(grant/v-1)*0.8+debt+loyal+war)} likely)`,cost:grant,escrow:true,p:0.25+(grant/v-1)*0.8+debt+loyal+war,lever:'gold',pay:grant},
     ...(give.length?[{label:`A grant of ${give.length} crown furlong${give.length>1?'s':''} beside his lands (${odds(0.2+(landVal/v-1)*0.7+hungry+loyal+war)})`,p:0.2+(landVal/v-1)*0.7+hungry+loyal+war,lever:'land',give}]:[]),
     ...(own.length?[{label:`Remit his towns' dues for five years, some ${dues.toLocaleString()} gold (${odds(Math.min(0.85,0.2+Math.log2(Math.max(0.25,dues/v))*0.2+debt+loyal+war))})`,p:Math.min(0.85,0.2+Math.log2(Math.max(0.25,dues/v))*0.2+debt+loyal+war),lever:'tax'}]:[]), // promises are worth less than coin in hand
     ...(host&&hs>=0?[{label:`Send the royal host to his gates (${odds(Math.min(0.8,0.25+Math.log2(Math.max(0.25,host.strength/Math.max(20,hs)))*0.18+war*0.5))}; he will not forget it)`,p:Math.min(0.8,0.25+Math.log2(Math.max(0.25,host.strength/Math.max(20,hs)))*0.18+war*0.5),lever:'force'}]:[]), // even a weak lord may call the crown's bluff
     {label:`Ask him plainly (${odds(0.1+loyal*1.5+war)})`,p:0.1+loyal*1.5+war,lever:'ask'},
     {label:'Let it be',lever:'none'}];
-  const opts=L.map(o=>({label:o.label,cost:o.cost,act:()=>{
+  const opts=L.map(o=>({label:o.label,cost:o.cost,escrow:o.escrow,act:()=>{
     if(o.lever==='none')return;
-    // gold goes with the envoys (the petition takes its cost); it comes back if he refuses
+    // gold goes with the envoys (the petition takes it from the purse and the envoys carry it): his if he agrees, home again if he refuses
     if(o.lever==='force'&&host){orderArmy(host,req.si??nearestSettlementIdx(req.pos.x,req.pos.z));}
     const decide=day()+12+randi('sim',25),seat=W.settlements[h.seat]&&W.settlements[h.seat].owner===req.hi?h.seat:(req.si??nearestSettlementIdx(req.pos.x,req.pos.z));
     G.ordersDirty=true;(W.projects=W.projects||[]).push({type:'persuade',req,lever:o.lever,p:clamp(o.p,0.03,0.97),pay:o.pay,give:o.give,decide,x:req.pos.x,z:req.pos.z});
@@ -10282,7 +10313,7 @@ function persuade(req){ // req: {hi, title, text, value (what it costs him, in g
   return true;
 }
 function answerPersuade(q){ // the lord's answer
-  const req=q.req,h=W.houses[req.hi];if(!h||h.exiled)return;
+  const req=q.req,h=W.houses[req.hi];if(!h||h.exiled||h.extinct){if(q.lever==='gold')W.treasury+=q.pay;return;} // no one to take it: the envoys bring the gold home
   if(chance('sim',q.p)){
     if(q.lever==='gold')h.gold=(h.gold||0)+q.pay;
     if(q.lever==='land')for(const f of q.give)if(f.lord===0){setLord(f,req.hi,false);f.bought=false;}
@@ -12712,7 +12743,8 @@ Acts are sealed while you rule; the crown's own levers take their place:
   offer; he answers weeks later); clear a quarter of a crown town (condemned,
   pulled down house by house as leases end, laid out anew and rebuilt by the
   town's own growth). In a lord's town the crown cannot order it, only
-  persuade: a grant of gold, a grant of crown land beside his, a remission of
+  persuade: a grant of gold (the envoys carry it; it comes home if he
+  refuses), a grant of crown land beside his, a remission of
   his dues, the royal host at his gates (he yields or rises), or plain
   asking. Lords build roads of their own where a long way round carries
   much traffic.
@@ -12933,7 +12965,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   plots are rebuilt first; empty houses fall vacant in proportion to the vacancy; owners rebuild in better
   stuff where the value added repays it; lanes open as the shortfall of plots needs.
 - **Walls** are paid for by the burghers' murage and raised when the danger, weighed by what the town is
-  worth, outruns their cost; repairs come from the murage, then the lord. **Castle works** are ranked by
+  worth, outruns the cost of the line they would actually build (by the metre of curtain, nothing where a
+  cliff is the wall; a wider circuit pays only for its new stretches); repairs come from the murage, then the
+  lord, and a breach is walled up once what has gone to it, year by year, covers the work. **Castle works** are ranked by
   what they add to the defence of what they protect, against cost. **Churches** take gifts from what lords
   have to spare; a new parish comes when the churches cannot seat the people.
 - **Lords** invest where the return repays the cost, sell fiefs at their rents, found towns where carts pass
@@ -13325,8 +13359,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
   growth: houses ribbon out along the roads, back lanes branch where there is
   room, bend with the ground, stop at water and walls and join older streets.
   Each wall is traced around the dense core of its age (keeping to the near
-  bank of a river, riding hill crests, left open at cliffs, pulling down the
-  houses in its way); later suburbs spill past the gates and across bridges.
+  bank of a river, riding hill crests, left open at cliffs, going round a
+  house where that costs less than pulling it down); the first wall leaves
+  the old village outside, and farmsteads out in the fields are never
+  walled; later suburbs spill past the gates and across bridges.
   A wall never runs through a keep, hall, church, bailey or close; it goes
   round them. When a city outgrows its wall the new circuit reuses the old
   wherever the town has not spilled past it and runs out only around the
@@ -13425,7 +13461,8 @@ What happens is decided by quantities the economy produces, not by numbers cross
   assart, spray for a flood). Lasting states show while they last:
   festivals, plague haze, besiegers' campfires, riot torches, famine dust.
 - Town walls are placed by a trade-off rather than a set shape: each house
-  left outside is a loss, each metre of wall a cost, a falling slope is
+  left outside is a loss, each house on the line a greater one (it is pulled
+  down: five times the loss), each metre of wall a cost, a falling slope is
   cheaper to wall and water cannot be walled. The cheapest closed line is
   found by dynamic programming, so ribbons of houses along roads stay
   outside the gates. Bastion ditches are wet only where a river, pond or
