@@ -3433,6 +3433,41 @@ function fullTitle(n){
    RENDERING — illuminated-manuscript low-poly, vertex colors, instancing
    ========================================================================= */
 let scene,camera,renderer,G={};
+// VISUAL DEFERRAL BEGIN: projection tasks never advance the simulation.
+const VISUAL={
+  disabled:/(?:^|[&#])defer=off(?:&|$)/.test(location.hash),jobs:new Map(),timer:0,world:null,projecting:false,fault:null,fields:false,catching:false,
+  stats:{requested:0,coalesced:0,completed:0,failures:0,ms:{},counts:{}},
+  fast(){return !this.disabled&&!!W&&speedIdx===5;},
+  reset(){if(this.timer)clearTimeout(this.timer);this.timer=0;this.jobs.clear();this.world=G;this.fault=null;this.fields=false;this.catching=false;},
+  defer(kind,fn){
+    if(this.world!==G)this.reset();
+    if(!this.fast()&&!this.jobs.size&&!this.projecting)return false;
+    if(this.projecting)return false;
+    this.queue(kind,fn);return true;
+  },
+  queue(kind,fn){if(this.world!==G)this.reset();
+    this.stats.requested++;if(this.jobs.has(kind))this.stats.coalesced++;
+    this.jobs.set(kind,fn);this.schedule();
+  },
+  schedule(){if(!this.jobs.size&&!this.fields&&!G.detDirty)this.catching=false;
+    if(this.timer||this.fault||(!this.jobs.size&&!this.fields&&!(this.catching&&G.detDirty))||W.prehistory)return;
+    const world=G;this.timer=setTimeout(()=>{this.timer=0;if(world!==G){this.reset();return;}this.drain();},this.fast()?1000:!this.jobs.size&&!this.fields?25:0);
+  },
+  drain(){if(this.world!==G){this.reset();return;}if(W.prehistory||this.fault)return;
+    const next=this.jobs.entries().next();if(next.done&&!this.fields){if(!G.detDirty)this.catching=false;this.schedule();return;}const[k,fn]=next.done?['fields',()=>{featFlush(performance.now()/1000,true);this.fields=!!G.feat?.tiles?.size;}]:next.value,t=performance.now();
+    this.projecting=true;
+    try{fn();this.jobs.delete(k);this.stats.completed++;this.stats.counts[k]=(this.stats.counts[k]||0)+1;}
+    catch(e){this.fault=e;this.stats.failures++;simErr(e);setSpeed(0);}
+    finally{this.projecting=false;this.stats.ms[k]=(this.stats.ms[k]||0)+performance.now()-t;}
+    this.schedule();
+  },
+  settle(){if(this.timer)clearTimeout(this.timer);this.timer=0;this.schedule();},
+  async finish(timeoutMs=30000){const start=performance.now();this.fields=!!G.feat?.tiles?.size;this.settle();while((this.jobs.size||this.fields||this.catching&&G.detDirty)&&!this.fault){if(performance.now()-start>=timeoutMs)throw new Error('Visual catch-up timeout: '+this.status().pending.join(', '));await new Promise(r=>setTimeout(r,0));}if(this.fault)throw this.fault;},
+  retry(){this.fault=null;this.settle();},
+  status(){return{fast:this.fast(),pending:[...this.jobs.keys(),...(this.fields?['fields']:[]),...(this.catching&&G.detDirty?['details']:[])],fault:this.fault?.message||null,stats:this.stats};}
+};
+window.FURLONG_VISUAL=VISUAL;
+// VISUAL DEFERRAL END
 
 function mergeGeoms(list){ // list of [geometry, matrix] → one non-indexed BufferGeometry
   let pos=[],norm=[];
@@ -5251,6 +5286,7 @@ function rebuildDetails(){
     for(const a of['aMasonry','aGableColor','aKind','aRoofKind'])if(m.geometry.attributes[a])m.geometry.attributes[a].needsUpdate=true;
     m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;
   }
+  if(VISUAL.catching){VISUAL.fields=!!G.feat?.tiles?.size;VISUAL.queue('fences',()=>projectFences());}
 }
 /* ---------------- town walls: one continuous curtain per town ------------
    Curtain runs follow the wall line and the ground, broken only by water and
@@ -5278,6 +5314,7 @@ function segOutside(p,q,C){ // the parts of segment p→q that lie outside circl
   const sq=Math.sqrt(disc),t1=(-b-sq)/(2*a),t2=(-b+sq)/(2*a),at=t=>({x:p.x+dx*t,z:p.z+dz*t}),out=[];
   if(t1>0)out.push([p,at(Math.min(1,t1))]);if(t2<1)out.push([at(Math.max(0,t2)),q]);return out;}
 function rebuildWalls(){
+  if(VISUAL.defer('walls',()=>rebuildWalls()))return;
   if(G.wallGrp){scene.remove(G.wallGrp);disposeTree(G.wallGrp);}
   const grp=new THREE.Group(),acc=newAcc(),acc2=newAcc(),ditch=newAcc(),inst={merlon:[],tower:[],cap:[],gate:[],stake:[],gtower:[],sqt:[],cgb:[]};
   const face=(V,n,col)=>{ // a planar polygon, wound to face along n
@@ -5743,7 +5780,10 @@ const treeGone=(f,t)=>(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.B
    different use (corn against pasture: the beasts kept out of the crop). No fence runs between the open-field strips of
    one village. Dry-stone where the ground is stony or stone is cheaper than timber; post-and-rail elsewhere. */
 function furlongPoly(f){ // the furlong's exact Voronoi cell, each edge knowing the neighbour across it
-  if(f.poly)return f.poly;const F=G.land.F,site=g=>({x:(g.i+0.15+0.7*g.jx)*FG-SIZE/2,z:(g.j+0.15+0.7*g.jz)*FG-SIZE/2}),P0=site(f);
+  if(f.poly)return f.poly;return f.poly=computeFurlongPoly(f);
+}
+function computeFurlongPoly(f){
+  const F=G.land.F,site=g=>({x:(g.i+0.15+0.7*g.jx)*FG-SIZE/2,z:(g.j+0.15+0.7*g.jz)*FG-SIZE/2}),P0=site(f);
   let poly=[{x:P0.x-FG*2,z:P0.z-FG*2,nb:-1},{x:P0.x+FG*2,z:P0.z-FG*2,nb:-1},{x:P0.x+FG*2,z:P0.z+FG*2,nb:-1},{x:P0.x-FG*2,z:P0.z+FG*2,nb:-1}];
   for(let dj=-2;dj<=2;dj++)for(let di=-2;di<=2;di++){if(!di&&!dj)continue;const i=f.i+di,j=f.j+dj;if(i<0||j<0||i>=FN||j>=FN)continue;
     const g=F[j*FN+i],Q=site(g),mx=(P0.x+Q.x)/2,mz=(P0.z+Q.z)/2,nx=Q.x-P0.x,nz=Q.z-P0.z,side=p=>(p.x-mx)*nx+(p.z-mz)*nz; // keep the half-plane nearer f
@@ -5752,7 +5792,7 @@ function furlongPoly(f){ // the furlong's exact Voronoi cell, each edge knowing 
     // the edge that starts at the new crossing runs along g's bisector: tag it
     for(let k=0;k<out.length;k++){const a=out[k],b=out[(k+1)%out.length];if(Math.abs(side(a))<1e-6&&Math.abs(side(b))<1e-6)a.nb=g.k;}
     poly=out;}
-  return f.poly=poly;}
+  return poly;}
 function fenceStone(s){return !!s&&((s.res&&s.res.stone>=6)||price(s,'stone')<price(s,'timber')*0.7);}
 function buildFenceMeshes(){
   const post=new THREE.BoxGeometry(0.22,1.3,0.22),rail=new THREE.BoxGeometry(1,0.1,0.08),M4=new THREE.Matrix4();
@@ -5797,7 +5837,12 @@ function buildTracks(){
         if(dc+c<dist[w]){dist[w]=dc+c;via[w]=e;push(dist[w],w);}}}
     for(const f of fs){let t=-1,td=1e18;for(const q of furlongPoly(f)){const i=T.V.get(tgKey(q));if(i!==undefined&&dist[i]<td){td=dist[i];t=i;}}
       for(let v=t,g=0;v>=0&&v!==a0&&via[v]&&g<400;g++){const e=via[v];used.add(e.k);v=e.a===v?e.b:e.a;}}});
-  G.trackSet=used;
+  G.trackSet=used;prepareTrackBridges();
+  if(VISUAL.defer('tracks',()=>projectTracks()))return;
+  projectTracks();
+}
+function projectTracks(){
+  const T=G.tg,used=G.trackSet;
   if(G.trackMesh){scene.remove(G.trackMesh);G.trackMesh.geometry.dispose();}
   const pos=[];for(const k of used){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b],L=e.L,n=Math.max(1,Math.ceil(L/8)),ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L,hw=1.2;
     for(let q=0;q<n;q++){const t0=q/n,t1=(q+1)/n,x0=A.x+(Bp.x-A.x)*t0,z0=A.z+(Bp.z-A.z)*t0,x1=A.x+(Bp.x-A.x)*t1,z1=A.z+(Bp.z-A.z)*t1,y0=hAt(x0,z0)+0.18,y1=hAt(x1,z1)+0.18;
@@ -5806,24 +5851,41 @@ function buildTracks(){
   G.trackMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b7355,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
   G.trackMesh.receiveShadow=true;G.trackMesh.renderOrder=2;scene.add(G.trackMesh);
   /* where a lane crosses a stream: a plank bridge with a handrail, or, in a later and better-off parish, a little stone bridge with parapets */
-  for(const k of['trackBridgeW','trackBridgeS'])if(G[k]){scene.remove(G[k]);G[k].geometry.dispose();G[k]=null;}G.trackBridgeAt=[];
-  if(!G.rivHash)riverStrips();const wood=[],stone=[],U=new THREE.Vector3(0,1,0);
+  for(const k of['trackBridgeW','trackBridgeS'])if(G[k]){scene.remove(G[k]);G[k].geometry.dispose();G[k]=null;}
+  const wood=[],stone=[],U=new THREE.Vector3(0,1,0);
+  for(const {mx,mz,y,ux,uz,span,isStone}of G.trackBridgePlan||[]){
+    const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),U,new THREE.Vector3(-uz,0,ux)).setPosition(mx,y,mz),P=isStone?stone:wood;
+    if(isStone){P.push([new THREE.BoxGeometry(span,1.1,3.6).translate(0,-0.45,0),M]);for(const sd of[-1,1])P.push([new THREE.BoxGeometry(span,0.7,0.4).translate(0,0.35,sd*1.6),M]);}
+    else{P.push([new THREE.BoxGeometry(span,0.22,2.6).translate(0,0,0),M]);for(const sd of[-1,1]){P.push([new THREE.BoxGeometry(span,0.12,0.12).translate(0,0.85,sd*1.2),M]);
+      for(let q=0;q<=Math.ceil(span/3);q++)P.push([new THREE.BoxGeometry(0.16,0.95,0.16).translate(-span/2+q*span/Math.ceil(span/3),0.4,sd*1.2),M]);}}
+  }
+  for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const m=new THREE.Mesh(mergeGeoms(P),new THREE.MeshLambertMaterial({color:col}));m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
+function prepareTrackBridges(){
+  if(!G.rivHash)riverStrips();const T=G.tg,used=G.trackSet,plan=[];G.trackBridgeAt=[];
   for(const k of used){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b],L=e.L;if(!L)continue;const ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L;
     let t0=-1;for(let s=0;s<=L+0.5;s+=1){const x=A.x+ux*Math.min(s,L),z=A.z+uz*Math.min(s,L),wet=!!riverAt(x,z,0.6);
       if(wet&&t0<0)t0=s;if((!wet||s>=L)&&t0>=0){const s0=Math.max(0,t0-2.5),s1=Math.min(L,s+2.5),span=s1-s0;t0=-1;if(span<3)continue;
         const ax=A.x+ux*s0,az=A.z+uz*s0,bx=A.x+ux*s1,bz=A.z+uz*s1,mx=(ax+bx)/2,mz=(az+bz)/2,si=nearestSettlementIdx(mx,mz),st=W.settlements[si];
         const isStone=AD()>=1200&&st&&(st.prosperity>55||(st.stores.stone||0)>=20)&&span<26,y=Math.max(hAt(ax,az),hAt(bx,bz),riverSurf(mx,mz)+(isStone?0.4:0.3))+(isStone?0.5:0.35); // the deck clears the water
-        const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),U,new THREE.Vector3(-uz,0,ux)).setPosition(mx,y,mz),P=isStone?stone:wood;(G.trackBridgeAt||(G.trackBridgeAt=[])).push({x:mx,z:mz,stone:isStone});
-        if(isStone){P.push([new THREE.BoxGeometry(span,1.1,3.6).translate(0,-0.45,0),M]);for(const sd of[-1,1])P.push([new THREE.BoxGeometry(span,0.7,0.4).translate(0,0.35,sd*1.6),M]);}
-        else{P.push([new THREE.BoxGeometry(span,0.22,2.6),M]);for(const sd of[-1,1]){P.push([new THREE.BoxGeometry(span,0.12,0.12).translate(0,0.85,sd*1.2),M]);
-          for(let q=0;q<=Math.ceil(span/3);q++)P.push([new THREE.BoxGeometry(0.16,0.95,0.16).translate(-span/2+q*span/Math.ceil(span/3),0.4,sd*1.2),M]);}}}}}
-  for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const m=new THREE.Mesh(mergeGeoms(P),new THREE.MeshLambertMaterial({color:col}));m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
+        G.trackBridgeAt.push({x:mx,z:mz,stone:isStone});plan.push({mx,mz,y,ux,uz,span,isStone});}}}
+  G.trackBridgePlan=plan;
+}
 function riverSurf(x,z){let y=-1e9;if(!G.rivHash)return y;for(const o of G.rivHash.near(x,z,40))if(segDist(x,z,o.a,o.b)<o.hw+3)y=Math.max(y,o.y);return y;} // the water's surface where a stream runs
 function trackAt(x,z,tol){if(!G.trackSet||!G.tg)return false;const T=G.tg;for(const k of G.trackSet){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b];if(segDist(x,z,A,Bp)<tol)return true;}return false;}
 function rebuildFences(){
   if(!G.land||!G.fenceWood)return;G.fenceDirty=false;
-  const F=G.land.F,mask=G.land.mask,worked=f=>f&&f.dom>=0&&(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.BURNT)&&f.kind!==LK.NONE;let nw=0,ns=0;
-  for(const f of F){if(!worked(f))continue;const P=furlongPoly(f),s=W.settlements[f.dom],stone=fenceStone(s),M=stone?G.fenceStone:G.fenceWood;
+  prepareFences(); // price() and furlongPoly() populate simulation caches: keep their original boundary
+  if(VISUAL.defer('fences',()=>projectFences()))return;
+  projectFences();
+}
+const fenceWorked=f=>f&&f.dom>=0&&(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.BURNT)&&f.kind!==LK.NONE;
+function prepareFences(){
+  for(const f of G.land.F)if(fenceWorked(f)){furlongPoly(f);fenceStone(W.settlements[f.dom]);}
+}
+function fenceStoneView(s){return !!s&&((s.res&&s.res.stone>=6)||(s.px?.stone??price0(s,'stone'))<(s.px?.timber??price0(s,'timber'))*0.7);}
+function projectFences(){
+  const F=G.land.F,mask=G.land.mask,worked=fenceWorked;let nw=0,ns=0;
+  for(const f of F){if(!worked(f))continue;const P=f.poly||computeFurlongPoly(f),s=W.settlements[f.dom],stone=fenceStoneView(s),M=stone?G.fenceStone:G.fenceWood;
     for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?F[a.nb]:null;
       const ta=G.tg&&G.tg.V.get(tgKey(a)),tb=G.tg&&G.tg.V.get(tgKey(b)),lane=G.trackSet&&ta!==undefined&&tb!==undefined&&G.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);
       if(!lane){
@@ -6128,10 +6190,11 @@ function featCompute(i0,j0,i1,j1){ // chamfer distance transform over a window (
   }
   for(let y=j0;y<=j1;y++)for(let x=i0;x<=i1;x++)F.d2[(y*FR+x)*4+3]=255;
 }
-function featFlush(now){ // apply pending changes a few tiles at a time, so no frame stalls on a map-wide recompute
-  const F=G.feat;if(!F||!F.tiles||!F.tiles.size||now-F.t<0.3)return;
-  F.t=now;const n=FR/FT;let k=0;
-  for(const t of F.tiles){F.tiles.delete(t);const i=t%n,j=(t/n)|0;featCompute(i*FT,j*FT,i*FT+FT-1,j*FT+FT-1);if(++k>=4)break;}
+function featFlush(now,catchUp=false){ // apply pending changes a few tiles at a time, so no frame stalls on a map-wide recompute
+  const F=G.feat;if(!F||!F.tiles||!F.tiles.size||!catchUp&&now-F.t<0.3)return;
+  if(!catchUp&&VISUAL.fast()&&now-F.t<1)return;
+  F.t=now;const n=FR/FT,t0=performance.now();let k=0;
+  for(const t of F.tiles){F.tiles.delete(t);const i=t%n,j=(t/n)|0;featCompute(i*FT,j*FT,i*FT+FT-1,j*FT+FT-1);if(++k>=4||catchUp&&performance.now()-t0>=8)break;}
   F.tex1.needsUpdate=F.tex2.needsUpdate=true;
 }
 
@@ -11463,7 +11526,14 @@ function setSpeed(i){
   i=Math.round(+i);if(!(i>=0&&i<SPEEDS.length))return;
   if(i>0)sovPausedFrom=0; // the player chose a speed: don't override it when petitions clear
   if(speedIdx!==0)lastSpeed=speedIdx;
-  speedIdx=i;
+  const wasReeling=VISUAL.fast();speedIdx=i;
+  if(VISUAL.fast()){VISUAL.catching=false;VISUAL.fields=false;}
+  if(wasReeling&&!VISUAL.fast()){
+    VISUAL.catching=true;VISUAL.fields=!!G.feat?.tiles?.size;
+    if(G.wallGrp)VISUAL.queue('walls',()=>rebuildWalls());
+    if(G.trackSet&&G.tg)VISUAL.queue('tracks',()=>projectTracks());
+    if(G.fenceWood)VISUAL.queue('fences',()=>projectFences());
+  }VISUAL.settle();
   const pause=document.getElementById('pausebtn');pause.textContent=i===0?'Resume':'Pause';pause.setAttribute('aria-label',i===0?'Resume the simulation':'Pause the simulation');pause.setAttribute('aria-pressed',String(i===0));
   document.getElementById('speedselect').value=String(i||lastSpeed||1);
 }
@@ -12746,7 +12816,7 @@ async function boot(){
   await generateWorld(seed,progress);
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
-  initGraphics();
+  initGraphics();VISUAL.reset();
   buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   simInit();
   // The exhaustive recorder is still too costly for normal fast-forward.
@@ -12859,7 +12929,7 @@ async function replaySave(o,progress){ // grow the days again, giving each comma
   while(true){while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;try{simTick();}catch(e){simErr(e);}
     if(++n%60===0)await progress(`Reading the annals again… AD ${AD()} of ${o.ad}`,clamp((day()-d0)/Math.max(1,tgt-d0),0,1));}
   REPLAYING=false;JOURNAL=J.slice();RESUMED=true;setPlaceMode(null);
-  buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
+  buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();VISUAL.settle();lastSeasonKey='';
   if(o.cam){cam.focus.set(o.cam.x,hAt(o.cam.x,o.cam.z),o.cam.z);cam.cur.focus.copy(cam.focus);cam.dist=cam.cur.dist=o.cam.d;cam.yaw=cam.cur.yaw=o.cam.yaw;cam.mode='free';}
   emit('crown',4,W.capital.pos,`The annals are taken up again in AD ${AD()}${o.name?` (“${o.name}”)`:''}.`+(o.build!==buildId()?' This save was made in another build of the game: the realm may have unfolded differently.':''));}
 /* ============================ THE ADVISOR'S DOOR ============================

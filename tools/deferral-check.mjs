@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+// Local fastest-mode projection/state equality and native-RAF catch-up in hardware Chrome.
+// node tools/deferral-check.mjs --baseline 75ac15d --years 2 --out /tmp/furlong-deferral
+// --variants baseline,candidate,off additionally validates defer=off; --era checks actual later-era boot.
+import {spawn,execFileSync} from 'node:child_process';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
+import assert from 'node:assert/strict';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const args=Object.fromEntries(process.argv.slice(2).reduce((a,v,i,all)=>{if(v.startsWith('--'))a.push([v.slice(2),all[i+1]&&!all[i+1].startsWith('--')?all[i+1]:true]);return a;},[]));
+const OUT=path.resolve(args.out||path.join(os.tmpdir(),'furlong-performance-'+Date.now())),years=Number(args.years??2),era=Number(args.era??850),bootTimeout=Number(args['boot-timeout']??120)*1000;
+const worlds=String(args.seeds||'1001:sea,2002:land').split(',').map(v=>{const[s,coast]=v.split(':');return{seed:Number(s),coast};});
+const variants=String(args.variants||'baseline,candidate').split(',');
+if(!Number.isInteger(years)||years<0||!Number.isInteger(era)||era<850||era>1500||!Number.isFinite(bootTimeout)||bootTimeout<1000||worlds.some(w=>!Number.isInteger(w.seed)||!['sea','land'].includes(w.coast))||variants.some(v=>!['baseline','candidate','off'].includes(v)))throw new Error('invalid years, era, timeout, seed:coast or variants');
+if(fs.existsSync(OUT))throw new Error('choose a fresh evidence directory');fs.mkdirSync(OUT,{recursive:true});
+const sources={baseline:execFileSync('git',['show',(args.baseline||'main')+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:20e6}),candidate:fs.readFileSync(args.source||path.join(ROOT,'index.html'),'utf8')};
+const hash=s=>createHash('sha256').update(s).digest('hex');for(const[k,s]of Object.entries(sources))fs.writeFileSync(path.join(OUT,k+'.html'),s);
+const run={sourceSHA256:Object.fromEntries(Object.entries(sources).map(([k,s])=>[k,hash(s)])),harnessSHA256:hash(fs.readFileSync(fileURLToPath(import.meta.url))),args,startedUTC:new Date().toISOString(),node:process.version};
+fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));
+const CHROME=process.env.CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',sleep=ms=>new Promise(r=>setTimeout(r,ms)),active=new Set();
+for(const sig of ['SIGINT','SIGTERM'])process.on(sig,()=>{for(const stop of active)stop();process.exit(sig==='SIGINT'?130:143);});
+class CDP{
+  constructor(url){this.ws=new WebSocket(url);this.n=0;this.wait=new Map();this.listeners=new Map();this.open=new Promise((res,rej)=>{this.ws.onopen=res;this.ws.onerror=rej;});
+    this.ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=this.wait.get(m.id);if(p){this.wait.delete(m.id);m.error?p.reject(new Error(m.error.message)):p.resolve(m.result);}}else for(const f of this.listeners.get(m.method)||[])f(m.params);};
+    this.ws.onclose=()=>{for(const p of this.wait.values())p.reject(new Error('Chrome closed'));this.wait.clear();};}
+  send(method,params={}){const id=++this.n;this.ws.send(JSON.stringify({id,method,params}));return new Promise((resolve,reject)=>this.wait.set(id,{resolve,reject}));}
+  on(method,f){if(!this.listeners.has(method))this.listeners.set(method,[]);this.listeners.get(method).push(f);}
+}
+async function evaluate(c,expression){const r=await c.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result.value;}
+async function launch(){const profile=fs.mkdtempSync(path.join(os.tmpdir(),'furlong-performance-'));
+  const proc=spawn(CHROME,['--headless=new','--remote-debugging-port=0',`--user-data-dir=${profile}`,'--no-first-run','--no-default-browser-check','--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows',...(process.platform==='darwin'?['--use-angle=metal']:[]),'--enable-gpu','--ignore-gpu-blocklist','--window-size=1440,900','about:blank'],{stdio:['ignore','ignore','pipe']});
+  let c;const stop=()=>{active.delete(stop);c?.ws.close();proc.kill('SIGKILL');fs.rmSync(profile,{recursive:true,force:true});};active.add(stop);
+  try{const ws=await new Promise((res,rej)=>{let buf='';const timer=setTimeout(()=>rej(new Error('Chrome startup timeout')),30000);proc.stderr.on('data',d=>{buf+=d;const m=/DevTools listening on (ws:\/\/\S+)/.exec(buf);if(m){clearTimeout(timer);res(m[1]);}});proc.on('error',rej);proc.on('exit',code=>{clearTimeout(timer);rej(new Error('Chrome exited '+code));});});
+    const list=await(await fetch(`http://127.0.0.1:${new URL(ws).port}/json/list`)).json();c=new CDP(list.find(t=>t.type==='page').webSocketDebuggerUrl);await c.open;return{c,stop};
+  }catch(e){stop();throw e;}}
+
+// Canonical graph encoding retains Map/Set and array order, reference identity, numeric precision,
+// genomes, parish records, ownership, food, coin, terrain, and land. Only derived caches/graphics
+// are excluded. DOM/UI intervals are suppressed equally; deferred simulation work is still flushed.
+const SERIALIZE=`(()=>{const seen=new Map(),pending=[],nodes=[],omit=new Set(${JSON.stringify(['__hs','_pm','_folkIndex','_folkRevision','_householdsV','_popTotal','_popValid','routes',...(args['ignore-life-ledger']?['ev','historyCells']:[])])});
+  const walk=v=>{if(v===undefined)return['undefined'];if(typeof v==='function')return['function'];if(typeof v==='number'&&!Number.isFinite(v))return['number',String(v)];if(v===null||typeof v!=='object')return v;
+    if(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.nodeType)return['graphic'];if(!seen.has(v)){seen.set(v,pending.length);pending.push(v);}return['ref',seen.get(v)];};
+  const root=walk({world:W,land:{F:G.land.F,mask:G.land.mask,flood:G.land.flood,perHead:G.land.perHead},annals:allLines,journal:JOURNAL,mod:MOD,personID:PID,notableID:NID,geography:{bldList:G.bldList,treeSpots:G.treeSpots,treeHash:G.treeHash,trackSet:G.trackSet,tg:G.tg,rivStrips:G.rivStrips,rivHash:G.rivHash,trackBridgeAt:G.trackBridgeAt,bridgeSpans:G.bridgeSpans}});
+  for(let i=0;i<pending.length;i++){const v=pending[i];if(ArrayBuffer.isView(v))nodes[i]=['typed',v.constructor.name,Array.from(v)];else if(v instanceof Map)nodes[i]=['map',[...v].map(([k,x])=>[walk(k),walk(x)])];else if(v instanceof Set)nodes[i]=['set',[...v].map(walk)];
+    else if(Array.isArray(v))nodes[i]=['array',v.map(walk)];else nodes[i]=['object',Object.keys(v).filter(k=>!omit.has(k)&&typeof v[k]!=='function').sort().map(k=>[k,walk(v[k])])];}
+  return JSON.stringify({root,nodes});})()`;
+const FINGERPRINT=`(async()=>{const s=${SERIALIZE},buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return{sha256:[...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,'0')).join(''),bytes:s.length};})()`;
+// Projection costs and semantic map/economy costs are inclusive, never added twice.
+const INSTRUMENT=`window.__cost={};for(const name of ['simTick','tickEconomy','tickHouseholds','tickLand','rebuildDetails','buildTracks','prepareFences','prepareTrackBridges','rebuildWalls','rebuildFences','projectFences','projectTracks','featFlush','animateWorld']){const fn=window[name];if(typeof fn!=='function')continue;window[name]=function(...args){const t=performance.now();try{return fn.apply(this,args);}finally{const c=__cost[name]||(__cost[name]={ms:0,calls:0});c.ms+=performance.now()-t;c.calls++;}};}`;
+run.instrumentedSHA256={};for(const[k,s]of Object.entries(sources)){const measured=s.replace('\nboot();','\n'+INSTRUMENT+'\nboot();');fs.writeFileSync(path.join(OUT,k+'.source.html'),s);fs.writeFileSync(path.join(OUT,k+'.html'),measured);run.instrumentedSHA256[k]=hash(measured);}fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));
+const SETTLE=`(async()=>{const start=performance.now();setSpeed(0);if(typeof VISUAL!=='undefined')await VISUAL.finish();while(G.feat.tiles?.size)featFlush((G.feat.t||0)+2);G.feat.t=performance.now()/1000;return typeof VISUAL==='undefined'?null:{...VISUAL.status(),settleMs:performance.now()-start};})()`;
+const GEOMETRY=`(()=>{const parts={walls:G.wallGrp,tracks:G.trackMesh,wood:G.trackBridgeW,stone:G.trackBridgeS,fenceWood:G.fenceWood,fencePost:G.fencePost,fenceStone:G.fenceStone};const data={};for(const[k,m]of Object.entries(parts)){if(!m){data[k]=null;continue;}const list=[];m.traverse(o=>{if(!o.geometry)return;const g=o.geometry;list.push({index:g.index?Array.from(g.index.array):null,attrs:Object.fromEntries(Object.entries(g.attributes).map(([k,a])=>[k,Array.from(a.array)])),count:o.isInstancedMesh?o.count:null,matrix:o.instanceMatrix?Array.from(o.instanceMatrix.array.slice(0,o.count*16)):null,colour:o.instanceColor?Array.from(o.instanceColor.array.slice(0,o.count*3)):null});});data[k]=list;}data.fields={d1:Array.from(G.feat.d1),d2:Array.from(G.feat.d2)};return JSON.stringify(data);})()`;
+async function check(variant,w){const{c,stop}=await launch(),id=`${variant}-${w.seed}-${w.coast}`,errors=[],result={id,variant,...w};try{
+  await c.send('Page.enable');await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));c.on('Runtime.consoleAPICalled',e=>{if(e.type==='error')errors.push(e.args.map(a=>a.description||a.value).join(' '));});
+  await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__nativeRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
+  await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant==='baseline'?'baseline.html':'candidate.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=${era}`+(variant==='off'?'&defer=off':'')});
+  const t=Date.now();while(!await evaluate(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw new Error(errors.join('\n'));if(Date.now()-t>bootTimeout)throw new Error('boot timeout');await sleep(100);}
+  result.bootMs=Date.now()-t;result.bootCosts=await evaluate(c,'JSON.parse(JSON.stringify(__cost))');result.gpu=await evaluate(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return gl.getParameter(e.UNMASKED_RENDERER_WEBGL);})()");assert.ok(!/SwiftShader|llvmpipe|Software/i.test(result.gpu));
+  await evaluate(c,SETTLE);await evaluate(c,'ownershipTick()');result.initial=await evaluate(c,FINGERPRINT);await evaluate(c,"__cost={};cam.mode='free';setSpeed(5)");
+  // Every day is authoritative. Identical daily boundaries deliberately exercise mixed semantic builders.
+  const start=Date.now();result.annual=[];
+  for(let y=0;y<years;y++){
+    await evaluate(c,`(async()=>{for(let i=0;i<360;i++){simTick();if(day()%30===15||day()%360===0)await new Promise(r=>setTimeout(r,0));if(day()%30===0){rebuildDetails();buildTracks();rebuildFences();rebuildWalls();}}})()`);
+    result.annual.push(await evaluate(c,FINGERPRINT));
+  }
+  result.historyMs=Date.now()-start;result.historyCosts=await evaluate(c,'JSON.parse(JSON.stringify(__cost))');result.pendingBeforePause=await evaluate(c,"typeof VISUAL==='undefined'?null:VISUAL.status()");result.settled=await evaluate(c,SETTLE);
+  result.final=await evaluate(c,FINGERPRINT);fs.writeFileSync(path.join(OUT,id+'.state.json'),await evaluate(c,SERIALIZE));result.rngNext=await evaluate(c,"Object.fromEntries(['gen','sim','folk'].map(k=>[k,Array.from({length:16},()=>RS[k]())]))");
+  // Player-authorized setting during fast-forward, repeated meshes, then settle to latest state.
+  await evaluate(c,"setSpeed(5);applySetting('tax',9);buildTracks();rebuildFences();rebuildWalls();buildTracks();rebuildFences();rebuildWalls();setSpeed(1)");result.playerSettled=await evaluate(c,SETTLE);result.playerState=await evaluate(c,FINGERPRINT);
+  const geo=await evaluate(c,GEOMETRY);result.geometrySHA256=hash(geo);fs.writeFileSync(path.join(OUT,id+'.geometry.json'),geo);
+  // Actual main animate loop: native RAF and real speed 5, then pause and wait for projections.
+  await evaluate(c,"__cost={};document.getElementById('drawerclose').click();document.getElementById('savebox').style.display='none';document.getElementById('endgame').style.display='none';hideInspect();perfToggle(true);PERF.f=[];setSpeed(5);window.requestAnimationFrame=window.__nativeRAF;requestAnimationFrame(animate)");await sleep(6000);
+  result.drawn=await evaluate(c,"(()=>{const a=PERF.f;return{day:day(),frames:a.length,days:a.reduce((n,f)=>n+f.ticks,0),seconds:a.reduce((n,f)=>n+f.dt,0)/1000,avgMs:a.reduce((n,f)=>n+f.total,0)/a.length,cost:__cost};})()");result.finalSettle=await evaluate(c,SETTLE);await evaluate(c,'setSpeed(0);window.requestAnimationFrame=()=>0');await sleep(100);
+  if(variant==='candidate'){const beforeGeo=await evaluate(c,GEOMETRY),before=hash(beforeGeo);await evaluate(c,"VISUAL.projecting=true;try{projectTracks();projectFences();rebuildWalls();}finally{VISUAL.projecting=false;}");const afterGeo=await evaluate(c,GEOMETRY);result.freshProjectionMatches=before===hash(afterGeo);if(!result.freshProjectionMatches){fs.writeFileSync(path.join(OUT,id+'.before-fresh.json'),beforeGeo);fs.writeFileSync(path.join(OUT,id+'.after-fresh.json'),afterGeo);}assert.equal(result.freshProjectionMatches,true);}
+
+  result.view=await evaluate(c,"(()=>{const gl=renderer.getContext();return{errors:errN,calls:renderer.info.render.calls,linked:renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS)),pending:typeof VISUAL==='undefined'?[]:VISUAL.status().pending};})()");
+  await evaluate(c,'renderer.setSize(390,844)');await c.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await c.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});const resizeStart=Date.now();while(!await evaluate(c,'innerWidth===390')){if(Date.now()-resizeStart>5000)throw new Error('phone viewport did not resize');await sleep(50);}await sleep(100);await evaluate(c,"perfToggle(false);updateUILayout();setDrawerClosed(true);hideInspect();closeToolMenu();updateCamera(0,perfNow());animateWorld(0,perfNow());renderer.render(scene,camera)");await sleep(100);result.mobile=await evaluate(c,"({layout:document.body.dataset.layout,overflow:document.documentElement.scrollWidth>innerWidth,canvasWidth:renderer.domElement.getBoundingClientRect().width,calls:renderer.info.render.calls,errors:errN})");
+  const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'.png'),Buffer.from(shot.data,'base64'));
+  result.errors=errors;assert.equal(errors.length,0);assert.equal(result.view.errors,0);assert.ok(result.view.linked&&result.view.calls>0);assert.equal(result.view.pending.length,0);assert.equal(result.mobile.layout,'phone');assert.equal(result.mobile.overflow,false);assert.equal(result.mobile.canvasWidth,390);assert.equal(result.mobile.errors,0);
+  fs.writeFileSync(path.join(OUT,id+'.result.json'),JSON.stringify(result,null,2));return result;
+}catch(e){result.failed=e.stack;result.errors=errors;fs.writeFileSync(path.join(OUT,id+'.result.json'),JSON.stringify(result,null,2));return result;}finally{stop();}}
+const results=[];if(args.reference){const ref=JSON.parse(fs.readFileSync(path.join(args.reference,'run.json')));assert.equal(ref.sourceSHA256.baseline,run.sourceSHA256.baseline);assert.equal(Number(ref.args.years??2),years);assert.equal(Number(ref.args.era??850),era);for(const w of worlds)results.push(JSON.parse(fs.readFileSync(path.join(args.reference,`baseline-${w.seed}-${w.coast}.result.json`))));}for(const w of worlds)for(const v of variants){console.log('Checking '+v+' '+w.seed+' '+w.coast);results.push(await check(v,w));fs.writeFileSync(path.join(OUT,'results.json'),JSON.stringify(results,null,2));}
+const checks=[];for(const w of worlds){const b=results.find(r=>r.variant==='baseline'&&r.seed===w.seed&&r.coast===w.coast);for(const v of variants.filter(v=>v!=='baseline')){const n=results.find(r=>r.variant===v&&r.seed===w.seed&&r.coast===w.coast);checks.push({...w,variant:v,passed:!b.failed&&!n.failed&&b.initial.sha256===n.initial.sha256&&JSON.stringify(b.annual)===JSON.stringify(n.annual)&&b.final.sha256===n.final.sha256&&b.playerState.sha256===n.playerState.sha256&&JSON.stringify(b.rngNext)===JSON.stringify(n.rngNext)&&b.geometrySHA256===n.geometrySHA256,baselineMs:b.historyMs,candidateMs:n.historyMs,baselineBootMs:b.bootMs,candidateBootMs:n.bootMs});}}
+fs.writeFileSync(path.join(OUT,'checks.json'),JSON.stringify(checks,null,2));console.log(JSON.stringify({out:OUT,checks},null,2));process.exit(checks.every(c=>c.passed)?0:1);
