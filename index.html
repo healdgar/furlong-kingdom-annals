@@ -336,7 +336,7 @@ a.pp,a.nm{color:inherit;text-decoration:underline dotted rgba(90,60,40,.55);text
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-03 01:03 UTC · after 3b2eaed</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-03 01:42 UTC · after 6e67878</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2826,6 +2826,7 @@ function houseFolk(s){
     if(!b)b=homes.find(x=>cap.get(x)>0)||null; // none with room among those it looked at: the first that has any
     if(!b&&homes.length)b=homes[(rr++)%homes.length]; // no room left: they lodge with another household
     if(b){cap.set(b,(cap.get(b)||0)-1);b.hh.push(h);}h.bh=b;}
+  for(const b of homes)if(b.hh.length)b._vac=0; // lived in: its empty years count afresh
   s._hhY=year();}
 function householdOf(s,h){return (s.folk||[]).filter(p=>householdHead(p)===h);}
 function folkStat(s){ // what the town card shows, a year at a time
@@ -6401,9 +6402,9 @@ function addBuildingLive(s){ // growth: empty houses fill first, then the next o
   const L=s._lay;if(!L||!s.growSlots)return null;
   if(!bldRoom(1))return null;
   const empty=s.buildings.find(b=>b.state==='ruin'&&b.deserted);
-  if(empty){empty.state='sound';empty.deserted=false;s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(empty);return empty;}
+  if(empty){empty.state='sound';empty.deserted=false;s.ruinCount=Math.max(0,s.ruinCount-1);rehouse(s,empty);updateBuildingInstance(empty);return empty;}
   const burnt=s.buildings.find(b=>b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120); // the rubble cleared from a burned plot: built on again before new ground is broken
-  if(burnt){burnt.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(burnt);return burnt;}
+  if(burnt){burnt.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);rehouse(s,burnt);updateBuildingInstance(burnt);return burnt;}
   for(let t=0;t<30;t++){
     if(!s.growSlots.length){
       {const lord=lordAcct(s),cost=foodYr()*6;if(day()<(s._extT||0)||means(lord)<cost||!L.extend())return null;buildWorks(s,cost,lord,'street works');} // the lord lays out the new street, and pays for it
@@ -8960,7 +8961,7 @@ function tickThreats(){
   // rebuilding: once the rubble is cleared, a burned house goes up again as soon as there are households wanting roofs and the means to pay the builders; while the town has empty houses, its ruins wait
   if(day()%10===0)for(const s of W.settlements){const p=(s.folk&&s.folk.length?crowding(s)>0:s.pop>housing(s))?0.3:0;if(p<=0)continue;for(const b of s.buildings){
     if(b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120&&chance('sim',p)){
-      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // the owner rebuilds, and pays for it
+      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);rehouse(s,b);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // the owner rebuilds, and pays for it
     }
   }}
   // lightning ignition
@@ -9657,7 +9658,21 @@ function tickWays(){
     else r.cond=Math.max(0.15,c0-0.15);
     if(Math.abs((r.cond??1)-c0)>1e-6)dirty=true;});
   if(dirty){W.routes={};G.roadsDirty=true;}}
-function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s).sort((a,b)=>(b.w||0)-(a.w||0));}
+function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s||h.bh.state!=='sound').sort((a,b)=>(b.w||0)-(a.w||0));}
+function rehouse(s,b){ // a house rebuilt or brought back into use: its own household comes home if it has found no other roof, else the best-off household without one (or lodging over another's) moves in
+  b._vac=0;b.hh=(b.hh||[]).filter(h=>h.bh===b&&!h.dead);if(b.hh.length)return;
+  const h=unhousedOf(s)[0]||heads_(s,x=>x.bh&&!x.bh.removed&&x.bh.s===s&&x.bh.state==='sound'&&(x.bh.hh||[]).indexOf(x)>=capOf(x.bh))[0];
+  if(!h)return;if(h.bh&&h.bh.hh)h.bh.hh=h.bh.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;}
+function moveIn(s){ // households with no roof, or lodging over another's, take the empty houses the place has before anyone builds; each the one that suits it best
+  let empty=null;
+  for(const h of heads_(s,x=>!x.bh||x.bh.removed||x.bh.s!==s||x.bh.state!=='sound'||(x.bh.hh||[]).indexOf(x)>=capOf(x.bh)).sort((a,b)=>(b.w||0)-(a.w||0))){
+    if(!empty)empty=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed&&!(b.hh&&b.hh.length));if(!empty.length)return;
+    const wk=workOf(h,s);let bi=0,bs=-1e9;empty.forEach((x,i)=>{const v=homeScore(h,s,x.x,x.z,x.st,wk);if(v>bs){bs=v;bi=i;}});
+    const b=empty.splice(bi,1)[0];if(h.bh&&h.bh.hh)h.bh.hh=h.bh.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;b._vac=0;}}
+function tickFalling(s){ // the houses let go at the yearly reckoning fall in one by one through the year, unless a household has taken one meanwhile
+  if(!s._falling||!s._falling.length)return;
+  s._falling=s._falling.filter(b=>{if(day()<b._fallAt)return true;b._fallAt=0;
+    if(!b.removed&&b.state==='sound'&&!(b.hh&&b.hh.length)){b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}return false;});}
 /* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
 function tickStreets(){
   if(day()%360!==230||W.prehistory)return;
@@ -9686,6 +9701,7 @@ function tickStreets(){
 function tickGrowth(){ // houses are built for households that have none, as fast as the place's means and its timber allow; empty houses fall vacant as the households thin; owners rebuild in better stuff where the value it adds repays the cost
   if(day()%6!==0)return;
   for(const s of W.settlements){
+    if(s.folk&&s.folk.length)moveIn(s);tickFalling(s);
     const short=s.folk&&s.folk.length?crowding(s):Math.max(0,(s.pop-housing(s))/HOUSEHOLD),hands=heads_(s,h=>h.tr==='carpenter'||h.tr==='mason'||h.tr==='thatcher').length; // households lodging or with no roof; the builders the place has
     if(short>0&&!s.siegeBy){
       let n=Math.min(short,(1+hands)*0.25*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // as fast as its builders can (wattle and daub, slower, when there is no sawn timber)
@@ -9708,14 +9724,22 @@ function tickGrowth(){ // houses are built for households that have none, as fas
       for(let k=0;k<Math.min(20,C.length);k++){const b=C[(k*7919+day())%C.length],own=ownerAcct(b,s),dw=s._lay.live.widen(b,true);if(!dw)continue;
         const pv=propValue(b),gain=pv*(Math.sqrt((b.w*b.d+dw*Math.min(b.w,b.d))/(b.w*b.d))-1)*0.12*(W._pl||1),cost=dw*Math.min(b.w,b.d)*0.8*(W._pl||1);
         if(gain*12>=cost&&means(own)>=cost&&s._lay.live.widen(b)){buildWorks(s,cost,own,'building');updateBuildingInstance(b);G.detDirty=true;}}}
-    if(day()%360===(W.settlements.indexOf(s)*29)%360&&s.folk&&s.folk.length) // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
-      for(const b of s.buildings){if(!RESID.has(b.arch)||b.state!=='sound'||b.removed||(b.hh&&b.hh.length))continue;const own=ownerAcct(b,s),up=b.w*b.d*0.03*(W._pl||1);
+    if(day()%360===(W.settlements.indexOf(s)*29)%360&&s.folk&&s.folk.length){ // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
+      houseFolk(s); // who lives where as it stands today, not as at the last reckoning
+      const homes=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),fall=[];
+      for(const b of homes){if(b.hh&&b.hh.length||(b._fallAt||0)>day())continue;const own=ownerAcct(b,s),up=b.w*b.d*0.03*(W._pl||1);
         { // first, another use for it: a craftsman who works from a room not made for his trade takes it and fits it out (a forge in a house, a shop in a hall)
           const C=heads_(s,h=>TRADE_ARCH[h.tr]&&TRADE_ARCH[h.tr]!==b.arch&&(!h.bh||h.bh.arch!==TRADE_ARCH[h.tr])&&b.arch!=='court'&&b.arch!=='hospital'&&b.arch!=='toll').sort((a,c)=>(c.w||0)-(a.w||0))[0],fit=b.w*b.d*0.12*(W._pl||1);
           if(C&&means(C)>=fit){const was=ARCH[b.arch][4],want=TRADE_ARCH[C.tr];buildWorks(s,fit,C,'refitting');const old=C.bh;if(old&&old.hh)old.hh=old.hh.filter(x=>x!==C);
             b.arch=want;b.h=ARCH[want][2]*(0.8+0.25*(b.tier||0));b.hh=[C];C.bh=b;b._vac=0;updateBuildingInstance(b);G.detDirty=true;life(C,`Took the empty ${was} in the ${b.district||'town'} quarter and fitted it out as a ${ARCH[want][4]}`);continue;}}
-        b._vac=(b._vac||0)+1;const rent=propValue(b)*0.12*(W._pl||1);if(means(own)>=up&&rent*Math.pow(0.7,b._vac)>up)buildWorks(s,up,own,'repairs'); // worth keeping while a tenant may yet be found
-        else{b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}}
+        b._vac=(b._vac||0)+1;const rent=propValue(b)*0.12*(W._pl||1),hope=rent*Math.pow(0.7,b._vac);if(means(own)>=up&&hope>up)buildWorks(s,up,own,'repairs'); // worth keeping while a tenant may yet be found
+        else fall.push([b,hope-up]);}
+      /* houses are let go in proportion to the vacancy: a town with a few empty houses loses few in a year, a dying one many; those least worth keeping
+         first. They fall in one by one through the year (tickFalling), and one that finds a household before its day is saved; the rest stand another year unmended */
+      const E=homes.filter(b=>!(b.hh&&b.hh.length)).length,lose=fall.sort((x,y)=>x[1]-y[1]).slice(0,Math.ceil(E*E/Math.max(1,homes.length)));
+      lose.forEach(([b],i)=>{b._fallAt=day()+Math.round((i+1)/(lose.length+1)*330);});(s._falling=s._falling||[]).push(...lose.map(x=>x[0]));
+      if(lose.length>=3){const n=lose.length,t=vary('deserted',[()=>`${n} empty houses in ${s.name} are let go: no tenant has come for them, and their owners will not mend the roofs. They will fall in through the year.`,()=>`In ${s.name} ${n} houses have stood empty too long; their owners leave them unmended, and one by one their roofs will fall in.`,()=>`${s.name} has more roofs than households: ${n} empty houses are left to fall in.`]);
+        s.history.push({yr:year(),t});emit('trade',n>=10?5:3,s.pos,t);}}
     // rebuilding in better stuff: where the value it adds over the years repays the cost, and the owner can pay
     if(!s.siegeBy&&chance('sim',0.25)){
       const core=(s.extentR||s.radius||100)*0.4;
@@ -12961,8 +12985,11 @@ What happens is decided by quantities the economy produces, not by numbers cross
   good share of it lives by its market.
 - **People move** from where life is hard or crowded to where there is a living and room (weighed against
   rent and the length of the road); strangers come by sea and the border roads.
-- **Houses** are built for households without one, as fast as the town's means and timber allow; burned
-  plots are rebuilt first; empty houses fall vacant in proportion to the vacancy; owners rebuild in better
+- **Houses** are built for households without one, as fast as the town's means and timber allow, once
+  they have taken the empty houses there are; burned plots are rebuilt first, and the household that lost
+  the house goes back in. Once a year the empty houses whose owners will not mend them are let go, in
+  proportion to the vacancy (the annals say how many), and fall in one by one through the year unless a
+  household takes one first; owners rebuild in better
   stuff where the value added repays it; lanes open as the shortfall of plots needs.
 - **Walls** are paid for by the burghers' murage and raised when the danger, weighed by what the town is
   worth, outruns the cost of the line they would actually build (by the metre of curtain, nothing where a
@@ -13590,7 +13617,7 @@ the whole list is done (growth pace, prosperity levels, castle/church tempo, reb
 |---|---|---|---|---|
 | 14 | siege | raid if strength < 2× defence; garrison>20 cliff for siege vs quick fall | raid vs siege by expected prize against expected loss; siege length continuous in garrison, walls, stores | fixed |
 | 15 | material upgrade | prosperity>62 & dice on random buildings | upgrade when the rise in property value beats the cost | fixed |
-| 16 | desertion | only below pop<room×0.5 | houses empty in proportion to the vacancy (more houses than households) | fixed |
+| 16 | desertion | only below pop<room×0.5 | houses empty in proportion to the vacancy (more houses than households). Repaired again (Oct 2026): the yearly check read a year-old occupancy, never reset a house's empty years, and ruined every failing house the same day, silently; restored ruins were given no household. Now households take empty houses before anyone builds, the check counts who lives where that day, lets go ceil(E²/H) houses (least worth keeping first), says so in the annals, and they fall in through the year | fixed |
 | 17 | castle works | dice + purse multiples, ambition by kind, 25-year retry lock | invest when threat × value protected beats the cost against the lord's income | fixed |
 | 18 | church gifts | lord gold >3000 / crown >15000 cliffs; parish pop>900 & dice | gifts in proportion to surplus; parish when the churches cannot seat the people | fixed |
 | 19 | lord investments | gold ≥2500 / 12000; projects by pop thresholds | rank by return (rents/tolls gained) against cost and purse | fixed |

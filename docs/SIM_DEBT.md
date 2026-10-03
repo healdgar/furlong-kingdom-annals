@@ -35,7 +35,7 @@ the whole list is done (growth pace, prosperity levels, castle/church tempo, reb
 |---|---|---|---|---|
 | 14 | siege | raid if strength < 2× defence; garrison>20 cliff for siege vs quick fall | raid vs siege by expected prize against expected loss; siege length continuous in garrison, walls, stores | fixed |
 | 15 | material upgrade | prosperity>62 & dice on random buildings | upgrade when the rise in property value beats the cost | fixed |
-| 16 | desertion | only below pop<room×0.5 | houses empty in proportion to the vacancy (more houses than households) | fixed |
+| 16 | desertion | only below pop<room×0.5 | houses empty in proportion to the vacancy (more houses than households). Repaired again (Oct 2026): the yearly check read a year-old occupancy, never reset a house's empty years, and ruined every failing house the same day, silently; restored ruins were given no household. Now households take empty houses before anyone builds, the check counts who lives where that day, lets go ceil(E²/H) houses (least worth keeping first), says so in the annals, and they fall in through the year | fixed |
 | 17 | castle works | dice + purse multiples, ambition by kind, 25-year retry lock | invest when threat × value protected beats the cost against the lord's income | fixed |
 | 18 | church gifts | lord gold >3000 / crown >15000 cliffs; parish pop>900 & dice | gifts in proportion to surplus; parish when the churches cannot seat the people | fixed |
 | 19 | lord investments | gold ≥2500 / 12000; projects by pop thresholds | rank by return (rents/tolls gained) against cost and purse | fixed |

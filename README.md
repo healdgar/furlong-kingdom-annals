@@ -473,8 +473,11 @@ What happens is decided by quantities the economy produces, not by numbers cross
   good share of it lives by its market.
 - **People move** from where life is hard or crowded to where there is a living and room (weighed against
   rent and the length of the road); strangers come by sea and the border roads.
-- **Houses** are built for households without one, as fast as the town's means and timber allow; burned
-  plots are rebuilt first; empty houses fall vacant in proportion to the vacancy; owners rebuild in better
+- **Houses** are built for households without one, as fast as the town's means and timber allow, once
+  they have taken the empty houses there are; burned plots are rebuilt first, and the household that lost
+  the house goes back in. Once a year the empty houses whose owners will not mend them are let go, in
+  proportion to the vacancy (the annals say how many), and fall in one by one through the year unless a
+  household takes one first; owners rebuild in better
   stuff where the value added repays it; lanes open as the shortfall of plots needs.
 - **Walls** are paid for by the burghers' murage and raised when the danger, weighed by what the town is
   worth, outruns the cost of the line they would actually build (by the metre of curtain, nothing where a
