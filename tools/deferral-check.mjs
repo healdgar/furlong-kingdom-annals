@@ -60,7 +60,7 @@ async function check(variant,w){const{c,stop}=await launch(),id=`${variant}-${w.
   // Every day is authoritative. Identical daily boundaries deliberately exercise mixed semantic builders.
   const start=Date.now();result.annual=[];
   for(let y=0;y<years;y++){
-    await evaluate(c,`(async()=>{for(let i=0;i<360;i++){simTick();if(day()%30===15||day()%360===0)await new Promise(r=>setTimeout(r,0));if(day()%30===0){rebuildDetails();buildTracks();rebuildFences();rebuildWalls();}}})()`);
+    await evaluate(c,`(async()=>{for(let i=0;i<360;i++){if(simTick()===false){await STORAGE_OUTCOMES.flush();i--;continue;}if(day()%30===15||day()%360===0)await new Promise(r=>setTimeout(r,0));if(day()%30===0){rebuildDetails();buildTracks();rebuildFences();rebuildWalls();}}})()`);
     result.annual.push(await evaluate(c,FINGERPRINT));
   }
   result.historyMs=Date.now()-start;result.historyCosts=await evaluate(c,'JSON.parse(JSON.stringify(__cost))');result.pendingBeforePause=await evaluate(c,"typeof VISUAL==='undefined'?null:VISUAL.status()");result.settled=await evaluate(c,SETTLE);

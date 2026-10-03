@@ -114,7 +114,7 @@ async function check(which,w){
           treeRestored:before.equals(after)&&wood.every((x,i)=>x===G.feat.src[3][i]),
           roadEdges:G.roads.geometry.attributes.aEdge.count===G.roads.geometry.attributes.position.count};})()`);
     }
-    for(let d=0;d<days;d+=30){await ev(c,`(()=>{for(let i=0;i<${Math.min(30,days-d)};i++)simTick();})()`);await sleep(5);}
+    for(let d=0;d<days;d+=30){await ev(c,`(async()=>{for(let i=0;i<${Math.min(30,days-d)};i++)if(simTick()===false){await STORAGE_OUTCOMES.flush();i--;}})()`);await sleep(5);}
     const history=await ev(c,HISTORY);result.historySHA256=createHash('sha256').update(JSON.stringify(history)).digest('hex');result.simErrors=history.errors;
     fs.writeFileSync(path.join(OUT,id+'-history.json'),JSON.stringify(history,null,1));
     // Exercise round apses, stone bellcotes and Gothic parts without a centuries-long simulation.

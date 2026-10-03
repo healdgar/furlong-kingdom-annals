@@ -10380,6 +10380,7 @@ function doAct(act,p,opt){
 
 /* ============================ MASTER TICK ================================ */
 function simTick(){
+  if(!storageOutcomeReady())return false; // let durable history catch up before another whole day
   W.clock.day++;
   ownershipTick();
   tickWeather();
@@ -12555,7 +12556,7 @@ function animate(t){
   let ticks=0;const tb=performance.now();
   while(simAccum>=1&&(ticks<1||performance.now()-tb<28)){ // time-budgeted, so the fastest speed runs as fast as the machine allows
     if(speedIdx===0){simAccum=0;break;} // a petition paused the realm mid-frame: stop here, not a dozen days on
-    simAccum-=1;try{simTick();}catch(e){simErr(e);}ticks++;}
+    try{if(simTick()===false)break;}catch(e){simErr(e);}simAccum-=1;ticks++;}
   const tSim=performance.now(); // (the performance monitor's marks)
   const cap=Math.max(45,(SPEEDS[speedIdx]||0)*0.25);if(simAccum>cap)simAccum=cap; // don't spiral if a frame stalls
   W.clock.frac=W.clock.frac||0;
@@ -12800,6 +12801,64 @@ const HISTORY={requested:/(?:^|[&#])history=full(?:&|$)/.test(location.hash),act
 };
 function historyBind(name){const original=window[name];window[name]=function(...args){return HISTORY.transact(name,()=>original.apply(this,args));};}
 function historyDeferred(kind,fn){return ()=>HISTORY.transact(kind,fn);}
+// STORAGE OUTCOME JOURNAL BEGIN
+// Ordered outcome records, not a graph comparison. Only committed chunks leave memory.
+function outcomeJSON(value){const seen=new Set(),walk=v=>{if(v===undefined)return ['u'];if(typeof v==='number'&&(!Number.isFinite(v)||Object.is(v,-0)))return ['n',Object.is(v,-0)?'-0':String(v)];if(typeof v==='bigint')return ['b',String(v)];
+    if(v===null||typeof v==='string'||typeof v==='boolean'||typeof v==='number')return v;if(typeof v!=='object')throw new Error('Unsupported storage outcome value');if(seen.has(v))throw new Error('Storage outcomes must contain IDs, not cyclic objects');seen.add(v);
+    const array=Array.isArray(v),proto=Object.getPrototypeOf(v);if(!array&&proto!==null&&proto!==Object.prototype)throw new Error('Storage outcomes require plain data');const fields=[];
+    for(const k of Reflect.ownKeys(v)){if(typeof k!=='string')throw new Error('Storage outcome symbol key');const d=Object.getOwnPropertyDescriptor(v,k);if(!('value'in d))throw new Error('Storage outcome accessor');fields.push([k,walk(d.value)]);}seen.delete(v);return [array?'a':'o',fields];};return JSON.stringify(walk(value));}
+function outcomeParse(text){const walk=v=>{if(!Array.isArray(v))return v;switch(v[0]){case 'u':return undefined;case 'n':return v[1]==='-0'?-0:Number(v[1]);case 'b':return BigInt(v[1]);case 'a':case 'o':{const o=v[0]==='a'?[]:{};for(const[k,x]of v[1])Object.defineProperty(o,k,{value:walk(x),enumerable:k!=='length'||v[0]!=='a',writable:true,configurable:k!=='length'||v[0]!=='a'});return o;}default:throw new Error('Unknown storage outcome encoding');}};return walk(JSON.parse(text));}
+class OutcomeJournal{
+  constructor(write,{chunkBytes=128*1024,maxPendingBytes=16*1024*1024,onFault=()=>{}}={}){this.write=write;this.chunkBytes=chunkBytes;this.maxPendingBytes=maxPendingBytes;this.onFault=onFault;this.seq=0;this.chunk=0;this.committed=-1;this.bytes=0;this.rows=[];this.rowBytes=0;this.pending=new Map();this.chain=Promise.resolve();this.fault=null;}
+  assert(){if(this.fault)throw this.fault;}
+  get ready(){return !this.fault&&this.bytes<this.maxPendingBytes;}
+  append(event){this.assert();const seq=this.seq,text=outcomeJSON({seq,event})+'\n';if(typeof text!=='string')throw new Error('Storage outcome is not serializable');
+    // UTF-8 and UTF-16 payloads both fit this conservative watermark, plus a row allowance.
+    const cost=text.length*3+64;this.rows.push(text);this.rowBytes+=cost;this.bytes+=cost;this.seq++;
+    if(this.rowBytes>=this.chunkBytes)this.seal();return seq;}
+  seal(){if(!this.rows.length)return;const count=this.rows.length,entry={chunk:this.chunk++,first:this.seq-count,last:this.seq-1,text:this.rows.join(''),cost:this.rowBytes};this.rows=[];this.rowBytes=0;this.pending.set(entry.chunk,entry);
+    this.chain=this.chain.then(async()=>{if(this.fault)return;try{await this.write(entry);this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;}catch(e){this.fault=e instanceof Error?e:new Error(String(e));this.onFault(this.fault);}});}
+  async flush(){this.seal();await this.chain;this.assert();return this.committed;}
+  *uncommitted(){for(const entry of this.pending.values())for(const row of entry.text.trimEnd().split('\n'))yield outcomeParse(row);for(const row of this.rows)yield outcomeParse(row);}
+  status(){return {records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null};}
+}
+// STORAGE OUTCOME JOURNAL END
+const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,
+  async begin(){
+    const code=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n');
+    const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
+    this.meta={format:'furlong-storage-outcomes',version:1,encoding:'tagged-json-v1',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null};this.lastHash=null;this.lastChunk=-1;
+    this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
+    await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
+    this.journal=new OutcomeJournal(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
+      const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash};
+      await new Promise((resolve,reject)=>{const t=this.db.transaction(['games','chunks'],'readwrite');t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history write failed'));});
+      this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;
+    },{onFault:e=>{setSpeed(0);console.error('Storage history paused:',e);}});
+    this.journal.append({kind:'begin',day:typeof W!=='undefined'&&W?day():0,world:this.meta.world});
+  },
+  schedule(){if(!this.timer)this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>{});},1000);},
+  async flush(){if(this.timer){clearTimeout(this.timer);this.timer=null;}if(this.journal)return this.journal.flush();},
+  async wait(){if(this.journal&&!this.journal.ready)await this.flush();},
+  status(){return {id:this.meta?.id,...this.journal?.status(),continuation:false};},
+  async saved(){if(!this.db)throw new Error('Storage history has not begun');return new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
+  async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,stream:this.stream};},
+  async *records(endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq){
+    // Capture a boundary before yielding; later records belong to a subsequent export.
+    if(!this.meta)return;this.journal?.seal();await this.journal?.chain;const end=this.lastChunk,tail=this.journal?[...this.journal.uncommitted()]:[];let expected=0,previous=null;
+    for(let k=0;k<=end;k++){const entry=await new Promise((resolve,reject)=>{const r=this.db.transaction('chunks').objectStore('chunks').get([this.meta.id,k]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+      if(!entry||entry.first!==expected||entry.previous!==previous)throw new Error('Storage outcome chunk gap');
+      const text=await new Response(entry.blob.stream().pipeThrough(new DecompressionStream('gzip'))).text(),bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)),hash=[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==entry.hash)throw new Error('Storage outcome checksum differs');
+      for(const row of text.trimEnd().split('\n')){if(expected>endSeq)return;const record=outcomeParse(row);if(record.seq!==expected++)throw new Error('Storage outcome sequence gap');yield record;}if(expected-1!==entry.last)throw new Error('Storage outcome chunk length differs');previous=entry.hash;}
+    for(const record of tail){if(expected>endSeq)return;if(record.seq!==expected++)throw new Error('Storage outcome tail gap');yield record;}if(expected<=endSeq)throw new Error('Storage outcome tail missing');
+  },
+  stream(){const owner=this,endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq;let it,header=false;return new ReadableStream({async pull(controller){try{if(!header){header=true;owner.journal?.seal();await owner.journal?.chain;it=owner.records(endSeq);controller.enqueue(new TextEncoder().encode(outcomeJSON({format:'furlong-storage-outcomes',meta:owner.meta,endSeq})+'\n'));return;}const next=await it.next();if(next.done)controller.close();else controller.enqueue(new TextEncoder().encode(outcomeJSON(next.value)+'\n'));}catch(e){controller.error(e);}}});}
+};
+function storageOutcome(event){if(!STORAGE_OUTCOMES.journal)throw new Error('Storage history has not begun');const seq=STORAGE_OUTCOMES.journal.append(event);STORAGE_OUTCOMES.schedule();return seq;}
+function storageOutcomeAssert(){if(STORAGE_OUTCOMES.journal)STORAGE_OUTCOMES.journal.assert();}
+function storageOutcomeReady(){return !STORAGE_OUTCOMES.journal||STORAGE_OUTCOMES.journal.ready;}
+window.FURLONG_STORAGE_LOG=STORAGE_OUTCOMES;
+addEventListener('pagehide',()=>{STORAGE_OUTCOMES.flush().catch(()=>{});});
 async function boot(){
   {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
@@ -12814,6 +12873,7 @@ async function boot(){
     return new Promise(r=>setTimeout(r,delay));};
   await progress('Forging the realm…',0.02);
   await generateWorld(seed,progress);
+  await STORAGE_OUTCOMES.begin();
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
   initGraphics();VISUAL.reset();
@@ -12824,7 +12884,7 @@ async function boot(){
   if(HISTORY.requested)try{await HISTORY.begin();}catch(e){HISTORY.fail(e);throw e;}
   if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
     W.prehistory=true;const target=(START_AD-W.startAD)*360;let yieldAt=performance.now()+40;
-    while(day()<target){if(HISTORY.fault)throw HISTORY.fault;try{simTick();}catch(e){simErr(e);} // every day still runs; yield by elapsed time rather than blocking for three whole years
+    while(day()<target){if(HISTORY.fault)throw HISTORY.fault;await STORAGE_OUTCOMES.wait();try{simTick();}catch(e){simErr(e);} // every day still runs; yield by elapsed time rather than blocking for three whole years
       if(performance.now()>=yieldAt){await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*day()/target,0);yieldAt=performance.now()+40;}}
     W.prehistory=false;buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
     for(const s of W.settlements)s.pop0=s.pop;
@@ -12847,6 +12907,7 @@ async function boot(){
   setTimeout(()=>document.getElementById('loading').remove(),900);
   {const hm=location.hash.match(/[#&]h=(\d+)/);if(hm&&!RESUMED)setTimeout(()=>{jot({k:'sov',on:true,hi:+hm[1]});setSovereign(true,+hm[1]);},1000);} // #…&h=2: begin as that house (0 the crown)
   if(HISTORY.active)HISTORY.capture('boot-ready');
+  await STORAGE_OUTCOMES.flush();
   requestAnimationFrame(animate);
 }
 /* =========================================================================
@@ -12926,7 +12987,7 @@ async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=docum
 document.addEventListener('click',e=>{const b=e.target.closest('[data-sv]');if(b){e.stopPropagation();saveAct(b.dataset.sv);}});
 async function replaySave(o,progress){ // grow the days again, giving each command on the day it was given
   REPLAYING=true;const J=o.j||[],d0=day(),tgt=o.day;let i=0,n=0;
-  while(true){while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;try{simTick();}catch(e){simErr(e);}
+  while(true){await STORAGE_OUTCOMES.wait();while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;try{simTick();}catch(e){simErr(e);}
     if(++n%60===0)await progress(`Reading the annals again… AD ${AD()} of ${o.ad}`,clamp((day()-d0)/Math.max(1,tgt-d0),0,1));}
   REPLAYING=false;JOURNAL=J.slice();RESUMED=true;setPlaceMode(null);
   buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();VISUAL.settle();lastSeasonKey='';

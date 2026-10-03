@@ -52,6 +52,40 @@ a save file would be unsafe and insufficient to restore the engine correctly.
 
 ## Coverage and remaining work
 
+### Storage outcome journal
+
+Physical storage emits ordered mutation and decision records into a separate,
+always-on local journal. Recording copies each event immediately; compression,
+checksumming and IndexedDB writes run asynchronously. Chunks leave memory only
+after the chunk and its manifest commit together. At the pending-byte watermark,
+fast-forward waits before starting another day. It never discards records or
+interrupts a day merely to satisfy the watermark.
+
+Each session records its world parameters and executable inline-source SHA256.
+Chunks carry consecutive sequence ranges, content hashes and predecessor hashes.
+The tagged JSON encoding preserves absent versus undefined fields, unusual
+numbers and array holes. Records must contain plain data and stable entity IDs.
+
+```js
+FURLONG_STORAGE_LOG.status()
+await FURLONG_STORAGE_LOG.flush()
+for await (const record of FURLONG_STORAGE_LOG.records()) { /* inspect */ }
+const stream = FURLONG_STORAGE_LOG.stream() // bounded, tagged JSONL export
+const sessions = await FURLONG_STORAGE_LOG.saved()
+const older = await FURLONG_STORAGE_LOG.open(sessions[0].id)
+for await (const record of older.records()) { /* verifies persisted chunks */ }
+```
+
+A failed write pauses progress and retains the uncommitted tail for current-session
+export. Previous committed sessions remain readable after a browser restart.
+Browser eviction, clearing site data or closing before an asynchronous commit can
+lose data; `pagehide` flushing is only best effort. Export to durable external
+storage and a player-facing storage-management interface remain future work.
+This journal covers storage, not the entire engine. It does not yet hydrate a
+running game; its manifest therefore retains `continuation: false`.
+
+### Engine coverage
+
 This is a validated foundation, **not a claim of 100% complete engine replay**.
 
 1. Replace full graph scans with mutation logging; retain the independent
