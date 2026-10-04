@@ -102,3 +102,19 @@ on and off. Enabled startup took 34.57→33.47 seconds (sea) and 47.75→45.88 s
 18.59→0.85 seconds; p95 intervals fell from about 84 ms to 58–63 ms. This improves responsiveness,
 but does not make later-era starts immediate. Very long eras and full simulation-worker migration
 remain unvalidated and unfinished respectively.
+
+### Zero-demand owned consumption
+
+`consumeOwned` retains pantry resolution, physical ordered-sum reads, title
+synchronization, claim assignment and title-matching bookkeeping when effective
+demand is exactly zero. It omits only the owner-lot iteration and its no-op
+removal. The explicit journal assertion retains fail-closed behavior. NaN still
+uses the original iteration; tiny positive demands never enter this shortcut.
+The resolved owner is reused within a nonzero synchronous removal loop after
+pantry and title synchronization. No physical sum or arithmetic order changes.
+
+`tools/consume-owned.test.mjs` compares the complete relevant event, lot, claim,
+household, index, counter and RNG projections against frozen `405fed3`, including
+zero/negative-zero/NaN/tiny demand, char-to-timber mapping, live household
+formation and household splitting. Local microbenchmarks demonstrate scan cost;
+whole-game gains require separate native measurements.
