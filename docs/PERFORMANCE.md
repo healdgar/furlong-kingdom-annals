@@ -137,7 +137,7 @@ in the coastal run and 163 in the inland run. Asynchronous persistence waits and
 outside that timer; this is not an OS CPU counter or a frame-rate measurement. The measured source
 above is the performance checkpoint before journal deduplication or the proposed worker refactor.
 
-### Next architectural boundary
+### Architectural proposal at the checkpoint
 
 The current `simTick()` already runs daily phases synchronously on the main thread. A daily barrier
 alone will not parallelize that work. A future simulation worker should own the world and RNG,
@@ -150,6 +150,34 @@ accepted before commit only when their inputs still match. Full-world daily copi
 Journal projection, encoding and persistence can be batched separately with bounded backpressure;
 coalescing a rendered view must never discard required historical outcomes. This worker/day-boundary
 refactor is a proposal, not part of the changes above.
+
+## Integration with the current public release, 4 October 2026
+
+Checkpoint `1c8bb84` is integrated onto public release `f2e4b93`. Its canonical-order lot
+indexes and bounded coordinate/path reuse preserve the release's capture-fault guards,
+native journal worker, immutable captures, active facility/claim indexes, hay remnant
+losses, pending purchase protection and arithmetic provenance. Explicit route-batch
+callers retain their existing API. Recursive plain-data projection uses direct assignment
+with the own-property protection for `__proto__`; record projection already had that optimization.
+
+All 578 tests pass. A stamped-source drawn one-day coastal smoke passes shader compilation,
+camera uniforms, live rebuilds and church variants without browser or simulation errors.
+Serial native Chrome/Metal comparisons against `f2e4b93` pass through
+90 days in sea seed 1001 and inland seed 2002. Full world/land/annal fingerprints and RNG
+states match at days 0/30/60/90, every accepted expanded storage event matches, persisted
+replay matches accepted records, and both journals fully commit. The optional semantic field
+oracle is unsupported in these sources; complete game-history reconstruction is not claimed.
+Timing and correctness use separate fresh browser sessions. End-to-end undrawn timing is
+6,739.4→6,666.2 ms coastal and 8,846.6→8,909.8 ms inland: approximately +1.1% and -0.7%
+throughput, respectively, within variation. The current public release already includes
+other optimizations; the historical 49%/42% checkpoint result is not an additional gain
+against this newer baseline. Neither sample meets the harness's separate 70% encoded-history
+reduction or 2x RAF-throughput gates; neither target is claimed for this integration.
+
+Compared simulation source SHA256: `664b831fd98a0370aee2befc8d588ba6c406d3b37f259ba113882c7884265ac4`.
+Release source SHA256: `f261626ad9f07648c82ac4b64069ae0886223db766de6075b527cb3be84f1d09`; only the visible build stamp differs from the compared source.
+Full snapshots, accepted/persisted fingerprints and measurements remain local under ignored
+`tools/soak-results/performance-deploy-2026-10-04/`.
 
 ## Validated source, 3 October 2026
 
@@ -178,3 +206,19 @@ on and off. Enabled startup took 34.57→33.47 seconds (sea) and 47.75→45.88 s
 18.59→0.85 seconds; p95 intervals fell from about 84 ms to 58–63 ms. This improves responsiveness,
 but does not make later-era starts immediate. Very long eras and full simulation-worker migration
 remain unvalidated and unfinished respectively.
+
+### Zero-demand owned consumption
+
+`consumeOwned` retains pantry resolution, physical ordered-sum reads, title
+synchronization, claim assignment and title-matching bookkeeping when effective
+demand is exactly zero. It omits only the owner-lot iteration and its no-op
+removal. The explicit journal assertion retains fail-closed behavior. NaN still
+uses the original iteration; tiny positive demands never enter this shortcut.
+The resolved owner is reused within a nonzero synchronous removal loop after
+pantry and title synchronization. No physical sum or arithmetic order changes.
+
+`tools/consume-owned.test.mjs` compares the complete relevant event, lot, claim,
+household, index, counter and RNG projections against frozen `405fed3`, including
+zero/negative-zero/NaN/tiny demand, char-to-timber mapping, live household
+formation and household splitting. Local microbenchmarks demonstrate scan cost;
+whole-game gains require separate native measurements.

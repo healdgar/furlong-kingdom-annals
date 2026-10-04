@@ -38,3 +38,108 @@ transaction. Independent inventory and money audits remain necessary.
 The final batched-replay harness also passes the same frozen source through day
 10: 53,212 accepted outcomes and 53,213 persisted records, 2,129 lots and 51
 locations. Evidence is `storage-events-stream10` beside the 60-day evidence.
+
+## Compact outcome chunks
+
+New journals default to metadata version 2 (`compact-storage-v2`). Each physical
+chunk starts fresh schema, string and snapshot dictionaries. Ordered own keys,
+exact numbers and metadata remain in the encoding; lot/location snapshots and
+unchanged primitive envelope fields use exact deltas. No storage outcome is
+removed. Chunk checksums, predecessor links, sequence checks, fault retention and
+day-boundary backpressure remain mandatory. Readers accept legacy version 1
+chunks as well. `records()` returns the original canonical event or transaction
+envelope; `storageRecords()` flattens transaction storage effects for independent
+physical replay. The exported `stream()` remains tagged JSONL with expanded
+records; `meta.encoding` describes stored chunks, not export lines.
+
+Set `window.FURLONG_REPLAY_LEGACY_AUDIT=true` before boot to select the legacy
+encoder and canonical engine captures. Otherwise engine snapshot handles own
+ordered copied values synchronously. Their dictionaries/caches live outside
+`W`, `G` and storage ledgers. Public `lotState()` and all readers return canonical
+plain snapshots. Primitive-only captures are reusable only when every own key,
+key order and resolved value matches; nested metadata always receives validation
+and a fresh detached copy. Unsupported values/accessors remain errors.
+
+Correctness harnesses install `window.FURLONG_STORAGE_AUDIT_OBSERVER(event)`
+before boot when `FURLONG_STORAGE_AUDIT_SUPPORTED` is available. The dispatch
+calls `storageObserveOutcome(event)` once before collecting a primitive. Its
+callback receives a detached canonical event, independent of internal handles;
+callback mutations cannot modify retained records. Ordinary production recording
+performs no canonical expansion. Transaction collectors may retain handles
+unchanged until append. They must never replace this observer with a primitive
+hook that reads internal snapshot handles directly.
+
+The codec's focused checks cover independent chunks, legacy reads, exact
+property order/presence, tiny values, negative zero, nonfinite numbers, BigInt,
+array holes/additional keys, nested storage-shaped metadata, rollback after an
+invalid append, transient changes, writer failures and observer isolation.
+These checks establish codec fidelity; native whole-game performance and replay
+must be measured separately on the integrated source.
+
+Capture, audit-observer and append-encoding failures are sticky recording faults.
+They pause through the journal fault callback and reject every subsequent append;
+day admission remains closed. Accepted rows retain their exact pending tail and
+can still finish persistence unless the writer itself has failed. A writer
+failure retains all unacknowledged chunks. `journal.rejected` retains the first
+rejected attempt's sequence, phase and context for diagnosis; unsupported input
+cannot be promised a durable or replayable encoding. Fault-reporting errors
+cannot reopen admission. Legacy encoding follows the same failure rules, while
+old archive reads remain independent. Compact readers reject malformed schemas,
+indexes, delta bases, field counts and special-value tags.
+
+## Off-thread storage journal
+
+The always-on storage journal accepts the same ordered records. Append now captures
+owned raw fields immediately, without running JSON or the storage codec. Ordered
+key vectors are shared within transport batches; opaque lot handles keep their
+complete owned values. Mutable metadata is detached before append returns.
+
+A Blob Worker validates binary framing and exact sequence, then hashes, gzips and atomically persists the native bytes. Default archives declare version 3 and `native-storage-v3` per manifest/chunk. It does not run the canonical storage codec during simulation. Readers decompress and decode records on demand for analysis/export; version 1 tagged JSON and version 2 compact archives remain readable. Finished batches use exact native binary transport, transferred during the producing tick, so processing
+can overlap an atomic simulation day. The worker processes batches serially and
+acknowledges only after one transaction commits both chunk and manifest. Main
+retains each sealed binary buffer until its checked acknowledgement; captured object graphs are released. A separate transferable copy preserves fault-tail ownership. SHA-256 chains cover the exact uncompressed native bytes; `encodedBytes` counts those bytes and `storedBytes` counts gzip bytes. Binary journals report zero `encodedCharacters`. Canonical readers and tagged exports remain compatible; chunk boundaries can differ. There are no field watches or graph comparisons.
+
+Unsealed capture accounting deliberately overestimates storage; sealed buffers use their retained byte length plus entry overhead. The admission watermark is 16 MiB, with a separate 32 MiB estimated raw batch target. Crossing the watermark
+seals a short unfinished batch immediately at the day boundary. A synchronous day
+can exceed the watermark: all its records remain accepted, and another day waits
+for the worker. This does not establish a strict within-day heap limit. Direct
+out-of-band calls must also respect admission. Closing the tab before completion
+can lose its uncommitted tail, as before.
+
+Worker/persistence/protocol failures close admission and retain the complete binary/unsealed
+pending tail. `records()` and `stream()` combine the acknowledged prefix with that
+tail, including uncertain commits without duplicating records. An independently
+opened archive reads its actual durable prefix. No uncertain write is retried or
+silently moved to another writer. Capture failures retain their rejected context.
+
+`FURLONG_STORAGE_FOREGROUND_AUDIT=true` before boot selects a diagnostic foreground
+pipeline. Worker startup failure uses the same explicit foreground fallback;
+`FURLONG_STORAGE_LOG.status()` reports `processingMode` and `fallbackReason`.
+Foreground mode uses the original OutcomeJournal codec and encoded write path, preserving all records without binary transport.
+
+`node --test tools/storage-worker.test.mjs` exercises a real Node worker running the
+embedded browser runtime, with asynchronous atomic IndexedDB fixtures. It checks
+exact accepted/durable streams, opaque handles, own fields, special numbers,
+BigInt, holes, mutable metadata ownership, immediate protocol faults, backpressure,
+injected transaction failure, uncertain acknowledgement and prefix/tail export.
+The fixtures establish pipeline semantics, not browser IndexedDB reliability.
+
+`node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
+matched owned-handle events in fresh processes. Synthetic measurements diagnose
+capture, transport and persistence separately; they do not establish browser
+throughput or device memory limits. Earlier Worker codec experiments regressed
+native timing and were not shipped. Native v3 removes that codec work and retains
+pending bytes instead of large captured object graphs.
+
+An isolated Metal Chrome run at seed 1001 sea, AD850 plus 390 days, measured
+739 ms for the busy monthly day including persistence, versus 995 ms on main
+3822132. The following ordinary day measured 123 versus 152 ms. Both accepted
+131,111 and 15,201 records respectively. These bounded measurements are not a
+later-century or rendered frame-rate guarantee. Exact native history equivalence,
+fault recovery and multi-world checks remain separate release checks. Local
+evidence and source hashes stay under `.git/direct-history/2026-10-04/`.
+
+Binary captures retain full ordered storage detail; no canonical dictionary/delta
+comparison occurs on the Worker fast-forward path. This is not a complete-world
+continuation archive: demographic, political and other world mutation coverage,
+snapshot hydration and replay execution remain unfinished.

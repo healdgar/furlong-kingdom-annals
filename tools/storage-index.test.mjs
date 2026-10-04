@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {realm} from './ownership-fixture.mjs';
 
-// Compare the former scans, not a second implementation of the new query helper.
-const baseline=execFileSync('git',['show','405fed3:index.html'],{encoding:'utf8',maxBuffer:20e6});
+// Compare the current public release scans while retaining its custody, metadata and arithmetic repairs.
+const baseline=execFileSync('git',['show','f2e4b93:index.html'],{encoding:'utf8',maxBuffer:20e6});
 const names=['storageBindGood','storageTick','storageSpoil','storageBuildingReport','storageInvestment','storageTitleTake','storageCargoOut','storageConsumeSale','transferOwnership'];
 const oldFunctions=names.map(n=>baseline.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))[0]).join('\n');
 const oldDestroy=baseline.match(/^  destroy\(id\)\{.*$/m)[0].trim().replace(/^destroy/,'function');

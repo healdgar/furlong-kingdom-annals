@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-04 02:06 UTC · after a6ae8f8</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-04 23:30 UTC · storage indexes and route reuse</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -415,7 +415,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
     <button id="rulebtn" title="Rule the realm yourself: decrees, petitions, war orders">♛ Rule</button>
     <button id="pausebtn" aria-label="Pause the simulation">Pause</button>
     <select id="speedselect" aria-label="Simulation speed">
-      <option value="6">Life pace</option><option value="1">½ day / sec</option><option value="2">2 days / sec</option><option value="3">8 days / sec</option><option value="4">30 days / sec</option><option value="5">1 year / sec</option>
+      <option value="6">Life pace</option><option value="1">Normal</option><option value="2">Fast</option><option value="3">Very fast</option><option value="4">Fastest</option><option value="5">Reel years</option>
     </select>
     <button id="menubtn" aria-expanded="false" aria-controls="toolmenu">Menu</button>
     <div id="toolmenu">
@@ -1029,6 +1029,7 @@ async function generateWorld(seed,progress){
      dragon:null,monarch:null,reignStart:0,reignNum:{},name:placeName(),kingdomAdj:null,
      stats:{battles:0,greatFires:0}};
 
+  notableIndexRebuild(); // this new authoritative archive starts empty; replay uses the same transition path
   await progress('Raising the bones of the earth…',0.05);
   /* --- terrain: fBm + domain warp + mountain spine + optional coast ----- */
   const spineA=rand('gen')*Math.PI, spineOff=(rand('gen')-0.5)*0.5;
@@ -2664,6 +2665,39 @@ function stitchRoads(){ // a road now runs centre → its spoke street → the o
 }
 
 /* ---------------- houses, dynasty & the cast ----------------------------- */
+// Rebuildable indexes are outside the complete authoritative notable archive.
+// Native writers below maintain them; imports must explicitly adopt trusted data.
+// Raw alive/id edits or same-length archive edits require explicit rebuild.
+const NOTABLE_INDEXES=new WeakMap();
+function notableIndexRebuild(world=W){
+  const archive=world.notables,C={archive,length:archive.length,living:[],byId:new Map(),entries:new Map(),cleanup:new Set(),supported:true};
+  NOTABLE_INDEXES.set(world,C);
+  if(Object.getPrototypeOf(archive)!==Array.prototype){C.supported=false;return C;}
+  for(let i=0;i<archive.length;i++)if(!notableIndexAdd(C,archive[i],i)){C.supported=false;break;}
+  return C;
+}
+function notableIndexAdd(C,n,order=C.length){
+  if(!n||typeof n!=='object')return false;
+  const id=Object.getOwnPropertyDescriptor(n,'id'),alive=Object.getOwnPropertyDescriptor(n,'alive');
+  if(!id||!('value'in id)||!alive||!('value'in alive))return false;
+  const entry={n,order};let entries=C.entries.get(n);if(!entries)C.entries.set(n,entries=[]);entries.push(entry);
+  if(!C.byId.has(id.value))C.byId.set(id.value,n);
+  if(alive.value)C.living.push(entry);
+  if(Object.prototype.hasOwnProperty.call(n,'_just'))C.cleanup.add(n);
+  C.length=Math.max(C.length,order+1);return true;
+}
+function notableIndex(){let C=NOTABLE_INDEXES.get(W);if(!C){C={supported:false};NOTABLE_INDEXES.set(W,C);}else if(C.supported&&(C.archive!==W.notables||C.length!==W.notables.length))C.supported=false;return C;}
+function* livingNotables(){
+  const C=notableIndex();if(!C.supported){yield* W.notables;return;}
+  let order=-1;
+  while(true){let lo=0,hi=C.living.length;while(lo<hi){const mid=(lo+hi)>>>1;if(C.living[mid].order<=order)lo=mid+1;else hi=mid;}if(lo===C.living.length)return;const entry=C.living[lo];order=entry.order;yield entry.n;}
+}
+function livingNotableCandidates(predicate){const C=notableIndex();return C.supported?C.living.map(e=>e.n).filter(predicate):W.notables.filter(predicate);}
+function livingNotableCount(){const C=notableIndex();return C.supported?C.living.length:W.notables.filter(n=>n.alive).length;}
+// Explicit transitions preserve archive order, including restoration/resurrection.
+function notableSetAlive(n,alive){const C=notableIndex();n.alive=alive;if(!C.supported)return;const entries=C.entries.get(n);if(!entries)return;
+  C.living=C.living.filter(e=>e.n!==n);if(alive){C.living.push(...entries);C.living.sort((a,b)=>a.order-b.order);}}
+function notableMarriageCleanup(single){const C=notableIndex();if(!C.supported){W.notables.forEach(n=>delete n._just);return;}for(const n of single)C.cleanup.add(n);for(const n of C.cleanup)delete n._just;C.cleanup.clear();}
 let NID=1;
 function mkNotable(o){
   const n=Object.assign({id:NID++,alive:true,spouse:null,heirs:[],grudges:[],epithet:'',
@@ -2673,7 +2707,7 @@ function mkNotable(o){
   if(!n.g)endow(n,ma,pa); // blood from the parents (or a stranger's), and the teaching of a lord's household
   if(!n.traits.length)n.traits=deriveTraits(n);else n.fixedTraits=true;
   nameUse(n.name.split(' ')[0],1);
-  W.notables.push(n);return n;
+  const index=notableIndex();W.notables.push(n);if(index.supported&&!notableIndexAdd(index,n))index.supported=false;index.length=W.notables.length;return n;
 }
 const TRAITS=['bold','craven','just','cruel','shrewd','dull','pious','cynical','fertile','sickly','comely','stern','generous','grasping','patient','wrathful'];
 function twoTraits(){const a=pick('gen',TRAITS);let b=pick('gen',TRAITS);let g=0;while(b===a&&g++<9)b=pick('gen',TRAITS);return[a,b];}
@@ -2932,12 +2966,31 @@ class HouseholdPopulation extends Map{
   clear(){for(const s of this.keys())s._popValid=false;super.clear();}
 }
 function populationOf(s){if(!s._popValid){let n=0;for(const h of s.households||[])n+=h.population.get(s)||0;s._popTotal=n;s._popValid=true;}return s._popTotal;}
+// Maintained nonempty household view; complete registry/member history remains authoritative.
+const HOUSEHOLD_MEMBER_INDEXES=new WeakMap();
+const HOUSEHOLD_NATIVE_MAP=Map.prototype,HOUSEHOLD_MAP_ENTRIES=Map.prototype.entries,HOUSEHOLD_NATIVE_SET=Set.prototype,HOUSEHOLD_SET_VALUES=Set.prototype.values,HOUSEHOLD_SET_ITERATOR=Set.prototype[Symbol.iterator];
+const HOUSEHOLD_MAP_SIZE=Object.getOwnPropertyDescriptor(Map.prototype,'size').get,HOUSEHOLD_SET_SIZE=Object.getOwnPropertyDescriptor(Set.prototype,'size').get;
+const HOUSEHOLD_MAP_METHODS=Object.fromEntries(['get','set','values'].map(k=>[k,Map.prototype[k]])),HOUSEHOLD_SET_METHODS=Object.fromEntries(['add','delete','clear'].map(k=>[k,Set.prototype[k]]));
+function householdMemberIndexInvalidate(world=W){const C=HOUSEHOLD_MEMBER_INDEXES.get(world);if(C){C.valid=false;if(C.iterating)throw Error('Unmanaged household registry mutation during indexed iteration');}}
+function householdMemberIndex(world=W){const C=HOUSEHOLD_MEMBER_INDEXES.get(world);if(!C?.valid)return null;if(HOUSEHOLD_NATIVE_SET.values!==HOUSEHOLD_SET_VALUES||HOUSEHOLD_NATIVE_SET[Symbol.iterator]!==HOUSEHOLD_SET_ITERATOR){householdMemberIndexInvalidate(world);return null;}const d=Object.getOwnPropertyDescriptor(world,'households');
+  if(d?.value!==C.map||Object.getPrototypeOf(C.map)!==HOUSEHOLD_NATIVE_MAP||HOUSEHOLD_MAP_SIZE.call(C.map)!==C.size){householdMemberIndexInvalidate(world);return null;}
+  for(const[k,v]of Object.entries(HOUSEHOLD_MAP_METHODS))if(Object.hasOwn(C.map,k)||Object.getOwnPropertyDescriptor(HOUSEHOLD_NATIVE_MAP,k)?.value!==v){householdMemberIndexInvalidate(world);return null;}return C;}
+function householdMemberIndexSet(h){if(!h||typeof h!=='object')return null;const d=Object.getOwnPropertyDescriptor(h,'members'),M=d?.value;if(!M||Object.getPrototypeOf(M)!==HOUSEHOLD_NATIVE_SET||Object.hasOwn(M,'size')||Object.hasOwn(M,Symbol.iterator)||M[Symbol.iterator]!==HOUSEHOLD_SET_ITERATOR||HOUSEHOLD_NATIVE_SET.values!==HOUSEHOLD_SET_VALUES||HOUSEHOLD_NATIVE_SET[Symbol.iterator]!==HOUSEHOLD_SET_ITERATOR)return null;
+  for(const[k,v]of Object.entries(HOUSEHOLD_SET_METHODS))if(Object.hasOwn(M,k)||Object.getOwnPropertyDescriptor(HOUSEHOLD_NATIVE_SET,k)?.value!==v)return null;try{HOUSEHOLD_SET_SIZE.call(M);}catch{return null;}return M;}
+function householdMemberIndexRecord(C,id,h){if(!C?.valid)return;const members=householdMemberIndexSet(h);if(!members){householdMemberIndexInvalidate();return;}let entry=C.entries.get(id);if(entry){C.byHousehold.delete(entry.h);C.active=C.active.filter(e=>e!==entry);entry.h=h;entry.members=members;}else{entry={h,members,order:C.next++};C.entries.set(id,entry);}C.byHousehold.set(h,entry);entry.nonempty=HOUSEHOLD_SET_SIZE.call(members)>0;if(entry.nonempty){C.active.push(entry);C.active.sort((a,b)=>a.order-b.order);}C.size=HOUSEHOLD_MAP_SIZE.call(C.map);}
+function householdRegister(h){let M=W.households;if(!M){M=W.households=new Map();HOUSEHOLD_MEMBER_INDEXES.set(W,{map:M,entries:new Map(),byHousehold:new WeakMap(),active:[],next:0,size:0,valid:true,iterating:0});}const C=householdMemberIndex();const result=M.set(h.id,h);householdMemberIndexRecord(C,h.id,h);return result;}
+function householdMemberIndexRefresh(h){const C=householdMemberIndex();if(!C)return;const entry=C.byHousehold.get(h);if(!entry||householdMemberIndexSet(h)!==entry.members){householdMemberIndexInvalidate();return;}const nonempty=HOUSEHOLD_SET_SIZE.call(entry.members)>0;if(nonempty===entry.nonempty)return;let lo=0,hi=C.active.length;while(lo<hi){const m=(lo+hi)>>>1;if(C.active[m].order<entry.order)lo=m+1;else hi=m;}if(nonempty)C.active.splice(lo,0,entry);else if(C.active[lo]===entry)C.active.splice(lo,1);entry.nonempty=nonempty;}
+function householdMemberAdd(h,p){const result=h.members.add(p);householdMemberIndexRefresh(h);return result;}
+function householdMemberDelete(h,p){const result=h.members.delete(p);householdMemberIndexRefresh(h);return result;}
+function householdMemberClear(h){const result=h.members.clear();householdMemberIndexRefresh(h);return result;}
+function householdMemberIndexAdopt(world=W){const map=world.households,C={map,entries:new Map(),byHousehold:new WeakMap(),active:[],next:0,size:0,valid:true,iterating:0};if(HOUSEHOLD_MEMBER_INDEXES.get(world)?.iterating)householdMemberIndexInvalidate(world);HOUSEHOLD_MEMBER_INDEXES.set(world,C);if(!map||Object.getPrototypeOf(map)!==HOUSEHOLD_NATIVE_MAP){C.valid=false;return false;}let iterator;try{iterator=HOUSEHOLD_MAP_ENTRIES.call(map);}catch{C.valid=false;return false;}for(const[id,h]of iterator){const members=householdMemberIndexSet(h);if(!members||C.byHousehold.has(h)){C.valid=false;return false;}const entry={h,members,order:C.next++};C.entries.set(id,entry);C.byHousehold.set(h,entry);entry.nonempty=HOUSEHOLD_SET_SIZE.call(members)>0;if(entry.nonempty)C.active.push(entry);}C.size=HOUSEHOLD_MAP_SIZE.call(map);return !!householdMemberIndex(world);}
+function* nonemptyHouseholds(){const C=householdMemberIndex();if(!C){yield* (W.households||new Map()).values();return;}C.iterating++;let order=-1;try{while(true){if(HOUSEHOLD_NATIVE_SET.values!==HOUSEHOLD_SET_VALUES||HOUSEHOLD_NATIVE_SET[Symbol.iterator]!==HOUSEHOLD_SET_ITERATOR)householdMemberIndexInvalidate();if(!C.valid)throw Error('Unmanaged household registry mutation during indexed iteration');let lo=0,hi=C.active.length;while(lo<hi){const m=(lo+hi)>>>1;if(C.active[m].order<=order)lo=m+1;else hi=m;}if(lo===C.active.length)return;const entry=C.active[lo];order=entry.order;yield entry.h;}}finally{C.iterating--;}}
 function newHousehold(p){const h={household:true,id:'hh'+((W._hhID=(W._hhID||0)+1)),head:p,members:new Set(),assets:{w:0,_debt:0,_owe:[]},population:new HouseholdPopulation(),hunger:0};
-  h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});(W.households||(W.households=new Map())).set(h.id,h);return h;}
-function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)old.members.delete(p);
+  h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});householdRegister(h);return h;}
+function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)householdMemberDelete(old,p);
   if(!old)for(const k of HH_FIELDS){const d=Object.getOwnPropertyDescriptor(p,k);if(d&&'value'in d&&d.value!=null){if(k==='w'||k==='_debt'||k==='_inc')h.assets[k]=(h.assets[k]||0)+d.value;
     else if(k==='_owe')(h.assets._owe||(h.assets._owe=[])).push(...d.value);else if(k==='herd'){const H=h.assets.herd||(h.assets.herd={});for(const g of BEASTS)H[g]=(H[g]||0)+(d.value[g]||0);}else h.assets[k]=d.value;}}
-  p._hh=h;h.members.add(p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
+  p._hh=h;householdMemberAdd(h,p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
     get(){return k==='_fill'?h.assets[k]:h.head===p?h.assets[k]:k==='herd'||k==='_owe'?undefined:0;},
     set(v){if(h.head===p)h.assets[k]=v;}});return h;}
 function householdAccount(p){if(!p||p.merc)return null;if(p.household)return p;if(p._hh)return p._hh;
@@ -2969,7 +3022,7 @@ function marryHouseholds(a,b){let A=householdAccount(a),B=householdAccount(b);if
   transferOwnership(B,[[A,1]]);for(const p of [...B.members])bindHousehold(p,A);B.successors=[[A,1]];B.head=null;
   for(const s of W.settlements){for(const f of s.furl||[]){if(f.own===b.id)f.own=a.id;if(f.wk===b.id)f.wk=a.id;}for(const x of s.buildings||[])if(x.title&&x.title.owner===B)x.title.owner=A;else if(x.ownerId===b.id)x.ownerId=a.id;for(const f of s.furl||[])if(f.title){for(const k of ['own','work'])if(f.title[k].owner===B)f.title[k].owner=A;}householdHeadsChanged(s);}}
 function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);herdSync(from);herdSync(to);const x=stockOf(from,h),y=stockOf(to,h);
-  for(const kind of ['held','animals'])for(const g in x[kind]){const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held'&&!BEASTS.includes(g))storageMoveLots(from,to,physical,q,h,'held','household-arrival');x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;storageTitleDirty(from,g);storageTitleDirty(to,g);if(!from.storage||kind==='animals'||BEASTS.includes(g)){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
+  for(const kind of ['held','animals'])for(const g in x[kind]){const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held'&&!BEASTS.includes(g))storageMoveLots(from,to,physical,q,h,'held','household-arrival');x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;storageTitleKnownDirty(from,g);storageTitleKnownDirty(to,g);if(!from.storage||kind==='animals'||BEASTS.includes(g)){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
   h.home=to;from._herdLast=Object.fromEntries(BEASTS.map(g=>[g,from.stores[g]||0]));to._herdLast=Object.fromEntries(BEASTS.map(g=>[g,to.stores[g]||0]));}
 function departHousehold(p,from,to,why){const h=householdAccount(p);if(!h||why==='bride'||h.movingTo===to)return;
   const remaining=[...h.members].filter(q=>q!==p&&!q.dead&&q.si===from);if(!remaining.length)return;
@@ -2984,62 +3037,136 @@ function arriveHousehold(p,from,to){const h=householdAccount(p);if(!h)return;con
 const STORAGE_GOODS={grain:{volume:1,dry:true},hay:{volume:3,dry:true},fish:{volume:1},timber:{volume:2},ore:{volume:1.5},stone:{volume:2},tools:{volume:0.5},wool:{volume:2,dry:true},cloth:{volume:1,dry:true},wine:{volume:1}};
 const STORAGE_TYPES={grange:{capacity:800,goods:['grain','hay','wool'],protection:0.45,cost:360,days:90,timber:24,stone:0},granary:{capacity:600,goods:['grain','hay'],protection:0.4,cost:500,days:120,timber:20,stone:20},warehouse:{capacity:1000,goods:null,protection:0.65,cost:700,days:150,timber:30,stone:30}};
 function storageInvariantFault(message){const error=new Error(message);if(typeof storageModelFault==='function')storageModelFault(error);throw error;}
+const STORAGE_CAPTURE_DATA=new WeakSet();
 function storagePlainData(value,path='metadata',seen=new Set()){if(value===null||typeof value!=='object'){if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage '+path);return value;}if(seen.has(value))throw Error('Cyclic storage '+path);const proto=Object.getPrototypeOf(value);if(!Array.isArray(value)&&proto!==Object.prototype&&proto!==null)throw Error('Non-plain storage '+path);const next=new Set(seen);next.add(value);const out=Array.isArray(value)?new Array(value.length):Object.create(proto===null?null:Object.prototype);for(const key of Reflect.ownKeys(value)){if(Array.isArray(value)&&key==='length')continue;if(typeof key!=='string')throw Error('Symbol storage '+path);const d=Object.getOwnPropertyDescriptor(value,key);if(!('value' in d))throw Error('Accessor storage '+path+'.'+key);const item=storagePlainData(d.value,path+'.'+key,next);if(key==='__proto__')Object.defineProperty(out,key,{value:item,writable:true,enumerable:true,configurable:true});else out[key]=item;}return out;}
-function storageRecordState(record,refs={}){const out={};for(const key of Reflect.ownKeys(record)){if(typeof key!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(record,key);if(!('value' in d))throw Error('Accessor storage record '+key);const value=Object.prototype.hasOwnProperty.call(refs,key)?refs[key](d.value):storagePlainData(d.value,key);if(key==='__proto__')Object.defineProperty(out,key,{value,writable:true,enumerable:true,configurable:true});else out[key]=value;}return out;}
-// Index membership can be reinserted by a transfer. Queries retain canonical lot insertion
-// order so custody choices, rounding and the outcome stream match the former full scans.
+function storageRecordStateUnsafe(record,refs={}){const out={};for(const key of Reflect.ownKeys(record)){if(typeof key!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(record,key);if(!('value' in d))throw Error('Accessor storage record '+key);const value=Object.prototype.hasOwnProperty.call(refs,key)?refs[key](d.value):storagePlainData(d.value,key);if(key==='__proto__')Object.defineProperty(out,key,{value,writable:true,enumerable:true,configurable:true});else out[key]=value;}return out;}
+function storageCaptureFault(error,context){if(typeof STORAGE_OUTCOMES!=='undefined'&&STORAGE_OUTCOMES.journal&&typeof STORAGE_OUTCOMES.journal.fail==='function')STORAGE_OUTCOMES.journal.fail(error,context);return error;}
+function storageRecordState(record,refs={}){try{return storageRecordStateUnsafe(record,refs);}catch(error){throw storageCaptureFault(error,{phase:'record-capture',record});}}
+function storageImmutableCapture(out){Object.freeze(out);STORAGE_CAPTURE_DATA.add(out);return out;}
+// Rebuildable capture cache; never part of authoritative ledgers or history graphs.
+const STORAGE_LOT_CAPTURE=new WeakMap();
+function storageLotCapture(l){
+  if(!l)return null;if(globalThis.FURLONG_REPLAY_LEGACY_AUDIT===true)return storageImmutableCapture(storageRecordState(l,{owner:storageOwnerId}));
+  const keys=Reflect.ownKeys(l),old=STORAGE_LOT_CAPTURE.get(l),values=[];let unchanged=!!old&&old.keys.length===keys.length;
+  for(let i=0;i<keys.length;i++){const k=keys[i];if(typeof k!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(l,k);if(!('value'in d))throw Error('Accessor storage record '+k);const value=k==='owner'?storageOwnerId(d.value):d.value;
+    // Nested metadata can mutate independently: validate and clone it through the full path.
+    if(value!==null&&typeof value==='object'){STORAGE_LOT_CAPTURE.delete(l);return storageImmutableCapture(storageRecordState(l,{owner:storageOwnerId}));}if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage '+k);
+    values.push(value);if(unchanged&&(old.keys[i]!==k||!Object.is(old.values[i],value)))unchanged=false;
+  }
+  if(unchanged)return old.snapshot;const snapshot={};for(let i=0;i<keys.length;i++){const k=keys[i],value=values[i];if(k==='__proto__')Object.defineProperty(snapshot,k,{value,enumerable:true,writable:true,configurable:true});else snapshot[k]=value;}Object.freeze(snapshot);STORAGE_CAPTURE_DATA.add(snapshot);STORAGE_LOT_CAPTURE.set(l,{keys,values,snapshot});return snapshot;
+}
+// Internal captures own every value synchronously; no authoritative references escape.
+const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_LOT_HANDLES=new WeakMap();
+function storageCompactCaptureActive(){return typeof STORAGE_OUTCOMES!=='undefined'&&STORAGE_OUTCOMES.journal?.mode==='compact'&&globalThis.FURLONG_COMPACT_CAPTURE!==false;}
+function storageLotHandleUnsafe(l){
+  if(!l)return null;if(!storageCompactCaptureActive())return storageLotCapture(l);
+  const keys=Reflect.ownKeys(l),values=[],old=STORAGE_LOT_HANDLES.get(l);let unchanged=!!old&&old.keys.length===keys.length;
+  for(let i=0;i<keys.length;i++){const k=keys[i];if(typeof k!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(l,k);if(!('value'in d))throw Error('Accessor storage record '+k);const value=k==='owner'?storageOwnerId(d.value):storagePlainData(d.value,k);values.push(value);if(unchanged&&(old.keys[i]!==k||!Object.is(old.values[i],value)))unchanged=false;}
+  if(unchanged)return old.handle;const handle=Object.freeze({owner:values[keys.indexOf('owner')],id:values[keys.indexOf('id')]}),data={keys,values,handle};STORAGE_CAPTURE_HANDLES.set(handle,data);STORAGE_LOT_HANDLES.set(l,data);return handle;
+}
+function storageLotHandle(l){try{return storageLotHandleUnsafe(l);}catch(error){throw storageCaptureFault(error,{phase:'lot-capture',lot:l&&Object.getOwnPropertyDescriptor(l,'id')?.value,record:l});}}
+function storageExpandOutcome(value,seen=new Set()){
+  if(value===null||typeof value!=='object')return value;if(seen.has(value))throw Error('Cyclic storage outcome');seen.add(value);
+  const capture=STORAGE_CAPTURE_HANDLES.get(value),array=!capture&&Array.isArray(value),out=array?[]:{},keys=capture?capture.keys:Reflect.ownKeys(value);
+  for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=capture?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');Object.defineProperty(out,key,{value:storageExpandOutcome(capture?capture.values[i]:d.value,seen),enumerable:key!=='length'||!array,writable:true,configurable:key!=='length'||!array});}seen.delete(value);return out;
+}
+function storageObserveOutcome(event){try{if(typeof STORAGE_OUTCOMES!=='undefined'&&typeof STORAGE_OUTCOMES.journal?.assert==='function')STORAGE_OUTCOMES.journal.assert();if(typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function')globalThis.FURLONG_STORAGE_AUDIT_OBSERVER(storageExpandOutcome(event));}catch(error){throw storageCaptureFault(error,{phase:'audit-observer',event});}}
+globalThis.FURLONG_STORAGE_AUDIT_SUPPORTED=true;
+// Only explicit membership writers maintain this rebuildable index. The complete
+// locations Map remains authoritative; raw edits require invalidation/adoption.
+const STORAGE_FACILITY_INDEXES=new WeakMap();
+const STORAGE_FACILITY_MAP=Map.prototype,STORAGE_FACILITY_MAP_ENTRIES=Map.prototype.entries,STORAGE_FACILITY_MAP_SIZE=Object.getOwnPropertyDescriptor(Map.prototype,'size').get;
+const STORAGE_FACILITY_MAP_METHODS=Object.fromEntries(['values','get','set','delete','clear'].map(k=>[k,Map.prototype[k]]));
+function storageFacilityIndexInit(K){const C={map:K.locations,entries:new Map(),facilities:[],next:0,size:0,valid:true,iterating:0};STORAGE_FACILITY_INDEXES.set(K,C);return C;}
+function storageFacilityInvalidate(K){const C=STORAGE_FACILITY_INDEXES.get(K);if(C){C.valid=false;if(C.iterating)throw Error('Unmanaged facility mutation during indexed iteration');}}
+function storageFacilityIndex(K){const C=STORAGE_FACILITY_INDEXES.get(K);if(!C?.valid)return null;
+  const field=Object.getOwnPropertyDescriptor(K,'locations');
+  if(field?.value!==C.map||Object.getPrototypeOf(C.map)!==STORAGE_FACILITY_MAP||STORAGE_FACILITY_MAP_SIZE.call(C.map)!==C.size||'building'in Object.prototype){storageFacilityInvalidate(K);return null;}
+  for(const[k,v]of Object.entries(STORAGE_FACILITY_MAP_METHODS))if(Object.prototype.hasOwnProperty.call(C.map,k)||Object.getOwnPropertyDescriptor(STORAGE_FACILITY_MAP,k)?.value!==v){storageFacilityInvalidate(K);return null;}
+  return C;
+}
+function storageFacilityRecordData(n){return !!n&&typeof n==='object'&&Object.getPrototypeOf(n)===Object.prototype&&Object.values(Object.getOwnPropertyDescriptors(n)).every(d=>'value'in d);}
+function storageFacilityIndexRecord(K,id,n){const C=STORAGE_FACILITY_INDEXES.get(K);if(!C?.valid)return;
+  const d=Object.getOwnPropertyDescriptor(n,'building');if(!storageFacilityRecordData(n)){storageFacilityInvalidate(K);return;}
+  let entry=C.entries.get(id);if(!entry){entry={id,n,order:C.next++,facility:false};C.entries.set(id,entry);}else entry.n=n;
+  if(entry.facility||d?.value){C.facilities=C.facilities.filter(e=>e!==entry);if(d?.value){C.facilities.push(entry);C.facilities.sort((a,b)=>a.order-b.order);}}entry.facility=!!d?.value;C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);
+}
+function storageFacilityAdopt(K){if(STORAGE_FACILITY_INDEXES.get(K)?.iterating)storageFacilityInvalidate(K);const C=storageFacilityIndexInit(K);try{STORAGE_FACILITY_MAP_SIZE.call(C.map);}catch{C.valid=false;return false;}if(Object.getPrototypeOf(C.map)!==STORAGE_FACILITY_MAP){C.valid=false;return false;}
+  for(const[id,n]of STORAGE_FACILITY_MAP_ENTRIES.call(C.map))storageFacilityIndexRecord(K,id,n);return !!storageFacilityIndex(K);
+}
+function storageFacilityLocationSet(K,id,n){const C=storageFacilityIndex(K);if(C&&!storageFacilityRecordData(n))storageFacilityInvalidate(K);
+  const result=K.locations.set(id,n);storageFacilityIndexRecord(K,id,n);return result;
+}
+function storageFacilityLocationDelete(K,id){const C=storageFacilityIndex(K),result=K.locations.delete(id);if(C&&result){const entry=C.entries.get(id);C.entries.delete(id);C.facilities=C.facilities.filter(e=>e!==entry);C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);}return result;}
+function storageFacilityLocationClear(K){const C=storageFacilityIndex(K),result=K.locations.clear();if(C){C.entries.clear();C.facilities=[];C.size=0;}return result;}
+function storageFacilityBuilding(K,id,building){const C=storageFacilityIndex(K),n=K.locations.get(id);if(!n)throw Error('Unknown facility location');
+  if(C&&!storageFacilityRecordData(n))storageFacilityInvalidate(K);if(Object.is(n.building,building))return n;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=K.locationState(n);n.building=building;storageFacilityIndexRecord(K,id,n);K.revision++;K.event('facility-membership',null,0,{location:id,before,locationAfter:K.locationState(n)});return n;
+}
+function* storageFacilityLocations(K){const C=storageFacilityIndex(K);if(!C){yield* K.locations.values();return;}C.iterating++;let order=-1;
+  try{while(true){if(!C.valid)throw Error('Unmanaged facility mutation during indexed iteration');let lo=0,hi=C.facilities.length;while(lo<hi){const mid=(lo+hi)>>>1;if(C.facilities[mid].order<=order)lo=mid+1;else hi=mid;}if(lo===C.facilities.length)return;const entry=C.facilities[lo];order=entry.order;yield entry.n;}}finally{C.iterating--;}
+}
+// Arithmetic ancestry is a max-union of native ledger contributions, not copied totals.
+// Native settlements remain in their original array slots (wards are not removed).
+const STORAGE_ARITHMETIC_ORIGINS=new WeakMap();let storageArithmeticNext=1;
+function storageArithmeticOrigin(K){if(Number.isInteger(K.realmId)&&K.realmId>=0)return 'realm:'+K.realmId;let id=STORAGE_ARITHMETIC_ORIGINS.get(K);if(!id)STORAGE_ARITHMETIC_ORIGINS.set(K,id='local:'+storageArithmeticNext++);return id;}
+function storageArithmeticState(K,g){let state=K.roundoff.get(g);if(!state){state={budget:0,operations:0,last:null};K.roundoff.set(g,state);}if(!state.origins){state.origins=Object.create(null);state.origins[storageArithmeticOrigin(K)]=state.budget;}return state;}
+const STORAGE_ARITHMETIC_FLOAT=new Float64Array(1),STORAGE_ARITHMETIC_BITS=new BigUint64Array(STORAGE_ARITHMETIC_FLOAT.buffer);
+function storageArithmeticBound(origins){let bound=0;for(const origin of Object.keys(origins)){const value=origins[origin];if(!value)continue;if(!bound){bound=value;continue;}const sum=bound+value;if(!Number.isFinite(sum))return sum;STORAGE_ARITHMETIC_FLOAT[0]=sum;STORAGE_ARITHMETIC_BITS[0]+=1n;bound=STORAGE_ARITHMETIC_FLOAT[0];}return bound;}
+function storageArithmeticImport(A,B,g){if(A===B||!A.roundoff.has(g))return {};const source=storageArithmeticState(A,g),target=storageArithmeticState(B,g),changed=[];for(const origin of Object.keys(source.origins)){const value=source.origins[origin],before=target.origins[origin]||0;if(value>before){target.origins[origin]=value;changed.push([origin,value]);}}if(!changed.length)return {};const before=target.budget;const bound=storageArithmeticBound(target.origins);target.budget=Math.max(before,bound);return {arithmeticProvenance:{source:A.realmId??null,before,bound:target.budget,frontier:changed}};}
+function storageArithmeticEmpty(A,B,g){const data=storageArithmeticImport(A,B,g);if(data.arithmeticProvenance)B.event('arithmetic-provenance',null,0,{good:g,origin:A.realmId??null,...data});}
+// Indexed selections preserve canonical lot insertion order after membership reinsertion.
 const STORAGE_LOT_ORDER=new WeakMap();
 class StorageLedger {
-  constructor(){this.version=2;this.next=1;this.revision=0;this.locations=new Map();this.lots=new Map();this.events=[];this.day=0;this.totals=new Map();this.occupancy=new Map();this.byGood=new Map();this.byLocation=new Map();this.byOwner=new Map();this.byAvailability=new Map();this.roundoff=new Map();}
-  rounding(g,operation,...inputs){const old=this.roundoff.get(g)||{budget:0,operations:0,last:null};const magnitude=inputs.reduce((n,v)=>n+(Number.isFinite(v)?Math.abs(v):0),0);old.budget+=Number.EPSILON*magnitude*2;old.operations++;old.last={operation,inputs};this.roundoff.set(g,old);}
-  lotState(l){return l?storageRecordState(l,{owner:storageOwnerId}):null;}
-  locationState(n){return storageRecordState(n,{owner:storageOwnerId,building:b=>b?.storageId??null});}
-  annotate(l,fields,remove=[]){const reserved=new Set(['id','qty','owner','good','location','availability']);const data=storagePlainData(fields);for(const key of Reflect.ownKeys(data).concat(remove))if(typeof key!=='string'||reserved.has(key))throw Error('Use explicit storage mutation for '+String(key));if(!Object.keys(data).some(k=>!Object.prototype.hasOwnProperty.call(l,k)||!Object.is(l[k],data[k]))&&!remove.some(k=>Object.prototype.hasOwnProperty.call(l,k)))return;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.lotState(l);for(const k of remove)delete l[k];for(const k in data)l[k]=data[k];this.revision++;this.event('lot-metadata',l,0,{before});}
+  constructor(){this.version=2;this.next=1;this.revision=0;this.locations=new Map();this.lots=new Map();this.events=[];this.day=0;this.totals=new Map();this.occupancy=new Map();this.byGood=new Map();this.byLocation=new Map();this.byOwner=new Map();this.byAvailability=new Map();this.roundoff=new Map();storageFacilityIndexInit(this);}
+  rounding(g,operation,...inputs){const old=storageArithmeticState(this,g),origin=storageArithmeticOrigin(this);const magnitude=inputs.reduce((n,v)=>n+(Number.isFinite(v)?Math.abs(v):0),0),contribution=Number.EPSILON*magnitude*2;old.budget+=contribution;old.origins[origin]=(old.origins[origin]||0)+contribution;old.operations++;old.last={operation,inputs};this.roundoff.set(g,old);}
+  lotState(l){return storageLotCapture(l);}
+  captureLot(l){return storageLotHandle(l);}
+  locationState(n){return storageImmutableCapture(storageRecordState(n,{owner:storageOwnerId,building:b=>b?.storageId??null}));}
+  annotate(l,fields,remove=[]){const reserved=new Set(['id','qty','owner','good','location','availability']);const data=storagePlainData(fields);for(const key of Reflect.ownKeys(data).concat(remove))if(typeof key!=='string'||reserved.has(key))throw Error('Use explicit storage mutation for '+String(key));if(!Object.keys(data).some(k=>!Object.prototype.hasOwnProperty.call(l,k)||!Object.is(l[k],data[k]))&&!remove.some(k=>Object.prototype.hasOwnProperty.call(l,k)))return;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l);for(const k of remove)delete l[k];for(const k in data)if(k==='__proto__')Object.defineProperty(l,k,{value:data[k],enumerable:true,writable:true,configurable:true});else l[k]=data[k];this.revision++;this.event('lot-metadata',l,0,{before});}
 
-  event(cause,lot,qty,extra={}){const e={seq:(this.sequence=(this.sequence||0)+1),settlement:this.realmId??null,day:this.day,kind:'storage',cause,lot:lot?.id??null,owner:storageOwnerId(lot?.owner),location:lot?.location??null,good:lot?.good??null,availability:lot?.availability??null,qty,qtyAfter:lot?.qty??null,lotAfter:this.lotState(lot),...extra};storageTitleEvent(this,e);if(typeof storageOutcome==='function')storageOutcome(e);else this.events.push(e);}
-  location(id,data){storageRecordState(data,{building:b=>b?.storageId??null,owner:storageOwnerId});if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();let n=this.locations.get(id);if(!n){n={id,capacity:0,goods:null,protection:1,active:true,...data};this.locations.set(id,n);this.revision++;this.event('location-created',null,0,{location:id,capacity:Number.isFinite(n.capacity)?n.capacity:null,exposed:!!n.exposed,x:Number.isFinite(n.x)?n.x:null,z:Number.isFinite(n.z)?n.z:null,goods:n.goods,locationAfter:this.locationState(n)});}return n;}
+  event(cause,lot,qty,extra={}){const e={seq:(this.sequence=(this.sequence||0)+1),settlement:this.realmId??null,day:this.day,kind:'storage',cause,lot:lot?.id??null,owner:storageOwnerId(lot?.owner),location:lot?.location??null,good:lot?.good??null,availability:lot?.availability??null,qty,qtyAfter:lot?.qty??null,lotAfter:this.captureLot(lot),...extra};Object.freeze(e);STORAGE_CAPTURE_DATA.add(e);storageTitleEvent(this,e);if(typeof storageOutcome==='function')storageOutcome(e);else this.events.push(e);}
+  location(id,data){storageRecordState(data,{building:b=>b?.storageId??null,owner:storageOwnerId});if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();let n=this.locations.get(id);if(!n){n={id,capacity:0,goods:null,protection:1,active:true,...data};storageFacilityLocationSet(this,id,n);this.revision++;this.event('location-created',null,0,{location:id,capacity:Number.isFinite(n.capacity)?n.capacity:null,exposed:!!n.exposed,x:Number.isFinite(n.x)?n.x:null,z:Number.isFinite(n.z)?n.z:null,goods:n.goods,locationAfter:this.locationState(n)});}return n;}
   index(l){const order=STORAGE_LOT_ORDER.get(this);if(order&&!order.ids.has(l.id))order.ids.set(l.id,order.next++);for(const[M,k]of [[this.byGood,l.good],[this.byLocation,l.location],[this.byOwner,l.owner],[this.byAvailability,l.availability]]){let ids=M.get(k);if(!ids)M.set(k,ids=new Set());ids.add(l.id);}this.dirty(l);}
   dirty(l){this.totals.delete(l.good);this.occupancy.delete(l.location);}
   unindex(l){STORAGE_LOT_ORDER.get(this)?.ids.delete(l.id);this.byGood.get(l.good)?.delete(l.id);this.byLocation.get(l.location)?.delete(l.id);this.byOwner.get(l.owner)?.delete(l.id);this.byAvailability.get(l.availability)?.delete(l.id);this.dirty(l);}
   orderedLots(ids){if(!ids.length)return [];let order=STORAGE_LOT_ORDER.get(this);if(!order){order={ids:new Map(),next:0};for(const id of this.lots.keys())order.ids.set(id,order.next++);STORAGE_LOT_ORDER.set(this,order);}return ids.map(id=>this.lots.get(id)).filter(Boolean).sort((a,b)=>order.ids.get(a.id)-order.ids.get(b.id));}
   matching(fields){const entries=Object.entries(fields);let ids;for(const[k,v]of entries){const bucket=this[{good:'byGood',location:'byLocation',owner:'byOwner',availability:'byAvailability'}[k]]?.get(v);if(!bucket?.size)return [];if(!ids||bucket.size<ids.size)ids=bucket;}if(!ids)throw new Error('Storage query requires an indexed field');const matches=[];for(const id of ids){const l=this.lots.get(id);if(l&&entries.every(([k,v])=>l[k]===v))matches.push(id);}return this.orderedLots(matches);}
   exposedLots(){const ids=[];for(const[id,n]of this.locations)if(n.exposed)for(const lotId of this.byLocation.get(id)||[])ids.push(lotId);return this.orderedLots(ids);}
-  relocate(l,id,availability=l.availability,cause='custody-move'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.lotState(l),from=l.location;this.byLocation.get(from)?.delete(l.id);this.occupancy.delete(from);l.location=id;if(l.availability!==availability){this.byAvailability.get(l.availability)?.delete(l.id);let A=this.byAvailability.get(availability);if(!A)this.byAvailability.set(availability,A=new Set());A.add(l.id);l.availability=availability;}let ids=this.byLocation.get(id);if(!ids)this.byLocation.set(id,ids=new Set());ids.add(l.id);this.dirty(l);this.revision++;this.event(cause,l,l.qty,{from,before});}
+  relocate(l,id,availability=l.availability,cause='custody-move'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),from=l.location;this.byLocation.get(from)?.delete(l.id);this.occupancy.delete(from);l.location=id;if(l.availability!==availability){this.byAvailability.get(l.availability)?.delete(l.id);let A=this.byAvailability.get(availability);if(!A)this.byAvailability.set(availability,A=new Set());A.add(l.id);l.availability=availability;}let ids=this.byLocation.get(id);if(!ids)this.byLocation.set(id,ids=new Set());ids.add(l.id);this.dirty(l);this.revision++;this.event(cause,l,l.qty,{from,before});}
   compatible(a,b){const keys=l=>Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty');const A=keys(a),B=keys(b);return A.length===B.length&&A.every(k=>Object.prototype.hasOwnProperty.call(b,k)&&Object.is(a[k],b[k]));}
-  coalesce(g){const groups=new Map();for(const id of [...this.byGood.get(g)||[]]){const l=this.lots.get(id);if(!l)continue;let M=groups.get(l.owner);if(!M)groups.set(l.owner,M=new Map());const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(keys.some(k=>typeof k!=='string'||typeof l[k]==='object'&&l[k]!==null||typeof l[k]==='function'))continue;const key=JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));const keep=M.get(key);if(!keep||!this.compatible(keep,l)){M.set(key,l);continue;}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.lotState(l),qty=l.qty;this.unindex(l);this.lots.delete(l.id);this.rounding(g,'merge',keep.qty,qty);keep.qty+=qty;this.dirty(keep);this.revision++;this.event('lot-merged',l,qty,{before,lotAfter:null,sourceLotAfter:this.lotState(keep),into:keep.id});}}
+  coalesce(g,eligible){const groups=new Map();for(const id of [...this.byGood.get(g)||[]]){const l=this.lots.get(id);if(!l||eligible&&!eligible(l))continue;let M=groups.get(l.owner);if(!M)groups.set(l.owner,M=new Map());const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(keys.some(k=>{if(typeof k!=='string')return true;const v=l[k],t=typeof v;return v!==null&&t!=='string'&&t!=='boolean'&&t!=='undefined'&&(t!=='number'||!Number.isFinite(v)||Object.is(v,-0));}))continue;const key=JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));const keep=M.get(key);if(!keep||!this.compatible(keep,l)){M.set(key,l);continue;}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),qty=l.qty;this.unindex(l);this.lots.delete(l.id);this.rounding(g,'merge',keep.qty,qty);keep.qty+=qty;this.dirty(keep);this.revision++;this.event('lot-merged',l,qty,{before,lotAfter:null,sourceLotAfter:this.captureLot(keep),into:keep.id});}}
   volume(g){return STORAGE_GOODS[g]?.volume??1;}
   total(g){const c=this.totals.get(g);if(c!==undefined)return c;let q=0;for(const id of this.byGood.get(g)||[]){const l=this.lots.get(id);if(l&&!this.locations.get(l.location)?.transit)q+=l.qty;}this.totals.set(g,q);return q;}
   used(id){const c=this.occupancy.get(id);if(c!==undefined)return c;let q=0;for(const lotId of this.byLocation.get(id)||[]){const l=this.lots.get(lotId);if(l)q+=l.qty*this.volume(l.good);}this.occupancy.set(id,q);return q;}
   free(id,g){const n=this.locations.get(id);return !n||!n.active||n.goods&&!n.goods.includes(g)?0:Math.max(0,n.capacity-this.used(id))/this.volume(g);}
   create(g,qty,owner,location,availability='unassigned',cause='production'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(!(qty>0)||!Number.isFinite(qty))storageInvariantFault('Invalid physical quantity');if(!this.locations.has(location))storageInvariantFault('Unknown custody location');if(this.locations.get(location).transit)storageInvariantFault('Transit creation requires dispatch');if(this.free(location,g)<qty)throw Error('Storage creation exceeds compatible capacity');for(const id of this.byLocation.get(location)||[]){const old=this.lots.get(id);if(old&&this.compatible(old,{id:null,qty:0,good:g,owner,location,availability})){this.rounding(g,'inflow',old.qty,qty);old.qty+=qty;this.dirty(old);this.revision++;this.event(cause,old,qty);return old;}}this.rounding(g,'create',qty);storageRegisterOwner(owner);const l={id:'lot:'+(this.realmId??'local')+':'+this.next++,good:g,qty,owner,location,availability};this.lots.set(l.id,l);this.index(l);this.revision++;this.event(cause,l,qty);return l;}
-  split(l,qty){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(qty===l.qty)return l;if(!(qty>0&&qty<l.qty))storageInvariantFault('Invalid lot split');this.rounding(l.good,'split',l.qty,qty);l.qty-=qty;const n={...l,id:'lot:'+(this.realmId??'local')+':'+this.next++,qty};this.lots.set(n.id,n);this.dirty(l);this.index(n);this.revision++;this.event('lot-split',n,qty,{fromLot:l.id,sourceQtyAfter:l.qty,sourceLotAfter:this.lotState(l)});return n;}
+  split(l,qty){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(qty===l.qty)return l;if(!(qty>0&&qty<l.qty))storageInvariantFault('Invalid lot split');this.rounding(l.good,'split',l.qty,qty);l.qty-=qty;const n={...l,id:'lot:'+(this.realmId??'local')+':'+this.next++,qty};this.lots.set(n.id,n);this.dirty(l);this.index(n);this.revision++;this.event('lot-split',n,qty,{fromLot:l.id,sourceQtyAfter:l.qty,sourceLotAfter:this.captureLot(l)});return n;}
   move(l,id,qty=l.qty,cause='deposit'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const n=this.locations.get(id);if(!n)storageInvariantFault('Unknown custody destination');const q=Math.min(qty,l.qty,this.free(id,l.good));if(q>0){const part=this.split(l,q);this.relocate(part,id,part.availability,cause);}if(q<qty)this.event('intake-rejected',l,qty-q,{destination:id,reason:!n.active?'inactive':'capacity-or-good'});return q;}
-  remove(l,qty,cause){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const q=Math.min(Math.max(0,qty),l.qty);if(q>0){this.rounding(l.good,'remove',l.qty,q);l.qty-=q;this.dirty(l);this.revision++;this.event(cause,l,q);if(l.qty===0){this.unindex(l);this.lots.delete(l.id);}}return q;}
-  transfer(l,owner,qty=l.qty,availability=l.availability){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(owner===l.owner&&availability===l.availability&&qty===l.qty)return l;storageRegisterOwner(owner);const p=this.split(l,qty),before=this.lotState(p),from=p.owner;this.byOwner.get(p.owner)?.delete(p.id);this.byAvailability.get(p.availability)?.delete(p.id);p.owner=owner;p.availability=availability;for(const[M,k]of [[this.byOwner,owner],[this.byAvailability,availability]]){let I=M.get(k);if(!I)M.set(k,I=new Set());I.add(p.id);}this.revision++;this.event('title-transfer',p,qty,{from:storageOwnerId(from),before});return p;}
+  remove(l,qty,cause,extra){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();let detail;if(extra!==undefined){detail={before:this.captureLot(l)};for(const key of ['claimGood','titleBefore','titleAfter','legalQty'])if(Object.prototype.hasOwnProperty.call(extra,key))detail[key]=extra[key];}const q=Math.min(Math.max(0,qty),l.qty);if(q>0){this.rounding(l.good,'remove',l.qty,q);l.qty-=q;this.dirty(l);this.revision++;this.event(cause,l,q,detail);if(l.qty===0){this.unindex(l);this.lots.delete(l.id);}}return q;}
+  transfer(l,owner,qty=l.qty,availability=l.availability){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(owner===l.owner&&availability===l.availability&&qty===l.qty)return l;storageRegisterOwner(owner);const p=this.split(l,qty),before=this.captureLot(p),from=p.owner;this.byOwner.get(p.owner)?.delete(p.id);this.byAvailability.get(p.availability)?.delete(p.id);p.owner=owner;p.availability=availability;for(const[M,k]of [[this.byOwner,owner],[this.byAvailability,availability]]){let I=M.get(k);if(!I)M.set(k,I=new Set());I.add(p.id);}this.revision++;this.event('title-transfer',p,qty,{from:storageOwnerId(from),before});return p;}
   destroy(id){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const n=this.locations.get(id);if(!n||!n.active)return;const before=this.locationState(n);n.active=false;this.event('location-destroyed',null,0,{location:id,before,locationAfter:this.locationState(n)});const yard=this.location('exposed:'+id,{x:n.x,z:n.z,capacity:Infinity,exposed:true,protection:4});for(const l of this.matching({location:id})){this.relocate(l,yard.id,l.availability,'facility-destroyed');}this.revision++;}
 }
 function storageOwnerId(o){if(o==null)return 'unassigned';if(typeof o!=='object')return typeof o+':'+String(o);if(o.household)return 'household:'+o.id;const hi=W.houses?.indexOf(o);if(hi>=0)return 'house:'+hi;const si=W.settlements?.indexOf(o);if(si>=0)return 'settlement:'+si;if(o.gn!==undefined&&o.id!=null)return 'person:'+o.id;return o.storageOwnerId||'unregistered-account';}
 function storageRegisterOwner(o){if(o&&typeof o==='object'&&storageOwnerId(o)==='unregistered-account'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();o.storageOwnerId='account:'+(W._storageOwnerNext=(W._storageOwnerNext||0)+1);if(typeof storageOutcome==='function')storageOutcome({day:day(),kind:'storage',cause:'owner-registered',owner:o.storageOwnerId});}return storageOwnerId(o);}
 
-function storageInit(s){if(s.storage)return s.storage;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const raw=s.stores,K=s.storage=new StorageLedger();K.realmId=W.settlements.indexOf(s);K.day=day();for(const x of s._owners?.values()||[])storageBindClaims(s,x);K.location('yard',{x:s.pos.x,z:s.pos.z,capacity:Infinity,exposed:true,protection:4});
+function storageInit(s){if(s.storage)return s.storage;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const raw=s.stores,K=s.storage=new StorageLedger();K.realmId=W.settlements.indexOf(s);K.day=day();for(const x of s._owners?.values()||[])storageBindClaims(s,x);storageClaimInitialize(s);K.location('yard',{x:s.pos.x,z:s.pos.z,capacity:Infinity,exposed:true,protection:4});
   for(const g of Object.keys(raw)){if(typeof BEASTS!=='undefined'&&BEASTS.includes(g))continue;const q=raw[g];if(q>0&&Number.isFinite(q))K.create(g,q,null,'yard','unassigned','migration-uncovered');storageBindGood(s,g);}
   K.event('engine-migration',null,0,{version:2,legacyGranaryFlag:!!s.works?.granary,disposition:'all existing goods retained uncovered; abstract granary protection retired'});return K;}
-function storageBindGood(s,g){const K=s.storage,D=Object.getOwnPropertyDescriptor(s.stores,g);if(D?.get)return;if(D?.value>0&&K.total(g)===0)K.create(g,D.value,null,'yard','unassigned','new-good-migration');Object.defineProperty(s.stores,g,{configurable:true,enumerable:true,get(){return K.total(g);},set(v){if(!Number.isFinite(v)||v<0)storageInvariantFault('Invalid physical stock '+g);const old=K.total(g),d=v-old;if(d>0)K.create(g,d,null,storageSource(s,g),'unassigned','physical-inflow');else if(d<0){const pending=[...K.byGood.get(g)||[]].some(id=>K.lots.get(id)?.pendingPurchase);if(!pending)storageTitles(s,g);let left=-d;for(const l of K.matching({good:g}).filter(l=>!K.locations.get(l.location)?.transit).sort((a,b)=>(!a.pendingPurchase)-(!b.pendingPurchase)||(a.owner!==null)-(b.owner!==null))){const q=Math.min(left,l.qty),claim=l.claimGood||g,x=(s._owners||new Map()).get(l.owner);if(!l.pendingPurchase&&x&&x[l.availability]&&x[l.availability][claim]>0){const before=x[l.availability][claim];x[l.availability][claim]=Math.max(0,before-q);storageTitleDirty(s,claim);K.event('legal-title-loss',l,Math.min(before,q),{claimGood:claim,titleBefore:before,titleAfter:x[l.availability][claim]});}if(l.owner==null&&s._made?.[g])s._made[g]=Math.max(0,s._made[g]-q);left-=K.remove(l,q,'physical-outflow');if(!(left>0))break;}}}});}
+function storageBindGood(s,g){const K=s.storage,D=Object.getOwnPropertyDescriptor(s.stores,g);if(D?.get)return;if(D?.value>0&&K.total(g)===0)K.create(g,D.value,null,'yard','unassigned','new-good-migration');Object.defineProperty(s.stores,g,{configurable:true,enumerable:true,get(){return K.total(g);},set(v){if(!Number.isFinite(v)||v<0)storageInvariantFault('Invalid physical stock '+g);const old=K.total(g),d=v-old;if(d>0)K.create(g,d,null,storageSource(s,g),'unassigned','physical-inflow');else if(d<0){const pending=[...K.byGood.get(g)||[]].some(id=>K.lots.get(id)?.pendingPurchase);if(!pending)storageTitles(s,g);let left=-d;for(const l of K.matching({good:g}).filter(l=>!K.locations.get(l.location)?.transit).sort((a,b)=>(!a.pendingPurchase)-(!b.pendingPurchase)||(a.owner!==null)-(b.owner!==null))){const q=Math.min(left,l.qty),claim=l.claimGood||g,x=(s._owners||new Map()).get(l.owner);if(!l.pendingPurchase&&x&&x[l.availability]&&x[l.availability][claim]>0){const before=x[l.availability][claim];x[l.availability][claim]=Math.max(0,before-q);storageTitleKnownDirty(s,claim);K.event('legal-title-loss',l,Math.min(before,q),{claimGood:claim,titleBefore:before,titleAfter:x[l.availability][claim]});}if(l.owner==null&&s._made?.[g])s._made[g]=Math.max(0,s._made[g]-q);left-=K.remove(l,q,'physical-outflow');if(!(left>0))break;}}}});}
 function storageSource(s,g){const K=s.storage;if(g!=='grain'&&g!=='hay')return 'yard';const F=(s.furl||[]).filter(f=>typeof LS!=='undefined'&&f.state===LS.TILLED);if(!F.length)return 'yard';let x=0,z=0,a=0;for(const f of F){const w=f.area||1;x+=f.x*w;z+=f.z*w;a+=w;}const id='collection:'+g;K.location(id,{x:x/a,z:z/a,capacity:Infinity,exposed:true,protection:4,aggregateProduction:true});return id;}
 
 function storageFacilities(s){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageInit(s),seen=new Set();for(const b of s.buildings||[]){const t=STORAGE_TYPES[b.arch];if(!t)continue;if(!b.storageId){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();b.storageId='building:'+K.next++;}const id=b.storageId;seen.add(id);const owner=b.title?.owner??b.ownerId;storageRegisterOwner(owner);let n=K.locations.get(id);if(!n)n=K.location(id,{building:b,x:b.x,z:b.z,...t,owner,public:b.storagePublic!==false});if(b.removed||b.state!=='sound'){K.destroy(id);continue;}const capacity=t.capacity*(1+0.5*(b.tier||0));if(!n.active||n.capacity!==capacity||n.x!==b.x||n.z!==b.z||n.owner!==owner||n.public!==(b.storagePublic!==false)||n.protection!==t.protection){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=K.locationState(n);Object.assign(n,{active:true,capacity,x:b.x,z:b.z,owner,public:b.storagePublic!==false,protection:t.protection});K.revision++;K.event('facility-state',null,0,{location:id,before,locationAfter:K.locationState(n)});}}
-  for(const n of K.locations.values())if(n.building&&!seen.has(n.id))K.destroy(n.id);return K;}
+  for(const n of storageFacilityLocations(K))if(n.building&&!seen.has(n.id))K.destroy(n.id);return K;}
 
 function storageAccess(s,a,b){const d=dist2d(a.x,a.z,b.x,b.z),steps=Math.max(1,Math.ceil(d/5));if(typeof wallRadAt==='function'&&s.wallRad){const side=p=>dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x));if(side(a)*side(b)<0)return false;}for(let i=0;i<=steps;i++){const f=i/steps,x=a.x+(b.x-a.x)*f,z=a.z+(b.z-a.z)*f;if(typeof toCell==='function'&&W.water){const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj)||W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.35)return false;}if(typeof riverAt==='function'&&riverAt(x,z,0.5)||typeof lakeAt==='function'&&lakeAt(s,x,z,0.5))return false;}return true;}
-// These caches live only for a synchronous survey or carriage calculation. Later calls
-// recheck terrain, water, walls, sealed gates and the street graph from current state.
+// Reuse only within one synchronous, read-only site evaluation; never retain across world changes.
 const STORAGE_ROUTE_BATCHES=new WeakMap();
-function storageRouteBatch(s,fn){if(STORAGE_ROUTE_BATCHES.has(s))return fn();STORAGE_ROUTE_BATCHES.set(s,{g:null,points:new Map(),paths:new Map()});try{return fn();}finally{STORAGE_ROUTE_BATCHES.delete(s);}}
-function storageRoute(s,a,b){
+function storageRouteBatch(s,fn){if(typeof fn!=='function')return {s,g:null,points:new Map(),paths:new Map()};if(STORAGE_ROUTE_BATCHES.has(s))return fn();STORAGE_ROUTE_BATCHES.set(s,storageRouteBatch(s));try{return fn();}finally{STORAGE_ROUTE_BATCHES.delete(s);}}
+function storageRoute(s,a,b,batch){
   if(s.siegeBy||s.quarantineUntil>day())return Infinity;
   const signature=(s.streets||[]).map(st=>`${!!st.gone}:${!!st.hidden}:${st.pts?.length||0}`).join('|');
   if(s._storageRouteSignature!==signature){s._storageRouteSignature=signature;s._storageGraph=streetGraph({...s,_sg:null,streets:(s.streets||[]).filter(st=>!st.gone&&!st.hidden)});}
-  const g=s._storageGraph,C=STORAGE_ROUTE_BATCHES.get(s);if(!g.N.length)return Infinity;
+  const g=s._storageGraph,C=batch?.s===s?batch:STORAGE_ROUTE_BATCHES.get(s);if(!g.N.length)return Infinity;
   if(C&&C.g!==g){C.g=g;C.points.clear();C.paths.clear();}
   const accessible=p=>{const key=p.x+','+p.z;if(C?.points.has(key))return C.points.get(key);let best=-1,bd=Infinity;
     for(let i=0;i<g.N.length;i++){const d=dist2d(p.x,p.z,g.N[i].x,g.N[i].z);if(d<bd&&storageAccess(s,p,g.N[i])){best=i;bd=d;}}
@@ -3058,21 +3185,50 @@ function storageTitleEvent(K,e){const C=STORAGE_TITLE_CERTIFICATES.get(K);if(!C)
 function storageTitleGroups(K,g,claims){const C=storageTitleCache(K);let M=C.goods.get(g);if(!M)C.goods.set(g,M=new Map());const groups=new Map(),skip=new Set();claims.forEach((c,i)=>{let group=groups.get(c.o);if(!group){const id=storageOwnerId(c.o);let state=M.get(id);if(!state)M.set(id,state={epoch:0,certificate:null});group={state,epoch:state.epoch,generation:C.generation,entries:[],eligible:true};groups.set(c.o,group);}group.entries.push({i,kind:c.kind,good:c.claimGood,q:c.q});});for(const[o,x]of groups){const old=x.state.certificate;if(old&&old.generation===C.generation&&old.epoch===x.epoch&&old.entries.length===x.entries.length&&old.entries.every((v,i)=>v.kind===x.entries[i].kind&&v.good===x.entries[i].good&&Object.is(v.q,x.entries[i].q)))skip.add(o);}return{C,groups,skip};}
 function storageTitleCertify(context,remaining){for(const x of context.groups.values())if(x.eligible&&x.epoch===x.state.epoch&&x.generation===context.C.generation&&x.entries.every(e=>remaining[e.i]===0))x.state.certificate={epoch:x.epoch,generation:x.generation,entries:x.entries};}
 const STORAGE_CLAIM_BINDINGS=new WeakMap();
-function storageBindClaims(s,x){if(!s.storage||STORAGE_CLAIM_BINDINGS.has(x))return;const tables=x.storageClaimTables||(x.storageClaimTables={}),views={};STORAGE_CLAIM_BINDINGS.set(x,views);for(const kind of ['held','sale']){const wrap=value=>{const target=value||{};tables[kind]=target;return new Proxy(target,{set(t,g,v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const existed=Object.prototype.hasOwnProperty.call(t,g),before=t[g];s.storage.rounding(g==='char'?'timber':g,'claim-'+kind,before,v,(v||0)-(before||0));t[g]=v;if(!existed||!Object.is(before,v))storageTitleDirty(s,g);return true;},deleteProperty(t,g){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const existed=Object.prototype.hasOwnProperty.call(t,g);s.storage.rounding(g==='char'?'timber':g,'claim-delete',t[g]);delete t[g];if(existed)storageTitleDirty(s,g);return true;},defineProperty(t,g,d){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();s.storage.rounding(g==='char'?'timber':g,'claim-define',t[g],d.value);const yes=Reflect.defineProperty(t,g,d);if(yes)storageTitleDirty(s,g);return yes;}});};views[kind]=wrap(x[kind]);Object.defineProperty(x,kind,{configurable:true,enumerable:true,get(){return views[kind];},set(v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const goods=new Set([...Object.keys(tables[kind]),...Object.keys(v||{})]);for(const g of goods)s.storage.rounding(g==='char'?'timber':g,'claim-table',tables[kind][g],v?.[g]);views[kind]=wrap(v);for(const g of goods)storageTitleDirty(s,g);}});}}
+// Derived claim activity, admitted only through the engine's explicit owner/table writers.
+// Public dirty notifications abandon this cache: raw aliases and Map order changes are opaque.
+const STORAGE_ACTIVE_CLAIMS=new WeakMap(),STORAGE_MANAGED_CLAIM_TABLES=new WeakSet(),STORAGE_CLAIM_DIRTY_TOKEN={};
+function storageClaimMap(s,M){let C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C)STORAGE_ACTIVE_CLAIMS.set(s,C={map:M,size:0,next:0,records:new WeakMap(),goods:new Map(),unsafe:new Set(),ready:false,fallback:false});return C;}
+function storageClaimRegister(s,o,x){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C||C.fallback)return;if(C.map!==s._owners||C.map.size!==C.size+1){C.fallback=true;return;}const old=C.records.get(x);if(old){C.fallback=true;return;}for(const kind of ['held','sale'])STORAGE_MANAGED_CLAIM_TABLES.add(x[kind]);C.records.set(x,{o,x,rank:C.next++});C.size=C.map.size;}
+function storageClaimReplace(x,kind,value){STORAGE_MANAGED_CLAIM_TABLES.add(value);x[kind]=value;return value;}
+function storageClaimValue(d){return !d?0:'value'in d&&(d.value===null||['undefined','number','boolean','string'].includes(typeof d.value))?d.value:undefined;}
+function storageClaimActivity(s,x,g){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C?.ready||C.fallback||typeof g!=='string')return;const r=C.records.get(x);if(!r){C.fallback=true;return;}const physical=g==='char'?'timber':g,held=x.storageClaimTables?.held,sale=x.storageClaimTables?.sale;
+  if(!held||!sale||Object.getPrototypeOf(held)!==Object.prototype||Object.getPrototypeOf(sale)!==Object.prototype){C.fallback=true;return;}const ds=[Object.getOwnPropertyDescriptor(held,physical),Object.getOwnPropertyDescriptor(sale,physical),...(physical==='timber'?[Object.getOwnPropertyDescriptor(held,'char')]:[])];if(ds.some(d=>d&&(!('value'in d)||d.value!==null&&!['undefined','number','boolean','string'].includes(typeof d.value)))){C.unsafe.add(physical);return;}
+  const active=ds.some(d=>storageClaimValue(d)>0);let list=C.goods.get(physical);if(!list)C.goods.set(physical,list=[]);let lo=0,hi=list.length;while(lo<hi){const m=(lo+hi)>>>1;if(list[m].rank<r.rank)lo=m+1;else hi=m;}const present=list[lo]===r;if(active&&!present)list.splice(lo,0,r);else if(!active&&present)list.splice(lo,1);
+}
+function storageClaimTable(s,x){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C?.ready||C.fallback)return;const tables=x.storageClaimTables;if(!tables){C.fallback=true;return;}const goods=new Set();for(const kind of ['held','sale']){const t=tables[kind];if(!t||Object.getPrototypeOf(t)!==Object.prototype){C.fallback=true;return;}for(const g of Reflect.ownKeys(t)){if(typeof g!=='string'){C.fallback=true;return;}goods.add(g);}}for(const g of goods)storageClaimActivity(s,x,g);}
+function storageClaimInitialize(s){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C||C.fallback)return;const M=s._owners;if(C.map!==M||Object.getPrototypeOf(M)!==Map.prototype||M.size!==C.size||M.get!==Map.prototype.get||M.set!==Map.prototype.set||M[Symbol.iterator]!==Map.prototype[Symbol.iterator]){C.fallback=true;return;}C.ready=true;for(const[o,x]of M){const r=C.records.get(x);if(!r||r.o!==o){C.fallback=true;return;}storageClaimTable(s,x);}}
+function storageClaimOwners(s,g){const C=STORAGE_ACTIVE_CLAIMS.get(s),M=s._owners;if(!C?.ready||C.fallback||C.unsafe.has(g)||g==='char'||C.map!==M||M.size!==C.size||Object.getPrototypeOf(M)!==Map.prototype||M.get!==Map.prototype.get||M.set!==Map.prototype.set||M[Symbol.iterator]!==Map.prototype[Symbol.iterator]||storageTitleDirty!==STORAGE_CLAIM_DIRTY_DEFAULT)return M||[];return (C.goods.get(g)||[]).map(r=>[r.o,r.x]);}
+function storageTitleKnownDirty(s,g){return storageTitleDirty===STORAGE_CLAIM_DIRTY_DEFAULT?storageTitleDirty(s,g,STORAGE_CLAIM_DIRTY_TOKEN):storageTitleDirty(s,g);}
+function storageBindClaims(s,x){if(!s.storage||STORAGE_CLAIM_BINDINGS.has(x))return;const tables=x.storageClaimTables||(x.storageClaimTables={}),views={};STORAGE_CLAIM_BINDINGS.set(x,views);for(const kind of ['held','sale']){const wrap=value=>{const target=value||{};const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C&&!STORAGE_MANAGED_CLAIM_TABLES.has(target))C.fallback=true;tables[kind]=target;return new Proxy(target,{set(t,g,v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const existed=Object.prototype.hasOwnProperty.call(t,g),before=t[g];s.storage.rounding(g==='char'?'timber':g,'claim-'+kind,before,v,(v||0)-(before||0));t[g]=v;storageClaimActivity(s,x,g);if(!existed||!Object.is(before,v))storageTitleKnownDirty(s,g);return true;},deleteProperty(t,g){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const existed=Object.prototype.hasOwnProperty.call(t,g);s.storage.rounding(g==='char'?'timber':g,'claim-delete',t[g]);delete t[g];storageClaimActivity(s,x,g);if(existed)storageTitleKnownDirty(s,g);return true;},defineProperty(t,g,d){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();s.storage.rounding(g==='char'?'timber':g,'claim-define',t[g],d.value);const yes=Reflect.defineProperty(t,g,d);if(yes){storageClaimActivity(s,x,g);storageTitleKnownDirty(s,g);}return yes;}});};views[kind]=wrap(x[kind]);Object.defineProperty(x,kind,{configurable:true,enumerable:true,get(){return views[kind];},set(v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const goods=new Set([...Object.keys(tables[kind]),...Object.keys(v||{})]);for(const g of goods)s.storage.rounding(g==='char'?'timber':g,'claim-table',tables[kind][g],v?.[g]);views[kind]=wrap(v);storageClaimTable(s,x);for(const g of goods){storageClaimActivity(s,x,g);storageTitleKnownDirty(s,g);}}});}}
 
-function storageTitleDirty(s,g){if(!s.storage)return;const K=s.storage;if(!K.titleRevision)K.titleRevision=new Map();const physical=g==='char'?'timber':g;K.titleRevision.set(physical,(K.titleRevision.get(physical)||0)+1);}
-function storageTitles(s,onlyGood){const K=s.storage;if(!K)return;for(const g of onlyGood?[onlyGood]:Object.keys(s.stores)){if(typeof BEASTS!=='undefined'&&BEASTS.includes(g))continue;const titleRevision=K.titleRevision?.get(g)||0;if(K.titleMatched?.get(g)===titleRevision)continue;const claims=[],lookup=new Map();for(const[o,x]of s._owners||[])for(const kind of ['held','sale'])for(const claimGood of g==='timber'&&kind==='held'?['timber','char']:[g]){const q=x[kind][claimGood]||0;if(q>0){const i=claims.length;claims.push({o,kind,claimGood,q});let m=lookup.get(o);if(!m)lookup.set(o,m=new Map());m.set(kind+':'+claimGood,i);}}
-  const remaining=claims.map(c=>c.q),pool=[],context=storageTitleGroups(K,g,claims),claimedTotal=claims.reduce((n,c)=>n+c.q,0);for(const o of context.skip)for(const e of context.groups.get(o).entries)remaining[e.i]=0;for(const id of [...K.byGood.get(g)||[]]){const l=K.lots.get(id);if(!l||K.locations.get(l.location)?.transit||context.skip.has(l.owner))continue;const group=context.groups.get(l.owner);if(group&&Object.prototype.hasOwnProperty.call(l,'pendingPurchase'))group.eligible=false;let i=lookup.get(l.owner)?.get(l.availability+':'+(l.claimGood||g));if(i===undefined&&l.pendingPurchase&&g==='timber')i=lookup.get(l.owner)?.get(l.availability+':char');if(l.pendingPurchase&&i===undefined)continue;if(i!==undefined&&l.pendingPurchase&&claims[i].claimGood!==(l.claimGood||g))K.annotate(l,{claimGood:claims[i].claimGood});const keep=i!==undefined?Math.min(l.qty,remaining[i]):0;if(i!==undefined){remaining[i]-=keep;if(keep===l.qty)K.annotate(l,{},['pendingPurchase']);}if(keep<l.qty){if(group)group.eligible=false;const p=keep>0?K.split(l,l.qty-keep):l;K.transfer(p,null,p.qty,'unassigned');K.annotate(p,{},['claimGood','pendingPurchase']);pool.push(p);}}
-  let pi=0,acceptedRoundoff=0;claims.forEach((c,i)=>{let need=remaining[i];while(need>0&&pi<pool.length){const l=pool[pi],q=Math.min(need,l.qty),p=K.transfer(l,c.o,q,c.kind);K.annotate(p,{claimGood:c.claimGood});need-=q;if(p===l)pi++;}if(!(need>0)&&!(acceptedRoundoff>0))return;const tolerance=(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.max(Math.abs(K.total(g)),Math.abs(claimedTotal))*((K.byGood.get(g)?.size||0)+claims.length+1)*8;if(acceptedRoundoff+need>tolerance){K.event('unbacked-title',null,need,{owner:storageOwnerId(c.o),good:g,claimGood:c.claimGood,availability:c.kind});storageInvariantFault('Unbacked '+g+' title at '+s.name+' for '+storageOwnerId(c.o)+': '+need+' on day '+day()+'; physical '+K.total(g)+'; claims '+claims.reduce((n,c)=>n+c.q,0)+'; pending '+[...K.byGood.get(g)||[]].reduce((n,id)=>n+(K.lots.get(id)?.pendingPurchase?K.lots.get(id).qty:0),0));}if(need>0){acceptedRoundoff+=need;K.event('accounting-roundoff',null,need,{good:g,owner:storageOwnerId(c.o),claimGood:c.claimGood,tolerance,provenance:storagePlainData(K.roundoff.get(g)||null)});}});if(!K.titleMatched)K.titleMatched=new Map();K.titleMatched.set(g,titleRevision);K.coalesce(g);storageTitleCertify(context,remaining);}}
+function storageTitleDirty(s,g,token){if(!s.storage)return;const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C&&token!==STORAGE_CLAIM_DIRTY_TOKEN)C.fallback=true;const K=s.storage;if(!K.titleRevision)K.titleRevision=new Map();const physical=g==='char'?'timber':g;K.titleRevision.set(physical,(K.titleRevision.get(physical)||0)+1);}
+const STORAGE_CLAIM_DIRTY_DEFAULT=storageTitleDirty;
+function storageTitles(s,onlyGood){const K=s.storage;if(!K)return;for(const g of onlyGood?[onlyGood]:Object.keys(s.stores)){if(typeof BEASTS!=='undefined'&&BEASTS.includes(g))continue;const titleRevision=K.titleRevision?.get(g)||0;if(K.titleMatched?.get(g)===titleRevision)continue;const claims=[],lookup=new Map();for(const[o,x]of storageClaimOwners(s,g))for(const kind of ['held','sale'])for(const claimGood of g==='timber'&&kind==='held'?['timber','char']:[g]){const q=x[kind][claimGood]||0;if(q>0){const i=claims.length;claims.push({o,kind,claimGood,q});let m=lookup.get(o);if(!m)lookup.set(o,m=new Map());m.set(kind+':'+claimGood,i);}}
+  const remaining=claims.map(c=>c.q),pool=[],context=storageTitleGroups(K,g,claims),claimedTotal=claims.reduce((n,c)=>n+c.q,0);for(const o of context.skip)for(const e of context.groups.get(o).entries)remaining[e.i]=0;for(const id of [...K.byGood.get(g)||[]]){const l=K.lots.get(id);if(!l||K.locations.get(l.location)?.transit||context.skip.has(l.owner))continue;const group=context.groups.get(l.owner);if(group&&Object.prototype.hasOwnProperty.call(l,'pendingPurchase'))group.eligible=false;let i=lookup.get(l.owner)?.get(l.availability+':'+(l.claimGood||g));if(l.pendingPurchase)continue; /* Paid custody is completed only by an explicit credit, gift, consumption or cargo operation. */const keep=i!==undefined?Math.min(l.qty,remaining[i]):0;if(i!==undefined){remaining[i]-=keep;if(keep===l.qty)K.annotate(l,{},['pendingPurchase']);}if(keep<l.qty){if(group)group.eligible=false;const p=keep>0?K.split(l,l.qty-keep):l;K.transfer(p,null,p.qty,'unassigned');K.annotate(p,{},['claimGood','pendingPurchase']);pool.push(p);}}
+  let pi=0,acceptedRoundoff=0;claims.forEach((c,i)=>{let need=remaining[i];while(need>0&&pi<pool.length){const l=pool[pi],q=Math.min(need,l.qty),p=K.transfer(l,c.o,q,c.kind);K.annotate(p,{claimGood:c.claimGood});need-=q;if(p===l)pi++;}if(!(need>0)&&!(acceptedRoundoff>0))return;const tolerance=(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.max(Math.abs(K.total(g)),Math.abs(claimedTotal))*((K.byGood.get(g)?.size||0)+claims.length+1)*8;if(acceptedRoundoff+need>tolerance){K.event('unbacked-title',null,need,{owner:storageOwnerId(c.o),good:g,claimGood:c.claimGood,availability:c.kind});storageInvariantFault('Unbacked '+g+' title at '+s.name+' for '+storageOwnerId(c.o)+': '+need+' on day '+day()+'; physical '+K.total(g)+'; claims '+claims.reduce((n,c)=>n+c.q,0)+'; pending '+[...K.byGood.get(g)||[]].reduce((n,id)=>n+(K.lots.get(id)?.pendingPurchase?K.lots.get(id).qty:0),0));}if(need>0){acceptedRoundoff+=need;K.event('accounting-roundoff',null,need,{good:g,owner:storageOwnerId(c.o),claimGood:c.claimGood,tolerance,provenance:storagePlainData(K.roundoff.get(g)||null)});}});K.coalesce(g);storageTitleCertify(context,remaining);if(!K.titleMatched)K.titleMatched=new Map();K.titleMatched.set(g,titleRevision);}}
 
-function storageTick(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageTick(s));if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageFacilities(s);K.day=day();storageTitles(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100));let moved=0,cost=0;const routeCache=new Map();for(const l of K.exposedLots()){const a=K.locations.get(l.location);if(!a?.exposed||!(l.qty>0))continue;const candidates=[];for(const n of K.locations.values()){if(!n.building||!n.active||!n.public&&n.owner!==l.owner||!(K.free(n.id,l.good)>0))continue;const key=a.id+'>'+n.id;let d=routeCache.get(key);if(d===undefined){d=storageRoute(s,a,n);routeCache.set(key,d);}if(Number.isFinite(d))candidates.push({n,d});}candidates.sort((a,b)=>a.d-b.d);for(const{n,d}of candidates){if(!(work>0))break;const payer=l.owner||lordAcct(s),unitCost=d*0.00002;const q=Math.min(l.qty,K.free(n.id,l.good),work/(20+d)/K.volume(l.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}const movedHere=K.move(l,n.id,q,'local-carriage');work-=movedHere*K.volume(l.good)*(20+d);moved+=movedHere;cost+=movedHere*d*0.00002;if(l.location!==a.id||!K.lots.has(l.id)||!l.qty)break;}}
+// One collection-boundary loss, after compatible parts combine, never per inflow mutation.
+function storageHayRemnants(s,K){
+  const eligible=l=>!K.locations.get(l.location)?.transit&&!Object.prototype.hasOwnProperty.call(l,'pendingPurchase')&&!(l.owner==null&&(s._made?.hay||0)>0),crumbs=[];
+  for(const id of K.byGood.get('hay')||[]){const l=K.lots.get(id);if(l&&l.qty>0&&l.qty<=0.001&&eligible(l))crumbs.push(l);}if(!crumbs.length)return;
+  const primitiveKey=l=>{const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(!keys.every(k=>{if(typeof k!=='string')return false;const v=l[k],type=typeof v;return v===null||['string','boolean','undefined'].includes(type)||type==='number'&&Number.isFinite(v)&&!Object.is(v,-0);}))return null;return JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));},groups=new Map(),fallback=new Set();
+  for(const l of crumbs){const key=primitiveKey(l);if(key===null){fallback.add(l.id);continue;}let keys=groups.get(l.owner);if(!keys)groups.set(l.owner,keys=new Map());if(!keys.has(key))keys.set(key,l);}
+  if(groups.size)K.coalesce('hay',l=>{if(!eligible(l))return false;const keys=groups.get(l.owner);if(!keys)return false;const key=primitiveKey(l),crumb=key===null?null:keys.get(key);return !!crumb&&K.compatible(crumb,l);});
+  for(const crumb of crumbs){const l=K.lots.get(crumb.id);if(!l||!(l.qty>0&&l.qty<=0.001))continue;
+    // Native primitive groups are now unique; only uncoalescible metadata needs a sum.
+    if(fallback.has(l.id)){let combined=0;for(const otherId of K.byLocation.get(l.location)||[]){const other=K.lots.get(otherId);if(other&&eligible(other)&&K.compatible(l,other))combined+=other.qty;}if(combined>0.001)continue;}
+    const qty=l.qty,claim=l.claimGood||'hay',x=(s._owners||new Map()).get(l.owner),table=x?.[l.availability];let title;if(l.owner!=null&&table){const before=table[claim]||0;table[claim]=Math.max(0,before-qty);storageTitleKnownDirty(s,claim);title={claimGood:claim,titleBefore:before,titleAfter:table[claim],legalQty:before-table[claim]};}K.remove(l,qty,'vermin-remnant-loss',title||{});
+  }
+}
+function storageTick(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageTick(s));if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageFacilities(s);K.day=day();storageTitles(s);storageHayRemnants(s,K);let work=800*Math.max(1,Math.floor((s.pop||0)/100));let moved=0,cost=0;const routeCache=new Map();for(const l of K.exposedLots()){const a=K.locations.get(l.location);if(!a?.exposed||!(l.qty>0)||l.good==='hay'&&l.qty<=0.001)continue;const candidates=[];for(const n of storageFacilityLocations(K)){if(!n.building||!n.active||!n.public&&n.owner!==l.owner||!(K.free(n.id,l.good)>0))continue;const key=a.id+'>'+n.id;let d=routeCache.get(key);if(d===undefined){d=storageRoute(s,a,n);routeCache.set(key,d);}if(Number.isFinite(d))candidates.push({n,d});}candidates.sort((a,b)=>a.d-b.d);for(const{n,d}of candidates){if(!(work>0))break;const payer=l.owner||lordAcct(s),unitCost=d*0.00002;const q=Math.min(l.qty,K.free(n.id,l.good),work/(20+d)/K.volume(l.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}const movedHere=K.move(l,n.id,q,'local-carriage');work-=movedHere*K.volume(l.good)*(20+d);moved+=movedHere;cost+=movedHere*d*0.00002;if(l.location!==a.id||!K.lots.has(l.id)||!l.qty)break;}}
   s.storageReport={day:day(),moved,handlingCost:cost,exposed:K.exposedLots().reduce((q,l)=>q+l.qty*K.volume(l.good),0)};
 }
 function storageSpoil(s,g,rate){const K=storageFacilities(s);K.day=day();storageTitles(s,g);const losses=new Map();let unassigned=0;for(const l of K.matching({good:g})){const n=K.locations.get(l.location),q=l.qty*Math.min(1,rate*(n?.protection??4));K.remove(l,q,n?.exposed?'exposure-loss':'stored-spoilage');if(l.owner==null)unassigned+=q;else{const x=(s._owners||new Map()).get(l.owner);if(x&&x[l.availability])x[l.availability][l.claimGood||g]=Math.max(0,(x[l.availability][l.claimGood||g]||0)-q);losses.set(l.owner,(losses.get(l.owner)||0)+q);}}
   if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
 
 function storageBuildingReport(s,b){const K=s.storage;if(!K)return null;const n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const l of K.matching({location:n.id})){goods[l.good]=(goods[l.good]||0)+l.qty;const id=storageOwnerId(l.owner);owners.set(id,(owners.get(id)||0)+l.qty*K.volume(l.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
-function storageSiteQuote(si,arch,x,z,payer){const s=W.settlements[si],t=STORAGE_TYPES[arch];if(!s||!t||!Number.isFinite(x)||!Number.isFinite(z))return {ok:false,reason:'Choose a valid storage site.'};if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageSiteQuote(si,arch,x,z,payer));if(!s._lay?.live?.storageSite)return {ok:false,reason:'The town survey is unavailable.'};if(!s._lay.live.storageSite(x,z,arch,true))return {ok:false,reason:'Unsuitable ground, street, water, or an occupied lot.'};const site={x,z},mk=(s.places||[]).find(p=>p.kind==='market')||s.pos,marketDistance=storageRoute(s,site,mk);if(!Number.isFinite(marketDistance))return {ok:false,reason:'No open street route to market.'};if((W.projects||[]).some(q=>q.type==='storage'&&!q.dead&&q.si===si&&dist2d(x,z,q.x,q.z)<18))return {ok:false,reason:'Another storage work already reserves this ground.'};const land=planLand([site],ARCH[arch][0]*ARCH[arch][1]).c;const fields=(s.furl||[]).filter(f=>f.state===LS.TILLED);let productionDistance=Infinity;for(const f of fields)productionDistance=Math.min(productionDistance,storageRoute(s,f,site));return {ok:true,si,arch,x,z,payer:payer??s.owner,capacity:t.capacity,cost:t.cost+land+t.timber*price(s,'timber')+t.stone*price(s,'stone'),labour:t.cost,materialEstimate:t.timber*price(s,'timber')+t.stone*price(s,'stone'),land,days:t.days,timber:t.timber,stone:t.stone,marketDistance,productionDistance,handlingPerLoad:marketDistance*0.00002};}
+function storageSiteQuote(si,arch,x,z,payer,routes){const s=W.settlements[si],t=STORAGE_TYPES[arch];if(!s||!t||!Number.isFinite(x)||!Number.isFinite(z))return {ok:false,reason:'Choose a valid storage site.'};if(!routes&&!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageSiteQuote(si,arch,x,z,payer));if(!s._lay?.live?.storageSite)return {ok:false,reason:'The town survey is unavailable.'};if(!s._lay.live.storageSite(x,z,arch,true))return {ok:false,reason:'Unsuitable ground, street, water, or an occupied lot.'};const site={x,z},mk=(s.places||[]).find(p=>p.kind==='market')||s.pos,marketDistance=storageRoute(s,site,mk,routes);if(!Number.isFinite(marketDistance))return {ok:false,reason:'No open street route to market.'};if((W.projects||[]).some(q=>q.type==='storage'&&!q.dead&&q.si===si&&dist2d(x,z,q.x,q.z)<18))return {ok:false,reason:'Another storage work already reserves this ground.'};const land=planLand([site],ARCH[arch][0]*ARCH[arch][1]).c;const fields=(s.furl||[]).filter(f=>f.state===LS.TILLED);let productionDistance=Infinity;for(const f of fields)productionDistance=Math.min(productionDistance,storageRoute(s,f,site,routes));return {ok:true,si,arch,x,z,payer:payer??s.owner,capacity:t.capacity,cost:t.cost+land+t.timber*price(s,'timber')+t.stone*price(s,'stone'),labour:t.cost,materialEstimate:t.timber*price(s,'timber')+t.stone*price(s,'stone'),land,days:t.days,timber:t.timber,stone:t.stone,marketDistance,productionDistance,handlingPerLoad:marketDistance*0.00002};}
 function storageMaterialDemand(s,g){const si=W.settlements.indexOf(s);return (W.projects||[]).reduce((n,q)=>n+(q.type==='storage'&&!q.dead&&!q.materials&&q.si===si?Math.max(0,(q[g]||0)-(q[g+'Installed']||0)):0),0);}
 function storageProjectState(q){const state=storageRecordState(q,{payer:p=>storageOwnerId(typeof p==='number'?houseAcct(p):p)});state.id=q.storageProjectId;return state;}
 
@@ -3080,26 +3236,26 @@ function storageCommission(quote){if(typeof storageOutcomeAssert==='function')st
 function storageProjectTick(q){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const s=W.settlements[q.si];if(!s){q.dead=true;return;}const K=storageInit(s);K.day=day();const payer=typeof q.payer==='number'?q.payer===0?'crown':W.houses[q.payer]:accountOwner(q.payer);if(!payer||typeof q.payer==='number'&&s.owner!==q.payer){q.dead=true;K.event('construction-abandoned',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason:'authority-lost',projectAfter:storageProjectState(q)});return;}const stall=reason=>{const changed=!q.stalled||q.reason!==reason;q.stalled=true;q.reason=reason;if(changed)K.event('construction-stalled',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason,projectAfter:storageProjectState(q)});};if(!q.landPaid&&q.land>0){if(means(payer)<q.land){stall('ground-payment');return;}acct(payer,-q.land);payAmong(heads_(s,h=>tills(h,s)),q.land,null,'land');q.landPaid=true;q.paid+=q.land;K.event('construction-ground-paid',null,q.land,{owner:storageOwnerId(q.payer),x:q.x,z:q.z,projectAfter:storageProjectState(q)});}const share=q.labour/q.days;if(means(payer)<share){stall('funds');return;}if(!s._lay.live.storageSite(q.x,q.z,q.arch,true)){stall('site-obstructed');return;}
   if(!q.materials){for(const g of ['timber','stone']){const installed=q[g+'Installed']||0,need=Math.max(0,q[g]-installed);if(!(need>0))continue;let used=consumeOwnStock(s,payer,g,need),paid=0;const remaining=need-used,unit=price(s,g),affordable=unit>0?Math.max(0,means(payer)-share)/unit:remaining,wanted=Math.min(remaining,affordable,avail(s,g,unit));if(wanted>0){paid=purchase(s,g,payer,wanted,unit);addHeld(s,payer,g,purchase.got);used+=consumeOwned(s,payer,g,purchase.got);}if(used>0){q[g+'Installed']=Math.min(q[g],installed+used);q.materialPaid=(q.materialPaid||0)+paid;K.event('construction-material-installed',null,used,{owner:storageOwnerId(q.payer),arch:q.arch,good:g,paid,projectAfter:storageProjectState(q)});}}if((q.timberInstalled||0)<q.timber||(q.stoneInstalled||0)<q.stone){stall('materials');return;}q.materials=true;K.event('construction-materials',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,timber:q.timber,stone:q.stone,paid:q.materialPaid||0,projectAfter:storageProjectState(q)});}
   acct(payer,-share);wages(s,share,'works');q.paid+=share;q.done++;q.stalled=false;q.reason=null;K.event('construction-progress',null,share,{projectAfter:storageProjectState(q)});if(q.done<q.days)return;const b=s._lay.live.storageSite(q.x,q.z,q.arch,false);if(!b){stall('site-obstructed');return;}b.ownerId=typeof q.payer==='number'?-1:q.payer.head?.id??q.payer.id??-1;b.storagePublic=typeof q.payer==='number'||q.arch==='warehouse';if(typeof q.payer!=='number')b.title={owner:accountOwner(q.payer),beneficiary:q.payer.head||q.payer};q.dead=true;bindPropertyRights(s);storageFacilities(s);syncLive(s);G.detDirty=true;K.event('construction-completed',null,0,{owner:storageOwnerId(q.payer),location:b.storageId,arch:q.arch,x:q.x,z:q.z,paid:q.paid,capacity:K.locations.get(b.storageId).capacity,projectAfter:storageProjectState(q)});s.history.push({yr:year(),t:`A ${q.arch} was completed at (${Math.round(q.x)}, ${Math.round(q.z)}), with room for ${q.capacity} loads.`});emit('trade',5,{x:q.x,z:q.z},`The new ${q.arch} at ${s.name} opens for ${q.capacity} loads.`);}
-function storageInvestment(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageInvestment(s));if(day()%30!==W.settlements.indexOf(s)%30||(W.projects||[]).some(q=>q.type==='storage'&&W.settlements[q.si]===s&&!q.dead))return;const K=storageFacilities(s);if(!(s.storageReport?.exposed>100))return;const exposed=new Map();for(const l of K.exposedLots()){const o=l.owner||lordAcct(s);exposed.set(o,(exposed.get(o)||0)+l.qty*K.volume(l.good));}const investors=[...exposed].sort((a,b)=>b[1]-a[1]);for(const[o,amount]of investors){const arch=o&&o.household&&o.head?.tr==='merchant'?'warehouse':'grange',t=STORAGE_TYPES[arch];if(means(o)<t.cost*1.5||amount<100)continue;let best=null;const anchors=arch==='grange'?(s.furl||[]).filter(f=>f.state===LS.TILLED).slice(0,12):[(s.places||[]).find(p=>p.kind==='market')||s.pos];for(const a of anchors)for(let k=0;k<8;k++){const theta=k*Math.PI/4,x=a.x+Math.cos(theta)*22,z=a.z+Math.sin(theta)*22,Q=storageSiteQuote(W.settlements.indexOf(s),arch,x,z,o);if(!Q.ok)continue;const avoided=Math.min(amount,t.capacity)*0.00108*360*price(s,'grain'),handling=Math.min(amount,t.capacity)*Q.handlingPerLoad*12,net=avoided-handling-Q.cost/5;if(!best||net>best.net)best={Q,net};}if(best){K.event('investment-decision',null,0,{owner:storageOwnerId(o),arch,exposed:amount,annualNet:best.net,chosen:best.net>0,x:best.Q.x,z:best.Q.z});if(best.net>0){storageCommission(best.Q);return;}}}}
+function storageInvestment(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageInvestment(s));if(day()%30!==W.settlements.indexOf(s)%30||(W.projects||[]).some(q=>q.type==='storage'&&W.settlements[q.si]===s&&!q.dead))return;const K=storageFacilities(s);if(!(s.storageReport?.exposed>100))return;const exposed=new Map();for(const l of K.exposedLots()){const o=l.owner||lordAcct(s);exposed.set(o,(exposed.get(o)||0)+l.qty*K.volume(l.good));}const investors=[...exposed].sort((a,b)=>b[1]-a[1]);for(const[o,amount]of investors){const arch=o&&o.household&&o.head?.tr==='merchant'?'warehouse':'grange',t=STORAGE_TYPES[arch];if(means(o)<t.cost*1.5||amount<100)continue;let routes=STORAGE_ROUTE_BATCHES.get(s),best=null;const anchors=arch==='grange'?(s.furl||[]).filter(f=>f.state===LS.TILLED).slice(0,12):[(s.places||[]).find(p=>p.kind==='market')||s.pos];for(const a of anchors)for(let k=0;k<8;k++){const theta=k*Math.PI/4,x=a.x+Math.cos(theta)*22,z=a.z+Math.sin(theta)*22,Q=storageSiteQuote(W.settlements.indexOf(s),arch,x,z,o,routes);if(!Q.ok)continue;const avoided=Math.min(amount,t.capacity)*0.00108*360*price(s,'grain'),handling=Math.min(amount,t.capacity)*Q.handlingPerLoad*12,net=avoided-handling-Q.cost/5;if(!best||net>best.net)best={Q,net};}routes=null;if(best){K.event('investment-decision',null,0,{owner:storageOwnerId(o),arch,exposed:amount,annualNet:best.net,chosen:best.net>0,x:best.Q.x,z:best.Q.z});if(best.net>0){storageCommission(best.Q);return;}}}}
 
 function storageTitleTake(s,from,to,g,qty,availability='held'){if(!s.storage||BEASTS.includes(g))return [];const K=s.storage,out=[];let left=qty;for(const l of K.matching({owner:accountOwner(from),good:g,availability:'sale'})){const q=Math.min(left,l.qty);if(q>0){const p=K.transfer(l,accountOwner(to),q,availability);K.annotate(p,{pendingPurchase:true});out.push(p);left-=q;}if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-title-transfer',null,left,{owner:storageOwnerId(from),good:g,destinationOwner:storageOwnerId(to)});storageInvariantFault('Unbacked title transfer '+g+': '+left);}return out;}
-function storageCargoOut(c,s){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=s.storage;if(!K||BEASTS.includes(c.good))return;const id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});let left=c.qty;const lots=[];for(const l of K.matching({owner:accountOwner(c.m),good:c.good,availability:'held'})){const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q),from=p.location;K.annotate(p,{},['pendingPurchase']);K.relocate(p,id,'transit','dispatch');lots.push(p);K.event('cargo-destination',p,q,{from,destination:c.dest});left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(c.good)?.budget||0)+Number.EPSILON*Math.abs(c.qty)*8){K.event('unbacked-cargo',null,left,{good:c.good,owner:storageOwnerId(c.m)});storageInvariantFault('Unbacked cargo '+c.good+': '+left);}c.storageCargo={origin:s,id};Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){let q=0;for(const lotId of K.byLocation.get(id)||[]){const l=K.lots.get(lotId);if(l?.location===id)q+=l.qty;}return q;}});}
-function storageCargoArrive(c,d){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);storageBindGood(d,c.good);for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;const from=l.location;l.location='yard';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('arrival',l,l.qty,{from,origin:W.settlements.indexOf(cargo.origin)});}storageTitles(d);}
+function storageCargoOut(c,s,purchased=false){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=s.storage;if(!K||BEASTS.includes(c.good))return;const id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});let left=c.qty;const lots=[];for(const l of K.matching({owner:accountOwner(c.m),good:c.good,availability:'held'}))if(!purchased||l.pendingPurchase){const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q),from=p.location;K.annotate(p,{},['pendingPurchase']);K.relocate(p,id,'transit','dispatch');lots.push(p);K.event('cargo-destination',p,q,{from,destination:c.dest});left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(c.good)?.budget||0)+Number.EPSILON*Math.abs(c.qty)*8){K.event('unbacked-cargo',null,left,{good:c.good,owner:storageOwnerId(c.m)});storageInvariantFault('Unbacked cargo '+c.good+': '+left);}c.storageCargo={origin:s,id};Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){let q=0;for(const lotId of K.byLocation.get(id)||[]){const l=K.lots.get(lotId);if(l?.location===id)q+=l.qty;}return q;}});}
+function storageCargoArrive(c,d){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);storageBindGood(d,c.good);for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;const from=l.location;l.location='yard';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('arrival',l,l.qty,{from,origin:W.settlements.indexOf(cargo.origin),...storageArithmeticImport(A,B,c.good)});}storageTitles(d);}
 function storageConsumeSale(s,who,g,qty){if(!s.storage)return qty;storageTitles(s,g);let left=qty;for(const l of s.storage.matching({owner:accountOwner(who),good:g,availability:'sale'})){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}return qty-left;}
 
-function storageMoveLots(a,b,g,qty,owner=null,availability=null,cause='settlement-transfer'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const A=storageInit(a),B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);let left=qty;for(const id of [...A.byGood.get(g)||[]]){const l=A.lots.get(id);if(!l||A.locations.get(l.location)?.transit||owner!==null&&l.owner!==owner||availability!==null&&l.availability!==availability)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event(cause,p,q,{from,origin:W.settlements.indexOf(a)});left-=q;if(!(left>0))break;}return qty-left;}
-function storageCargoRaid(c,fence){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return 0;const A=cargo.origin.storage,B=fence?storageInit(fence):null;let salvaged=0;for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;const q=l.qty,keep=B?q*0.6:0;A.remove(l,q-keep,'cargo-robbery-loss');if(keep>0){A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;l.location='yard';l.owner='out';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('cargo-stolen-arrival',l,keep,{from:cargo.id,origin:c.origin});salvaged+=keep;}}return salvaged;}
+function storageMoveLots(a,b,g,qty,owner=null,availability=null,cause='settlement-transfer'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const A=storageInit(a),B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);let left=qty,moved=false;for(const id of [...A.byGood.get(g)||[]]){const l=A.lots.get(id);if(!l||A.locations.get(l.location)?.transit||owner!==null&&l.owner!==owner||availability!==null&&l.availability!==availability)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;moved=true;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event(cause,p,q,{from,origin:W.settlements.indexOf(a),...storageArithmeticImport(A,B,g)});left-=q;if(!(left>0))break;}if(!moved&&qty>0)storageArithmeticEmpty(A,B,g);return qty-left;}
+function storageCargoRaid(c,fence){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return 0;const A=cargo.origin.storage,B=fence?storageInit(fence):null;let salvaged=0;for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;const q=l.qty,keep=B?q*0.6:0;A.remove(l,q-keep,'cargo-robbery-loss');if(keep>0){A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;l.location='yard';l.owner='out';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('cargo-stolen-arrival',l,keep,{from:cargo.id,origin:c.origin,...storageArithmeticImport(A,B,c.good)});salvaged+=keep;}}return salvaged;}
 
 function storageCompleteHeld(s,who,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(who),physical=g==='char'?'timber':g;let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==physical||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q);K.annotate(p,{claimGood:g},['pendingPurchase']);left-=q;if(!(left>0))break;}}
 function storagePurchased(s,who,g,qty,operation){const K=s.storage,owner=accountOwner(who);let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;operation(K,l,q);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-purchase-completion',null,left,{good:g,owner:storageOwnerId(owner)});storageInvariantFault('Unbacked purchase completion '+g+': '+left);}return qty-left;}
 function storageConsumePurchased(s,who,g,qty,cause){return storagePurchased(s,who,g,qty,(K,l,q)=>K.remove(l,q,cause));}
 function buyBuildingMaterial(s,g,who,qty){purchase(s,g,who,qty);const got=purchase.got;if(got>0){if(s.storage)storageConsumePurchased(s,who,g,got,'construction-material');else s.stores[g]-=got;}return got;} // legacy works may finish with partial local supply; only the buyer's actual purchase is installed
 
-function storageMovePurchased(s,d,who,g,qty){const B=storageInit(d);storageBindGood(d,g);return storagePurchased(s,who,g,qty,(A,l,q)=>{if(A===B)return;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event('purchased-relief-arrival',p,q,{from,origin:A.realmId});});}
-function stockOf(s,who){who=accountOwner(who);const M=s._owners||(s._owners=new Map());let x=M.get(who);if(!x){x={held:{},sale:{},reserve:{},animals:{}};M.set(who,x);}storageBindClaims(s,x);return x;}
+function storageMovePurchased(s,d,who,g,qty){const B=storageInit(d);storageBindGood(d,g);return storagePurchased(s,who,g,qty,(A,l,q)=>{if(A===B)return;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event('purchased-relief-arrival',p,q,{from,origin:A.realmId,...storageArithmeticImport(A,B,g)});});}
+function stockOf(s,who){who=accountOwner(who);let M=s._owners;if(!M){M=s._owners=new Map();storageClaimMap(s,M);if(s.storage)storageClaimInitialize(s);}let x=M.get(who);if(!x){x={held:{},sale:{},reserve:{},animals:{}};M.set(who,x);storageClaimRegister(s,who,x);}storageBindClaims(s,x);return x;}
 function pantry(s,who){return stockOf(s,who).held;}
-function addHeld(s,who,g,q,completed=false){if(q>0){const L=pantry(s,who);L[g]=(L[g]||0)+q;if(!completed)storageCompleteHeld(s,who,g,q);storageTitleDirty(s,g);}}
-function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g;let v=Math.max(0,Math.min(q,L[g]||0,s.stores[physical]||0));if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;for(const id of [...s.storage.byOwner.get(accountOwner(who))||[]]){const l=s.storage.lots.get(id);if(l&&l.owner===accountOwner(who)&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}
+function addHeld(s,who,g,q,completed=false){if(q>0){const L=pantry(s,who);L[g]=(L[g]||0)+q;if(!completed)storageCompleteHeld(s,who,g,q);storageTitleKnownDirty(s,g);}}
+function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g;let v=Math.max(0,Math.min(q,L[g]||0,s.stores[physical]||0));if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;if(v===0){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();}else{const owner=accountOwner(who);for(const id of [...s.storage.byOwner.get(owner)||[]]){const l=s.storage.lots.get(id);if(l&&l.owner===owner&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}
 function consumeOwnStock(s,who,g,q){let got=consumeOwned(s,who,g,q);const L=mkt(s,g);let v=Math.max(0,Math.min(q-got,L.get(who)||0,s.stores[g]||0));if(v>0){if(s.storage&&!BEASTS.includes(g))v=storageConsumeSale(s,who,g,v);const left=(L.get(who)||0)-v;if(left>0)L.set(who,left);else{L.delete(who);rsv(s,g).delete(who);}if(!s.storage||BEASTS.includes(g))s.stores[g]-=v;got+=v;}return got;}
 function herdProduce(s){const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),owned={};for(const g of BEASTS)owned[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
   const lord=lordAcct(s),remainder=Object.fromEntries(BEASTS.map(g=>[g,Math.max(0,(s.stores[g]||0)-(owned[g]||0))]));
@@ -3120,15 +3276,15 @@ function giveFood(s,g,q,source){if(!(q>0))return;const H=householdsOf(s),weights
 function initOwnership(s){if(s._ownershipReady)return;s._ownershipReady=true;const old=s._lard;householdsOf(s);
   for(const g of ['grain','fish'])giveFood(s,g,old?old[g]||0:Math.min(s.stores[g]||0,s.pop*NEED[g]*30));
   if(old)for(const g of Object.keys(old))if(g!=='grain'&&g!=='fish')addHeld(s,lordAcct(s),g,old[g]||0);
-  s._lard=new Proxy({}, {get(_,g){return heldTotal(s,g);},set(_,g,v){storageTitleDirty(s,g);const was=heldTotal(s,g),delta=v-was;if(delta>1e-9)giveFood(s,g,delta);
+  s._lard=new Proxy({}, {get(_,g){return heldTotal(s,g);},set(_,g,v){storageTitleKnownDirty(s,g);const was=heldTotal(s,g),delta=v-was;if(delta>1e-9)giveFood(s,g,delta);
     else if(delta<0&&was>0)for(const x of s._owners.values())if(x.held[g])x.held[g]*=Math.max(0,v)/was;return true;},ownKeys(){return [...new Set([...s._owners.values()].flatMap(x=>Object.keys(x.held)))];},getOwnPropertyDescriptor(){return {enumerable:true,configurable:true};}});}
 class OwnedMarket extends Map {
   constructor(s,g,kind='sale'){super();this.s=s;this.g=g;this.kind=kind;}
   get(w){return stockOf(this.s,w)[this.kind][this.g];}
-  set(w,v){stockOf(this.s,w)[this.kind][this.g]=Math.max(0,v);if(this.kind!=='reserve')storageTitleDirty(this.s,this.g);return this;}
+  set(w,v){stockOf(this.s,w)[this.kind][this.g]=Math.max(0,v);if(this.kind!=='reserve')storageTitleKnownDirty(this.s,this.g);return this;}
   has(w){return this.get(w)!==undefined;}
-  delete(w){const x=stockOf(this.s,w)[this.kind],had=this.g in x;delete x[this.g];if(this.kind!=='reserve')storageTitleDirty(this.s,this.g);return had;}
-  clear(){for(const x of (this.s._owners||new Map()).values())delete x[this.kind][this.g];if(this.kind!=='reserve')storageTitleDirty(this.s,this.g);}
+  delete(w){const x=stockOf(this.s,w)[this.kind],had=this.g in x;delete x[this.g];if(this.kind!=='reserve')storageTitleKnownDirty(this.s,this.g);return had;}
+  clear(){for(const x of (this.s._owners||new Map()).values())delete x[this.kind][this.g];if(this.kind!=='reserve')storageTitleKnownDirty(this.s,this.g);}
   *ownedEntries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w,x[this.kind][this.g]];}
   *entries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w&&w.household?w.head||w:w,x[this.kind][this.g]];}
   *keys(){for(const[w]of this.entries())yield w;}
@@ -3138,8 +3294,8 @@ class OwnedMarket extends Map {
   forEach(fn,t){for(const[w,v]of this.entries())fn.call(t,v,w,this);}
 }
 function ownerShares(w,seen=new Set()){if(w&&w.dead&&w._estateShares)return w._estateShares.flatMap(([to,f])=>ownerShares(to,seen).map(([x,q])=>[x,f*q]));w=accountOwner(w);if(w&&w.household&&w.successors&&!seen.has(w)){const next=new Set(seen);next.add(w);return w.successors.flatMap(([to,f])=>ownerShares(to,next).map(([x,q])=>[x,f*q]));}return [[w,1]];}
-function transferOwnership(from,shares){shares=shares.flatMap(([to,f])=>ownerShares(to).map(([x,q])=>[x,f*q]));for(const s of W.settlements){const M=s._owners,x=M&&M.get(from);if(!x)continue;if(s.storage){storageTitles(s);for(const lot of s.storage.matching({owner:from})){const qty=lot.qty;let left=qty;for(let i=0;i<shares.length;i++){const[to,f]=shares[i],q=i===shares.length-1?left:Math.min(left,qty*f);if(q>0){s.storage.transfer(lot,to,q,lot.availability);left-=q;}}}}const snapshot={held:{...x.held},sale:{...x.sale},reserve:{...x.reserve},animals:{...x.animals}};x.held={};x.sale={};x.reserve={};x.animals={};
-  for(const[to,f]of shares){const y=stockOf(s,to);for(const type of ['held','sale','animals'])for(const g in snapshot[type]){const dest=type==='animals'&&!(to&&to.household)?'sale':type;y[dest][g]=(y[dest][g]||0)+snapshot[type][g]*f;}for(const g of Object.keys(snapshot.held).concat(Object.keys(snapshot.sale)))storageTitleDirty(s,g);for(const g in snapshot.reserve)y.reserve[g]=Math.max(y.reserve[g]||0,snapshot.reserve[g]);}
+function transferOwnership(from,shares){shares=shares.flatMap(([to,f])=>ownerShares(to).map(([x,q])=>[x,f*q]));for(const s of W.settlements){const M=s._owners,x=M&&M.get(from);if(!x)continue;if(s.storage){storageTitles(s);for(const lot of s.storage.matching({owner:from})){const qty=lot.qty;let left=qty;for(let i=0;i<shares.length;i++){const[to,f]=shares[i],q=i===shares.length-1?left:Math.min(left,qty*f);if(q>0){s.storage.transfer(lot,to,q,lot.availability);left-=q;}}}}const snapshot={held:{...x.held},sale:{...x.sale},reserve:{...x.reserve},animals:{...x.animals}};storageClaimReplace(x,'held',{});storageClaimReplace(x,'sale',{});x.reserve={};x.animals={};
+  for(const[to,f]of shares){const y=stockOf(s,to);for(const type of ['held','sale','animals'])for(const g in snapshot[type]){const dest=type==='animals'&&!(to&&to.household)?'sale':type;y[dest][g]=(y[dest][g]||0)+snapshot[type][g]*f;}for(const g of Object.keys(snapshot.held).concat(Object.keys(snapshot.sale)))storageTitleKnownDirty(s,g);for(const g in snapshot.reserve)y.reserve[g]=Math.max(y.reserve[g]||0,snapshot.reserve[g]);}
   }}
 function bindPropertyRights(s){const resolve=id=>{const p=typeof id==='number'&&id>=0?((W._pm||folkIndex()).get(id)||folkIndex().get(id)):null;return p?{owner:householdAccount(p),beneficiary:p}: {owner:id,beneficiary:null};};
   if(s._rightsF!==(s.furl||[]).length){for(const f of s.furl||[])if(!f.title){f.title={own:resolve(f.own),work:resolve(f.wk)};
@@ -3494,7 +3650,7 @@ function makeHousesAndCast(){
     mkNotable({name:personName(sx),sex:sx,age:16+randi('gen',40),house:randi('gen',6),role:'cousin',traits:(twoTraits(),[]),agenda:pick('gen',['schemes quietly','tends the estates','drinks too deep','writes poor verse','collects falcons'])});
   }
 }
-function notableById(id){return W.notables.find(n=>n.id===id);}
+function notableById(id){const C=notableIndex();return C.supported?(id!==id?undefined:C.byId.get(id)):W.notables.find(n=>n.id===id);}
 /* ---- family trees: anyone's forebears, kin and issue, from the parish book (the folk) and the annals (the nobility); for the great, the titles they held and the line by which a crown or a seat will pass */
 const TREE=new Map();let treeN=0;
 function tKey(x){if(!x)return '';if(TREE.size>4000)TREE.clear();const k=x._tk||(x._tk='t'+(++treeN));TREE.set(k,x);return k;}
@@ -3542,7 +3698,7 @@ function chooseLandUse(s,si){ // once a year: strips go to corn or to hay as the
   else for(const f of T.filter(f=>f.kind===LK.MEADOW&&f.ar>=Math.max(1,f.n)*0.25).sort((a,b)=>wetOf(a)-wetOf(b))){if(grSup>=grDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((gA-hA)*3<=hA*0.25)continue; // corn pays, and the town is short of bread
     f.kind=f.kind0||LK.FIELD;writeFurlong(f);G.fenceDirty=true;grSup+=gA0*f.area;haySup-=hY(f)*f.area;}}
 function tickTitles(){ // the annals note who held what, and from when
-  if(day()%30!==13)return;for(const n of W.notables){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
+  if(day()%30!==13)return;for(const n of livingNotables()){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
     const H=W.houses[n.house],seat=H&&W.settlements[H.seat];(n.titles||(n.titles=[])).push({d:day(),t:n.role==='monarch'?`${n.sex==='f'?'Queen':'King'} of the realm`:`Head of ${H?H.name:'the house'}${seat?', at '+seat.name:''}`});}}
 function houseOf(n){return W.houses[n.house];}
 function fullTitle(n){
@@ -8361,7 +8517,7 @@ function ladeOut(c,o,quiet){const mode=c.sea||c.river?'boat':'cart',want=c.qty,m
   if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman',Q=o._missQ||(o._missQ={}),k='~'+c.good,nq=Math.max(0,want-(Q[k]||0));Q[k]=Math.max(Q[k]||0,want);U[tr]=(U[tr]||0)+freight(o,nq,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}return null;} // no one free to drive it: the load waits, and the going rate will rise
   c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
   if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good)){o.stores[c.good]+=got;if(got>0)offer(o,c.good,m,got);}else if(got>0){addHeld(o,m,c.good,got);}return null;} // nothing for sale at the price: no load (what was taken goes back)
-  c.qty=got;storageCargoOut(c,o);c.value*=got/want;c.fee=freight(o,got,c.len,mode);c.drv=drv;c.crew=drv;if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-c.cost; // his outlay
+  c.qty=got;storageCargoOut(c,o,true);c.value*=got/want;c.fee=freight(o,got,c.len,mode);c.drv=drv;c.crew=drv;if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-c.cost; // his outlay
   const trip=Math.max(0.5,c.arriveDay-c.departDay),dest=W.settlements[c.dest];drv.away={until:c.arriveDay+trip,what:`${c.sea?'master of a cog':c.river?'on a barge':'carting'} ${c.good} to ${dest?dest.name:'market'}, and back`};
   (o._loads||(o._loads={}))[mode]=(o._loads[mode]||0)+1;
   life(drv,`${mode==='cart'?'Carted':'Shipped'} ${Math.round(got)} ${c.good} from ${o.name} to ${dest?dest.name:'market'}${m!==drv&&m!=='out'?' for '+folkName(m):''}`);if(m!=='out'&&m!==drv)life(m,`Sent ${Math.round(got)} ${c.good} to ${dest?dest.name:'market'}`);return c;}
@@ -8416,7 +8572,9 @@ function reconcile(s,heads,goods=GOODS){ // the stores and their owners agree: w
   for(const g of goods){const L=mkt(s,g);
     for(const[w,v]of[...L.ownedEntries()]){if(v===0){L.delete(w);continue;}if(w&&w.gn!==undefined&&w.dead){L.delete(w);let x=w;for(let k=0;k<6&&x&&x.gn!==undefined&&x.dead;k++)x=x._heir;offer(s,g,x&&!(x.gn!==undefined&&x.dead)?x:lordAcct(s),v);}} // a dead seller's stock is his heir's
     let fam=0;if(LU[g]!==undefined)for(const x of s._owners.values())fam+=(x.animals[g]||0);
-    const T=Math.max(0,(s.stores[g]||0)-fam),ld=(Ld[g]||0)+(g==='timber'?Ld.char||0:0);let led=0;for(const v of L.values())led+=v;const have=led+ld;
+    /* Paid, unposted custody is not surplus stock available to offer again. */
+    let pending=0;if(s.storage)for(const id of s.storage.byGood.get(g)||[]){const l=s.storage.lots.get(id);if(l?.pendingPurchase&&!s.storage.locations.get(l.location)?.transit)pending+=l.qty;}
+    const T=Math.max(0,(s.stores[g]||0)-fam-pending),ld=(Ld[g]||0)+(g==='timber'?Ld.char||0:0);let led=0;for(const v of L.values())led+=v;const have=led+ld;
     if(T>have+1e-6){const d=T-have;
       if(g==='wool'){let sh=0;for(const h of heads)sh+=(h.herd&&h.herd.sheep)||0;const all=Math.max(sh,s.stores.sheep||0);for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,d*h.herd.sheep/Math.max(1,all));if(all>sh)offer(s,'wool',lordAcct(s),d*(all-sh)/all);else if(!sh)offer(s,'wool',lordAcct(s),d);}
       else offer(s,g,lordAcct(s),d);}
@@ -8428,7 +8586,7 @@ function topUpFood(s,need,PM){const H=householdsOf(s),plans=[];let short=0;
   const heads=heads_(s,()=>true);shareOutput(s,W.settlements.indexOf(s),PM,heads,true);reconcile(s,heads,['grain','fish']);
   // Reconciliation may have removed spoiled food from a crock since the demand was reckoned.
   for(const pl of plans){const L=pantry(s,pl.owner),n=pl.owner.population.get(s)||0,Hd=pl.owner.assets.herd||{},home=0;pl.q=Math.max(0,n*(NEED.grain+NEED.fish)-home-(L.grain||0)-(L.fish||0));}
-  const cut={grain:0.3,fish:0.25},take=(pl,g,q)=>{addHeld(s,pl.owner,g,q);pl.q=Math.max(0,pl.q-q);craftWork(s,pl.buyer,MARGIN[g],Math.min(Math.max(0,means(pl.buyer)),q*price(s,g)*cut[g]/(1-cut[g])));};
+  const cut={grain:0.3,fish:0.25},take=(pl,g,q)=>{const gift=accountOwner(pl.buyer)!==accountOwner(pl.owner);if(gift)storageGiftTitle(s,pl.buyer,pl.owner,g,q);addHeld(s,pl.owner,g,q,gift);pl.q=Math.max(0,pl.q-q);craftWork(s,pl.buyer,MARGIN[g],Math.min(Math.max(0,means(pl.buyer)),q*price(s,g)*cut[g]/(1-cut[g])));};
   for(const pl of plans)for(const g of ['grain','fish']){const q=Math.min(pl.q,mkt(s,g).get(pl.buyer)||0);if(q>0){purchase(s,g,pl.buyer,q);take(pl,g,purchase.got);}}
   for(const g of ['grain','fish'].sort((a,b)=>price(s,a)/(1-cut[a])-price(s,b)/(1-cut[b]))){const got=clearMarket(s,g,plans.map(pl=>[pl.buyer,pl.q]));plans.forEach((pl,i)=>take(pl,g,got[i]));}}
 function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s);shareOutput(s,W.settlements.indexOf(s),PM,heads_(s,()=>true),true);reconcile(s,headsOf(s),['grain','fish']);topUpFood(s,0,PM);let hungry=0,total=0,homeDay=0;
@@ -8739,7 +8897,7 @@ function tickPolitics(){
         emit('crown',10,W.capital.pos,`The great houses meet at ${W.capital.name} and set ${fullTitle(old)} aside; they elect ${fullTitle(head)} of ${h.name} in ${old.sex==='f'?'her':'his'} place.`);
         W.monarch=head;head.role='monarch';head.house=0;W.reignNum[head.name]=(W.reignNum[head.name]||0)+1;W.reignStart=day();
         W.legitimacy=35;h.loyalty=95;adoptDynasty(ci);
-        const nh=W.notables.filter(n=>n.alive&&n.house===ci&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0];if(nh){nh.role='head';h.head=nh.id;}
+        const nh=livingNotableCandidates(n=>n.alive&&n.house===ci&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0];if(nh){nh.role='head';h.head=nh.id;}
         W.houses.forEach((o,i)=>{if(i>0&&!o.exiled)o.loyalty=clamp(o.loyalty+15,0,100);});reignHeader(head);}}}
   const avgUnrest=W.settlements.reduce((t,s)=>t+s.unrest,0)/W.settlements.length;
   for(let hi=1;hi<W.houses.length;hi++){
@@ -8798,7 +8956,7 @@ function tickPolitics(){
     }
   }
   // notables: birthdays, deaths, births, marriages
-  for(const n of W.notables){
+  for(const n of livingNotables()){
     if(!n.alive)continue;
     if((day()-n.birthDay)%360===0&&day()>n.birthDay){
       n.age=ageOf(n);
@@ -8812,8 +8970,8 @@ function tickPolitics(){
   }
   // births — the cast stays a cast, not a census (~140 living notables)
   if(day()%9===0){
-    const aliveCount=W.notables.filter(x=>x.alive).length;
-    for(const n of W.notables){
+    const aliveCount=livingNotableCount();
+    for(const n of livingNotables()){
       if(aliveCount>=140)break;
       if(!n.alive||n.sex!=='f'||!n.spouse)continue;
       const sp=notableById(n.spouse);if(!sp||!sp.alive)continue;
@@ -8836,7 +8994,7 @@ function tickPolitics(){
   }
   // arranged marriages for alliance value
   if(day()%37===0){
-    const single=W.notables.filter(n=>n.alive&&!n.spouse&&ageOf(n)>=17&&ageOf(n)<=45&&(n.role==='heir'||n.role==='scion'||n.role==='cousin'));
+    const single=livingNotableCandidates(n=>n.alive&&!n.spouse&&ageOf(n)>=17&&ageOf(n)<=45&&(n.role==='heir'||n.role==='scion'||n.role==='cousin'));
     for(const a of single){
       const b=single.find(b2=>b2!==a&&b2.sex!==a.sex&&b2.house!==a.house&&!b2._just);
       if(b&&chance('sim',0.35)){
@@ -8851,7 +9009,7 @@ function tickPolitics(){
         break;
       }
     }
-    W.notables.forEach(n=>delete n._just);
+    notableMarriageCleanup(single);
   }
   // an exiled house's seat does not stay empty forever: new blood is raised to the peerage
   if(day()%97===0){
@@ -8916,7 +9074,7 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
 }
 function killNotable(n,cause,silent){
   if(!n.alive)return;
-  n.alive=false;n.deathDay=day();nameUse(n.name.split(' ')[0],-1);
+  notableSetAlive(n,false);n.deathDay=day();nameUse(n.name.split(' ')[0],-1);
   const wasMonarch=n===W.monarch;
   const h=houseOf(n);
   if(!silent){
@@ -9425,7 +9583,7 @@ function disbandArmy(a){
 }
 function adoptDynasty(hi){ // the crown takes the victorious house's name and arms
   const h=W.houses[hi],c=W.houses[0];
-  for(const n of W.notables)if(n.alive&&n.house===0&&n!==W.monarch)n.oldBlood=W.dynasty||1; // the fallen line's people stay at court, but are no longer the crown's kin
+  for(const n of livingNotables())if(n.alive&&n.house===0&&n!==W.monarch)n.oldBlood=W.dynasty||1; // the fallen line's people stay at court, but are no longer the crown's kin
   W.dynOrigin=hi;
   const oldName=c.name;
   c.name=h.name;c.sigilHue=h.sigilHue;c.charge=h.charge;delete c._url;
@@ -9861,9 +10019,9 @@ function builtReach(s){ // how far the built-up ground reaches now (nine houses 
   const C=s.pos,d=[];for(const b of s.buildings||[])if(!b.removed&&b.state!=='gone'&&b.state!=='ruin'&&!b.inst)d.push(dist2d(b.x,b.z,C.x,C.z));
   if(d.length<4)return s.extentR||s.radius||80;d.sort((a,b)=>a-b);return d[Math.floor(d.length*0.9)]+12;}
 function wardPrice(a){return Math.round(12*Math.max(0,a._ltY??a._lt??0));} // a dozen years' purchase of what its lord draws from it: rents, his share of the harvest, the market's tolls
-function moveStock(a,b,g,x){const T=a.stores[g]||0;if(!(x>0)||!(T>0))return;x=Math.min(x,T);initOwnership(a);initOwnership(b);if(LU[g]!==undefined){herdSync(a);herdSync(b);}const f=x/T,L=mkt(a,g),R=a.rsv&&a.rsv[g];if(a.storage&&!BEASTS.includes(g)){const A=a.storage,B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);for(const id of [...A.byGood.get(g)||[]]){const lot=A.lots.get(id);if(!lot||A.locations.get(lot.location)?.transit)continue;const q=lot.qty*f;if(!(q>0))continue;const part=A.split(lot,q),from=part.location;A.event('custody-departure',part,part.qty,{lotAfter:null,destination:B.realmId});A.unindex(part);A.lots.delete(part.id);A.revision++;part.location='yard';B.lots.set(part.id,part);B.index(part);B.revision++;B.event('settlement-transfer',part,q,{from,origin:W.settlements.indexOf(a)});}}
+function moveStock(a,b,g,x){const T=a.stores[g]||0;if(!(x>0)||!(T>0))return;x=Math.min(x,T);initOwnership(a);initOwnership(b);if(LU[g]!==undefined){herdSync(a);herdSync(b);}const f=x/T,L=mkt(a,g),R=a.rsv&&a.rsv[g];if(a.storage&&!BEASTS.includes(g)){const A=a.storage,B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);for(const id of [...A.byGood.get(g)||[]]){const lot=A.lots.get(id);if(!lot||A.locations.get(lot.location)?.transit)continue;const q=lot.qty*f;if(!(q>0))continue;const part=A.split(lot,q),from=part.location;A.event('custody-departure',part,part.qty,{lotAfter:null,destination:B.realmId});A.unindex(part);A.lots.delete(part.id);A.revision++;part.location='yard';B.lots.set(part.id,part);B.index(part);B.revision++;B.event('settlement-transfer',part,q,{from,origin:W.settlements.indexOf(a),...storageArithmeticImport(A,B,g)});}}
   for(const[w,v]of [...L.ownedEntries()]){const q=v*f;L.set(w,v-q);offer(b,g,w,q,R&&R.get(w));}
-  for(const[w,v]of a._owners)for(const claim of g==='timber'?['timber','char']:[g]){const q=(v.held[claim]||0)*f;if(q>0){v.held[claim]-=q;storageTitleDirty(a,claim);addHeld(b,w,claim,q,true);}}
+  for(const[w,v]of a._owners)for(const claim of g==='timber'?['timber','char']:[g]){const q=(v.held[claim]||0)*f;if(q>0){v.held[claim]-=q;storageTitleKnownDirty(a,claim);addHeld(b,w,claim,q,true);}}
   if(LU[g]!==undefined)for(const[w,v]of a._owners){const q=(v.animals[g]||0)*f;if(q>0){v.animals[g]-=q;const H=stockOf(b,w).animals;H[g]=(H[g]||0)+q;}}
   if(!a.storage||BEASTS.includes(g)){a.stores[g]=T-x;b.stores[g]=(b.stores[g]||0)+x;}if(LU[g]!==undefined){a._herdLast=Object.fromEntries(BEASTS.map(k=>[k,a.stores[k]||0]));b._herdLast=Object.fromEntries(BEASTS.map(k=>[k,b.stores[k]||0]));}}
 function lordTake(s,v){if(v>0)s._lt=(s._lt||0)+v;} // what a place yields its lord this year
@@ -9922,13 +10080,13 @@ const PARTIBLE=new Set(['celtic','german','slavic','norse']);
 const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'freehold, for a small quit-rent',lease:'on lease, for a money rent',crop:'as a sharecropper, for half the crop',demesne:'the lord\'s demesne, worked by hired hands'};
 const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
-function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of (W.households||new Map()).values())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
+function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of nonemptyHouseholds())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
 function headsOf(s){return householdsOf(s).map(h=>h.head).filter(p=>p&&!p.dead);} // an orphan household remains an owner even before its heir is grown
 function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant';
 function inheritanceCustom(s){return {land:PARTIBLE.has(s&&s.cult)?'partible':'eldest',movables:s&&s.cult==='anglo'&&AD()>=1180?'thirds':'kin',dower:1/3,heriot:true,naturalLand:s&&s.cult==='celtic',...s&&s.custom};}
-function estateChildren(p){const all=new Set(p.kids||[]);for(const h of (W.households||new Map()).values())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
+function estateChildren(p){const all=new Set(p.kids||[]);for(const h of nonemptyHouseholds())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
   const living=[];const visit=(q,seen)=>{if(seen.has(q))return;seen.add(q);if(!q.dead){living.push(q);return;}for(const r of q.kids||[])visit(r,seen);};for(const q of all)visit(q,new Set());return living.sort((a,b)=>a.b-b.b||a.id-b.id);}
 function estateKin(p){const children=estateChildren(p);if(children.length)return children;
   const parents=[p.ma,p.pa].filter(q=>q&&!q.dead&&!q._dying);if(parents.length)return parents;
@@ -10080,7 +10238,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   for(const t of W.settlements){for(const f of t.furl||[]){if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;
       if(widow&&heir&&heir!==widow){f.dower=widow.id;f.dowerFraction=inheritanceCustom(t).dower;}}if(f.wk===p.id){const to=survivors.find(q=>q.si===W.settlements.indexOf(t)&&ageYrs(q)>=14)||heirs.find(q=>q.si===W.settlements.indexOf(t));f.wk=to?to.id:-1;}}
     for(const b of t.buildings||[])if(b.ownerId===p.id)b.ownerId=heirs.length?heirs[(b.k||0)%heirs.length].id:widow?widow.id:'lord';householdHeadsChanged(t);}
-  if(!isHead){h.members.delete(p);return;}
+  if(!isHead){householdMemberDelete(h,p);return;}
   // Customary heriot is a single best beast from a servile tenant, not seizure of the whole family's goods.
   if(inheritanceCustom(s).heriot&&servile){const H=h.assets.herd||{},best=BEASTS.filter(g=>(H[g]||0)>=1).sort((a,b)=>price(s,b)-price(s,a))[0];if(best){H[best]-=1;offer(s,best,lordAcct(s),1);}}
   repay(p,Math.max(0,h.assets.w||0));
@@ -10092,7 +10250,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   transferOwnership(h,distribution);
   const cash=Math.max(0,h.assets.w||0);h.assets.w=0;for(const[to,f]of shares)acct(to,cash*f);
   h.estate={person:p.id,day:day(),custom:inheritanceCustom(s),shares:shares.map(([to,f])=>[to.household?to.id:to==='crown'?'crown':to.id||'institution',f]),unpaidDebt:Math.max(0,debt-credit)};
-  h.assets._debt=0;h.assets._owe=[];h.members.delete(p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
+  h.assets._debt=0;h.assets._owe=[];householdMemberDelete(h,p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
   p._estateShares=shares;if(!h.head)h.successors=shares;p._heir=h.head||heirs[0]||null;
   if(h.head&&ageYrs(h.head)<18)h.guardian=widow||estateKin(p).find(q=>ageYrs(q)>=18)||null;
   for(const q of new Set([...heirs,...(widow?[widow]:[])]))life(q,`Inherited under the custom of ${s.name} from ${folkName(p)}`);}
@@ -10565,7 +10723,7 @@ function nameLinker(){ // every town, house and living notable the annals name, 
   const k=W.settlements.length+'|'+W.houses.map(h=>h.name).join()+'|'+W.notables.length+'|'+Math.floor(day()/60);
   if(G._nl&&G._nl.k===k)return G._nl;const map=new Map();
   W.settlements.forEach((s,i)=>map.set(s.name,'s'+i));W.houses.forEach((h,i)=>{if(h.name&&!h.extinct)map.set(h.name,'h'+i);});
-  for(const n of W.notables)if(n.alive)map.set(fullTitle(n),'n'+n.id);
+  for(const n of livingNotables())if(n.alive)map.set(fullTitle(n),'n'+n.id);
   const names=[...map.keys()].filter(x=>x&&x.length>2).sort((a,b)=>b.length-a.length).map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
   return G._nl={k,map,re:names.length?new RegExp('(?<![\\wÀ-ÿ])('+names.join('|')+')(?![\\wÀ-ÿ])','g'):null};}
 function linkNames(html){const L=nameLinker();return L.re?html.replace(L.re,m=>`<a class="nm" data-nm="${L.map.get(m)}">${m}</a>`):html;}
@@ -11759,7 +11917,7 @@ function helpUI(){
   <details><summary>What the top bar means</summary><p>The date follows four 90-day seasons, making a 360-day game year. The weather symbol shows current conditions; a skull signals plague.</p><p>⛁ Treasury: the crown’s gold. ☺ Population: the realm’s people. ♛ Legitimacy: support for the crown. ✦ Legacy: your dynasty’s accumulated deeds, shown while ruling. A house’s own purse and standing are in its Crown panel.</p><p>Tap the monarch’s name to find them. Ruling shows your current role; pressing it lays down the crown or banner. Its count shows waiting petitions, available in Menu.</p></details>
   <details><summary>Camera controls</summary><p>Touch: drag one finger to pan; pinch to zoom; twist two fingers to turn. Mouse: drag to pan; right-drag to turn and tilt; scroll to zoom.</p><div class="row"><label for="cameramode">Camera</label><select id="cameramode"><option value="free">Manual</option><option value="director">Follow the stories</option></select></div></details>
   <details><summary>Keyboard shortcuts</summary><p>Space: pause · 1–5: speed · L: life pace · R: rule · B: plan · M: map · C: watch · H: hide controls · P: performance · Escape: cancel or close.</p></details>
-  <p class="note">Life pace: one game day in half an hour. The other speeds advance ½, 2, 8, 30 or 360 days per second.</p><div class="row"><button class="pbb" data-sv="close">Close</button></div></div>`;
+  <p class="note">Life pace follows the folk; faster settings move through the years.</p><div class="row"><button class="pbb" data-sv="close">Close</button></div></div>`;
   const size=document.getElementById('uisize');size.value=UIPrefs.size;size.onchange=()=>{UIPrefs.size=size.value;saveUIPrefs();};
   document.getElementById('courtpin').onchange=e=>{UIPrefs.pinCourt=e.target.checked;saveUIPrefs();};
   const select=document.getElementById('cameramode');select.value=cam.mode==='director'?'director':'free';select.onchange=()=>{cam.mode=select.value;cam.follow=null;cam.manualUntil=0;};
@@ -12945,53 +13103,236 @@ function outcomeJSON(value){const seen=new Set(),walk=v=>{if(v===undefined)retur
     const array=Array.isArray(v),proto=Object.getPrototypeOf(v);if(!array&&proto!==null&&proto!==Object.prototype)throw new Error('Storage outcomes require plain data');const fields=[];
     for(const k of Reflect.ownKeys(v)){if(typeof k!=='string')throw new Error('Storage outcome symbol key');const d=Object.getOwnPropertyDescriptor(v,k);if(!('value'in d))throw new Error('Storage outcome accessor');fields.push([k,walk(d.value)]);}seen.delete(v);return [array?'a':'o',fields];};return JSON.stringify(walk(value));}
 function outcomeParse(text){const walk=v=>{if(!Array.isArray(v))return v;switch(v[0]){case 'u':return undefined;case 'n':return v[1]==='-0'?-0:Number(v[1]);case 'b':return BigInt(v[1]);case 'a':case 'o':{const o=v[0]==='a'?[]:{};for(const[k,x]of v[1])Object.defineProperty(o,k,{value:walk(x),enumerable:k!=='length'||v[0]!=='a',writable:true,configurable:k!=='length'||v[0]!=='a'});return o;}default:throw new Error('Unknown storage outcome encoding');}};return walk(JSON.parse(text));}
+// Chunk-local schemas, strings and exact lot deltas. Every chunk is independently readable.
+const OUTCOME_LOT_FIELDS=['owner','location','good','availability','qty','id'];
+const OUTCOME_LOT_REF={owner:0,location:1,good:2,availability:3,qtyAfter:4,lot:5};
+class OutcomeCodec{
+  constructor(){this.schemas=[];this.schemaIds=new Map();this.strings=[];this.stringIds=new Map();this.snapshots=new Map();this.events=new Map();this.slots=0;}
+  encode(seq,event){
+    const schemaStart=this.schemas.length,stringStart=this.strings.length,updates=new Map(),eventUpdates=new Map(),seen=new Set();let slots=this.slots;
+    const same=(a,b)=>{if(Object.is(a,b))return true;if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!same(a[i],b[i]))return false;return true;};
+    const walk=(v,key='',parent=null,inSnapshot=false,inEvent=false)=>{
+      if(v===undefined)return [2];if(typeof v==='number'&&(!Number.isFinite(v)||Object.is(v,-0)))return [3,Object.is(v,-0)?'-0':String(v)];if(typeof v==='bigint')return [4,String(v)];
+      if(parent&&Object.hasOwn(OUTCOME_LOT_REF,key)){const index=OUTCOME_LOT_REF[key];if(parent.present[index]&&Object.is(v,parent.values[index]))return [6,index];}
+      if(typeof v==='string'&&v.length>=3){let id=this.stringIds.get(v);if(id===undefined){id=this.strings.length;this.stringIds.set(v,id);this.strings.push(v);}return [5,id];}
+      if(v===null||typeof v==='string'||typeof v==='boolean'||typeof v==='number')return v;
+      if(typeof v!=='object')throw Error('Unsupported storage outcome value');if(seen.has(v))throw Error('Storage outcomes must contain IDs, not cyclic objects');
+      const capture=typeof STORAGE_CAPTURE_HANDLES!=='undefined'?STORAGE_CAPTURE_HANDLES.get(v):null;
+      const array=!capture&&Array.isArray(v),trusted=!!capture||typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(v);if(!trusted){const proto=Object.getPrototypeOf(v);if(!array&&proto!==null&&proto!==Object.prototype)throw Error('Storage outcomes require plain data');}seen.add(v);
+      const storage=!capture&&!array&&(trusted?v.kind:Object.getOwnPropertyDescriptor(v,'kind')?.value)==='storage';let refs=null;
+      if(storage){const lot=trusted?v.lotAfter:Object.getOwnPropertyDescriptor(v,'lotAfter')?.value;if(lot){refs={present:[],values:[]};const data=typeof STORAGE_CAPTURE_HANDLES!=='undefined'?STORAGE_CAPTURE_HANDLES.get(lot):null,safe=typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(lot);for(let i=0;i<OUTCOME_LOT_FIELDS.length;i++){const k=OUTCOME_LOT_FIELDS[i],at=data?data.keys.indexOf(k):-1,d=safe||data?null:Object.getOwnPropertyDescriptor(lot,k);refs.present[i]=data?at>=0:safe?Object.hasOwn(lot,k):!!d&&'value'in d;refs.values[i]=data?data.values[at]:safe?lot[k]:d?.value;}}}
+      const snapshot=!inSnapshot&&!array&&['lotAfter','sourceLotAfter','before','locationAfter'].includes(key)&&typeof (capture?capture.values[capture.keys.indexOf('id')]:Object.getOwnPropertyDescriptor(v,'id')?.value)==='string';
+      const keys=capture?capture.keys:Reflect.ownKeys(v),values=[];for(let at=0;at<keys.length;at++){const k=keys[at];if(typeof k!=='string')throw Error('Storage outcome symbol key');let value;if(capture)value=capture.values[at];else if(trusted)value=v[k];else{const d=Object.getOwnPropertyDescriptor(v,k);if(!('value'in d))throw Error('Storage outcome accessor');value=d.value;}values.push(walk(value,k,refs,inSnapshot||snapshot,inEvent||storage));}seen.delete(v);
+      const signature=JSON.stringify(keys);let schema=this.schemaIds.get(signature);if(schema===undefined){schema=this.schemas.length;this.schemaIds.set(signature,schema);this.schemas.push(keys);}
+      if(snapshot){
+        const id=(key==='locationAfter'?'location:':'lot:')+schema,old=updates.get(id)||this.snapshots.get(id);if(old){const changes=[];if(old.schema===schema){for(let i=0;i<values.length;i++)if(!same(old.values[i],values[i]))changes.push(i,values[i]);updates.set(id,{slot:old.slot,schema,values});return [9,old.slot,schema,changes];}updates.set(id,{slot:old.slot,schema,values});return [8,old.slot,schema,values];}
+        if(slots<4096){const slot=slots++;updates.set(id,{slot,schema,values});return [8,slot,schema,values];}
+      }
+      if(storage&&!inEvent&&Object.hasOwn(v,'seq')){const old=eventUpdates.get(schema)||this.events.get(schema);eventUpdates.set(schema,values);if(old){const changes=[];for(let i=0;i<values.length;i++){const x=values[i],scalar=!Array.isArray(x)||[2,3,4,5,6].includes(x[0]);if(!scalar||!same(old[i],x))changes.push(i,x);}return [10,schema,changes];}return [7,schema,values];}
+      return [array?1:0,schema,values];
+    };
+    try{const value=walk(event),text=JSON.stringify([2,seq,this.schemas.slice(schemaStart),this.strings.slice(stringStart),value])+'\n';for(const [id,state]of updates)this.snapshots.set(id,state);for(const [schema,values]of eventUpdates)this.events.set(schema,values);this.slots=slots;return text;}
+    catch(e){for(const keys of this.schemas.splice(schemaStart))this.schemaIds.delete(JSON.stringify(keys));for(const value of this.strings.splice(stringStart))this.stringIds.delete(value);throw e;}
+  }
+  *decode(text){
+    const schemas=[],strings=[],snapshots=[],events=[];
+    const index=(n,length,label)=>{if(!Number.isInteger(n)||n<0||n>=length)throw Error('Invalid outcome '+label);return n;};
+    const changes=(base,delta)=>{if(!Array.isArray(delta)||delta.length%2)throw Error('Invalid outcome delta');const out=base.slice(),used=new Set();for(let i=0;i<delta.length;i+=2){const at=index(delta[i],out.length,'delta index');if(used.has(at))throw Error('Duplicate outcome delta index');used.add(at);out[at]=delta[i+1];}return out;};
+    const walk=v=>{if(!Array.isArray(v)){if(v!==null&&typeof v==='object')throw Error('Invalid compact outcome object');return v;}const lengths={0:3,1:3,2:1,3:2,4:2,5:2,7:3,8:4,9:4,10:3};if(v.length!==lengths[v[0]])throw Error('Invalid compact outcome tag');switch(v[0]){
+      case 2:return undefined;case 3:if(!['-0','NaN','Infinity','-Infinity'].includes(v[1]))throw Error('Invalid outcome number');return v[1]==='-0'?-0:Number(v[1]);case 4:if(typeof v[1]!=='string'||!/^[-]?\d+$/.test(v[1]))throw Error('Invalid outcome bigint');return BigInt(v[1]);case 5:return strings[index(v[1],strings.length,'string')];
+      case 0:case 1:case 7:case 8:case 9:case 10:{const snapshot=v[0]===8||v[0]===9,slot=snapshot?v[1]:null,schema=snapshot?v[2]:v[1],keys=schemas[index(schema,schemas.length,'schema')];if(snapshot)index(slot,4096,'snapshot slot');let packed=snapshot?v[3]:v[2];if(v[0]===10){if(!events[schema])throw Error('Missing outcome event base');packed=changes(events[schema],v[2]);}if(v[0]===7||v[0]===10)events[schema]=packed;if(v[0]===9){const old=snapshots[slot];if(!old||old.schema!==schema)throw Error('Missing outcome delta base');packed=changes(old.values,v[3]);}
+        if(!Array.isArray(packed)||packed.length!==keys.length)throw Error('Invalid outcome field count');const out=v[0]===1?[]:{},refs=[];for(let i=0;i<keys.length;i++){const x=packed[i];if(Array.isArray(x)&&x[0]===6){if(x.length!==2)throw Error('Invalid outcome lot reference');refs.push([keys[i],OUTCOME_LOT_FIELDS[index(x[1],OUTCOME_LOT_FIELDS.length,'lot reference')]]);continue;}Object.defineProperty(out,keys[i],{value:walk(x),enumerable:keys[i]!=='length'||v[0]!==1,writable:true,configurable:keys[i]!=='length'||v[0]!==1});}
+        for(const[k,from]of refs){if(!out.lotAfter||!Object.hasOwn(out.lotAfter,from))throw Error('Missing outcome lot reference');Object.defineProperty(out,k,{value:out.lotAfter[from],enumerable:true,writable:true,configurable:true});}
+        // Define references in their original position: enumeration order is part of the oracle.
+        if(refs.length){const ordered={};for(const k of keys)Object.defineProperty(ordered,k,{value:out[k],enumerable:true,writable:true,configurable:true});if(snapshot)snapshots[slot]={schema,values:packed};return ordered;}
+        if(snapshot)snapshots[slot]={schema,values:packed};return out;
+      }default:throw Error('Unknown compact outcome tag');}};
+    for(const row of text.trimEnd().split('\n')){if(!row)continue;const packet=JSON.parse(row);if(packet[0]!==2){yield outcomeParse(row);continue;}if(packet.length!==5||!Number.isInteger(packet[1])||packet[1]<0||!Array.isArray(packet[2])||!Array.isArray(packet[3]))throw Error('Invalid compact outcome row');for(const keys of packet[2]){if(!Array.isArray(keys)||keys.some(k=>typeof k!=='string')||new Set(keys).size!==keys.length)throw Error('Invalid outcome schema definition');schemas.push(keys);}for(const text of packet[3]){if(typeof text!=='string')throw Error('Invalid outcome string definition');strings.push(text);}yield {seq:packet[1],event:walk(packet[4])};}
+  }
+}
+function outcomeRecords(text){return new OutcomeCodec().decode(text);}
 class OutcomeJournal{
-  constructor(write,{chunkBytes=1024*1024,maxPendingBytes=16*1024*1024,onFault=()=>{}}={}){this.write=write;this.chunkBytes=chunkBytes;this.maxPendingBytes=maxPendingBytes;this.onFault=onFault;this.seq=0;this.chunk=0;this.committed=-1;this.bytes=0;this.rows=[];this.rowBytes=0;this.pending=new Map();this.chain=Promise.resolve();this.fault=null;}
+  constructor(write,{chunkBytes=1024*1024,maxPendingBytes=16*1024*1024,onFault=()=>{},mode='compact'}={}){this.mode=mode;this.codec=new OutcomeCodec();this.encodedCharacters=0;this.write=write;this.chunkBytes=chunkBytes;this.maxPendingBytes=maxPendingBytes;this.onFault=onFault;this.seq=0;this.chunk=0;this.committed=-1;this.bytes=0;this.rows=[];this.rowBytes=0;this.pending=new Map();this.chain=Promise.resolve();this.fault=null;}
+  fail(error,context){if(!this.fault){this.fault=error instanceof Error?error:new Error(String(error));this.rejected={seq:this.seq,context,error:this.fault.message};try{this.onFault(this.fault);}catch(reportingError){this.reportingFault=String(reportingError);}}return this.fault;}
   assert(){if(this.fault)throw this.fault;}
   get ready(){return !this.fault&&this.bytes<this.maxPendingBytes;}
-  append(event){this.assert();const seq=this.seq,text=outcomeJSON({seq,event})+'\n';if(typeof text!=='string')throw new Error('Storage outcome is not serializable');
+  append(event){this.assert();const seq=this.seq;let text;try{text=this.mode==='legacy'?outcomeJSON({seq,event})+'\n':this.codec.encode(seq,event);if(typeof text!=='string')throw new Error('Storage outcome is not serializable');}catch(error){throw this.fail(error,{phase:'append',event});}
     // UTF-8 and UTF-16 payloads both fit this conservative watermark, plus a row allowance.
-    const cost=text.length*3+64;this.rows.push(text);this.rowBytes+=cost;this.bytes+=cost;this.seq++;
+    const cost=text.length*3+64;this.encodedCharacters+=text.length;this.rows.push(text);this.rowBytes+=cost;this.bytes+=cost;this.seq++;
     if(this.rowBytes>=this.chunkBytes)this.seal();return seq;}
-  seal(){if(!this.rows.length)return;const count=this.rows.length,entry={chunk:this.chunk++,first:this.seq-count,last:this.seq-1,text:this.rows.join(''),cost:this.rowBytes};this.rows=[];this.rowBytes=0;this.pending.set(entry.chunk,entry);
-    this.chain=this.chain.then(async()=>{if(this.fault)return;try{await this.write(entry);this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;}catch(e){this.fault=e instanceof Error?e:new Error(String(e));this.onFault(this.fault);}});}
+  seal(){if(!this.rows.length)return;const count=this.rows.length,entry={chunk:this.chunk++,first:this.seq-count,last:this.seq-1,text:this.rows.join(''),cost:this.rowBytes};this.rows=[];this.rowBytes=0;this.codec=new OutcomeCodec();this.pending.set(entry.chunk,entry);
+    this.chain=this.chain.then(async()=>{if(this.persistenceFault)return;try{await this.write(entry);this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;}catch(e){this.persistenceFault=e instanceof Error?e:new Error(String(e));this.fail(e,{phase:'persistence',chunk:entry.chunk});}});}
   async flush(){this.seal();await this.chain;this.assert();return this.committed;}
-  *uncommitted(){for(const entry of this.pending.values())for(const row of entry.text.trimEnd().split('\n'))yield outcomeParse(row);for(const row of this.rows)yield outcomeParse(row);}
-  status(){return {records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null};}
+  *uncommitted(){for(const entry of this.pending.values())yield* outcomeRecords(entry.text);yield* outcomeRecords(this.rows.join(''));}
+  status(){return {mode:this.mode,encodedCharacters:this.encodedCharacters,records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null,rejectedSeq:this.rejected?.seq??null,reportingFault:this.reportingFault||null,persistenceFault:this.persistenceFault?.message||null};}
 }
+// STORAGE OUTCOME WORKER BEGIN
+// Transport capture is not the storage wire codec: native primitives and ordered own fields
+// cross structured clone without losing undefined, holes, nonenumerable or __proto__ fields.
+const OUTCOME_TRANSPORT_HANDLES=new WeakMap();
+// Shared ordered key vectors serialize once per structured-clone batch, not once per row.
+let OUTCOME_TRANSPORT_SCHEMA_COUNT=0;const OUTCOME_TRANSPORT_SCHEMAS=new Map(),OUTCOME_TRANSPORT_SCHEMA_COST=new WeakMap();
+function outcomeTransportSchema(keys){let candidates=OUTCOME_TRANSPORT_SCHEMAS.get(keys.length);if(candidates)for(const schema of candidates){let same=true;for(let i=0;i<keys.length;i++)if(schema[i]!==keys[i]){same=false;break;}if(same)return schema;}
+  if(OUTCOME_TRANSPORT_SCHEMA_COUNT>=4096){OUTCOME_TRANSPORT_SCHEMAS.clear();OUTCOME_TRANSPORT_SCHEMA_COUNT=0;candidates=null;}if(!candidates)OUTCOME_TRANSPORT_SCHEMAS.set(keys.length,candidates=[]);const schema=Object.freeze(keys.slice());let base=512;for(const key of schema)base+=256+key.length*24;OUTCOME_TRANSPORT_SCHEMA_COST.set(schema,base);candidates.unshift(schema);if(candidates.length>64)candidates.pop();OUTCOME_TRANSPORT_SCHEMA_COUNT++;return schema;
+}
+function outcomeOwnedCost(value){if(value===null||typeof value!=='object')return typeof value==='string'?128+value.length*24:typeof value==='bigint'?128+String(value).length*24:128;let cost=512;for(const key of Reflect.ownKeys(value))cost+=128+key.length*24+outcomeOwnedCost(value[key]);return cost;}
+function outcomeOwnedCopy(value){if(value===null||typeof value!=='object')return value;const array=Array.isArray(value),out=array?[]:Object.create(Object.getPrototypeOf(value)===null?null:Object.prototype);for(const key of Reflect.ownKeys(value))Object.defineProperty(out,key,{value:outcomeOwnedCopy(value[key]),enumerable:key!=='length'||!array,writable:true,configurable:key!=='length'||!array});return out;}
+function outcomeTransportCapture(event){
+  const seen=new Set();let cost=0;
+  const walk=value=>{
+    if(value===null||typeof value!=='object'){if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage outcome value');cost+=typeof value==='string'?128+value.length*24:typeof value==='bigint'?128+String(value).length*24:128;return value;}
+    const handle=typeof STORAGE_CAPTURE_HANDLES==='undefined'?null:STORAGE_CAPTURE_HANDLES.get(value),cached=handle&&OUTCOME_TRANSPORT_HANDLES.get(value);
+    if(cached){cost+=cached.cost;return cached.value;}
+    // Private engine captures already own deep plain data; preserve them as opaque handles.
+    if(handle){const keys=outcomeTransportSchema(handle.keys);let ownedCost=OUTCOME_TRANSPORT_SCHEMA_COST.get(keys);for(const v of handle.values){if(typeof v==='string')ownedCost+=v.length*24;else if(typeof v==='bigint')ownedCost+=String(v).length*24;else if(v!==null&&typeof v==='object')ownedCost+=outcomeOwnedCost(v)-128;}const packet=Object.freeze({type:'owned-handle',keys,values:handle.values});cost+=ownedCost;OUTCOME_TRANSPORT_HANDLES.set(value,{value:packet,cost:ownedCost});return packet;}
+    if(seen.has(value))throw Error('Storage outcomes must contain IDs, not cyclic objects');const array=!handle&&Array.isArray(value),proto=Object.getPrototypeOf(value);if(!handle&&!array&&proto!==Object.prototype&&proto!==null)throw Error('Storage outcomes require plain data');seen.add(value);
+    const initial=cost,trusted=!!handle||typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(value),keys=handle?handle.keys:Reflect.ownKeys(value),values=[];cost+=512;
+    for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=trusted?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');cost+=128+key.length*24;const raw=trusted?value[key]:d.value;if(raw===null||typeof raw!=='object'){if(typeof raw==='function'||typeof raw==='symbol')throw Error('Unsupported storage outcome value');cost+=typeof raw==='string'?128+raw.length*24:typeof raw==='bigint'?128+String(raw).length*24:128;values.push(raw);}else values.push(walk(raw));}
+    seen.delete(value);const packet=Object.freeze({type:array?'array':proto===null?'null':'object',keys:outcomeTransportSchema(keys),values:Object.freeze(values)});if(handle)OUTCOME_TRANSPORT_HANDLES.set(value,{value:packet,cost:cost-initial});return packet;
+  };
+  // Only engine-marked frozen records containing scalars and private handles are reusable.
+  if(typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(event)&&Object.isFrozen(event)&&Object.getPrototypeOf(event)===Object.prototype&&!Array.isArray(event)){
+    const keys=Reflect.ownKeys(event);let safe=true;for(const key of keys){const v=event[key];if(typeof key!=='string'||typeof v==='function'||typeof v==='symbol'||v!==null&&typeof v==='object'&&!STORAGE_CAPTURE_HANDLES.has(v)){safe=false;break;}}
+    if(safe){cost=512;for(const key of keys){cost+=128+key.length*24;walk(event[key]);}return {value:Object.freeze({type:'engine-event',keys:outcomeTransportSchema(keys),event}),cost};}
+  }
+  const value=walk(event);return {value,cost};
+}
+function outcomeTransportRestore(packet,opaque=false){
+  if(packet===null||typeof packet!=='object')return packet;
+  if(packet.type==='engine-event'){const out={};for(const key of packet.keys){const value=packet.event[key],captured=value!==null&&typeof value==='object'?OUTCOME_TRANSPORT_HANDLES.get(value).value:value;Object.defineProperty(out,key,{value:outcomeTransportRestore(captured,opaque),enumerable:true,writable:true,configurable:true});}return out;}
+  if(!['object','null','array','owned-handle'].includes(packet.type)||!Array.isArray(packet.keys)||!Array.isArray(packet.values)||packet.keys.length!==packet.values.length)throw Error('Invalid storage transport packet');
+  if(packet.type==='owned-handle'){
+    if(opaque&&typeof STORAGE_CAPTURE_HANDLES!=='undefined'){const values=packet.values,handle=Object.freeze({owner:values[packet.keys.indexOf('owner')],id:values[packet.keys.indexOf('id')]});STORAGE_CAPTURE_HANDLES.set(handle,{keys:packet.keys,values,handle});return handle;}
+    const out={};for(let i=0;i<packet.keys.length;i++)Object.defineProperty(out,packet.keys[i],{value:outcomeOwnedCopy(packet.values[i]),enumerable:true,writable:true,configurable:true});return out;
+  }
+  const out=packet.type==='array'?[]:Object.create(packet.type==='null'?null:Object.prototype),seen=new Set();
+  for(let i=0;i<packet.keys.length;i++){const key=packet.keys[i];if(typeof key!=='string'||seen.has(key))throw Error('Invalid storage transport key');seen.add(key);Object.defineProperty(out,key,{value:outcomeTransportRestore(packet.values[i],opaque),enumerable:key!=='length'||packet.type!=='array',writable:true,configurable:key!=='length'||packet.type!=='array'});}if(opaque&&typeof STORAGE_CAPTURE_DATA!=='undefined')STORAGE_CAPTURE_DATA.add(out);return out;
+}
+class RawOutcomeJournal extends OutcomeJournal{
+  constructor(write,options={}){super(write,{chunkBytes:32*1024*1024,...options});this.codec=null;this.processingMode=options.processingMode||'worker';this.eager=options.eager===true;}
+  get ready(){if(!this.fault&&this.bytes>=this.maxPendingBytes)this.seal();return !this.fault&&this.bytes<this.maxPendingBytes;}
+  append(event){this.assert();const seq=this.seq;let capture;try{capture=outcomeTransportCapture(event);}catch(error){throw this.fail(error,{phase:'append-capture',event});}this.rows.push({seq,event:capture.value});this.rowBytes+=capture.cost;this.bytes+=capture.cost;this.seq++;if(this.rowBytes>=this.chunkBytes)this.seal();return seq;}
+  seal(){if(!this.rows.length||this.sealFault)return;let binary;try{binary=outcomeBinaryEncode(this.rows);}catch(error){this.sealFault=this.fail(error,{phase:'binary-seal'});return;}const cost=binary.byteLength+512,entry={chunk:this.chunk++,first:this.rows[0].seq,last:this.rows[this.rows.length-1].seq,binary,cost};this.bytes+=cost-this.rowBytes;this.rows=[];this.rowBytes=0;this.pending.set(entry.chunk,entry);
+    // Dispatch worker batches during the producing tick; retain raw ownership until commit ack.
+    let dispatched;if(this.eager&&!this.persistenceFault){try{dispatched=Promise.resolve(this.write(entry));}catch(error){dispatched=Promise.reject(error);}dispatched.catch(()=>{});}
+    this.chain=this.chain.then(async()=>{if(this.persistenceFault)return;try{const ack=await (dispatched||this.write(entry));if(ack&&(ack.chunk!==entry.chunk||ack.first!==entry.first||ack.last!==entry.last))throw Error('Storage worker acknowledgement differs');this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;this.encodedCharacters+=ack?.encodedCharacters||0;}catch(error){this.persistenceFault=error instanceof Error?error:new Error(String(error));this.fail(error,{phase:'worker-persistence',chunk:entry.chunk});}});}
+  *uncommitted(){for(const entry of this.pending.values())for(const row of outcomeBinaryDecode(entry.binary))yield {seq:row.seq,event:outcomeTransportRestore(row.event)};for(const row of this.rows)yield {seq:row.seq,event:outcomeTransportRestore(row.event)};}
+  status(){return {...super.status(),processingMode:this.processingMode,pendingAccounting:'retained-binary-plus-unsealed-capture'};}
+}
+// Batch-local native wire: exact UTF-16 strings, Float64 values, ordered keys and references.
+// Only this temporary transport buffer is transferred; accepted captures remain until ack.
+function outcomeBinaryEncode(records){
+  if(!Array.isArray(records)||!records.length||!Number.isSafeInteger(records[0].seq)||records[0].seq<0)throw Error('Binary storage sequence bounds');for(let i=0;i<records.length;i++)if(!Number.isSafeInteger(records[i].seq)||records[i].seq!==records[0].seq+i)throw Error('Binary storage record gap');
+  let buffer=new ArrayBuffer(65536),view=new DataView(buffer),at=0;const strings=new Map(),objects=new Map();
+  const room=n=>{if(at+n<=buffer.byteLength)return;let size=buffer.byteLength;while(size<at+n)size*=2;const next=new ArrayBuffer(size);new Uint8Array(next).set(new Uint8Array(buffer,0,at));buffer=next;view=new DataView(buffer);};
+  const byte=n=>{room(1);view.setUint8(at++,n);},uint=n=>{room(4);view.setUint32(at,n,true);at+=4;};
+  const string=s=>{const old=strings.get(s);if(old!==undefined){byte(6);uint(old);return;}byte(5);uint(strings.size);strings.set(s,strings.size);uint(s.length);room(s.length*2);for(let i=0;i<s.length;i++){view.setUint16(at,s.charCodeAt(i),true);at+=2;}};
+  const write=(v,packetValue=false)=>{if(v===null){byte(0);return;}switch(typeof v){case'undefined':byte(1);return;case'boolean':byte(v?3:2);return;case'number':byte(4);room(8);view.setFloat64(at,v,true);at+=8;return;case'string':string(v);return;case'bigint':byte(7);string(String(v));return;case'object':break;default:throw Error('Unsupported binary storage value');}
+    const old=objects.get(v);if(old!==undefined){byte(8);uint(old);return;}const id=objects.size;objects.set(v,id);if(packetValue&&v.type==='engine-event'){byte(12);uint(id);byte(0);write(v.keys);uint(v.keys.length);for(const key of v.keys){const value=v.event[key];write(value!==null&&typeof value==='object'?OUTCOME_TRANSPORT_HANDLES.get(value).value:value,true);}return;}if(packetValue&&['object','null','array','owned-handle'].includes(v.type)&&Array.isArray(v.keys)&&Array.isArray(v.values)){byte(12);uint(id);byte(['object','null','array','owned-handle'].indexOf(v.type));write(v.keys);uint(v.values.length);for(const x of v.values)write(x,v.type!=='owned-handle');return;}const array=Array.isArray(v);byte(array?10:Object.getPrototypeOf(v)===null?11:9);uint(id);const keys=Reflect.ownKeys(v);uint(keys.length);for(const key of keys){if(typeof key!=='string')throw Error('Binary storage symbol key');string(key);write(v[key]);}
+  };uint(records.length);for(const row of records){write(row.seq);write(row.event,true);}return buffer.slice(0,at);
+}
+// Validate framing/reference bounds and exact sequence without constructing record graphs.
+function outcomeBinaryValidate(buffer,first,last){
+  if(Object.prototype.toString.call(buffer)!=='[object ArrayBuffer]'||!Number.isSafeInteger(first)||first<0||!Number.isSafeInteger(last)||last<first)throw Error('Invalid binary storage bounds');const view=new DataView(buffer),strings=[],objects=[],scalar={kind:'scalar'};let at=0;
+  const need=n=>{if(n<0||at+n>view.byteLength)throw Error('Truncated binary storage buffer');},byte=()=>{need(1);return view.getUint8(at++);},uint=()=>{need(4);const n=view.getUint32(at,true);at+=4;return n;};
+  // Retain only scalar/string positions and array shape summaries, never record values.
+  const keyText=shape=>{if(shape.kind!=='string')throw Error('Binary storage key');if(shape.text!==undefined)return shape.text;let text='';for(let i=0;i<shape.length;i++)text+=String.fromCharCode(view.getUint16(shape.offset+i*2,true));shape.text=text;return text;};
+  const skip=()=>{const tag=byte();if(tag<=3)return scalar;if(tag===4){need(8);const value=view.getFloat64(at,true);at+=8;return value;}if(tag===5){if(uint()!==strings.length)throw Error('Binary storage string gap');const length=uint();need(length*2);const shape={kind:'string',length,offset:at};strings.push(shape);at+=length*2;return shape;}if(tag===6){const id=uint();if(id>=strings.length)throw Error('Binary storage string reference');return strings[id];}if(tag===7){const value=skip();if(value.kind!=='string'||! /^(0|-?[1-9][0-9]*)$/.test(keyText(value)))throw Error('Binary storage bigint');return scalar;}if(tag===8){const id=uint();if(id>=objects.length)throw Error('Binary storage object reference');if(!objects[id].complete)throw Error('Binary storage cyclic reference');return objects[id];}
+    if(tag===12){if(uint()!==objects.length)throw Error('Binary storage object gap');const shape={kind:'packet'};objects.push(shape);const kind=byte();if(kind>3)throw Error('Binary storage packet');const keys=skip(),count=uint();if(keys.kind!=='array'||keys.length!==count||keys.indices!==count||keys.stringIndices!==count||keys.properties!==count||keys.maxIndex>=count)throw Error('Binary storage packet fields');const names=new Set();let length=null,maxIndex=-1;for(let i=0;i<count;i++){const key=keyText(keys.stringValues.get(i));if(names.has(key))throw Error('Binary storage packet key');names.add(key);const value=skip();if(kind===2&&key==='length'){if(typeof value!=='number'||!Number.isInteger(value)||value<0||value>4294967295)throw Error('Binary storage array length');length=value;}else if(kind===2&&/^(0|[1-9][0-9]*)$/.test(key)&&Number(key)<4294967295)maxIndex=Math.max(maxIndex,Number(key));}if(kind===2&&length!==null&&maxIndex>=length)throw Error('Binary storage array length');shape.complete=true;return shape;}
+    if(tag<9||tag>11)throw Error('Binary storage tag');if(uint()!==objects.length)throw Error('Binary storage object gap');const shape={kind:tag===10?'array':'object',length:null,indices:0,stringIndices:0,properties:0,maxIndex:-1,stringValues:new Map()};objects.push(shape);const count=uint(),keys=new Set();for(let i=0;i<count;i++){const key=keyText(skip());if(keys.has(key))throw Error('Binary storage key');keys.add(key);const value=skip();if(tag===10&&key==='length'){if(typeof value!=='number'||!Number.isInteger(value)||value<0||value>4294967295)throw Error('Binary storage array length');shape.length=value;}else{shape.properties++;if(tag===10&&/^(0|[1-9][0-9]*)$/.test(key)&&Number(key)<4294967295){const index=Number(key);shape.indices++;shape.maxIndex=Math.max(shape.maxIndex,index);if(value.kind==='string'){shape.stringIndices++;shape.stringValues.set(index,value);}}}}if(tag===10&&shape.length!==null&&shape.maxIndex>=shape.length)throw Error('Binary storage array length');shape.complete=true;return shape;
+  };
+  const count=uint();if(count!==last-first+1)throw Error('Binary storage record count');for(let i=0;i<count;i++){if(byte()!==4)throw Error('Binary storage sequence type');need(8);const seq=view.getFloat64(at,true);at+=8;if(seq!==first+i)throw Error('Binary storage record gap');skip();}if(at!==view.byteLength)throw Error('Trailing binary storage data');return count;
+}
+function outcomeBinaryDecode(buffer){
+  if(Object.prototype.toString.call(buffer)!=='[object ArrayBuffer]')throw Error('Invalid binary storage buffer');const view=new DataView(buffer),strings=[],objects=[];let at=0;
+  const need=n=>{if(at+n>view.byteLength)throw Error('Truncated binary storage buffer');},byte=()=>{need(1);return view.getUint8(at++);},uint=()=>{need(4);const n=view.getUint32(at,true);at+=4;return n;};
+  const read=()=>{const tag=byte();if(tag===0)return null;if(tag===1)return undefined;if(tag===2)return false;if(tag===3)return true;if(tag===4){need(8);const n=view.getFloat64(at,true);at+=8;return n;}if(tag===5){const id=uint(),length=uint();if(id!==strings.length)throw Error('Binary storage string gap');need(length*2);let s='';for(let end=at+length*2;at<end;){const chars=[];for(let n=0;n<8192&&at<end;n++,at+=2)chars.push(view.getUint16(at,true));s+=String.fromCharCode(...chars);}strings.push(s);return s;}if(tag===6){const id=uint();if(id>=strings.length)throw Error('Binary storage string reference');return strings[id];}if(tag===7){const s=read();if(typeof s!=='string')throw Error('Binary storage bigint');return BigInt(s);}if(tag===8){const id=uint();if(id>=objects.length)throw Error('Binary storage object reference');return objects[id];}if(tag===12){const id=uint(),kind=byte();if(id!==objects.length||kind>3)throw Error('Binary storage packet');const packet={type:['object','null','array','owned-handle'][kind]};objects.push(packet);packet.keys=read();const count=uint();packet.values=[];for(let i=0;i<count;i++)packet.values.push(read());if(!Array.isArray(packet.keys)||packet.keys.length!==count)throw Error('Binary storage packet fields');return packet;}if(tag<9||tag>11)throw Error('Binary storage tag');const id=uint(),count=uint();if(id!==objects.length)throw Error('Binary storage object gap');const out=tag===10?[]:Object.create(tag===11?null:Object.prototype),keys=new Set();objects.push(out);for(let i=0;i<count;i++){const key=read();if(typeof key!=='string'||keys.has(key))throw Error('Binary storage key');keys.add(key);const value=read();Object.defineProperty(out,key,{value,enumerable:key!=='length'||tag!==10,writable:true,configurable:key!=='length'||tag!==10});}return out;};
+  const count=uint(),rows=[];for(let i=0;i<count;i++)rows.push({seq:read(),event:read()});if(at!==view.byteLength)throw Error('Trailing binary storage data');return rows;
+}
+class OutcomeWorkerPipeline{
+  constructor(write){this.write=write;this.chunk=0;this.seq=0;this.fault=null;}
+  async process(entry,mode='compact'){
+    if(this.fault)throw this.fault;try{if(entry.binary)entry={...entry,records:outcomeBinaryDecode(entry.binary)};if(entry.chunk!==this.chunk||entry.first!==this.seq||!Array.isArray(entry.records)||!entry.records.length||entry.last!==entry.first+entry.records.length-1)throw Error('Storage worker batch gap');const codec=new OutcomeCodec(),rows=[];let expected=this.seq;
+      for(const row of entry.records){if(row.seq!==expected++)throw Error('Storage worker record gap');const event=outcomeTransportRestore(row.event,mode!=='legacy');rows.push(mode==='legacy'?outcomeJSON({seq:row.seq,event})+'\n':codec.encode(row.seq,event));}
+      const text=rows.join(''),result=await this.write({...entry,text});this.chunk++;this.seq=expected;return {chunk:entry.chunk,first:entry.first,last:entry.last,encodedCharacters:text.length,...result};
+    }catch(error){this.fault=error instanceof Error?error:new Error(String(error));throw this.fault;}
+  }
+}
+function outcomeWorkerRuntime(){
+  let db,meta,pipeline,persist,queue=Promise.resolve(),fault=null;
+  const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
+  const transaction=(stores,write)=>new Promise((resolve,reject)=>{const tx=db.transaction(stores,'readwrite');tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error||Error('Storage history write failed'));try{write(tx);}catch(error){tx.abort();reject(error);}});
+  self.onmessage=message=>{const data=message.data;queue=queue.then(async()=>{try{if(fault)throw fault;
+    if(data.type==='init'){
+      if(pipeline)throw Error('Storage worker already initialized');if(typeof CompressionStream==='undefined'||typeof crypto==='undefined'||!crypto.subtle)throw Error('Worker compression or hashing unavailable');meta={...data.meta,...(data.mode==='native-storage-v3'?{version:3,encoding:'native-storage-v3'}:{})};
+      db=await new Promise((resolve,reject)=>{const request=indexedDB.open('furlong-storage-outcomes',1);request.onupgradeneeded=()=>{request.result.createObjectStore('games');request.result.createObjectStore('chunks');};request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('Storage history database is blocked'));request.onsuccess=()=>resolve(request.result);});
+      await transaction('games',tx=>tx.objectStore('games').put(meta,meta.id));
+      persist=async entry=>{const binary=entry.text===undefined?entry.binary:null,bytes=binary?new Uint8Array(binary):new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=meta.lastHash;
+        const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),next={...meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:meta.storedBytes+blob.size,encodedBytes:meta.encodedBytes+bytes.byteLength};
+        await transaction(['games','chunks'],tx=>{tx.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob,...(binary?{encoding:'native-storage-v3'}:{})},[meta.id,entry.chunk]);tx.objectStore('games').put(next,meta.id);});meta=next;return {meta};};pipeline=new OutcomeWorkerPipeline(persist);
+      self.postMessage({request:data.request,type:'ready',meta});
+    }else if(data.type==='chunk'){
+      if(!pipeline)throw Error('Storage worker has not begun');let ack;if(data.mode==='native-storage-v3'){const entry=data.entry;if(entry.chunk!==meta.lastChunk+1||entry.first!==meta.lastSeq+1)throw Error('Storage worker batch gap');outcomeBinaryValidate(entry.binary,entry.first,entry.last);const result=await persist(entry);ack={chunk:entry.chunk,first:entry.first,last:entry.last,encodedCharacters:0,...result};}else ack=await pipeline.process(data.entry,data.mode);self.postMessage({request:data.request,type:'committed',...ack});
+    }else throw Error('Unknown storage worker message');
+  }catch(error){fault=error instanceof Error?error:Error(String(error));self.postMessage({request:data.request,type:'error',message:fault.message});}});};
+}
+function outcomeWorkerSource(){return 'const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_CAPTURE_DATA=new WeakSet();const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeOwnedCopy.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+outcomeBinaryValidate.toString()+'\n'+outcomeBinaryDecode.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
+class OutcomeWorkerClient{
+  constructor(worker,{timeout=60000}={}){this.worker=worker;this.timeout=timeout;this.next=0;this.requests=new Map();this.fault=null;worker.onmessage=e=>{try{const data=e.data;if(!data||typeof data!=='object'||!Number.isInteger(data.request)||!['ready','committed','error'].includes(data.type))throw Error('Invalid storage worker acknowledgement');const request=this.requests.get(data.request);if(!request)throw Error('Unexpected storage worker acknowledgement');if(data.type!=='error'&&data.type!==request.expected)throw Error('Storage worker acknowledgement type differs');clearTimeout(request.timer);this.requests.delete(data.request);if(data.type==='error'){const error=Error(String(data.message));request.reject(error);this.fail(error);}else request.resolve(data);}catch(error){this.fail(error);}};worker.onerror=e=>{e.preventDefault?.();this.fail(Error(e.message||'Storage worker failed'));};worker.onmessageerror=()=>this.fail(Error('Storage worker message could not be decoded'));}
+  fail(error){if(this.fault)return;this.fault=error;for(const request of this.requests.values()){clearTimeout(request.timer);request.reject(error);}this.requests.clear();this.onFault?.(error);}
+  request(data){if(this.fault)return Promise.reject(this.fault);const request=this.next++;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>this.fail(Error('Storage worker acknowledgement timed out')),this.timeout);this.requests.set(request,{resolve,reject,timer,expected:data.type==='init'?'ready':'committed'});try{if(data.type==='chunk'){const binary=data.entry.binary?data.entry.binary.slice(0):outcomeBinaryEncode(data.entry.records),entry={chunk:data.entry.chunk,first:data.entry.first,last:data.entry.last,binary};this.worker.postMessage({...data,entry,request},[binary]);}else this.worker.postMessage({...data,request});}catch(error){this.fail(error);}});}
+  close(){this.worker.terminate();this.fail(Error('Storage worker closed'));}
+}
+// STORAGE OUTCOME WORKER END
 // STORAGE OUTCOME JOURNAL END
+const STORAGE_LEGACY_AUDIT=globalThis.FURLONG_REPLAY_LEGACY_AUDIT===true;
 const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,modelFault:null,
   async begin(){
     const code=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n');
     const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
-    this.meta={format:'furlong-storage-outcomes',version:1,encoding:'tagged-json-v1',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
+    this.meta={format:'furlong-storage-outcomes',version:STORAGE_LEGACY_AUDIT?1:2,encoding:STORAGE_LEGACY_AUDIT?'tagged-json-v1':'compact-storage-v2',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
     this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
-    await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
-    this.journal=new OutcomeJournal(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
+    const onFault=e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');};
+    let client=null,fallbackReason=null;
+    try{
+      if(globalThis.FURLONG_STORAGE_FOREGROUND_AUDIT===true)throw Error('Foreground audit requested');
+      if(typeof Worker==='undefined'||typeof CompressionStream==='undefined')throw Error('Worker or gzip support unavailable');
+      const url=URL.createObjectURL(new Blob([outcomeWorkerSource()],{type:'text/javascript'}));try{client=new OutcomeWorkerClient(new Worker(url));const ack=await client.request({type:'init',meta:this.meta,mode:STORAGE_LEGACY_AUDIT?'legacy':'native-storage-v3'});this.meta=ack.meta;}finally{URL.revokeObjectURL(url);}
+    }catch(error){client?.close();client=null;fallbackReason=String(error.message||error);console.warn('Storage history uses foreground fallback:',fallbackReason);}
+    const mode=STORAGE_LEGACY_AUDIT?'legacy':'compact';let write;
+    if(client){this.workerClient=client;write=async entry=>{const ack=await client.request({type:'chunk',entry:{chunk:entry.chunk,first:entry.first,last:entry.last,binary:entry.binary},mode:STORAGE_LEGACY_AUDIT?mode:'native-storage-v3'});if(ack.type!=='committed'||ack.chunk!==entry.chunk||ack.first!==entry.first||ack.last!==entry.last||ack.meta?.id!==this.meta.id||ack.meta.lastSeq!==entry.last||ack.meta.lastChunk!==entry.chunk)throw Error('Storage worker commit acknowledgement differs');this.meta=ack.meta;this.lastHash=ack.meta.lastHash;this.lastChunk=ack.chunk;return ack;};}
+    else{
+      await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
+      write=async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
       const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:this.meta.storedBytes+blob.size,encodedBytes:this.meta.encodedBytes+bytes.byteLength};
       await new Promise((resolve,reject)=>{const t=this.db.transaction(['games','chunks'],'readwrite');t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history write failed'));});
-      this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;
-    },{onFault:e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');}});
+        this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;return {meta};
+      };
+    }
+    this.journal=client?new RawOutcomeJournal(write,{mode,processingMode:'worker',eager:true,onFault}):new OutcomeJournal(write,{mode,onFault});if(!client)this.journal.processingMode='foreground-fallback';this.fallbackReason=fallbackReason;
+    if(client)client.onFault=error=>this.journal.fail(error,{phase:'worker-channel'});
     this.journal.append({kind:'begin',day:typeof W!=='undefined'&&W?day():0,world:this.meta.world});
   },
   schedule(){if(!this.timer)this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>{});},1000);},
   async flush(){if(this.timer){clearTimeout(this.timer);this.timer=null;}if(this.journal)return this.journal.flush();},
   async wait(){if(this.modelFault)throw this.modelFault;if(this.journal&&!this.journal.ready)await this.flush();},
-  status(){return {id:this.meta?.id,...this.journal?.status(),modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
+  status(){return {id:this.meta?.id,...this.journal?.status(),processingMode:this.journal?.processingMode,fallbackReason:this.fallbackReason||null,modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
   async saved(){if(!this.db)throw new Error('Storage history has not begun');return new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
-  async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,stream:this.stream};},
+  async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,storageRecords:this.storageRecords,stream:this.stream};},
   async *records(endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq){
     // Capture a boundary before yielding; later records belong to a subsequent export.
     if(!this.meta)return;this.journal?.seal();await this.journal?.chain;const end=this.lastChunk,tail=this.journal?[...this.journal.uncommitted()]:[];let expected=0,previous=null;
     for(let k=0;k<=end;k++){const entry=await new Promise((resolve,reject)=>{const r=this.db.transaction('chunks').objectStore('chunks').get([this.meta.id,k]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
       if(!entry||entry.first!==expected||entry.previous!==previous)throw new Error('Storage outcome chunk gap');
-      const text=await new Response(entry.blob.stream().pipeThrough(new DecompressionStream('gzip'))).text(),bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)),hash=[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==entry.hash)throw new Error('Storage outcome checksum differs');
-      for(const row of text.trimEnd().split('\n')){if(expected>endSeq)return;const record=outcomeParse(row);if(record.seq!==expected++)throw new Error('Storage outcome sequence gap');yield record;}if(expected-1!==entry.last)throw new Error('Storage outcome chunk length differs');previous=entry.hash;}
+      const buffer=await new Response(entry.blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),digest=await crypto.subtle.digest('SHA-256',buffer),hash=[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==entry.hash)throw new Error('Storage outcome checksum differs');
+      const binary=entry.encoding==='native-storage-v3';if(binary)outcomeBinaryValidate(buffer,entry.first,entry.last);const records=binary?outcomeBinaryDecode(buffer).map(row=>({seq:row.seq,event:outcomeTransportRestore(row.event)})):outcomeRecords(new TextDecoder().decode(buffer));
+      for(const record of records){if(expected>endSeq)return;if(record.seq!==expected++)throw new Error('Storage outcome sequence gap');yield record;}if(expected-1!==entry.last)throw new Error('Storage outcome chunk length differs');previous=entry.hash;}
     for(const record of tail){if(expected>endSeq)return;if(record.seq!==expected++)throw new Error('Storage outcome tail gap');yield record;}if(expected<=endSeq)throw new Error('Storage outcome tail missing');
   },
+  async *storageRecords(endSeq){let seq=0;for await(const record of this.records(endSeq)){const primitives=typeof storageTransactionPrimitives==='function'?storageTransactionPrimitives(record.event):null;if(primitives===null)yield {seq:seq++,event:record.event};else for(const event of primitives)yield {seq:seq++,event};}},
   stream(){const owner=this,endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq;let it,header=false;return new ReadableStream({async pull(controller){try{if(!header){header=true;owner.journal?.seal();await owner.journal?.chain;it=owner.records(endSeq);controller.enqueue(new TextEncoder().encode(outcomeJSON({format:'furlong-storage-outcomes',meta:owner.meta,endSeq})+'\n'));return;}const next=await it.next();if(next.done)controller.close();else controller.enqueue(new TextEncoder().encode(outcomeJSON(next.value)+'\n'));}catch(e){controller.error(e);}}});}
 };
-function storageOutcome(event){if(!STORAGE_OUTCOMES.journal)throw new Error('Storage history has not begun');const seq=STORAGE_OUTCOMES.journal.append(event);STORAGE_OUTCOMES.schedule();return seq;}
+function storageOutcome(event){storageObserveOutcome(event);if(!STORAGE_OUTCOMES.journal)throw new Error('Storage history has not begun');const seq=STORAGE_OUTCOMES.journal.append(event);STORAGE_OUTCOMES.schedule();return seq;}
 function storageOutcomeAssert(){if(STORAGE_OUTCOMES.modelFault)throw STORAGE_OUTCOMES.modelFault;if(STORAGE_OUTCOMES.journal)STORAGE_OUTCOMES.journal.assert();}
 function storageOutcomeReady(){return !STORAGE_OUTCOMES.modelFault&&(!STORAGE_OUTCOMES.journal||STORAGE_OUTCOMES.journal.ready);}
 function storageFaultNotice(message){const el=document.getElementById('storagefault')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'storagefault'}));el.setAttribute('role','alert');el.style.cssText='position:fixed;inset:auto 12px 12px;z-index:2000;padding:12px;background:#481c16;color:#fff';el.textContent=message;}
@@ -15311,6 +15652,22 @@ on and off. Enabled startup took 34.57→33.47 seconds (sea) and 47.75→45.88 s
 but does not make later-era starts immediate. Very long eras and full simulation-worker migration
 remain unvalidated and unfinished respectively.
 
+### Zero-demand owned consumption
+
+`consumeOwned` retains pantry resolution, physical ordered-sum reads, title
+synchronization, claim assignment and title-matching bookkeeping when effective
+demand is exactly zero. It omits only the owner-lot iteration and its no-op
+removal. The explicit journal assertion retains fail-closed behavior. NaN still
+uses the original iteration; tiny positive demands never enter this shortcut.
+The resolved owner is reused within a nonzero synchronous removal loop after
+pantry and title synchronization. No physical sum or arithmetic order changes.
+
+`tools/consume-owned.test.mjs` compares the complete relevant event, lot, claim,
+household, index, counter and RNG projections against frozen `405fed3`, including
+zero/negative-zero/NaN/tiny demand, char-to-timber mapping, live household
+formation and household splitting. Local microbenchmarks demonstrate scan cost;
+whole-game gains require separate native measurements.
+
 <<<FILE docs/PROVISIONING.md>>>
 # Food replenishment — 2 October 2026
 
@@ -15628,6 +15985,111 @@ The final batched-replay harness also passes the same frozen source through day
 10: 53,212 accepted outcomes and 53,213 persisted records, 2,129 lots and 51
 locations. Evidence is `storage-events-stream10` beside the 60-day evidence.
 
+## Compact outcome chunks
+
+New journals default to metadata version 2 (`compact-storage-v2`). Each physical
+chunk starts fresh schema, string and snapshot dictionaries. Ordered own keys,
+exact numbers and metadata remain in the encoding; lot/location snapshots and
+unchanged primitive envelope fields use exact deltas. No storage outcome is
+removed. Chunk checksums, predecessor links, sequence checks, fault retention and
+day-boundary backpressure remain mandatory. Readers accept legacy version 1
+chunks as well. `records()` returns the original canonical event or transaction
+envelope; `storageRecords()` flattens transaction storage effects for independent
+physical replay. The exported `stream()` remains tagged JSONL with expanded
+records; `meta.encoding` describes stored chunks, not export lines.
+
+Set `window.FURLONG_REPLAY_LEGACY_AUDIT=true` before boot to select the legacy
+encoder and canonical engine captures. Otherwise engine snapshot handles own
+ordered copied values synchronously. Their dictionaries/caches live outside
+`W`, `G` and storage ledgers. Public `lotState()` and all readers return canonical
+plain snapshots. Primitive-only captures are reusable only when every own key,
+key order and resolved value matches; nested metadata always receives validation
+and a fresh detached copy. Unsupported values/accessors remain errors.
+
+Correctness harnesses install `window.FURLONG_STORAGE_AUDIT_OBSERVER(event)`
+before boot when `FURLONG_STORAGE_AUDIT_SUPPORTED` is available. The dispatch
+calls `storageObserveOutcome(event)` once before collecting a primitive. Its
+callback receives a detached canonical event, independent of internal handles;
+callback mutations cannot modify retained records. Ordinary production recording
+performs no canonical expansion. Transaction collectors may retain handles
+unchanged until append. They must never replace this observer with a primitive
+hook that reads internal snapshot handles directly.
+
+The codec's focused checks cover independent chunks, legacy reads, exact
+property order/presence, tiny values, negative zero, nonfinite numbers, BigInt,
+array holes/additional keys, nested storage-shaped metadata, rollback after an
+invalid append, transient changes, writer failures and observer isolation.
+These checks establish codec fidelity; native whole-game performance and replay
+must be measured separately on the integrated source.
+
+Capture, audit-observer and append-encoding failures are sticky recording faults.
+They pause through the journal fault callback and reject every subsequent append;
+day admission remains closed. Accepted rows retain their exact pending tail and
+can still finish persistence unless the writer itself has failed. A writer
+failure retains all unacknowledged chunks. `journal.rejected` retains the first
+rejected attempt's sequence, phase and context for diagnosis; unsupported input
+cannot be promised a durable or replayable encoding. Fault-reporting errors
+cannot reopen admission. Legacy encoding follows the same failure rules, while
+old archive reads remain independent. Compact readers reject malformed schemas,
+indexes, delta bases, field counts and special-value tags.
+
+## Off-thread storage journal
+
+The always-on storage journal accepts the same ordered records. Append now captures
+owned raw fields immediately, without running JSON or the storage codec. Ordered
+key vectors are shared within transport batches; opaque lot handles keep their
+complete owned values. Mutable metadata is detached before append returns.
+
+A Blob Worker validates binary framing and exact sequence, then hashes, gzips and atomically persists the native bytes. Default archives declare version 3 and `native-storage-v3` per manifest/chunk. It does not run the canonical storage codec during simulation. Readers decompress and decode records on demand for analysis/export; version 1 tagged JSON and version 2 compact archives remain readable. Finished batches use exact native binary transport, transferred during the producing tick, so processing
+can overlap an atomic simulation day. The worker processes batches serially and
+acknowledges only after one transaction commits both chunk and manifest. Main
+retains each sealed binary buffer until its checked acknowledgement; captured object graphs are released. A separate transferable copy preserves fault-tail ownership. SHA-256 chains cover the exact uncompressed native bytes; `encodedBytes` counts those bytes and `storedBytes` counts gzip bytes. Binary journals report zero `encodedCharacters`. Canonical readers and tagged exports remain compatible; chunk boundaries can differ. There are no field watches or graph comparisons.
+
+Unsealed capture accounting deliberately overestimates storage; sealed buffers use their retained byte length plus entry overhead. The admission watermark is 16 MiB, with a separate 32 MiB estimated raw batch target. Crossing the watermark
+seals a short unfinished batch immediately at the day boundary. A synchronous day
+can exceed the watermark: all its records remain accepted, and another day waits
+for the worker. This does not establish a strict within-day heap limit. Direct
+out-of-band calls must also respect admission. Closing the tab before completion
+can lose its uncommitted tail, as before.
+
+Worker/persistence/protocol failures close admission and retain the complete binary/unsealed
+pending tail. `records()` and `stream()` combine the acknowledged prefix with that
+tail, including uncertain commits without duplicating records. An independently
+opened archive reads its actual durable prefix. No uncertain write is retried or
+silently moved to another writer. Capture failures retain their rejected context.
+
+`FURLONG_STORAGE_FOREGROUND_AUDIT=true` before boot selects a diagnostic foreground
+pipeline. Worker startup failure uses the same explicit foreground fallback;
+`FURLONG_STORAGE_LOG.status()` reports `processingMode` and `fallbackReason`.
+Foreground mode uses the original OutcomeJournal codec and encoded write path, preserving all records without binary transport.
+
+`node --test tools/storage-worker.test.mjs` exercises a real Node worker running the
+embedded browser runtime, with asynchronous atomic IndexedDB fixtures. It checks
+exact accepted/durable streams, opaque handles, own fields, special numbers,
+BigInt, holes, mutable metadata ownership, immediate protocol faults, backpressure,
+injected transaction failure, uncertain acknowledgement and prefix/tail export.
+The fixtures establish pipeline semantics, not browser IndexedDB reliability.
+
+`node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
+matched owned-handle events in fresh processes. Synthetic measurements diagnose
+capture, transport and persistence separately; they do not establish browser
+throughput or device memory limits. Earlier Worker codec experiments regressed
+native timing and were not shipped. Native v3 removes that codec work and retains
+pending bytes instead of large captured object graphs.
+
+An isolated Metal Chrome run at seed 1001 sea, AD850 plus 390 days, measured
+739 ms for the busy monthly day including persistence, versus 995 ms on main
+3822132. The following ordinary day measured 123 versus 152 ms. Both accepted
+131,111 and 15,201 records respectively. These bounded measurements are not a
+later-century or rendered frame-rate guarantee. Exact native history equivalence,
+fault recovery and multi-world checks remain separate release checks. Local
+evidence and source hashes stay under `.git/direct-history/2026-10-04/`.
+
+Binary captures retain full ordered storage detail; no canonical dictionary/delta
+comparison occurs on the Worker fast-forward path. This is not a complete-world
+continuation archive: demographic, political and other world mutation coverage,
+snapshot hydration and replay execution remain unfinished.
+
 <<<FILE docs/STORAGE-PERFORMANCE.md>>>
 # Lossless title-matching optimization
 
@@ -15845,7 +16307,10 @@ it does not call the projection under test. Source
 `923fc95a69b26052307f35f869f75e6ee9c34abe99962a5be75e625097a7f2d6`
 passes all 136 focused tests and source checks. No new GPU result is claimed.
 
-Floating-point cancellation is checked against a per-good arithmetic error budget. Physical additions, merges, splits and removals, and legal claim writes record their observed operand magnitudes; each contributes twice machine epsilon times the sum of operand magnitudes. Claim matching also allows its summation error. Matching checks this budget across all unmatched claims, records accepted roundoff with input provenance, then propagates the accumulated bound to later boundaries: matching or an exact-looking balance does not erase uncertainty incurred by earlier arithmetic. It never deletes tiny physical lots or legal balances, nor creates stock to conceal discrepancies; a deficit exceeding the arithmetic budget faults. This diagnostic budget is derived numerical uncertainty, not stock or ownership.
+Floating-point cancellation is checked against a per-good arithmetic error budget. Physical additions, merges, splits and removals, and legal claim writes record their observed operand magnitudes; each contributes twice machine epsilon times the sum of operand magnitudes. Claim matching also allows its summation error. Matching checks this budget across all unmatched claims, records accepted roundoff with input provenance, then propagates the accumulated bound to later boundaries: matching or an exact-looking balance does not erase uncertainty incurred by earlier arithmetic. Numerical matching never deletes tiny physical lots or legal balances, nor creates stock to conceal discrepancies; a deficit exceeding the arithmetic budget faults. This diagnostic budget is derived numerical uncertainty, not stock or ownership.
+
+At the daily storage collection boundary, completed non-transit hay with a positive quantity at or below 0.001 units is instead subject to explicit `vermin-remnant-loss`: worms and rats consume an uncollectable remnant. Compatible fragments combine before applying the threshold; valuable combined stock remains. The recorded physical removal also debits matching held/sale title, frees custody capacity and preserves all prior history. This is a modeled material loss, not numerical rounding. Pending purchases wait for ownership completion; fresh unoffered hay remains in `_made.hay` until the monthly `shareOutput` assigns producer title and clears that buffer. Daily food-only sharing preserves the hay buffer. Repeated checks of retained production/purchases emit no new loss events, and tiny retained hay incurs no local carriage payment. In-transit manifests are excluded.
+
 
 Unfinished construction installs available timber and stone incrementally. Each paid material receipt consumes existing stock once and records installed quantity on the project; later ordinary consumption cannot reclaim these inputs. Labour and protected capacity open only after both material requirements are fulfilled. Cancellation leaves spent material as sunk work, with the unfinished project history retained.
 
@@ -15858,6 +16323,44 @@ Purchase completion selects the purchasing account's canonical pending lot IDs. 
 A foreign ship cancelling a purchased load below its one-unit departure minimum retains the exact paid goods in the foreign buyer's local held inventory, completing purchase custody. Loads that sail retain their exact positive quantity in the ship manifest; displayed rounding never changes the recorded shipment.
 
 When no eligible household head can buy necessities, provision may use the lord's purse for an orphan household. The payer and recipient remain explicit: the lord's completed pending purchase transfers title to the recipient before its pantry is credited, while custody stays at the seller's location. A settlement with no household recipient retains the institutional account as recipient. This applies to every provisioned good, including timber, cloth and tools.
+
+Paid pending custody is excluded from ordinary held/sale matching and from physical surplus available for reconciliation to offer again. Only explicit completion, gift, purchased consumption or purchased cargo dispatch releases protection for the affected units. Daily food top-ups transfer the fallback lord purchaser's pending lots to the final household before crediting its pantry. Native merchant dispatch selects newly purchased pending lots, preserving previously held stock; the generic cargo helper retains its existing behavior. Reconciliation sums non-transit pending quantities by physical good, adding one traversal of that good's lot index per call.
+
+<<<FILE docs/game-write-log.md>>>
+# Direct game history prototype
+
+The playable game still uses the validated native v3 storage journal. The tools
+here develop broader game coverage; they are not loaded by `index.html`.
+
+The intended contract is a founding graph snapshot followed by ordered effects
+at actual write sites. Existing graph branches are not scanned or compared after
+founding. New referenced data receives a stable identity once. Reading the log
+later reconstructs state and can derive undo information and indexes.
+
+`game-write-transform.mjs` lowers supported member/cell writes and contracted
+native mutations. `game-write-log.mjs` captures their precise effects, including
+collection order, descriptors, array holes, shared buffer bytes and references.
+`game-write-game-config.mjs` inventories actual game roots, private state and
+facades. The local build tool pins source, generated code, parser, runtime,
+configuration and mutation manifest; unresolved contracts reject production
+admission. The vendored MIT Acorn parser requires no installation or network.
+
+Run all checks with `node --test tools/*.test.mjs`. Inspect the unresolved source
+inventory locally with `node tools/game-write-build.mjs index.html --audit`.
+Without `--audit`, the game build intentionally fails until coverage is complete.
+
+Architecture checks measure work rather than wall-clock thresholds: an isolated
+write cannot enumerate untouched model branches; appending one life event cannot
+copy existing history; one terrain write captures only that element's bytes;
+the default journal cannot run canonical codecs; failed admission retains the
+exact rejected outcome and prevents later canonical writes. Production household
+paths are transformed and replayed against independent backing-ledger comparisons.
+
+The prototype does not yet cover all private planner/RNG cells or recreate all
+source-defined ledger views and closures. Household tests compare canonical
+backing data, not the dynamic `_lard` Proxy projection or executable callback
+hydration. Full-game snapshot-plus-log continuation and rewind remain unverified.
+No performance improvement is inferred from fewer records or these unit checks.
 
 </script>
 </body>
