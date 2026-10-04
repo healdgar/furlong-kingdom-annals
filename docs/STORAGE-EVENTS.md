@@ -87,7 +87,7 @@ cannot reopen admission. Legacy encoding follows the same failure rules, while
 old archive reads remain independent. Compact readers reject malformed schemas,
 indexes, delta bases, field counts and special-value tags.
 
-## Off-thread processing of the shipped journal
+## Off-thread storage journal
 
 The always-on storage journal accepts the same ordered records. Append now captures
 owned raw fields immediately, without running JSON or the storage codec. Ordered
@@ -125,12 +125,21 @@ injected transaction failure, uncertain acknowledgement and prefix/tail export.
 The fixtures establish pipeline semantics, not browser IndexedDB reliability.
 
 `node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
-matched owned-handle events in fresh processes. A local run measured producer time
-3102→1229 ms and total time 3201→1256 ms; main codec time 2225→0 ms, raw capture
-279 ms and postMessage 136 ms. First worker commit occurred at 57 ms during the
-producer; baseline first commit occurred after the producer at 3116 ms. Main heap
-increase rose 62→127 MB; process RSS increase rose 204→501 MB. All 131,072 records
-committed. These are synthetic Node diagnostics; native Chrome world histories,
-ordinary-play performance and device memory limits require separate validation.
+matched owned-handle events in fresh processes. Synthetic measurements diagnose
+capture, transport and persistence separately; they do not establish browser
+throughput or device memory limits. Earlier Worker codec experiments regressed
+native timing and were not shipped. Native v3 removes that codec work and retains
+pending bytes instead of large captured object graphs.
 
-Native v3 persistence is a timing candidate: correctness tests pass, but native browser performance must be measured before release. Binary snapshots retain full ordered detail; no canonical dictionary/delta comparison occurs on the Worker fast-forward path.
+An isolated Metal Chrome run at seed 1001 sea, AD850 plus 390 days, measured
+739 ms for the busy monthly day including persistence, versus 995 ms on main
+3822132. The following ordinary day measured 123 versus 152 ms. Both accepted
+131,111 and 15,201 records respectively. These bounded measurements are not a
+later-century or rendered frame-rate guarantee. Exact native history equivalence,
+fault recovery and multi-world checks remain separate release checks. Local
+evidence and source hashes stay under `.git/direct-history/2026-10-04/`.
+
+Binary captures retain full ordered storage detail; no canonical dictionary/delta
+comparison occurs on the Worker fast-forward path. This is not a complete-world
+continuation archive: demographic, political and other world mutation coverage,
+snapshot hydration and replay execution remain unfinished.
