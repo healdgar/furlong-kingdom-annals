@@ -84,11 +84,11 @@ test('a census is reused across quiet days and recomputed after parish membershi
   r.eval('day=()=>2;householdsOf(s)');assert.equal(r.s.households,first);r.eval('removeAt(s,0);day=()=>3;householdsOf(s)');assert.notEqual(r.s.households,first);assert.equal(r.s.households.length,1);near(r.s.pop,150);});
 test('own-stock purchases retain demand, sale and income accounting',()=>{const r=realm({households:2});init(r);r.eval("mkt(s,'tools').clear();offer(s,'tools',H[0],4);offer(s,'tools',H[1],9);const cash0=means(H[0]);purchase(s,'tools',H[0],3,2)");
   near(r.eval('purchase.got'),3);near(r.eval('means(H[0])'),r.eval('cash0'));near(r.eval("mkt(s,'tools').get(H[1])"),9);near(r.eval("s._dem.tools"),3);near(r.eval("s._sold.tools"),3);near(r.eval('H[0]._inc'),6);});
-test('market settlement reads live quantities when two inventory owners project the same head',()=>{
-  // Freeze existing alias behavior: ownership repair is separate from performance work.
+test('market settlement mutates each canonical owner when two inventories project the same head',()=>{
+  // Distinct title accounts remain distinct even when their UI seller name is shared.
   for(const bulk of [false,true]){const r=realm({households:3,cash:100});init(r);
     r.eval("mkt(s,'tools').clear();const old=householdAccount(H[0]);bindHousehold(H[1],old);offer(s,'tools',H[0],10);householdPortion(H[0]);offer(s,'tools',H[0],20)");
-    if(bulk)r.eval("clearMarket(s,'tools',[[H[2],15]],1)");else near(r.eval("purchase(s,'tools',H[2],15,1)"),7.5);
-    near(r.eval("mkt(s,'tools').get(H[0])"),2.5);
+    if(bulk)r.eval("clearMarket(s,'tools',[[H[2],15]],1)");else near(r.eval("purchase(s,'tools',H[2],15,1)"),15);
+    near(r.eval("mkt(s,'tools').get(H[0])"),10);
   }
 });

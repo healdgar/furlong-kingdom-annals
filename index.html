@@ -2968,8 +2968,8 @@ function marryHouseholds(a,b){let A=householdAccount(a),B=householdAccount(b);if
   (A.assets._owe||(A.assets._owe=[])).push(...(B.assets._owe||[]));B.assets._owe=[];
   transferOwnership(B,[[A,1]]);for(const p of [...B.members])bindHousehold(p,A);B.successors=[[A,1]];B.head=null;
   for(const s of W.settlements){for(const f of s.furl||[]){if(f.own===b.id)f.own=a.id;if(f.wk===b.id)f.wk=a.id;}for(const x of s.buildings||[])if(x.title&&x.title.owner===B)x.title.owner=A;else if(x.ownerId===b.id)x.ownerId=a.id;for(const f of s.furl||[])if(f.title){for(const k of ['own','work'])if(f.title[k].owner===B)f.title[k].owner=A;}householdHeadsChanged(s);}}
-function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);const x=stockOf(from,h),y=stockOf(to,h);
-  for(const kind of ['held','animals'])for(const g in x[kind]){const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held')storageMoveLots(from,to,physical,q,h,'held','household-arrival');x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;storageTitleDirty(from,g);storageTitleDirty(to,g);if(!from.storage||kind==='animals'){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
+function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);herdSync(from);herdSync(to);const x=stockOf(from,h),y=stockOf(to,h);
+  for(const kind of ['held','animals'])for(const g in x[kind]){const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held'&&!BEASTS.includes(g))storageMoveLots(from,to,physical,q,h,'held','household-arrival');x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;storageTitleDirty(from,g);storageTitleDirty(to,g);if(!from.storage||kind==='animals'||BEASTS.includes(g)){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
   h.home=to;from._herdLast=Object.fromEntries(BEASTS.map(g=>[g,from.stores[g]||0]));to._herdLast=Object.fromEntries(BEASTS.map(g=>[g,to.stores[g]||0]));}
 function departHousehold(p,from,to,why){const h=householdAccount(p);if(!h||why==='bride'||h.movingTo===to)return;
   const remaining=[...h.members].filter(q=>q!==p&&!q.dead&&q.si===from);if(!remaining.length)return;
@@ -3052,7 +3052,7 @@ function storageProjectTick(q){if(typeof storageOutcomeAssert==='function')stora
   acct(payer,-share);wages(s,share,'works');q.paid+=share;q.done++;q.stalled=false;q.reason=null;K.event('construction-progress',null,share,{projectAfter:storageProjectState(q)});if(q.done<q.days)return;const b=s._lay.live.storageSite(q.x,q.z,q.arch,false);if(!b){stall('site-obstructed');return;}b.ownerId=typeof q.payer==='number'?-1:q.payer.head?.id??q.payer.id??-1;b.storagePublic=typeof q.payer==='number'||q.arch==='warehouse';if(typeof q.payer!=='number')b.title={owner:accountOwner(q.payer),beneficiary:q.payer.head||q.payer};q.dead=true;bindPropertyRights(s);storageFacilities(s);syncLive(s);G.detDirty=true;K.event('construction-completed',null,0,{owner:storageOwnerId(q.payer),location:b.storageId,arch:q.arch,x:q.x,z:q.z,paid:q.paid,capacity:K.locations.get(b.storageId).capacity,projectAfter:storageProjectState(q)});s.history.push({yr:year(),t:`A ${q.arch} was completed at (${Math.round(q.x)}, ${Math.round(q.z)}), with room for ${q.capacity} loads.`});emit('trade',5,{x:q.x,z:q.z},`The new ${q.arch} at ${s.name} opens for ${q.capacity} loads.`);}
 function storageInvestment(s){if(day()%30!==W.settlements.indexOf(s)%30||(W.projects||[]).some(q=>q.type==='storage'&&W.settlements[q.si]===s&&!q.dead))return;const K=storageFacilities(s);if(!(s.storageReport?.exposed>100))return;const exposed=new Map();for(const l of K.lots.values())if(K.locations.get(l.location)?.exposed){const o=l.owner||lordAcct(s);exposed.set(o,(exposed.get(o)||0)+l.qty*K.volume(l.good));}const investors=[...exposed].sort((a,b)=>b[1]-a[1]);for(const[o,amount]of investors){const arch=o&&o.household&&o.head?.tr==='merchant'?'warehouse':'grange',t=STORAGE_TYPES[arch];if(means(o)<t.cost*1.5||amount<100)continue;let best=null;const anchors=arch==='grange'?(s.furl||[]).filter(f=>f.state===LS.TILLED).slice(0,12):[(s.places||[]).find(p=>p.kind==='market')||s.pos];for(const a of anchors)for(let k=0;k<8;k++){const theta=k*Math.PI/4,x=a.x+Math.cos(theta)*22,z=a.z+Math.sin(theta)*22,Q=storageSiteQuote(W.settlements.indexOf(s),arch,x,z,o);if(!Q.ok)continue;const avoided=Math.min(amount,t.capacity)*0.00108*360*price(s,'grain'),handling=Math.min(amount,t.capacity)*Q.handlingPerLoad*12,net=avoided-handling-Q.cost/5;if(!best||net>best.net)best={Q,net};}if(best){K.event('investment-decision',null,0,{owner:storageOwnerId(o),arch,exposed:amount,annualNet:best.net,chosen:best.net>0,x:best.Q.x,z:best.Q.z});if(best.net>0){storageCommission(best.Q);return;}}}}
 
-function storageTitleTake(s,from,to,g,qty,availability='held'){if(!s.storage)return [];const K=s.storage,out=[];let left=qty;for(const l of [...K.lots.values()])if(l.owner===accountOwner(from)&&l.good===g&&l.availability==='sale'){const q=Math.min(left,l.qty);if(q>0){const p=K.transfer(l,accountOwner(to),q,availability);K.annotate(p,{pendingPurchase:true});out.push(p);left-=q;}if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-title-transfer',null,left,{owner:storageOwnerId(from),good:g,destinationOwner:storageOwnerId(to)});storageInvariantFault('Unbacked title transfer '+g+': '+left);}return out;}
+function storageTitleTake(s,from,to,g,qty,availability='held'){if(!s.storage||BEASTS.includes(g))return [];const K=s.storage,out=[];let left=qty;for(const l of [...K.lots.values()])if(l.owner===accountOwner(from)&&l.good===g&&l.availability==='sale'){const q=Math.min(left,l.qty);if(q>0){const p=K.transfer(l,accountOwner(to),q,availability);K.annotate(p,{pendingPurchase:true});out.push(p);left-=q;}if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-title-transfer',null,left,{owner:storageOwnerId(from),good:g,destinationOwner:storageOwnerId(to)});storageInvariantFault('Unbacked title transfer '+g+': '+left);}return out;}
 function storageCargoOut(c,s){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=s.storage;if(!K||BEASTS.includes(c.good))return;const id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});let left=c.qty;const lots=[];for(const l of [...K.lots.values()])if(l.owner===accountOwner(c.m)&&l.good===c.good&&l.availability==='held'){const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q),from=p.location;K.relocate(p,id,'transit','dispatch');lots.push(p);K.event('cargo-destination',p,q,{from,destination:c.dest});left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(c.good)?.budget||0)+Number.EPSILON*Math.abs(c.qty)*8){K.event('unbacked-cargo',null,left,{good:c.good,owner:storageOwnerId(c.m)});storageInvariantFault('Unbacked cargo '+c.good+': '+left);}c.storageCargo={origin:s,id};Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){let q=0;for(const lotId of K.byLocation.get(id)||[]){const l=K.lots.get(lotId);if(l?.location===id)q+=l.qty;}return q;}});}
 function storageCargoArrive(c,d){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);storageBindGood(d,c.good);for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;const from=l.location;l.location='yard';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('arrival',l,l.qty,{from,origin:W.settlements.indexOf(cargo.origin)});}storageTitles(d);}
 function storageConsumeSale(s,who,g,qty){if(!s.storage)return qty;storageTitles(s,g);let left=qty;for(const l of [...s.storage.lots.values()])if(l.owner===accountOwner(who)&&l.good===g&&l.availability==='sale'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}return qty-left;}
@@ -3064,7 +3064,7 @@ function stockOf(s,who){who=accountOwner(who);const M=s._owners||(s._owners=new 
 function pantry(s,who){return stockOf(s,who).held;}
 function addHeld(s,who,g,q){if(q>0){const L=pantry(s,who);L[g]=(L[g]||0)+q;storageTitleDirty(s,g);}}
 function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g;let v=Math.max(0,Math.min(q,L[g]||0,s.stores[physical]||0));if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;for(const id of [...s.storage.byOwner.get(accountOwner(who))||[]]){const l=s.storage.lots.get(id);if(l&&l.owner===accountOwner(who)&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}
-function consumeOwnStock(s,who,g,q){let got=consumeOwned(s,who,g,q);const L=mkt(s,g);let v=Math.max(0,Math.min(q-got,L.get(who)||0,s.stores[g]||0));if(v>0){if(s.storage&&!BEASTS.includes(g))v=storageConsumeSale(s,who,g,v);const left=(L.get(who)||0)-v;if(left>1e-9)L.set(who,left);else{L.delete(who);rsv(s,g).delete(who);}if(!s.storage||BEASTS.includes(g))s.stores[g]-=v;got+=v;}return got;}
+function consumeOwnStock(s,who,g,q){let got=consumeOwned(s,who,g,q);const L=mkt(s,g);let v=Math.max(0,Math.min(q-got,L.get(who)||0,s.stores[g]||0));if(v>0){if(s.storage&&!BEASTS.includes(g))v=storageConsumeSale(s,who,g,v);const left=(L.get(who)||0)-v;if(left>0)L.set(who,left);else{L.delete(who);rsv(s,g).delete(who);}if(!s.storage||BEASTS.includes(g))s.stores[g]-=v;got+=v;}return got;}
 function herdProduce(s){const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),owned={};for(const g of BEASTS)owned[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
   const lord=lordAcct(s),remainder=Object.fromEntries(BEASTS.map(g=>[g,Math.max(0,(s.stores[g]||0)-(owned[g]||0))]));
   for(const[o,x]of [...owners,[lord,{animals:remainder}]]){const H=x.animals,food=(H.cattle||0)*0.1+(H.swine||0)*0.025+(H.sheep||0)*0.008,wool=(H.sheep||0)*0.012;s.stores.grain+=food;s.stores.wool=(s.stores.wool||0)+wool;
@@ -3073,7 +3073,7 @@ function herdProduce(s){const owners=[...(s._owners||new Map())].filter(([,x])=>
 function winterFeed(s,snow){herdSync(s);const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),totals={};for(const g of BEASTS)totals[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
   const remainder=Object.fromEntries(BEASTS.map(g=>[g,Math.max(0,(s.stores[g]||0)-(totals[g]||0))]));
   for(const[o,x]of [...owners,[lordAcct(s),{animals:remainder}]]){const H=x.animals,need=['sheep','cattle','horses'].reduce((n,g)=>n+(H[g]||0)*LU[g],0)*0.35,eat=consumeOwnStock(s,o,'hay',need),short=need>0?1-eat/need:0;
-    if(short>0.05){const loss=Math.min(0.1,short*0.12)*(snow?1.4:1);for(const g of ['sheep','cattle','horses']){const q=(H[g]||0)*loss;H[g]-=q;s.stores[g]=Math.max(0,(s.stores[g]||0)-q);}}}
+    if(short>0.05){const loss=Math.min(0.1,short*0.12)*(snow?1.4:1);for(const g of ['sheep','cattle','horses']){const q=(H[g]||0)*loss;if(H===remainder&&H[g]>0)for(const x of (s._owners||new Map()).values())for(const kind of ['sale','held'])if(x[kind][g]!==undefined)x[kind][g]*=1-loss;H[g]=(H[g]||0)-q;s.stores[g]=Math.max(0,(s.stores[g]||0)-q);}}}
   s._herdLast=Object.fromEntries(BEASTS.map(g=>[g,s.stores[g]||0]));}
 function spoilOwned(s,g,rate){if(!(rate>0))return;if(s.storage){storageSpoil(s,g,rate);return;}const f=Math.max(0,1-rate);s.stores[g]=Math.max(0,(s.stores[g]||0)*f);
   for(const x of (s._owners||new Map()).values()){if(x.held[g])x.held[g]*=f;if(x.sale[g])x.sale[g]*=f;if(g==='timber'&&x.held.char)x.held.char*=f;}
@@ -3093,6 +3093,7 @@ class OwnedMarket extends Map {
   has(w){return this.get(w)!==undefined;}
   delete(w){const x=stockOf(this.s,w)[this.kind],had=this.g in x;delete x[this.g];if(this.kind!=='reserve')storageTitleDirty(this.s,this.g);return had;}
   clear(){for(const x of (this.s._owners||new Map()).values())delete x[this.kind][this.g];if(this.kind!=='reserve')storageTitleDirty(this.s,this.g);}
+  *ownedEntries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w,x[this.kind][this.g]];}
   *entries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w&&w.household?w.head||w:w,x[this.kind][this.g]];}
   *keys(){for(const[w]of this.entries())yield w;}
   *values(){for(const[,v]of this.entries())yield v;}
@@ -6688,15 +6689,15 @@ function tickLivestock(){
     const used=St.sheep*LU.sheep+St.cattle*LU.cattle+St.horses*LU.horses,press=used/Math.max(1,g.cap);M.press=press;
     for(const k of BEASTS){
       const room=k==='swine'?1-St.swine*LU.swine/Math.max(1,g.pann):1-press;
-      if(room>0)St[k]+=Math.max(0.3,St[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1); // they breed while there is grass; the surplus waits for the drovers
-      if(St[k]>want[k]*1.8){const cull=(St[k]-want[k]*1.8)*0.15;St[k]-=cull;St.grain+=cull*(k==='cattle'?4:k==='swine'?1.5:k==='sheep'?0.6:0);} // what no drover will take goes to the shambles
-      if(s.siegeBy)St[k]*=0.96; // shut in, the beasts are eaten
+      if(room>0)herdBirth(s,k,Math.max(0.3,St[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1)); // they breed while there is grass; the surplus waits for the drovers
+      if(St[k]>want[k]*1.8){const cull=(St[k]-want[k]*1.8)*0.15;herdLoss(s,k,cull);St.grain+=cull*(k==='cattle'?4:k==='swine'?1.5:k==='sheep'?0.6:0);} // what no drover will take goes to the shambles
+      if(s.siegeBy)herdLoss(s,k,St[k]*0.04); // shut in, the beasts are eaten
     }
     if(St.hay==null)St.hay=0;const si2=seasonIdx();
     if(si2===1||si2===2){const q=(g.hay*2+g.past*0.3+g.wild*0.08)*(W.drought?0.4:1);St.hay+=q;made(s,'hay',q);} // mown in summer, stacked for the winter
     const winterNeed=used*0.35; /* the rest of the winter's keep is the stubble and the frosted grass */s._hayWant=winterNeed*(si2===3?1:3); // three winter months' fodder, bought in autumn where the meadows fall short
     if(winter)winterFeed(s,snow); // every byre uses its owner's hay, and bears its own shortfall
-    if(M.murrain>0){M.murrain--;const k=M.murrainK;St[k]*=0.85; // murrain: a cattle-plague or the sheep-rot, carried between neighbours
+    if(M.murrain>0){M.murrain--;const k=M.murrainK;herdLoss(s,k,St[k]*0.15); // murrain: a cattle-plague or the sheep-rot, carried between neighbours
       for(const o of W.settlements)if(o!==s&&o.hm&&!(o.hm.murrain>0)&&dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z)<1400&&frand()<0.08){o.hm.murrain=3+Math.floor(frand()*4);o.hm.murrainK=k;}}
     else if(frand()<0.0006){M.murrain=3+Math.floor(frand()*4);M.murrainK=frand()<0.55?'cattle':'sheep';
       if(!W.prehistory)emit('fates',4,s.pos,vary('murrain',[()=>`A murrain falls on the ${M.murrainK==='cattle'?'cattle':'flocks'} of ${s.name}; the carcasses are burned in the ditches.`,
@@ -6712,10 +6713,11 @@ function lootTo(a){ // the households the host's men come from (or, with no men 
   const M=(a.men||[]).filter(p=>!p.merc&&!p.dead);if(M.length)return M.map(p=>p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));
   const t=W.settlements[a.home];return t?heads_(t,h=>ageYrs(h)<50):[];}
 function driveOffHerds(s,a){ // raiders take the beasts home with them: two thirds to the men's own families, a third to their lord's herd
-  if(!s.hm)return 0;const home=W.settlements[a.home],R=lootTo(a);let n=0;
-  for(const k of['sheep','cattle','swine']){const t=(s.stores[k]||0)*0.35;s.stores[k]-=t;n+=t;const men=R.length?t*2/3:0;
+  if(!s.hm)return 0;const home=W.settlements[a.home],R=lootTo(a);const touched=new Set([s,home,...R.map(h=>W.settlements[h.si])].filter(Boolean));for(const t of touched)herdSync(t);let n=0;
+  for(const k of['sheep','cattle','swine']){const t=(s.stores[k]||0)*0.35;herdLoss(s,k,t);n+=t;const men=R.length?t*2/3:0;
     if(home)home.stores[k]=(home.stores[k]||0)+(t-men); // the lord's third, unowned in the home byres: his
     for(const h of R){const q=men/R.length,hs=W.settlements[h.si];if(!hs)continue;hs.stores[k]=(hs.stores[k]||0)+q;herdOf(h)[k]=(herdOf(h)[k]||0)+q;}}
+  herdSync(s);for(const t of touched)t._herdLast=Object.fromEntries(BEASTS.map(k=>[k,t.stores[k]||0]));
   return Math.round(n);}
 function spoils(a,s,sack){ // what is taken from a fallen or raided town: coin passes whole, goods only as far as they can be carried
   const f=sack?0.5:0.2,lord=houseAcct(a.house),R=lootTo(a),home=W.settlements[a.home];let coin=0,chest=0;
@@ -6729,7 +6731,7 @@ function spoils(a,s,sack){ // what is taken from a fallen or raided town: coin p
   for(const g in CARRY){const q=(s.stores[g]||0)*f;if(!(q>0))continue;s.stores[g]-=q;const c=q*CARRY[g];if(!home||!(c>0))continue;home.stores[g]=(home.stores[g]||0)+c;
     if(R.length){const mc=c*2/3;for(const h of R)offer(home,g,h,mc/R.length);offer(home,g,lord,c-mc);}else offer(home,g,lord,c);}
   return coin+chest;}
-function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s?Math.min(riders,Math.floor((s.stores.horses||0)*0.6)):0;if(s)s.stores.horses=(s.stores.horses||0)-h;a.horses=(a.horses||0)+h;}
+function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s?Math.min(riders,Math.floor((s.stores.horses||0)*0.6)):0;if(s){herdSync(s);herdLoss(s,'horses',h);}a.horses=(a.horses||0)+h;}
 /* the herds on the map: each beast drawn stands for a few head, on the grass its village grazes; click one to learn whose it is */
 const HERDDRAW={sheep:{per:8,cap:3000},cattle:{per:2,cap:1600},horses:{per:1.5,cap:700},swine:{per:4,cap:1400}};
 function buildHerdMeshes(){
@@ -8320,7 +8322,7 @@ function ladeOut(c,o,quiet){const mode=c.sea||c.river?'boat':'cart',want=c.qty,m
   const drv=driverFor(o,mode,m,W.settlements[c.dest]);
   if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman',Q=o._missQ||(o._missQ={}),k='~'+c.good,nq=Math.max(0,want-(Q[k]||0));Q[k]=Math.max(Q[k]||0,want);U[tr]=(U[tr]||0)+freight(o,nq,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}return null;} // no one free to drive it: the load waits, and the going rate will rise
   c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
-  if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]-=got;else if(got>0){addHeld(o,m,c.good,got);}return null;} // nothing for sale at the price: no load (what was taken goes back)
+  if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good)){o.stores[c.good]+=got;if(got>0)offer(o,c.good,m,got);}else if(got>0){addHeld(o,m,c.good,got);}return null;} // nothing for sale at the price: no load (what was taken goes back)
   c.qty=got;storageCargoOut(c,o);c.value*=got/want;c.fee=freight(o,got,c.len,mode);c.drv=drv;c.crew=drv;if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-c.cost; // his outlay
   const trip=Math.max(0.5,c.arriveDay-c.departDay),dest=W.settlements[c.dest];drv.away={until:c.arriveDay+trip,what:`${c.sea?'master of a cog':c.river?'on a barge':'carting'} ${c.good} to ${dest?dest.name:'market'}, and back`};
   (o._loads||(o._loads={}))[mode]=(o._loads[mode]||0)+1;
@@ -8374,13 +8376,13 @@ function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=f
 function reconcile(s,heads,goods=GOODS){ // the stores and their owners agree: what was lost (eaten by armies, burned, spoiled, plundered) is lost by all in proportion; what came unowned (the fleeces, a gift of grain) is the lord's, or the shepherds'
   const Ld=lard(s);
   for(const g of goods){const L=mkt(s,g);
-    for(const[w,v]of[...L]){if(v<1e-3){L.delete(w);continue;}if(w&&w.gn!==undefined&&w.dead){L.delete(w);let x=w;for(let k=0;k<6&&x&&x.gn!==undefined&&x.dead;k++)x=x._heir;offer(s,g,x&&!(x.gn!==undefined&&x.dead)?x:lordAcct(s),v);}} // a dead seller's stock is his heir's
+    for(const[w,v]of[...L.ownedEntries()]){if(v===0){L.delete(w);continue;}if(w&&w.gn!==undefined&&w.dead){L.delete(w);let x=w;for(let k=0;k<6&&x&&x.gn!==undefined&&x.dead;k++)x=x._heir;offer(s,g,x&&!(x.gn!==undefined&&x.dead)?x:lordAcct(s),v);}} // a dead seller's stock is his heir's
     let fam=0;if(LU[g]!==undefined)for(const x of s._owners.values())fam+=(x.animals[g]||0);
     const T=Math.max(0,(s.stores[g]||0)-fam),ld=(Ld[g]||0)+(g==='timber'?Ld.char||0:0);let led=0;for(const v of L.values())led+=v;const have=led+ld;
     if(T>have+1e-6){const d=T-have;
       if(g==='wool'){let sh=0;for(const h of heads)sh+=(h.herd&&h.herd.sheep)||0;const all=Math.max(sh,s.stores.sheep||0);for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,d*h.herd.sheep/Math.max(1,all));if(all>sh)offer(s,'wool',lordAcct(s),d*(all-sh)/all);else if(!sh)offer(s,'wool',lordAcct(s),d);}
       else offer(s,g,lordAcct(s),d);}
-    else if(T<have-1e-6){const f=have>0?T/have:0;for(const[w,v]of L)L.set(w,v*f);if(Ld[g])Ld[g]*=f;if(g==='timber'&&Ld.char)Ld.char*=f;}}}
+    else if(T<have-1e-6){const f=have>0?T/have:0;for(const[w,v]of L.ownedEntries())L.set(w,v*f);if(Ld[g])Ld[g]*=f;if(g==='timber'&&Ld.char)Ld.char*=f;}}}
 function topUpFood(s,need,PM){const H=householdsOf(s),plans=[];let short=0;
   for(const h of H){const n=h.population.get(s)||0,L=pantry(s,h),herd=h.assets.herd||{},home=0;
     const q=Math.max(0,n*(NEED.grain+NEED.fish)-home-(L.grain||0)-(L.fish||0));if(q>1e-9){plans.push({owner:h,buyer:h.head||lordAcct(s),q});short+=q;}}
@@ -8402,7 +8404,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   const pg=price(s,'grain'),pf=price(s,'fish'),fishSh=Math.min(0.8,0.25*Math.pow(pg/Math.max(1e-6,pf),1.5)); // the cheaper food is eaten more
   const B=heads.length?heads:[lordAcct(s)];let sf=0,sn=0,sw=0;
   const plan=[],O={};let homeFood=0;const pay2=[]; // wages the better-off pay for service and day-labour
-  for(const h of B){const n=heads.length?householdSize(s,h):s.pop,owner=heads.length?householdAccount(h):householdsOf(s)[0],Ld=pantry(s,owner),H=h.gn!==undefined?herdOf(h):{};if(h.gn!==undefined)h._keep=n*NEED.grain*180; /* half a year's bread, on average, to the next harvest */
+  for(const h of B){const n=heads.length?householdSize(s,h):s.pop,owner=heads.length?householdAccount(h):householdsOf(s)[0],Ld=pantry(s,owner),H=h.gn!==undefined?herdOf(h,s):{};if(h.gn!==undefined)h._keep=n*NEED.grain*180; /* half a year's bread, on average, to the next harvest */
     let cash=h.gn!==undefined?(h.w||0)+foodYr()*0.25+BEASTS.reduce((t,k)=>t+(H[k]||0)*price(s,k)*0.5,0)+(h._owned||0)*foodYr()*0.5:1e12; // what he has, and what he could raise by selling beasts or land
     const sh=1,home=0,food=Math.max(0,n*(NEED.grain+NEED.fish)*30-home-((Ld.grain||0)+(Ld.fish||0))*sh); // milk and bacon from his own beasts; and what is still in the crock from last month
     const want=[['grain',food*(1-fishSh),0.3],['fish',food*fishSh,0.25],['timber',Math.max(0,n*NEED.timber*30-(Ld.timber||0)*sh),0.2],['cloth',Math.max(0,n*NEED.cloth*30-(Ld.cloth||0)*sh),0.4],['tools',Math.max(0,n*NEED.tools*30-(Ld.tools||0)*sh),0]]; // a household tops up to a month's need: it does not buy again what it has
@@ -9821,10 +9823,11 @@ function builtReach(s){ // how far the built-up ground reaches now (nine houses 
   const C=s.pos,d=[];for(const b of s.buildings||[])if(!b.removed&&b.state!=='gone'&&b.state!=='ruin'&&!b.inst)d.push(dist2d(b.x,b.z,C.x,C.z));
   if(d.length<4)return s.extentR||s.radius||80;d.sort((a,b)=>a-b);return d[Math.floor(d.length*0.9)]+12;}
 function wardPrice(a){return Math.round(12*Math.max(0,a._ltY??a._lt??0));} // a dozen years' purchase of what its lord draws from it: rents, his share of the harvest, the market's tolls
-function moveStock(a,b,g,x){const T=a.stores[g]||0;if(!(x>0)||!(T>0))return;x=Math.min(x,T);initOwnership(a);initOwnership(b);const f=x/T,L=mkt(a,g),R=a.rsv&&a.rsv[g];if(a.storage&&!BEASTS.includes(g)){const A=a.storage,B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);for(const id of [...A.byGood.get(g)||[]]){const lot=A.lots.get(id);if(!lot||A.locations.get(lot.location)?.transit)continue;const q=lot.qty*f;if(!(q>0))continue;const part=A.split(lot,q),from=part.location;A.event('custody-departure',part,part.qty,{lotAfter:null,destination:B.realmId});A.unindex(part);A.lots.delete(part.id);A.revision++;part.location='yard';B.lots.set(part.id,part);B.index(part);B.revision++;B.event('settlement-transfer',part,q,{from,origin:W.settlements.indexOf(a)});}}
-  for(const[w,v]of [...L]){const q=v*f;L.set(w,v-q);offer(b,g,w,q,R&&R.get(w));}
+function moveStock(a,b,g,x){const T=a.stores[g]||0;if(!(x>0)||!(T>0))return;x=Math.min(x,T);initOwnership(a);initOwnership(b);if(LU[g]!==undefined){herdSync(a);herdSync(b);}const f=x/T,L=mkt(a,g),R=a.rsv&&a.rsv[g];if(a.storage&&!BEASTS.includes(g)){const A=a.storage,B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);for(const id of [...A.byGood.get(g)||[]]){const lot=A.lots.get(id);if(!lot||A.locations.get(lot.location)?.transit)continue;const q=lot.qty*f;if(!(q>0))continue;const part=A.split(lot,q),from=part.location;A.event('custody-departure',part,part.qty,{lotAfter:null,destination:B.realmId});A.unindex(part);A.lots.delete(part.id);A.revision++;part.location='yard';B.lots.set(part.id,part);B.index(part);B.revision++;B.event('settlement-transfer',part,q,{from,origin:W.settlements.indexOf(a)});}}
+  for(const[w,v]of [...L.ownedEntries()]){const q=v*f;L.set(w,v-q);offer(b,g,w,q,R&&R.get(w));}
   for(const[w,v]of a._owners){const q=(v.held[g]||0)*f;if(q>0){v.held[g]-=q;storageTitleDirty(a,g);addHeld(b,w,g,q);}}
-  if(!a.storage||BEASTS.includes(g)){a.stores[g]=T-x;b.stores[g]=(b.stores[g]||0)+x;}}
+  if(LU[g]!==undefined)for(const[w,v]of a._owners){const q=(v.animals[g]||0)*f;if(q>0){v.animals[g]-=q;const H=stockOf(b,w).animals;H[g]=(H[g]||0)+q;}}
+  if(!a.storage||BEASTS.includes(g)){a.stores[g]=T-x;b.stores[g]=(b.stores[g]||0)+x;}if(LU[g]!==undefined){a._herdLast=Object.fromEntries(BEASTS.map(k=>[k,a.stores[k]||0]));b._herdLast=Object.fromEntries(BEASTS.map(k=>[k,b.stores[k]||0]));}}
 function lordTake(s,v){if(v>0)s._lt=(s._lt||0)+v;} // what a place yields its lord this year
 function incorporate(ai,bi,how){
   const S=W.settlements,a=S[ai],b=S[bi];a.wardOf=bi;a.owner=b.owner;a.wardSince=AD();
@@ -10000,24 +10003,24 @@ function rsv(s,g){const R=s.rsv||(s.rsv={});if(!(R[g] instanceof OwnedMarket)){c
 function offer(s,g,who,qty,res){if(s.storage&&!BEASTS.includes(g))storageBindGood(s,g);if(!(qty>0)||!who)return;const L=mkt(s,g);L.set(who,(L.get(who)||0)+qty);if(res>0){const R=rsv(s,g);R.set(who,Math.max(R.get(who)||0,res));}}
 function lard(s){initOwnership(s);return s._lard;} // a read aggregate; ownership lives in each account's inventory
 function forSale(w,v,g){return g==='grain'&&w&&(w.household||w.gn!==undefined)&&(w.household?w.assets._keep:w._keep)>0?Math.max(0,v-(w.household?w.assets._keep:w._keep)):v;} // a farming household keeps back its own bread till the next harvest, and sells the rest
-function avail(s,g,p){const L=mkt(s,g),R=s.rsv&&s.rsv[g];let a=0;for(const[w,v]of L)if(!(R&&R.get(w)>p))a+=forSale(w,v,g);return a;}
+function avail(s,g,p){const L=mkt(s,g),R=s.rsv&&s.rsv[g];let a=0;for(const[w,v]of L.ownedEntries())if(!(R&&R.get(w)>p))a+=forSale(w,v,g);return a;}
 function purchase(s,g,buyer,qty,p){ // the buyer takes from his own stock first, then from every seller content with the price, in proportion; returns what was paid (purchase.got: how much)
   purchase.got=0;if(s.storage)storageTitles(s,g);if(!(qty>0))return 0;p=p??price(s,g);const L=mkt(s,g),R=s.rsv&&s.rsv[g],D=s._dem||(s._dem={});
   const own0=buyer?L.get(buyer)||0:0;if(buyer&&buyer!=='out'&&p>0){if(buyer.gn!==undefined&&(g==='grain'||g==='fish')){const short=Math.min(qty-own0,qty)*p-Math.max(0,buyer.w||0);if(short>0)borrow(s,buyer,Math.min(short,foodYr()*0.25-(buyer._debt||0)));} /* bread on the slate: a neighbour, the church or the lord lends, and is owed */qty=Math.min(qty,own0+Math.max(0,means(buyer))/p);} // no one buys more than he can pay for
   if(!(qty>0))return 0;D[g]=(D[g]||0)+qty;
-  let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);storageTitleTake(s,buyer,buyer,g,got);if(own-got>1e-6)L.set(buyer,own-got);else L.delete(buyer);if(buyer.gn!==undefined)buyer._inc=(buyer._inc||0)+got*p;} // his own grain: worth to him what it would have fetched
-  let have=0;for(const[w,v]of L)if(w!==buyer&&!(R&&R.get(w)>p))have+=forSale(w,v,g);
+  let got=0;const own=buyer?L.get(buyer)||0:0;if(own>0){got=Math.min(own,qty);storageTitleTake(s,buyer,buyer,g,got);if(own-got>0)L.set(buyer,own-got);else L.delete(buyer);if(buyer.gn!==undefined)buyer._inc=(buyer._inc||0)+got*p;} // his own grain: worth to him what it would have fetched
+  let have=0;for(const[w,v]of L.ownedEntries())if(w!==accountOwner(buyer)&&!(R&&R.get(w)>p))have+=forSale(w,v,g);
   const take=Math.min(qty-got,have),f=have>0?take/have:0;let paid=0;
-  if(take>0)for(const[w,v]of L){if(w===buyer||R&&R.get(w)>p)continue;const q=forSale(w,v,g)*f,r=v-q;if(!(q>0))continue;storageTitleTake(s,w,buyer,g,q);if(w==='out')flow('>import '+g,q*p);if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);paid+=q*p;}
+  if(take>0)for(const[w,v]of L.ownedEntries()){if(w===accountOwner(buyer)||R&&R.get(w)>p)continue;const q=forSale(w,v,g)*f,r=v-q;if(!(q>0))continue;storageTitleTake(s,w,buyer,g,q);if(w==='out')flow('>import '+g,q*p);if(r>0)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);paid+=q*p;}
   got+=take;acct(buyer,-paid);if(buyer==='out')flow('<export '+g,paid);const S=s._sold||(s._sold={});S[g]=(S[g]||0)+got;purchase.got=got;return paid;}
 function clearMarket(s,g,orders,p){ // the month's buying of one good cleared at once: each buyer takes his own stock first, then all who want more share what is offered at the price, and all who offered it share the sale
   if(s.storage)storageTitles(s,g);const custody=[];p=p??price(s,g);const L=mkt(s,g),R=s.rsv&&s.rsv[g],got=new Array(orders.length).fill(0),res=new Array(orders.length).fill(0);let Rt=0,Dt=0;
-  orders.forEach(([b,q],i)=>{if(!(q>0))return;const own=b?L.get(b)||0:0;if(own>0){const t=Math.min(own,q);got[i]=t;storageTitleTake(s,b,b,g,t);if(own-t>1e-6)L.set(b,own-t);else L.delete(b);if(b.gn!==undefined)b._inc=(b._inc||0)+t*p;}res[i]=q-got[i];
+  orders.forEach(([b,q],i)=>{if(!(q>0))return;const own=b?L.get(b)||0:0;if(own>0){const t=Math.min(own,q);got[i]=t;storageTitleTake(s,b,b,g,t);if(own-t>0)L.set(b,own-t);else L.delete(b);if(b.gn!==undefined)b._inc=(b._inc||0)+t*p;}res[i]=q-got[i];
     if(res[i]>0&&b&&b!=='out'&&p>0){if(b.gn!==undefined&&(g==='grain'||g==='fish')){const short=res[i]*p-Math.max(0,b.w||0);if(short>0)borrow(s,b,Math.min(short,foodYr()*0.25-(b._debt||0)));}res[i]=Math.min(res[i],Math.max(0,means(b))/p);} /* he buys with what he has, and what a neighbour will lend him for bread */
     Dt+=got[i]+res[i];Rt+=res[i];});
-  let A=0;for(const[w,v]of L)if(!(R&&R.get(w)>p))A+=forSale(w,v,g);
+  let A=0;for(const[w,v]of L.ownedEntries())if(!(R&&R.get(w)>p))A+=forSale(w,v,g);
   const fill=Rt>0&&A>0?Math.min(1,A/Rt):0,sf=A>0?Math.min(1,Rt/A):0;
-  const lo=lordAcct(s);if(sf>0)for(const[w,v]of L){if(R&&R.get(w)>p)continue;const q=forSale(w,v,g)*sf,r=v-q;if(!(q>0))continue;custody.push(...storageTitleTake(s,w,null,g,q,'market-cleared'));if(w===lo)lordTake(s,q*p);if(w==='out')flow('>import '+g,q*p);if(r>1e-6)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);}
+  const lo=lordAcct(s);if(sf>0)for(const[w,v]of L.ownedEntries()){if(R&&R.get(w)>p)continue;const q=forSale(w,v,g)*sf,r=v-q;if(!(q>0))continue;custody.push(...storageTitleTake(s,w,null,g,q,'market-cleared'));if(w===lo)lordTake(s,q*p);if(w==='out')flow('>import '+g,q*p);if(r>0)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);}
   orders.forEach(([b],i)=>{if(!(res[i]>0)||!fill)return;const t=res[i]*fill;got[i]+=t;if(s.storage){let left=t;for(const l of custody){if(l.owner!==null||!(l.qty>0))continue;const q=Math.min(left,l.qty);s.storage.transfer(l,accountOwner(b),q,'held');left-=q;if(!(left>0))break;}}acct(b,-t*p);});
   const D=s._dem||(s._dem={}),S=s._sold||(s._sold={});D[g]=(D[g]||0)+Dt;S[g]=(S[g]||0)+got.reduce((a,b)=>a+b,0);return got;}
 function heads_(s,pred){return s.folk?headsOf(s).filter(h=>!h.role&&pred(h)):[];}
@@ -10092,16 +10095,19 @@ function youngPull(o){return foodYr()*0.5*Math.log10(1+o.pop)/3;} // to the youn
 /* beasts are the families' own: the village herd is their beasts grazing the common together, and the lord's;
    calves and lambs are the owners', losses fall on them, and each family buys, keeps or sells as its beasts are worth to it */
 const BEAST_YR={cattle:k=>GOODBASE.cattle*0.12,sheep:k=>GOODBASE.wool*0.55,swine:k=>GOODBASE.swine*0.35,horses:k=>GOODBASE.horses*0.06}; // milk and dung; a fleece and a lamb; a litter for the pot; a horse's work hired out
-function herdOf(h){const account=householdAccount(h),s=W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
+function herdOf(h,s){const account=householdAccount(h);s=s||W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
+function herdLoss(s,k,q){const was=s.stores[k]||0;if(!(was>0&&q>0))return;const lost=Math.min(q,was),f=(was-lost)/was;for(const x of (s._owners||new Map()).values())for(const kind of ['animals','sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;s.stores[k]=was-lost;if(s._herdLast)s._herdLast[k]=s.stores[k];}
+function herdBirth(s,k,q){const was=s.stores[k]||0;s.stores[k]=was+q;if(was>0)for(const x of (s._owners||new Map()).values())if(x.animals[k])x.animals[k]*=(was+q)/was;if(s._herdLast)s._herdLast[k]=(s._herdLast[k]||0)+q;}
 function herdSync(s){const L=s._herdLast;if(!L)return;const H=[...(s._owners||new Map()).values()].map(x=>x.animals);
-  for(const x of H)for(const k of BEASTS)if(!Number.isFinite(x[k]||0)){x[k]=0;flow('!nan herd',1);}
+  for(const x of H)for(const k of BEASTS)if(x[k]!==undefined&&!Number.isFinite(x[k]))throw new Error('Non-finite '+k+' ownership at '+s.name);
   for(const k of BEASTS){const now=s.stores[k]||0,was=L[k]||0;if(was<=0)continue;const fam=H.reduce((n,x)=>n+(x[k]||0),0);let f;
-    if(now>=was)f=now/was;else{const lord=Math.max(0,was-fam),loss=was-now;if(loss<=lord||fam<=0)continue;f=Math.max(0,fam-(loss-lord))/fam;}
-    if(Math.abs(f-1)>1e-6)for(const x of H)if(x[k])x[k]*=f;}
+    if(now>=was)continue;else{const lord=Math.max(0,was-fam),loss=was-now;if(loss<=lord||fam<=0)continue;f=Math.max(0,fam-(loss-lord))/fam;}
+    if(f!==1)for(const x of H)if(x[k])x[k]*=f;}
   s._herdLast=Object.fromEntries(BEASTS.map(k=>[k,s.stores[k]||0]));}
 function herdInit(s,heads){ // when the annals first count the beasts: the households' shares of the village herd, by how much land they work (the rest is the lord's)
-  if(s._herdLast)return;const w=new Map();let tot=0;for(const h of heads){const v=TILLERS.has(h.tr)||tills(h,s)?1+(s.furl||[]).filter(f=>f.wk===h.id).length*0.4:0.3;w.set(h,v);tot+=v;}
+  if(s._herdLast){herdSync(s);return;}const w=new Map();let tot=0;for(const h of heads){const v=TILLERS.has(h.tr)||tills(h,s)?1+(s.furl||[]).filter(f=>f.wk===h.id).length*0.4:0.3;w.set(h,v);tot+=v;}
   for(const h of heads){const H=stockOf(s,h).animals,sh=w.get(h)/Math.max(1,tot);for(const k of BEASTS)H[k]=(s.stores[k]||0)*(k==='horses'?0.3:0.75)*sh;if(h.beasts){H.cattle+=h.beasts;h.beasts=0;}}
+  for(const k of BEASTS){const assigned=heads.reduce((n,h)=>n+(stockOf(s,h).animals[k]||0),0),physical=s.stores[k]||0,f=physical>0?1-assigned/physical:1;for(const x of (s._owners||new Map()).values())for(const kind of ['sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;}
   s._herdLast=Object.fromEntries(BEASTS.map(k=>[k,s.stores[k]||0]));}
 function beastsWord(H){const p=[[Math.round(H.cattle||0),'cow'],[Math.round(H.sheep||0),'sheep'],[Math.round(H.swine||0),'pig'],[Math.round(H.horses||0),'horse']].filter(x=>x[0]>0);
   return p.length?p.map(([n,w])=>`${n} ${w}${n>1&&w!=='sheep'?'s':''}`).join(', '):'';}
@@ -10147,7 +10153,7 @@ function tickHouseholds(){
           const g2=val(o)-here-foodYr()*(0.3+d/1000*0.15);if(g2>bg){bg=g2;best=j;}}
         if(best>=0&&frand()<clamp(bg/Math.max(1,here)*0.8,0,0.7)){const o=Ss[best],i=s.folk.indexOf(p);if(i>=0){removeAt(s,i);journey(p,si,best,'migrant');life(p,`Left ${s.name} for ${o.name}, to make a living as a ${p.tr||'labourer'}`);s.pop=Math.max(5,s.pop-1);o.pop+=1;s.migOut=(s.migOut||0)+1;o.migIn=(o.migIn||0)+1;
           if(!W.prehistory&&frand()<0.02)emit('trade',1,s.pos,`${folkName(p)} leaves ${s.name} for ${o.name}, to seek work and a ${p.sx==='f'?'husband':'wife'}.`);}}}}
-    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=heads.reduce((t2,o)=>t2+((o.herd&&o.herd[k])||0),0); // the families' beasts, counted once
+    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=[...(s._owners||new Map()).values()].reduce((t2,o)=>t2+(o.animals[k]||0),0); // the families' beasts, counted once
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=0;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)
@@ -10159,7 +10165,7 @@ function tickHouseholds(){
         for(const[g,v,cut]of[['wine',drink,0.5],['cloth',dress,0.4]]){if(!(v>0))continue;const p=price(s,g),q=v*(1-cut)/Math.max(1e-6,p);purchase(s,g,h,q,p);const got=purchase.got;craftWork(s,h,g==='wine'?['brewer','cook']:['tailor'],got*p*cut/(1-cut));addHeld(s,h,g,got);if(got<q)lux[g]=(lux[g]||0)+(q-got);} // the vintner or weaver for the stuff, the alewife, innkeeper and tailor for the rest
       }
       { // the family's beasts: what they bring in, what their winter keep costs, and whether to buy or sell
-        const H=herdOf(h),hay=Math.max(0.3,price(s,'hay')),press=(s.hm&&s.hm.press)||0.8;
+        const H=herdOf(h,s),hay=Math.max(0.3,price(s,'hay')),press=(s.hm&&s.hm.press)||0.8;
         {let hy=0;for(const k of BEASTS)hy+=(H[k]||0)*LU[k]*10;if(hy>0){purchase(s,'hay',h,hy);addHeld(s,h,'hay',purchase.got);}} // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market) // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market)
         const keep=k=>LU[k]*(10*hay+GOODBASE.grain*Math.max(0,press-0.8)*3); // hay for the winter, and dear grazing on a crowded common
         const strips=(s.furl||[]).filter(f=>f.wk===h.id).length,tiller=TILLERS.has(h.tr)||tills(h,s);
