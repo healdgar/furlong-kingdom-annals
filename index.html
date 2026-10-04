@@ -12915,24 +12915,24 @@ class OutcomeJournal{
   status(){return {records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null};}
 }
 // STORAGE OUTCOME JOURNAL END
-const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,
+const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,modelFault:null,
   async begin(){
     const code=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n');
     const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
-    this.meta={format:'furlong-storage-outcomes',version:1,encoding:'tagged-json-v1',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null};this.lastHash=null;this.lastChunk=-1;
+    this.meta={format:'furlong-storage-outcomes',version:1,encoding:'tagged-json-v1',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
     this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
     await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
     this.journal=new OutcomeJournal(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
-      const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash};
+      const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:this.meta.storedBytes+blob.size,encodedBytes:this.meta.encodedBytes+bytes.byteLength};
       await new Promise((resolve,reject)=>{const t=this.db.transaction(['games','chunks'],'readwrite');t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history write failed'));});
       this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;
-    },{onFault:e=>{setSpeed(0);console.error('Storage history paused:',e);}});
+    },{onFault:e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');}});
     this.journal.append({kind:'begin',day:typeof W!=='undefined'&&W?day():0,world:this.meta.world});
   },
   schedule(){if(!this.timer)this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>{});},1000);},
   async flush(){if(this.timer){clearTimeout(this.timer);this.timer=null;}if(this.journal)return this.journal.flush();},
-  async wait(){if(this.journal&&!this.journal.ready)await this.flush();},
-  status(){return {id:this.meta?.id,...this.journal?.status(),continuation:false};},
+  async wait(){if(this.modelFault)throw this.modelFault;if(this.journal&&!this.journal.ready)await this.flush();},
+  status(){return {id:this.meta?.id,...this.journal?.status(),modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
   async saved(){if(!this.db)throw new Error('Storage history has not begun');return new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
   async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,stream:this.stream};},
   async *records(endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq){
@@ -12947,8 +12947,10 @@ const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-
   stream(){const owner=this,endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq;let it,header=false;return new ReadableStream({async pull(controller){try{if(!header){header=true;owner.journal?.seal();await owner.journal?.chain;it=owner.records(endSeq);controller.enqueue(new TextEncoder().encode(outcomeJSON({format:'furlong-storage-outcomes',meta:owner.meta,endSeq})+'\n'));return;}const next=await it.next();if(next.done)controller.close();else controller.enqueue(new TextEncoder().encode(outcomeJSON(next.value)+'\n'));}catch(e){controller.error(e);}}});}
 };
 function storageOutcome(event){if(!STORAGE_OUTCOMES.journal)throw new Error('Storage history has not begun');const seq=STORAGE_OUTCOMES.journal.append(event);STORAGE_OUTCOMES.schedule();return seq;}
-function storageOutcomeAssert(){if(STORAGE_OUTCOMES.journal)STORAGE_OUTCOMES.journal.assert();}
-function storageOutcomeReady(){return !STORAGE_OUTCOMES.journal||STORAGE_OUTCOMES.journal.ready;}
+function storageOutcomeAssert(){if(STORAGE_OUTCOMES.modelFault)throw STORAGE_OUTCOMES.modelFault;if(STORAGE_OUTCOMES.journal)STORAGE_OUTCOMES.journal.assert();}
+function storageOutcomeReady(){return !STORAGE_OUTCOMES.modelFault&&(!STORAGE_OUTCOMES.journal||STORAGE_OUTCOMES.journal.ready);}
+function storageFaultNotice(message){const el=document.getElementById('storagefault')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'storagefault'}));el.setAttribute('role','alert');el.style.cssText='position:fixed;inset:auto 12px 12px;z-index:2000;padding:12px;background:#481c16;color:#fff';el.textContent=message;}
+function storageModelFault(error){if(STORAGE_OUTCOMES.modelFault)return;const e=error instanceof Error?error:new Error(String(error));STORAGE_OUTCOMES.modelFault=e;if(STORAGE_OUTCOMES.journal&&!STORAGE_OUTCOMES.journal.fault){STORAGE_OUTCOMES.journal.append({kind:'storage-model-fault',day:day(),message:e.message});STORAGE_OUTCOMES.schedule();}setSpeed(0);storageFaultNotice('Storage accounting failed. The game is paused and its recorded history is retained.');console.error('Storage accounting paused:',e);}
 window.FURLONG_STORAGE_LOG=STORAGE_OUTCOMES;
 addEventListener('pagehide',()=>{STORAGE_OUTCOMES.flush().catch(()=>{});});
 async function boot(){
