@@ -62,8 +62,7 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 `node --test tools/provision.test.mjs` checks food replenishment, ownership,
 credit and payment conservation against the functions in `index.html`.
 `tools/soak.mjs` measures longer histories in isolated Chrome instances using
-the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md). [Physical storage and construction](docs/STORAGE.md).
-the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md).
+the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
 
 Population/census caching and shared route trees reduce repeated computation.
 A background routing worker retains the same synchronous fallback. [Implementation and matched-history checks](docs/PERFORMANCE.md).

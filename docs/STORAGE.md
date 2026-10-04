@@ -32,7 +32,7 @@ other registered goods one. These are game calibrations, not historical tonnages
 
 | Building | Base volume | Intake | Base labour | Timber / stone | Paid days |
 | --- | ---: | --- | ---: | ---: | ---: |
-| Grange | 800 | grain, hay, wool | 360 crowns | 24 / 8 | 90 |
+| Grange | 800 | grain, hay, wool | 360 crowns | 24 / 0 | 90 |
 | Granary | 600 | grain, hay | 500 crowns | 20 / 20 | 120 |
 | Warehouse | 1,000 | all non-livestock goods | 700 crowns | 30 / 30 | 150 |
 
