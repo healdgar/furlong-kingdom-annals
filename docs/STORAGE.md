@@ -129,3 +129,17 @@ The follow-up source hash is
 All 134 focused tests pass; `git diff --check` passes. This follow-up has no new
 GPU smoke: the earlier native GPU result applies to the preceding source only.
 Combined-source browser validation remains the integrator's responsibility.
+
+### Semantic metadata correction
+
+Lot, location and project projections now retain every own plain data field,
+including explicit undefined, special numbers, bigint and array holes. Actor and
+building references use stable IDs; executable values, accessors, cycles and
+non-plain objects reject before mutation. Metadata annotations cannot alter indexed
+core fields; those require explicit custody/title/quantity operations. Removal is
+an explicit annotation argument, distinct from assigning undefined.
+
+An independent raw-field oracle validates these projections and property presence;
+it does not call the projection under test. Source
+`923fc95a69b26052307f35f869f75e6ee9c34abe99962a5be75e625097a7f2d6`
+passes all 136 focused tests and source checks. No new GPU result is claimed.
