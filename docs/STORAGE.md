@@ -115,3 +115,17 @@ The root integration adds map picking and explicit saved command arguments, with
 fresh-realm command replay and survey-state separation regressions. The inventory
 alias repair, durable journal and corrected UI require combined browser and mature
 soak validation before a production handoff.
+
+### Cargo reference correction
+
+Read-only integration review reproduced a multi-seller shipment bug: coalescing
+retired a lot ID while the caravan retained that lot object, so a ten-unit load
+could report fifteen and resurrect the retired record on arrival. Cargo quantity,
+arrival and robbery now resolve current canonical location membership and stable
+IDs. Two regressions cover coalescing followed by arrival and robbery.
+
+The follow-up source hash is
+`a006bfeb4ef8b87fd177662fcd97901de9496d3a06132fb1dc7caf8a7d5ff058`.
+All 134 focused tests pass; `git diff --check` passes. This follow-up has no new
+GPU smoke: the earlier native GPU result applies to the preceding source only.
+Combined-source browser validation remains the integrator's responsibility.
