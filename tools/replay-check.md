@@ -28,17 +28,18 @@ so a transient larger within-tick burst can be missed. Browser startup/boot and 
 are excluded from timing. RAM/disk contention invalidates comparative performance conclusions.
 
 Correctness suppresses UI intervals and uses matched monthly callback yields plus visual finish before each comparison. Start/end day counts are asserted. Separate correctness passes hash accepted expanded storage records, reconstruct them with the existing
-independent reducer, compare raw own-field storage state and exact RNG stream states at matched cadence,
+independent reducer, compare raw own-field storage state and exact RNG stream states plus uncapped broad world/land/annal graph fingerprints at matched cadence,
 and independently read/reduce/hash persisted expanded records after flush. Begin headers are excluded
 from comparative event hashes. Sequence continuity and final journal durability remain required.
 This is a storage-event oracle, not complete modeled-game reconstruction, hydration, continuation,
 or proof that every semantic transaction field is captured. For candidates exposing FURLONG_TRANSACTIONS, an independent field reducer requires initial definitions,
-checks every scalar before/after precondition without refreshing stale values, and compares final recorded
-scalar fields to raw resolved own properties. Missing versus undefined remains distinct. Structured values
-and accessors are counted as skipped; only converted scalar purse/claim fields receive coverage. Unrecorded
+checks every recorded before/after precondition without refreshing stale values, and compares final recorded
+scalar and structured fields to raw resolved own properties. Arrays/holes, Map/Set order and creditor references are independently normalized; registered account/entity references also require raw pointer identity. Missing versus undefined remains distinct. Accessors are counted as skipped; only converted purse/claim/debt fields receive coverage. Unrecorded
 writes causing stale fields fail rather than being hidden. Transaction instrumentation fixtures remain separate evidence.
 
 `checks.json` reports correctness equivalence and predeclared gates: at least 70% lower total encoded
 history and at least 2x end-to-end actual RAF throughput. Tick measurements cannot establish the RAF gate.
 Gate failure is reported distinctly from correctness failures; JSON contains all failures, while process
 exit failure denotes correctness/runtime failures. A short run does not establish mature-world safety.
+
+The broad graph oracle follows performance-check exclusions for named derived indexes/routes and graphics, includes uncapped life/annal ledgers, Map/Set order, array holes and exact special-number tags. It is a comparison oracle, not an archive/hydrator. `node tools/replay-reader-check.mjs SOURCE_HTML` checks atomic production-reader rejection separately; unsupported baseline sources report absence rather than a pass.
