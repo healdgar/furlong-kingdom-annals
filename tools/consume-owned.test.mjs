@@ -1,15 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import {execFileSync} from 'node:child_process';
 import {realm as candidateRealm} from './ownership-fixture.mjs';
-const baseline=execFileSync('git',['show','405fed30436477184cf04d51fcf51fa0ba0e6bff:index.html'],{encoding:'utf8',maxBuffer:20e6});
-const temp=fs.mkdtempSync(path.join(os.tmpdir(),'furlong-consume-baseline-')),file=path.join(temp,'index.html');fs.writeFileSync(file,baseline);
-const previous=process.env.FURLONG_TEST_SOURCE;process.env.FURLONG_TEST_SOURCE=file;
-const {realm:baselineRealm}=await import('./ownership-fixture.mjs?consume-baseline=405fed3');
-if(previous===undefined)delete process.env.FURLONG_TEST_SOURCE;else process.env.FURLONG_TEST_SOURCE=previous;fs.rmSync(temp,{recursive:true});
+// Frozen pre-optimization operation from 405fed3; independent of Git object availability.
+const baselineConsume=`function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g;let v=Math.max(0,Math.min(q,L[g]||0,s.stores[physical]||0));if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;for(const id of [...s.storage.byOwner.get(accountOwner(who))||[]]){const l=s.storage.lots.get(id);if(l&&l.owner===accountOwner(who)&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}`;
+const baselineRealm=options=>{const r=candidateRealm(options);r.eval(baselineConsume);return r;};
 function canonical(v){if(v===undefined)return ['undefined'];if(typeof v==='number'&&(!Number.isFinite(v)||Object.is(v,-0)))return ['number',Object.is(v,-0)?'-0':String(v)];if(v===null||typeof v!=='object')return v;return [Array.isArray(v)?'array':'object',Reflect.ownKeys(v).map(k=>[k,canonical(Object.getOwnPropertyDescriptor(v,k).value)])];}
 function pair(){return [baselineRealm,candidateRealm].map(make=>{const r=make({grain:0,fish:0,households:3});r.eval(`storageInit(s);const K=s.storage;K.create('grain',8,null,'yard');addHeld(s,H[0],'grain',8);K.create('fish',3,null,'yard');addHeld(s,H[1],'fish',3);K.create('timber',2,null,'yard');addHeld(s,H[0],'char',2);storageTitles(s);globalThis.randomState=123;globalThis.randomCalls=0;randi=()=>{randomCalls++;randomState=(Math.imul(randomState,1664525)+1013904223)>>>0;return randomState};`);return r;});}
 function snapshot(r){return canonical(r.eval(`({revision:K.revision,next:K.next,sequence:K.sequence,events:K.events,roundoff:[...K.roundoff],lots:[...K.lots.values()].map(l=>Object.fromEntries(Reflect.ownKeys(l).map(k=>[k,k==='owner'?storageOwnerId(l[k]):l[k]]))),locations:[...K.locations.values()].map(l=>Object.fromEntries(Reflect.ownKeys(l).map(k=>[k,k==='owner'?storageOwnerId(l[k]):l[k]]))),byOwner:[...K.byOwner].map(([o,ids])=>[storageOwnerId(o),[...ids]]),totals:[...K.totals],titleRevision:[...K.titleRevision||[]],titleMatched:[...K.titleMatched||[]],claims:[...s._owners].map(([o,x])=>[storageOwnerId(o),x.held,x.sale,x.reserve,x.animals]),households:[...W.households?.values()||[]].map(h=>({id:h.id,head:h.head?.id,members:[...h.members].map(p=>p.id),assets:h.assets})),people:H.map(p=>({id:p.id,household:p._hh?.id,w:p.w})),randomState,randomCalls})`));}
