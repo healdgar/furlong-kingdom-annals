@@ -448,9 +448,14 @@ itself; you rule one lord's domain:
   it costs you your word). At a private war's end the towns taken go back,
   save the best one to a decisive victor; the loser remembers.
 - **Town works** (in any town of your own, crown or lord): a mill (+20% grain),
-  a granary (keeps 60% more against famine), a market charter (dues half
-  again), assarters (for three years the plough takes in the wood and waste).
-  Lords and the council build these on their own too.
+  a market charter (dues half again), assarters (for three years the plough
+  takes in the wood and waste). Lords and the council build these too.
+- **Granges, granaries and warehouses** hold finite quantities and reduce
+  spoilage. In a town's Works, choose a building and click its site on the map;
+  the survey shows capacity, materials, wages and distance to fields and market.
+  Construction waits for available materials and funds. Goods must be carried
+  to storage; excess stays exposed and spoils faster. Owners also invest when
+  avoided losses justify the building and carriage costs.
 - **Why?** Your standing at court is explained: what moves it year by year
   (tax, unrest, legitimacy, the monarch's character, a strong house's pride)
   and the recent swings with their causes; the purse shows last year's
