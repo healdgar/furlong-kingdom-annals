@@ -3191,10 +3191,14 @@ function storageTitles(s,onlyGood){const K=s.storage;if(!K)return;for(const g of
 
 // One collection-boundary loss, after compatible parts combine, never per inflow mutation.
 function storageHayRemnants(s,K){
-  const eligible=l=>!K.locations.get(l.location)?.transit&&!Object.prototype.hasOwnProperty.call(l,'pendingPurchase');K.coalesce('hay',eligible);
-  for(const id of [...K.byGood.get('hay')||[]]){const l=K.lots.get(id);if(!l||!eligible(l)||!(l.qty>0&&l.qty<=0.001)||l.owner==null&&(s._made?.hay||0)>0)continue;
-    // Structured future metadata can prevent bulk coalescing; protect its compatible total too.
-    let combined=0;for(const otherId of K.byLocation.get(l.location)||[]){const other=K.lots.get(otherId);if(other&&eligible(other)&&K.compatible(l,other))combined+=other.qty;}if(combined>0.001)continue;
+  const eligible=l=>!K.locations.get(l.location)?.transit&&!Object.prototype.hasOwnProperty.call(l,'pendingPurchase')&&!(l.owner==null&&(s._made?.hay||0)>0),crumbs=[];
+  for(const id of K.byGood.get('hay')||[]){const l=K.lots.get(id);if(l&&l.qty>0&&l.qty<=0.001&&eligible(l))crumbs.push(l);}if(!crumbs.length)return;
+  const native=l=>Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner').every(k=>{if(typeof k!=='string')return false;const v=l[k],type=typeof v;return v===null||['string','boolean','undefined'].includes(type)||type==='number'&&Number.isFinite(v)&&!Object.is(v,-0);}),groups=new Map(),fallback=new Set();
+  for(const l of crumbs){if(!native(l)){fallback.add(l.id);continue;}let locations=groups.get(l.owner);if(!locations)groups.set(l.owner,locations=new Map());let candidates=locations.get(l.location);if(!candidates)locations.set(l.location,candidates=[]);candidates.push(l);}
+  if(groups.size)K.coalesce('hay',l=>eligible(l)&&(groups.get(l.owner)?.get(l.location)||[]).some(crumb=>K.compatible(crumb,l)));
+  for(const crumb of crumbs){const l=K.lots.get(crumb.id);if(!l||!(l.qty>0&&l.qty<=0.001))continue;
+    // Native primitive groups are now unique; only uncoalescible metadata needs a sum.
+    if(fallback.has(l.id)){let combined=0;for(const otherId of K.byLocation.get(l.location)||[]){const other=K.lots.get(otherId);if(other&&eligible(other)&&K.compatible(l,other))combined+=other.qty;}if(combined>0.001)continue;}
     const qty=l.qty,claim=l.claimGood||'hay',x=(s._owners||new Map()).get(l.owner),table=x?.[l.availability];if(l.owner!=null&&table){const before=table[claim]||0;table[claim]=Math.max(0,before-qty);storageTitleKnownDirty(s,claim);K.event('legal-title-loss',l,Math.min(before,qty),{claimGood:claim,titleBefore:before,titleAfter:table[claim],lossCause:'vermin-remnant-loss'});}K.remove(l,qty,'vermin-remnant-loss');
   }
 }
