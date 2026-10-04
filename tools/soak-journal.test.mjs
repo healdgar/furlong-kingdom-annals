@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {finishJournal,assertJournalComplete} from './soak-journal.mjs';
+const complete=()=>({records:3,committed:2,pendingBytes:0,pendingChunks:0,fault:null,modelFault:null,encodedBytes:150,storedBytes:75});
+test('final acceptance waits for flush then records persisted status',async()=>{let flushed=false;const j={async flush(){await Promise.resolve();flushed=true;},status(){assert.ok(flushed);return complete();}};assert.deepEqual(assertJournalComplete(await finishJournal(j)).status,complete());});
+for(const [key,value] of [['committed',1],['pendingBytes',1],['pendingChunks',1],['fault','ENOSPC'],['modelFault','invalid title'],['records',0]])test('rejects final journal '+key,()=>assert.throws(()=>assertJournalComplete({status:{...complete(),[key]:value},error:null}),/Incomplete/));
+test('flush failure preserves final status and fails acceptance',async()=>{const r=await finishJournal({async flush(){throw Error('ENOSPC');},status:complete});assert.equal(r.error,'ENOSPC');assert.equal(r.status.storedBytes,75);assert.throws(()=>assertJournalComplete(r),/ENOSPC/);});

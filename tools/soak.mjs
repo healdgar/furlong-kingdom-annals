@@ -17,6 +17,7 @@
 import {spawn} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
 import {inventoryAudit} from './inventory-audit.mjs';
+import {finishJournal,assertJournalComplete} from './soak-journal.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
@@ -127,7 +128,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     const T={};for(const k in S.T){const d=S.T[k]-(T0[k]||0);if(d>0.5)T[k]=Math.round(d);}
     const out={y:Y,ad:AD(),auditDays:Math.min(aud,360),ms:Math.round(ms),msDay:+(ms/360).toFixed(2),tickMsDay:+(tickMs/360).toFixed(2),pop:Math.round(pop),folk,places:W.settlements.length,towns,walled,maxWallRatio:+maxWall.toFixed(2),badPop,
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
-      inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
+      journal:typeof STORAGE_OUTCOMES==='undefined'?null:STORAGE_OUTCOMES.status(),inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
       prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
       badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
     M0=M;F0=F;E0=errN;return out;};
@@ -185,8 +186,12 @@ async function runWorld(w){
       if(RENDER&&RENDER.has(y))await measure(y);
       if(y%10===0||y===YEARS||r.dErr)log(`${id}: AD ${r.ad} pop ${r.pop} places ${r.places} famine days ${r.famDays} residual ${r.residual} ${r.msDay} ms/day${r.dErr?' ERRORS '+r.dErr:''}`);
     }
+    const finalJournal=await ev(c,`(${finishJournal.toString()})(STORAGE_OUTCOMES)`);
+    fs.writeFileSync(path.join(OUT,id+'.journal.json'),JSON.stringify(finalJournal,null,2),{flag:'wx'});
+    assertJournalComplete(finalJournal);
+    fs.writeFileSync(path.join(OUT,id+'.summary.json'),JSON.stringify({...summarize(w,id,info,bootMs,phases,years,prof,errs),finalJournal},null,1));
     if(render.length)fs.writeFileSync(path.join(OUT,id+'.render.json'),JSON.stringify(render,null,1));
-    return Object.assign(summarize(w,id,info,bootMs,phases,years,prof,errs),{render});
+    return Object.assign(summarize(w,id,info,bootMs,phases,years,prof,errs),{render,finalJournal});
   }catch(e){log(`${id}: FAILED ${e.message}`);return {id,seed:w.seed,coast:w.coast,failed:e.message,errs};}
   finally{kill();}}
 
