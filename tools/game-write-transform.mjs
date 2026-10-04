@@ -1,9 +1,7 @@
-import {createRequire} from 'node:module';
+import * as acorn from './vendor/acorn/acorn.mjs';
 import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
-const require=createRequire(import.meta.url);
-let acorn;try{acorn=require('internal/deps/acorn/acorn/dist/acorn');}catch{throw Error('Prototype parser requires node --expose-internals; portable parser packaging remains outstanding.');}
 const MUTATORS=new Set(['push','pop','shift','unshift','splice','sort','reverse','fill','copyWithin','set','add','delete','clear','defineProperty','defineProperties','assign','setPrototypeOf','setInt8','setUint8','setInt16','setUint16','setInt32','setUint32','setFloat32','setFloat64','setBigInt64','setBigUint64']);
 const sha=s=>createHash('sha256').update(s).digest('hex');
 function children(n){const a=[];for(const [k,v]of Object.entries(n)){if(['start','end','loc'].includes(k))continue;if(Array.isArray(v)){for(const x of v)if(x?.type)a.push(x);}else if(v?.type)a.push(v);}return a.sort((a,b)=>a.start-b.start||b.end-a.end);}
@@ -75,8 +73,9 @@ export function transformWrites(source,options={}){
   if(memberCall){const m=n.callee,method=m.computed&&m.property.type==='Literal'?m.property.value:!m.computed?m.property.name:null;
    if(!MUTATORS.has(method)){site(n,'call','unsupported','unclassified member call may hide native mutation');return raw(n);}
    const contract=options.nativeContracts?.[method];if(!contract)return unsupported(n,'native-call','native mutation requires explicit data/callback/partial-failure contract');
-   if(n.optional||invalidMember(m)||suspended(m.property)||n.arguments.some(a=>suspended(a)||directEval(a))||directEval(m.property))return unsupported(n,'native-call','optional/super/private/suspended native call unsupported');
+   if(n.optional||m.optional||m.property.type==='PrivateIdentifier'||suspended(m.property)||n.arguments.some(a=>suspended(a)||directEval(a))||directEval(m.property))return unsupported(n,'native-call','optional/private/suspended native call unsupported');
    const id=site(n,'native-call','lowered',contract),args=n.arguments.map(a=>a.type==='SpreadElement'?render(a):`(${render(a)})`).join(',');
+   if(m.object.type==='Super')return `((${methodName})=>${facade}.call(this,${methodName},[${args}],${id}))(super[${key(m)}])`;
    return `((${objectName})=>((${methodName})=>${facade}.call(${objectName},${methodName},[${args}],${id}))(${objectName}[${key(m)}]))((${render(m.object)}))`;
   }
   if(n.type==='CallExpression'&&n.callee.type!=='MemberExpression')site(n,'call','unsupported','unclassified callable may mutate canonical state');
@@ -95,4 +94,4 @@ export function markerExclusions(source,modules){return modules.map(({begin,end,
 
 /** Selects executable inline scripts; callers explicitly pin any module exclusion ranges. */
 export function transformInlineScripts(html,options={}){const scripts=[];for(const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)){if(/\bsrc\s*=|\btype\s*=\s*['"]text\/plain/i.test(m[1]))continue;const offset=m.index+m[0].indexOf('>')+1;scripts.push({offset,...transformWrites(m[2],options)});}return {htmlSHA256:sha(html),scripts};}
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){const [input,config]=process.argv.slice(2);if(!input)throw Error('Usage: node --expose-internals tools/game-write-transform.mjs INPUT_JS [OPTIONS_JSON]');const result=transformWrites(fs.readFileSync(input,'utf8'),config?JSON.parse(fs.readFileSync(config,'utf8')):{});process.stdout.write(JSON.stringify(result)+'\n');}
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){const [input,config]=process.argv.slice(2);if(!input)throw Error('Usage: node tools/game-write-transform.mjs INPUT_JS [OPTIONS_JSON]');const result=transformWrites(fs.readFileSync(input,'utf8'),config?JSON.parse(fs.readFileSync(config,'utf8')):{});process.stdout.write(JSON.stringify(result)+'\n');}

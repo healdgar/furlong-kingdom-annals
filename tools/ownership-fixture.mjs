@@ -8,7 +8,7 @@ const ownership=source.slice(source.indexOf('function oldHouseholdHead('),source
 const functions=names.map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
 const constants=['GOODS','GOODBASE','NEED','LU','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','SHARE'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
 
-export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1}={}){
+export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,transformSource,bootstrap=''}={}){
   const H=Array.from({length:households},(_,i)=>({id:i+1,gn:'household',w:cash,tr:'labourer',si:0}));
   const s={name:'fixture',owner:0,pop,kind:'town',stores:{grain,fish},_lard:{grain:grainLard,fish:fishLard},folk:H.slice(),buildings:[],pos:{x:0,z:0},prosperity:50,unrest:0,_room:1000,infected:0,px:{grain:1,fish:2,ore:1,timber:1},_made:{},res:{}};
   const W={treasury:crown,houses:[],settlements:[s],_pl:1};
@@ -17,7 +17,9 @@ export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,p
     price:(x,g)=>x.px[g]??1,tilledOf:()=>[],parishOf:()=>null,payAmong:()=>assert.fail('fixture has no demesne wages'),
     tradeCounts:()=>Object.fromEntries(H.map(h=>[h.tr,1])),marketFor:()=>null,book:()=>{},lordTake:()=>{},folkIndex:()=>new Map(H.map(h=>[h.id,h])),carryingCap:()=>1000,
     emit:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
-  vm.runInContext(constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions,C);
+  if(bootstrap)vm.runInContext(bootstrap,C);
+  const program=constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions;
+  vm.runInContext(transformSource?transformSource(program):program,C);
   vm.runInContext("offer(s,'grain','crown',s.stores.grain);offer(s,'fish','crown',s.stores.fish)",C);
   const run=()=>vm.runInContext('tickPopulation()',C),eval_=s=>vm.runInContext(s,C);
   const coins=()=>W.treasury+H.reduce((t,h)=>t+h.w,0)+Object.values(s._poolBy||{}).reduce((t,v)=>t+v,0);
