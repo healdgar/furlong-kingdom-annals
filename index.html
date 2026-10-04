@@ -3080,8 +3080,8 @@ function spoilOwned(s,g,rate){if(!(rate>0))return;if(s.storage){storageSpoil(s,g
   for(const x of (s._owners||new Map()).values()){if(x.held[g])x.held[g]*=f;if(x.sale[g])x.sale[g]*=f;if(g==='timber'&&x.held.char)x.held.char*=f;}
   if(s._made&&s._made[g])s._made[g]*=f;}
 function heldTotal(s,g){let n=0;for(const x of (s._owners||new Map()).values())n+=x.held[g]||0;return n;}
-function giveFood(s,g,q){if(!(q>0))return;const H=householdsOf(s),weights=H.map(h=>Math.max(0,h.population.get(s)||0)*(0.1+h.hunger)),total=weights.reduce((a,b)=>a+b,0);
-  H.forEach((h,i)=>addHeld(s,h,g,q*(total>0?weights[i]/total:1/H.length)));}
+function storageGiftTitle(s,from,to,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(from);let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.owner!==owner||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.transfer(l,accountOwner(to),q,'held');K.annotate(p,{},['pendingPurchase']);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-gift',null,left,{good:g,owner:storageOwnerId(owner),destinationOwner:storageOwnerId(accountOwner(to))});storageInvariantFault('Unbacked purchased gift '+g+': '+left);}}
+function giveFood(s,g,q,source){if(!(q>0))return;const H=householdsOf(s),weights=H.map(h=>Math.max(0,h.population.get(s)||0)*(0.1+h.hunger)),total=weights.reduce((a,b)=>a+b,0);if(!H.length){if(source!==undefined)addHeld(s,source,g,q);return;}let left=q;H.forEach((h,i)=>{const v=i===H.length-1?left:Math.min(left,q*(total>0?weights[i]/total:1/H.length));if(v>0){if(source!==undefined)storageGiftTitle(s,source,h,g,v);addHeld(s,h,g,v);left-=v;}});}
 function initOwnership(s){if(s._ownershipReady)return;s._ownershipReady=true;const old=s._lard;householdsOf(s);
   for(const g of ['grain','fish'])giveFood(s,g,old?old[g]||0:Math.min(s.stores[g]||0,s.pop*NEED[g]*30));
   if(old)for(const g of Object.keys(old))if(g!=='grain'&&g!=='fish')addHeld(s,lordAcct(s),g,old[g]||0);
@@ -5158,7 +5158,7 @@ function tickChurches(){
     for(const b of T){const ch=chOf(b);ch.cong=Math.round(s.pop*wt(b)/tot);
       ch.fund+=gifts*wt(b)/tot; // (the tithe comes in as the parish's share of the harvest is sold)
       if(!(Lh&&Lh.exiled)){const spare=Math.max(0,purse(s.owner)-hostTarget(s.owner)*6),g=Math.min(30,spare*0.0015*(b.castle||b.cathedral?2:1)*wt(b)/tot*T.length);if(g>0.5&&spend(s.owner,g)){if(Lh)book(Lh,'church works',-g);ch.fund+=g;}} // the lord gives from what he has to spare beyond his host, more to his own chapel and the cathedral
-      const n=chNext(s,b,ch,ad);ch.next=n;if(!n){if(ch.fund>60){purchase(s,'grain',b,(ch.fund-60)/Math.max(1e-6,price(s,'grain')));giveFood(s,'grain',purchase.got);}continue;} // nothing wanted: the surplus is given as bread at the church door
+      const n=chNext(s,b,ch,ad);ch.next=n;if(!n){if(ch.fund>60){purchase(s,'grain',b,(ch.fund-60)/Math.max(1e-6,price(s,'grain')));giveFood(s,'grain',purchase.got,b);}continue;} // nothing wanted: the surplus is given as bread at the church door
       const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=(n.cr+(n.st-useS)*0.6)*PL(); // stone the yards lack is carted in
       if(ch.fund<cost+useS*price(s,'stone'))continue;
       let grew=0;
@@ -8426,7 +8426,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   { // in a hungry month the neighbours help: each household with more than its own year's need gives toward the others' bread, as its warmth moves it
     let short=0;for(const pl of plan)if(pl.h.gn!==undefined&&(pl.h._fill??1)<1)short+=pl.fq*(1-pl.h._fill);
     if(short>0.5){const pg2=price(s,'grain');for(const pl of plan){const h=pl.h;if(h.gn===undefined||!(short>0.5))continue;const spare=(h.w||0)-pl.n*foodYr();if(spare<=0)continue;
-      const give=Math.min(spare*clamp(0.03+0.04*trait(h,GWa),0,0.15),short*pg2);if(!(give>0))continue;purchase(s,'grain',h,give/Math.max(1e-6,pg2));const got=purchase.got;giveFood(s,'grain',got);short-=got;
+      const give=Math.min(spare*clamp(0.03+0.04*trait(h,GWa),0,0.15),short*pg2);if(!(give>0))continue;purchase(s,'grain',h,give/Math.max(1e-6,pg2));const got=purchase.got;giveFood(s,'grain',got,h);short-=got;
         if(got*pg2>foodYr()*0.3&&h._giveY!==year()){h._giveY=year();life(h,`Gave bread to hungry neighbours`);}}}}
   s._fill=sn>0?sf/sn:1;s._wealth=heads.length?sw/heads.length:0; // how well the place lives, as others hear of it
   s._homeDay=homeFood/30; // what the families' own beasts put on the table each day
@@ -11158,7 +11158,7 @@ function settlementCmd(cmd,si){
   const s=W.settlements[si],me=plyH();if(!s||inRevolt(s.owner)||s.owner!==me)return; // your writ runs in your own towns; a lord's are his (ask him)
   const pay=c=>spend(me,c);
   if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
-    acct(houseAcct(me),250);purchase(s,'grain',houseAcct(me),s.pop*0.4);giveFood(s,'grain',purchase.got);s.unrest=clamp(s.unrest-6,0,100);/* the grain bought in the market and given out */emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
+    acct(houseAcct(me),250);purchase(s,'grain',houseAcct(me),s.pop*0.4);giveFood(s,'grain',purchase.got,houseAcct(me));s.unrest=clamp(s.unrest-6,0,100);/* the grain bought in the market and given out */emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
   else if(cmd==='garrison'){if(cdLeft('s_gar'+si)||!pay(400))return;setCd('s_gar'+si,60);s.garrison+=40;payAmong(heads_(s,h=>ageYrs(h)<50),400,null,'garrisons');emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
   else if(cmd==='callout'||cmd==='levy'){const watch=cmd==='callout';if(cdLeft('s_lev'+si)||(watch?(s.garrison||0)<20:!pay(300)))return;setCd('s_lev'+si,watch?20:60); // every town can put men in the field: its watch, or a levy of its people
     const want=watch?s.garrison*0.75:Math.min(s.pop*0.12,40+s.pop*0.08),a=raiseArmy(me,si,want,me===0?'crown':'host');if(watch)s.garrison-=a.strength;
