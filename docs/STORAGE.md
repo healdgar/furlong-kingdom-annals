@@ -143,3 +143,5 @@ An independent raw-field oracle validates these projections and property presenc
 it does not call the projection under test. Source
 `923fc95a69b26052307f35f869f75e6ee9c34abe99962a5be75e625097a7f2d6`
 passes all 136 focused tests and source checks. No new GPU result is claimed.
+
+Floating-point cancellation is checked against a per-good arithmetic error budget. Physical additions, merges, splits and removals, and legal claim writes record their observed operand magnitudes; each contributes twice machine epsilon times the sum of operand magnitudes. Claim matching also allows its summation error. Matching spends this budget across all unmatched claims, records accepted roundoff with input provenance, then retains only the accepted residual budget for the next boundary. It never deletes tiny physical lots or legal balances, nor creates stock to conceal discrepancies; a deficit exceeding the arithmetic budget faults. This diagnostic budget is derived numerical uncertainty, not stock or ownership.
