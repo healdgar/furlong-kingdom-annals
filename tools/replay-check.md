@@ -32,8 +32,11 @@ independent reducer, compare raw own-field storage state and exact RNG stream st
 and independently read/reduce/hash persisted expanded records after flush. Begin headers are excluded
 from comparative event hashes. Sequence continuity and final journal durability remain required.
 This is a storage-event oracle, not complete modeled-game reconstruction, hydration, continuation,
-or proof that every semantic transaction field is captured. Transaction instrumentation fixtures and
-additional independent purse/claim checks are separate evidence.
+or proof that every semantic transaction field is captured. For candidates exposing FURLONG_TRANSACTIONS, an independent field reducer requires initial definitions,
+checks every scalar before/after precondition without refreshing stale values, and compares final recorded
+scalar fields to raw resolved own properties. Missing versus undefined remains distinct. Structured values
+and accessors are counted as skipped; only converted scalar purse/claim fields receive coverage. Unrecorded
+writes causing stale fields fail rather than being hidden. Transaction instrumentation fixtures remain separate evidence.
 
 `checks.json` reports correctness equivalence and predeclared gates: at least 70% lower total encoded
 history and at least 2x end-to-end actual RAF throughput. Tick measurements cannot establish the RAF gate.
