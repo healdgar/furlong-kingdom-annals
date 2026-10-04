@@ -13026,27 +13026,35 @@ class OutcomeJournal{
 // cross structured clone without losing undefined, holes, nonenumerable or __proto__ fields.
 const OUTCOME_TRANSPORT_HANDLES=new WeakMap();
 // Shared ordered key vectors serialize once per structured-clone batch, not once per row.
-let OUTCOME_TRANSPORT_SCHEMA_COUNT=0;const OUTCOME_TRANSPORT_SCHEMAS=new Map();
+let OUTCOME_TRANSPORT_SCHEMA_COUNT=0;const OUTCOME_TRANSPORT_SCHEMAS=new Map(),OUTCOME_TRANSPORT_SCHEMA_COST=new WeakMap();
 function outcomeTransportSchema(keys){let candidates=OUTCOME_TRANSPORT_SCHEMAS.get(keys.length);if(candidates)for(const schema of candidates){let same=true;for(let i=0;i<keys.length;i++)if(schema[i]!==keys[i]){same=false;break;}if(same)return schema;}
-  if(OUTCOME_TRANSPORT_SCHEMA_COUNT>=4096){OUTCOME_TRANSPORT_SCHEMAS.clear();OUTCOME_TRANSPORT_SCHEMA_COUNT=0;candidates=null;}if(!candidates)OUTCOME_TRANSPORT_SCHEMAS.set(keys.length,candidates=[]);const schema=Object.freeze(keys.slice());candidates.unshift(schema);if(candidates.length>64)candidates.pop();OUTCOME_TRANSPORT_SCHEMA_COUNT++;return schema;
+  if(OUTCOME_TRANSPORT_SCHEMA_COUNT>=4096){OUTCOME_TRANSPORT_SCHEMAS.clear();OUTCOME_TRANSPORT_SCHEMA_COUNT=0;candidates=null;}if(!candidates)OUTCOME_TRANSPORT_SCHEMAS.set(keys.length,candidates=[]);const schema=Object.freeze(keys.slice());let base=512;for(const key of schema)base+=256+key.length*24;OUTCOME_TRANSPORT_SCHEMA_COST.set(schema,base);candidates.unshift(schema);if(candidates.length>64)candidates.pop();OUTCOME_TRANSPORT_SCHEMA_COUNT++;return schema;
 }
+function outcomeOwnedCost(value){if(value===null||typeof value!=='object')return typeof value==='string'?128+value.length*24:typeof value==='bigint'?128+String(value).length*24:128;let cost=512;for(const key of Reflect.ownKeys(value))cost+=128+key.length*24+outcomeOwnedCost(value[key]);return cost;}
+function outcomeOwnedCopy(value){if(value===null||typeof value!=='object')return value;const array=Array.isArray(value),out=array?[]:Object.create(Object.getPrototypeOf(value)===null?null:Object.prototype);for(const key of Reflect.ownKeys(value))Object.defineProperty(out,key,{value:outcomeOwnedCopy(value[key]),enumerable:key!=='length'||!array,writable:true,configurable:key!=='length'||!array});return out;}
 function outcomeTransportCapture(event){
   const seen=new Set();let cost=0;
   const walk=value=>{
     if(value===null||typeof value!=='object'){if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage outcome value');cost+=typeof value==='string'?128+value.length*24:typeof value==='bigint'?128+String(value).length*24:128;return value;}
     const handle=typeof STORAGE_CAPTURE_HANDLES==='undefined'?null:STORAGE_CAPTURE_HANDLES.get(value),cached=handle&&OUTCOME_TRANSPORT_HANDLES.get(value);
     if(cached){cost+=cached.cost;return cached.value;}
+    // Private engine captures already own deep plain data; preserve them as opaque handles.
+    if(handle){const keys=outcomeTransportSchema(handle.keys);let ownedCost=OUTCOME_TRANSPORT_SCHEMA_COST.get(keys);for(const v of handle.values){if(typeof v==='string')ownedCost+=v.length*24;else if(typeof v==='bigint')ownedCost+=String(v).length*24;else if(v!==null&&typeof v==='object')ownedCost+=outcomeOwnedCost(v)-128;}const packet=Object.freeze({type:'owned-handle',keys,values:handle.values});cost+=ownedCost;OUTCOME_TRANSPORT_HANDLES.set(value,{value:packet,cost:ownedCost});return packet;}
     if(seen.has(value))throw Error('Storage outcomes must contain IDs, not cyclic objects');const array=!handle&&Array.isArray(value),proto=Object.getPrototypeOf(value);if(!handle&&!array&&proto!==Object.prototype&&proto!==null)throw Error('Storage outcomes require plain data');seen.add(value);
     const initial=cost,trusted=!!handle||typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(value),keys=handle?handle.keys:Reflect.ownKeys(value),values=[];cost+=512;
-    for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=trusted?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');cost+=128+key.length*24;values.push(walk(handle?handle.values[i]:trusted?value[key]:d.value));}
+    for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=trusted?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');cost+=128+key.length*24;const raw=trusted?value[key]:d.value;if(raw===null||typeof raw!=='object'){if(typeof raw==='function'||typeof raw==='symbol')throw Error('Unsupported storage outcome value');cost+=typeof raw==='string'?128+raw.length*24:typeof raw==='bigint'?128+String(raw).length*24:128;values.push(raw);}else values.push(walk(raw));}
     seen.delete(value);const packet=Object.freeze({type:array?'array':proto===null?'null':'object',keys:outcomeTransportSchema(keys),values:Object.freeze(values)});if(handle)OUTCOME_TRANSPORT_HANDLES.set(value,{value:packet,cost:cost-initial});return packet;
   };const value=walk(event);return {value,cost};
 }
-function outcomeTransportRestore(packet){
+function outcomeTransportRestore(packet,opaque=false){
   if(packet===null||typeof packet!=='object')return packet;
-  if(!['object','null','array'].includes(packet.type)||!Array.isArray(packet.keys)||!Array.isArray(packet.values)||packet.keys.length!==packet.values.length)throw Error('Invalid storage transport packet');
+  if(!['object','null','array','owned-handle'].includes(packet.type)||!Array.isArray(packet.keys)||!Array.isArray(packet.values)||packet.keys.length!==packet.values.length)throw Error('Invalid storage transport packet');
+  if(packet.type==='owned-handle'){
+    if(opaque&&typeof STORAGE_CAPTURE_HANDLES!=='undefined'){const values=packet.values,handle=Object.freeze({owner:values[packet.keys.indexOf('owner')],id:values[packet.keys.indexOf('id')]});STORAGE_CAPTURE_HANDLES.set(handle,{keys:packet.keys,values,handle});return handle;}
+    const out={};for(let i=0;i<packet.keys.length;i++)Object.defineProperty(out,packet.keys[i],{value:outcomeOwnedCopy(packet.values[i]),enumerable:true,writable:true,configurable:true});return out;
+  }
   const out=packet.type==='array'?[]:Object.create(packet.type==='null'?null:Object.prototype),seen=new Set();
-  for(let i=0;i<packet.keys.length;i++){const key=packet.keys[i];if(typeof key!=='string'||seen.has(key))throw Error('Invalid storage transport key');seen.add(key);Object.defineProperty(out,key,{value:outcomeTransportRestore(packet.values[i]),enumerable:key!=='length'||packet.type!=='array',writable:true,configurable:key!=='length'||packet.type!=='array'});}return out;
+  for(let i=0;i<packet.keys.length;i++){const key=packet.keys[i];if(typeof key!=='string'||seen.has(key))throw Error('Invalid storage transport key');seen.add(key);Object.defineProperty(out,key,{value:outcomeTransportRestore(packet.values[i],opaque),enumerable:key!=='length'||packet.type!=='array',writable:true,configurable:key!=='length'||packet.type!=='array'});}if(opaque&&typeof STORAGE_CAPTURE_DATA!=='undefined')STORAGE_CAPTURE_DATA.add(out);return out;
 }
 class RawOutcomeJournal extends OutcomeJournal{
   constructor(write,options={}){super(write,{chunkBytes:32*1024*1024,...options});this.codec=null;this.processingMode=options.processingMode||'worker';this.eager=options.eager===true;}
@@ -13063,7 +13071,7 @@ class OutcomeWorkerPipeline{
   constructor(write){this.write=write;this.chunk=0;this.seq=0;this.fault=null;}
   async process(entry,mode='compact'){
     if(this.fault)throw this.fault;try{if(entry.chunk!==this.chunk||entry.first!==this.seq||!Array.isArray(entry.records)||!entry.records.length||entry.last!==entry.first+entry.records.length-1)throw Error('Storage worker batch gap');const codec=new OutcomeCodec(),rows=[];let expected=this.seq;
-      for(const row of entry.records){if(row.seq!==expected++)throw Error('Storage worker record gap');const event=outcomeTransportRestore(row.event);rows.push(mode==='legacy'?outcomeJSON({seq:row.seq,event})+'\n':codec.encode(row.seq,event));}
+      for(const row of entry.records){if(row.seq!==expected++)throw Error('Storage worker record gap');const event=outcomeTransportRestore(row.event,mode!=='legacy');rows.push(mode==='legacy'?outcomeJSON({seq:row.seq,event})+'\n':codec.encode(row.seq,event));}
       const text=rows.join(''),result=await this.write({...entry,text});this.chunk++;this.seq=expected;return {chunk:entry.chunk,first:entry.first,last:entry.last,encodedCharacters:text.length,...result};
     }catch(error){this.fault=error instanceof Error?error:new Error(String(error));throw this.fault;}
   }
@@ -13086,7 +13094,7 @@ function outcomeWorkerRuntime(){
     }else throw Error('Unknown storage worker message');
   }catch(error){fault=error instanceof Error?error:Error(String(error));self.postMessage({request:data.request,type:'error',message:fault.message});}});};
 }
-function outcomeWorkerSource(){return 'const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
+function outcomeWorkerSource(){return 'const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_CAPTURE_DATA=new WeakSet();const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeOwnedCopy.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
 class OutcomeWorkerClient{
   constructor(worker,{timeout=60000}={}){this.worker=worker;this.timeout=timeout;this.next=0;this.requests=new Map();this.fault=null;worker.onmessage=e=>{try{const data=e.data;if(!data||typeof data!=='object'||!Number.isInteger(data.request)||!['ready','committed','error'].includes(data.type))throw Error('Invalid storage worker acknowledgement');const request=this.requests.get(data.request);if(!request)throw Error('Unexpected storage worker acknowledgement');if(data.type!=='error'&&data.type!==request.expected)throw Error('Storage worker acknowledgement type differs');clearTimeout(request.timer);this.requests.delete(data.request);if(data.type==='error'){const error=Error(String(data.message));request.reject(error);this.fail(error);}else request.resolve(data);}catch(error){this.fail(error);}};worker.onerror=e=>{e.preventDefault?.();this.fail(Error(e.message||'Storage worker failed'));};worker.onmessageerror=()=>this.fail(Error('Storage worker message could not be decoded'));}
   fail(error){if(this.fault)return;this.fault=error;for(const request of this.requests.values()){clearTimeout(request.timer);request.reject(error);}this.requests.clear();this.onFault?.(error);}
