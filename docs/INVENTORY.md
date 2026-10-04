@@ -108,3 +108,15 @@ instrumented transaction and daily boundaries. Final grain was
 source hash above. Concurrent short integration correctness checks make this
 run unsuitable for performance comparisons. Evidence remains local under
 `.git/storage/2026-10-03/inventory/final-quote-inland20` in the primary repository.
+
+The soak money oracle now pairs each declared prepaid `<cause*` payout with its
+synthetic negative `<>lost` mirror. On the original parent, seed 1001 sea first
+failed at day 11 garrison pay: total purses changed by -1.46e-11 while the old
+oracle expected +5.311443334054959 coins. The source debits the lord/crown
+before paying townsmen; this was flow interpretation, not minting or an omitted
+purse. The corrected original-parent phase audit completes day 360 without a
+phase residual above 0.01. This is not an annual or mature-world clearance.
+Twelve pure oracle fixtures retain detection of unfunded null payouts, missing
+upstream debits and omitted recipient purses, and cover external inflow/outflow,
+ordinary transfers, prepaid wages, looted-coin redistribution and null recipients.
+The annual 0.01 threshold remains. Engine money transactions are unchanged.

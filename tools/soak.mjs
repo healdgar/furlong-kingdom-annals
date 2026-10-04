@@ -5,7 +5,7 @@
 
    Each simulated year it records: sim errors; population, households and places; famine (place-days, onsets,
    hunger weighted by people); food and tilled land per head; money in every purse against the money the flow book
-   says came in, went out, was coined from nobody or paid to nobody (the residual is a mismatch between purse changes and the flow book);
+   says came in, went out, was declared prepaid or paid to nobody (the residual is a mismatch between purse changes and the flow book);
    walls far wider than their towns; deserted houses; time per day and per part of the day (each tick timed);
    heap. A CPU profile of one year gives the hottest functions.
 
@@ -15,6 +15,7 @@
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
             that makes or loses it, for the first N days)  --out dir  --chrome path */
 import {spawn} from 'node:child_process';
+import {moneyFlowGap} from './money-flow.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
@@ -89,9 +90,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     try{return f.apply(this,arguments);}finally{S.T[n]=(S.T[n]||0)+performance.now()-t;
       if(S.audit){const r=money().t-m0-gap(f0,flows()).expect;if(Math.abs(r)>1e-6){const L=S.L[n]||(S.L[n]={r:0,days:0});L.r+=r;L.days++;}}}};}
   S.L={};
-  const gap=(F0,F)=>{let expect=0,minted={},mintT=0;for(const k of new Set([...Object.keys(F),...Object.keys(F0)])){const d=(F[k]||0)-(F0[k]||0);if(!d||k[0]==='!')continue;
-      if(k==='<>lost')expect-=d;else if(k[0]==='<'&&k.endsWith('*')){minted[k.slice(1,-1)]=d;mintT+=d;}else if(k[0]==='<')expect+=d;else if(k[0]==='>')expect-=d;}
-    return {expect,minted,mintT};};
+  const gap=${moneyFlowGap.toString()};
   const money=()=>{let bad=0;const coin=v=>{if(v!==undefined&&!Number.isFinite(v))bad++;return v??0;};const by={crown:coin(W.treasury),houses:0,folk:0,church:0,murage:0,pool:0,hoard:coin(W.dragon?.hoard),escrow:0},seen=new Set(),P=p=>{if(!p||seen.has(p)||p.merc)return;seen.add(p);if(!W.households||!p._hh)by.folk+=coin(p.w);};
     if(W.households)for(const h of W.households.values())by.folk+=coin(h.assets.w);
     for(let i=1;i<W.houses.length;i++)if(W.houses[i])by.houses+=coin(W.houses[i].gold);
@@ -126,7 +125,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     const out={y:Y,ad:AD(),auditDays:Math.min(aud,360),ms:Math.round(ms),msDay:+(ms/360).toFixed(2),tickMsDay:+(tickMs/360).toFixed(2),pop:Math.round(pop),folk,places:W.settlements.length,towns,walled,maxWallRatio:+maxWall.toFixed(2),badPop,
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
       money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
-      minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
+      prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
       badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
     M0=M;F0=F;E0=errN;return out;};
   window.__soak=S;return new Promise(resolve=>RAF(()=>resolve('ok')));})()`;
@@ -222,7 +221,7 @@ function report(R){
     const cov=xs.reduce((t,x,i)=>t+(x-mx)*(ys[i]-my),0),sx=Math.sqrt(xs.reduce((t,x)=>t+(x-mx)**2,0)),sy=Math.sqrt(ys.reduce((t,y)=>t+(y-my)**2,0));
     md+=`\nDescriptive correlation only; paired seeds and a small sample do not establish causation.\n\nLand share against famine (share of people in famine): r = ${(sx&&sy?cov/(sx*sy):0).toFixed(2)} over ${ok.length} worlds.\n`;}
   const mint={};for(const r of ok)for(const k in r.money.mintedTotal)mint[k]=(mint[k]||0)+r.money.mintedTotal[k];
-  md+=`\nTiming includes instrumentation and deferred land work; tickMsDay in JSON excludes deferred callbacks. Audit years also include the purse census overhead. Drawing scenarios restart from the same undrawn year, then advance at the selected speed; startDay/endDay retain that interval.\n\nMoney reconciliation checks every year's residual against 0.01 coin; a net residual alone can hide cancelling errors. Residuals may indicate incorrectly labelled prepaid transfers or an omitted purse, as well as actual creation/loss.\n\n## Payments booked without a payer (all worlds; may be prepaid upstream)\n\n`+Object.entries(mint).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,15).map(([k,v])=>`- ${k}: ${v.toLocaleString()}`).join('\n')+'\n';
+  md+=`\nTiming includes instrumentation and deferred land work; tickMsDay in JSON excludes deferred callbacks. Audit years also include the purse census overhead. Drawing scenarios restart from the same undrawn year, then advance at the selected speed; startDay/endDay retain that interval.\n\nMoney reconciliation checks every year's residual against 0.01 coin; a net residual alone can hide cancelling errors. The oracle pairs declared prepaid star credits with their synthetic negative lost-account mirror. Missing upstream debits, omitted purses and actual creation/loss still produce residuals.\n\n## Declared prepaid payouts (all worlds; upstream debit must reconcile)\n\n`+Object.entries(mint).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,15).map(([k,v])=>`- ${k}: ${v.toLocaleString()}`).join('\n')+'\n';
   const T={};for(const r of ok)for(const [k,v] of r.perf.ticks)T[k]=(T[k]||0)+v/ok.length;
   md+=`\n## Where a day's time goes (share of tick time, mean over worlds)\n\n`+Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>`- ${k}: ${v.toFixed(1)}%`).join('\n')+'\n';
   const P={};for(const r of ok)for(const y in r.perf.profile)for(const [k,ms,p] of r.perf.profile[y].top)P[k]=(P[k]||0)+p/ok.length/Object.keys(r.perf.profile).length;
