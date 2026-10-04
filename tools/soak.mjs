@@ -111,7 +111,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   S.info=()=>({land,places:W.settlements.length,pop:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),realm:W.name,startAD:AD(),startDay:day(),gpu:(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()});
   S.year=async(aud=0)=>{const Fd0={...S.F},R0={...S.R},T0=Object.assign({},S.T),t0=performance.now(),was=new Map();let famDays=0,onsets=0,famPop=0,hung=0,popDays=0,placeDays=0,tickMs=0;
     for(const s of W.settlements)was.set(s,!!s.famineFlag);
-    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{if(simTick()===false){await STORAGE_OUTCOMES.flush();i--;continue;}}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&STORAGE_OUTCOMES.journal?.fault)throw e;simErr(e);}tickMs+=performance.now()-tickStart;
+    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&(STORAGE_OUTCOMES.journal?.fault||STORAGE_OUTCOMES.modelFault))throw e;simErr(e);}tickMs+=performance.now()-tickStart;
       if(day()%30===15||day()%360===0)await new Promise(resolve=>setTimeout(resolve,0)); // finish deferred tracks/fences before later days use them, and flush the yearly autosave
       placeDays+=W.settlements.length;for(const s of W.settlements){const f=!!s.famineFlag;if(f){famDays++;famPop+=s.pop;if(!was.get(s))onsets++;}was.set(s,f);hung+=(s.hunger||0)*s.pop;popDays+=s.pop;}}
     const ms=performance.now()-t0,M=money(),F=flows();Y++;
