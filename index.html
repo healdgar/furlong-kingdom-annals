@@ -1029,6 +1029,7 @@ async function generateWorld(seed,progress){
      dragon:null,monarch:null,reignStart:0,reignNum:{},name:placeName(),kingdomAdj:null,
      stats:{battles:0,greatFires:0}};
 
+  notableIndexRebuild(); // this new authoritative archive starts empty; replay uses the same transition path
   await progress('Raising the bones of the earth…',0.05);
   /* --- terrain: fBm + domain warp + mountain spine + optional coast ----- */
   const spineA=rand('gen')*Math.PI, spineOff=(rand('gen')-0.5)*0.5;
@@ -2664,6 +2665,39 @@ function stitchRoads(){ // a road now runs centre → its spoke street → the o
 }
 
 /* ---------------- houses, dynasty & the cast ----------------------------- */
+// Rebuildable indexes are outside the complete authoritative notable archive.
+// Native writers below maintain them; imports must explicitly adopt trusted data.
+// Raw alive/id edits or same-length archive edits require explicit rebuild.
+const NOTABLE_INDEXES=new WeakMap();
+function notableIndexRebuild(world=W){
+  const archive=world.notables,C={archive,length:archive.length,living:[],byId:new Map(),entries:new Map(),cleanup:new Set(),supported:true};
+  NOTABLE_INDEXES.set(world,C);
+  if(Object.getPrototypeOf(archive)!==Array.prototype){C.supported=false;return C;}
+  for(let i=0;i<archive.length;i++)if(!notableIndexAdd(C,archive[i],i)){C.supported=false;break;}
+  return C;
+}
+function notableIndexAdd(C,n,order=C.length){
+  if(!n||typeof n!=='object')return false;
+  const id=Object.getOwnPropertyDescriptor(n,'id'),alive=Object.getOwnPropertyDescriptor(n,'alive');
+  if(!id||!('value'in id)||!alive||!('value'in alive))return false;
+  const entry={n,order};let entries=C.entries.get(n);if(!entries)C.entries.set(n,entries=[]);entries.push(entry);
+  if(!C.byId.has(id.value))C.byId.set(id.value,n);
+  if(alive.value)C.living.push(entry);
+  if(Object.prototype.hasOwnProperty.call(n,'_just'))C.cleanup.add(n);
+  C.length=Math.max(C.length,order+1);return true;
+}
+function notableIndex(){let C=NOTABLE_INDEXES.get(W);if(!C){C={supported:false};NOTABLE_INDEXES.set(W,C);}else if(C.supported&&(C.archive!==W.notables||C.length!==W.notables.length))C.supported=false;return C;}
+function* livingNotables(){
+  const C=notableIndex();if(!C.supported){yield* W.notables;return;}
+  let order=-1;
+  while(true){let lo=0,hi=C.living.length;while(lo<hi){const mid=(lo+hi)>>>1;if(C.living[mid].order<=order)lo=mid+1;else hi=mid;}if(lo===C.living.length)return;const entry=C.living[lo];order=entry.order;yield entry.n;}
+}
+function livingNotableCandidates(predicate){const C=notableIndex();return C.supported?C.living.map(e=>e.n).filter(predicate):W.notables.filter(predicate);}
+function livingNotableCount(){const C=notableIndex();return C.supported?C.living.length:W.notables.filter(n=>n.alive).length;}
+// Explicit transitions preserve archive order, including restoration/resurrection.
+function notableSetAlive(n,alive){const C=notableIndex();n.alive=alive;if(!C.supported)return;const entries=C.entries.get(n);if(!entries)return;
+  C.living=C.living.filter(e=>e.n!==n);if(alive){C.living.push(...entries);C.living.sort((a,b)=>a.order-b.order);}}
+function notableMarriageCleanup(single){const C=notableIndex();if(!C.supported){W.notables.forEach(n=>delete n._just);return;}for(const n of single)C.cleanup.add(n);for(const n of C.cleanup)delete n._just;C.cleanup.clear();}
 let NID=1;
 function mkNotable(o){
   const n=Object.assign({id:NID++,alive:true,spouse:null,heirs:[],grudges:[],epithet:'',
@@ -2673,7 +2707,7 @@ function mkNotable(o){
   if(!n.g)endow(n,ma,pa); // blood from the parents (or a stranger's), and the teaching of a lord's household
   if(!n.traits.length)n.traits=deriveTraits(n);else n.fixedTraits=true;
   nameUse(n.name.split(' ')[0],1);
-  W.notables.push(n);return n;
+  const index=notableIndex();W.notables.push(n);if(index.supported&&!notableIndexAdd(index,n))index.supported=false;index.length=W.notables.length;return n;
 }
 const TRAITS=['bold','craven','just','cruel','shrewd','dull','pious','cynical','fertile','sickly','comely','stern','generous','grasping','patient','wrathful'];
 function twoTraits(){const a=pick('gen',TRAITS);let b=pick('gen',TRAITS);let g=0;while(b===a&&g++<9)b=pick('gen',TRAITS);return[a,b];}
@@ -3507,7 +3541,7 @@ function makeHousesAndCast(){
     mkNotable({name:personName(sx),sex:sx,age:16+randi('gen',40),house:randi('gen',6),role:'cousin',traits:(twoTraits(),[]),agenda:pick('gen',['schemes quietly','tends the estates','drinks too deep','writes poor verse','collects falcons'])});
   }
 }
-function notableById(id){return W.notables.find(n=>n.id===id);}
+function notableById(id){const C=notableIndex();return C.supported?(id!==id?undefined:C.byId.get(id)):W.notables.find(n=>n.id===id);}
 /* ---- family trees: anyone's forebears, kin and issue, from the parish book (the folk) and the annals (the nobility); for the great, the titles they held and the line by which a crown or a seat will pass */
 const TREE=new Map();let treeN=0;
 function tKey(x){if(!x)return '';if(TREE.size>4000)TREE.clear();const k=x._tk||(x._tk='t'+(++treeN));TREE.set(k,x);return k;}
@@ -8752,7 +8786,7 @@ function tickPolitics(){
         emit('crown',10,W.capital.pos,`The great houses meet at ${W.capital.name} and set ${fullTitle(old)} aside; they elect ${fullTitle(head)} of ${h.name} in ${old.sex==='f'?'her':'his'} place.`);
         W.monarch=head;head.role='monarch';head.house=0;W.reignNum[head.name]=(W.reignNum[head.name]||0)+1;W.reignStart=day();
         W.legitimacy=35;h.loyalty=95;adoptDynasty(ci);
-        const nh=W.notables.filter(n=>n.alive&&n.house===ci&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0];if(nh){nh.role='head';h.head=nh.id;}
+        const nh=livingNotableCandidates(n=>n.alive&&n.house===ci&&ageOf(n)>=16).sort((x,y)=>ageOf(y)-ageOf(x))[0];if(nh){nh.role='head';h.head=nh.id;}
         W.houses.forEach((o,i)=>{if(i>0&&!o.exiled)o.loyalty=clamp(o.loyalty+15,0,100);});reignHeader(head);}}}
   const avgUnrest=W.settlements.reduce((t,s)=>t+s.unrest,0)/W.settlements.length;
   for(let hi=1;hi<W.houses.length;hi++){
@@ -8811,7 +8845,7 @@ function tickPolitics(){
     }
   }
   // notables: birthdays, deaths, births, marriages
-  for(const n of W.notables){
+  for(const n of livingNotables()){
     if(!n.alive)continue;
     if((day()-n.birthDay)%360===0&&day()>n.birthDay){
       n.age=ageOf(n);
@@ -8825,8 +8859,8 @@ function tickPolitics(){
   }
   // births — the cast stays a cast, not a census (~140 living notables)
   if(day()%9===0){
-    const aliveCount=W.notables.filter(x=>x.alive).length;
-    for(const n of W.notables){
+    const aliveCount=livingNotableCount();
+    for(const n of livingNotables()){
       if(aliveCount>=140)break;
       if(!n.alive||n.sex!=='f'||!n.spouse)continue;
       const sp=notableById(n.spouse);if(!sp||!sp.alive)continue;
@@ -8849,7 +8883,7 @@ function tickPolitics(){
   }
   // arranged marriages for alliance value
   if(day()%37===0){
-    const single=W.notables.filter(n=>n.alive&&!n.spouse&&ageOf(n)>=17&&ageOf(n)<=45&&(n.role==='heir'||n.role==='scion'||n.role==='cousin'));
+    const single=livingNotableCandidates(n=>n.alive&&!n.spouse&&ageOf(n)>=17&&ageOf(n)<=45&&(n.role==='heir'||n.role==='scion'||n.role==='cousin'));
     for(const a of single){
       const b=single.find(b2=>b2!==a&&b2.sex!==a.sex&&b2.house!==a.house&&!b2._just);
       if(b&&chance('sim',0.35)){
@@ -8864,7 +8898,7 @@ function tickPolitics(){
         break;
       }
     }
-    W.notables.forEach(n=>delete n._just);
+    notableMarriageCleanup(single);
   }
   // an exiled house's seat does not stay empty forever: new blood is raised to the peerage
   if(day()%97===0){
@@ -8929,7 +8963,7 @@ function partition(hi,son){ // the lands are divided between the sons: the outly
 }
 function killNotable(n,cause,silent){
   if(!n.alive)return;
-  n.alive=false;n.deathDay=day();nameUse(n.name.split(' ')[0],-1);
+  notableSetAlive(n,false);n.deathDay=day();nameUse(n.name.split(' ')[0],-1);
   const wasMonarch=n===W.monarch;
   const h=houseOf(n);
   if(!silent){
