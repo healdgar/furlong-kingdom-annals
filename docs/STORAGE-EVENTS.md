@@ -94,13 +94,10 @@ owned raw fields immediately, without running JSON or the storage codec. Ordered
 key vectors are shared within transport batches; opaque lot handles keep their
 complete owned values. Mutable metadata is detached before append returns.
 
-A Blob Worker runs the existing codec, UTF-8 encoding, SHA-256, gzip and IndexedDB
-writes. Finished batches use exact native binary transport, transferred during the producing tick, so processing
+A Blob Worker validates binary framing and exact sequence, then hashes, gzips and atomically persists the native bytes. Default archives declare version 3 and `native-storage-v3` per manifest/chunk. It does not run the canonical storage codec during simulation. Readers decompress and decode records on demand for analysis/export; version 1 tagged JSON and version 2 compact archives remain readable. Finished batches use exact native binary transport, transferred during the producing tick, so processing
 can overlap an atomic simulation day. The worker processes batches serially and
 acknowledges only after one transaction commits both chunk and manifest. Main
-retains each sealed binary buffer until its checked acknowledgement; captured object graphs are released. A separate transferable copy preserves fault-tail ownership. Archive format, checksum
-chain, canonical readers and tagged export remain compatible; chunk boundaries
-can differ. There are no field watches or graph comparisons.
+retains each sealed binary buffer until its checked acknowledgement; captured object graphs are released. A separate transferable copy preserves fault-tail ownership. SHA-256 chains cover the exact uncompressed native bytes; `encodedBytes` counts those bytes and `storedBytes` counts gzip bytes. Binary journals report zero `encodedCharacters`. Canonical readers and tagged exports remain compatible; chunk boundaries can differ. There are no field watches or graph comparisons.
 
 Unsealed capture accounting deliberately overestimates storage; sealed buffers use their retained byte length plus entry overhead. The admission watermark is 16 MiB, with a separate 32 MiB estimated raw batch target. Crossing the watermark
 seals a short unfinished batch immediately at the day boundary. A synchronous day
@@ -135,3 +132,5 @@ producer; baseline first commit occurred after the producer at 3116 ms. Main hea
 increase rose 62→127 MB; process RSS increase rose 204→501 MB. All 131,072 records
 committed. These are synthetic Node diagnostics; native Chrome world histories,
 ordinary-play performance and device memory limits require separate validation.
+
+Native v3 persistence is a timing candidate: correctness tests pass, but native browser performance must be measured before release. Binary snapshots retain full ordered detail; no canonical dictionary/delta comparison occurs on the Worker fast-forward path.
