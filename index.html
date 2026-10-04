@@ -13619,6 +13619,16 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   browser exposes a GPU timer, draw calls, triangles, memory and scene size.
   *Copy report* puts it on the clipboard.
 
+## Automated checks
+
+`node --test tools/provision.test.mjs` checks food replenishment, ownership,
+credit and payment conservation against the functions in `index.html`.
+`tools/soak.mjs` measures longer histories in isolated Chrome instances using
+the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
+
+Population/census caching and shared route trees reduce repeated computation.
+A background routing worker retains the same synchronous fallback. [Implementation and matched-history checks](docs/PERFORMANCE.md).
+
 ## An advisor
 
 Bring an AI to your side, on any model, through any agent app that speaks MCP (Claude, a coding agent, an
@@ -14000,9 +14010,14 @@ itself; you rule one lord's domain:
   it costs you your word). At a private war's end the towns taken go back,
   save the best one to a decisive victor; the loser remembers.
 - **Town works** (in any town of your own, crown or lord): a mill (+20% grain),
-  a granary (keeps 60% more against famine), a market charter (dues half
-  again), assarters (for three years the plough takes in the wood and waste).
-  Lords and the council build these on their own too.
+  a market charter (dues half again), assarters (for three years the plough
+  takes in the wood and waste). Lords and the council build these too.
+- **Granges, granaries and warehouses** hold finite quantities and reduce
+  spoilage. In a town's Works, choose a building and click its site on the map;
+  the survey shows capacity, materials, wages and distance to fields and market.
+  Construction waits for available materials and funds. Goods must be carried
+  to storage; excess stays exposed and spoils faster. Owners also invest when
+  avoided losses justify the building and carriage costs.
 - **Why?** Your standing at court is explained: what moves it year by year
   (tax, unrest, legitimacy, the monarch's character, a strong house's pride)
   and the recent swings with their causes; the purse shows last year's
@@ -14077,7 +14092,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   beyond the realm. Every building has an owner (a household, the lord, the church, the town); rent goes to
   the owner, and an owner who lives in his own house pays none.
   - **The market:** every unit in a town's stores belongs to someone: a seller who has offered it, or a
-    household that has bought it and not yet used it. Each month the harvest is offered by those who grew
+    household that has bought it and not yet used it. Each household has a stable account and its own
+    pantry; community population and hunger aggregate household cohorts. Grain and fish are assigned daily,
+    and other output at the monthly market, to those who grew
     it (the tiller's share, the landowner's, the lord's home farm and his tenants' rents in kind, the
     church's tithe, the mill's multure), and the catch, timber, ore, tools, cloth, wine, hay and stone by
     those who made them. Households buy the month's bread, fish, fuel, cloth and tools with what is in their
@@ -14123,8 +14140,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
   - **Building is wages:** castles, churches, walls, roads, plans, new houses and rebuilds pay the masons,
     carpenters, thatchers and carters of the place (or the nearest that has them); stone is bought from
     the quarry's owner. Whoever will own a new house pays for it.
-  - **Death and marriage:** a dead man's purse, beasts and buildings pass to his widow or eldest grown
-    child, else escheat to the lord; a bride brings her purse and beasts to her husband's household.
+  - **Death and marriage:** stable household accounts survive their head. Creditors are paid before
+    movable estates are divided among widow and kin; later English presets preserve widow/children/soul
+    shares. Land follows its own local custom, including minor heirs and widow dower. Marriage combines
+    independent estates; dependent children bring a portion. [Rules and historical limits](docs/HOUSEHOLDS.md).
   - **Wards:** when a place grows into a greater neighbour, it becomes its ward (keeping its name and its
     church: the parish stays its own); under one lord it is simply taken in, else the greater lord buys the
     rights at a dozen years' purchase of what the ward actually yields its lord (rents, his share of the
@@ -14629,6 +14648,694 @@ within sane bounds — and the realm still produces story.
 
 [MIT](LICENSE): free to use, copy, change and share, with the copyright notice kept. Three.js, loaded from its CDN, is MIT too.
 
+<<<FILE docs/CONSTRUCTION-CUSTODY.md>>>
+# Pooled timber and construction custody repair
+
+The inland seed/fate 1001 baseline first strands charcoal title during a pooled
+timber transfer from Pontecala on day 1302. `char` is a legal fuel claim backed by
+physical timber. `moveStock` moved every physical timber lot, including charcoal
+lots, but moved only `held.timber` claims. Charcoal claims stayed at the origin.
+
+Before the transfer, physical timber was 406.92595112042716; afterward it was
+367.72752530853126. The transferred fraction applied to the 41.98288601417815
+charcoal claims is 4.04413392231434: exactly the excess found by the baseline
+storage check on day 1303. The repair transfers both held claim kinds with their
+existing lots. Existing custody transfers do not complete unrelated pending
+purchases at the receiving settlement.
+
+Six construction purchase boundaries also removed requested pooled material
+rather than what the buyer actually acquired. New/rebuilt houses, castle/church
+stonework, stone walls and house upgrades now install `purchase.got` from that
+buyer's pending lots. A buyer able to afford two units of a requested four
+installs two; the remaining seller stock and another buyer's pending purchase
+survive. An unfunded buyer consumes nothing. The non-lot fallback also consumes
+only the purchased quantity. Tiny positive quantities are retained.
+
+Legacy work progression still permits partial local supply. This patch changes
+physical/title/payment correctness without adding a new construction stall or
+rewriting existing life/history details. New seed outcomes can differ because
+unbought material survives. It is a correctness revision to the storage engine
+version 2 baseline, not a schema migration or continuation guarantee.
+
+Unpurchased pooled stone draws remain in the low-level first/wider wall, wharf,
+citadel, wall-project, wall-repair and paving paths. Those use a different legacy
+communal-work model and are unchanged here; this repair does not prove their
+payment semantics.
+
+Focused tests cover affordable/unfunded purchases, specific buyer custody,
+positive tiny balances, non-lot behavior, charcoal transfer and unrelated pending
+receiver purchases. Mature probe evidence uses an intentionally volatile event
+sink to locate first corruption quickly. It does not establish durable-journal
+correctness or full long-duration clearance; integrated durable soaks must be
+rerun against their exact source hash.
+
+A fresh immutable-baseline probe wrapped the complete `moveStock` transaction:
+first permanent violation is day 1302, combined claims 371.7716592308457 against
+physical 367.72752530853126, with no caught simulation errors. The earlier
+inside-`offer` trace includes an intentional transient while the pooled transfer
+is in progress; it is not the permanent-defect boundary. Baseline source SHA256
+is `0e2054a57172acc644701c9f0781a93a834e584422b70dcbd33ca910cc5c394a`.
+Evidence remains local in `.git/storage/2026-10-03/inventory/inland-permanent-baseline`.
+A controlled fixture reuses the observed mature physical/charcoal quantities and
+proves both settlements' title and physical conservation after repair.
+
+The candidate source
+`323c095e5c31992727aa57aabcbbac4e91e60ecde002f84f853a172adcee16c7`
+completed a fresh seed/fate 1001 inland fast-sink probe through day 1440,
+including the original day-1302/1303 boundary: no Pontecala combined timber/char
+overclaim and zero caught simulation errors. Evidence is
+`.git/storage/2026-10-03/inventory/inland-repair-candidate`. This targeted probe
+does not establish all-world inventory matching or durable outcome persistence.
+All 235 Node tests pass, including nine new material/custody regressions.
+
+<<<FILE docs/DEFERRAL.md>>>
+# Fastest-speed visual deferral
+
+Only player speed 5 (360 days/second) coalesces graphics. Slower speeds, map generation and
+later-era prehistory retain existing behavior. Every simulation day and life event remains.
+`&defer=off` disables this feature; captured before boot normalizes the link.
+
+## Boundaries
+
+Track routing, bridge crossing records, parcel polygon caching, market price caching, ownership,
+crops and economic land masks remain synchronous at their original call boundaries. Track/bridge
+mesh construction, fences and walls project current state through three latest-only callbacks.
+One projection runs per second while reeling; obsolete projections cannot accumulate. Terrain
+shader distances refresh at most once/second; their semantic source masks remain current.
+
+Pause or slower speed drains projections across yielded callbacks and drains shader tiles in
+batches of at most four or about 8 ms. A single tile or mesh can exceed the budget. Catch-up waits
+for any existing normal RAF detail refresh, then refreshes fences/fields from its latest masks.
+It neither forces nor retimes the mixed `rebuildDetails` function. Resuming reeling returns to
+bounded refreshes. New-world identity discards obsolete callbacks. Projection errors pause and
+retain dirty work; `FURLONG_VISUAL.retry()` retries explicitly. `status()` exposes pending work,
+including semantic detail tails; developer `finish()` rejects after 30 seconds if RAF cannot finish.
+
+Projection reads uncached parcel polygons/prices through pure kernels. It cannot populate those
+caches, clear authoritative fence dirtiness or draw simulation RNG. Existing spatial query `__hs`
+marks are deduplication scratch and excluded from semantic comparisons. Road builders, agents,
+labels, particles, lots, layouts and detailed maps retain their existing implementation.
+
+## Validation
+
+Parent: `75ac15d76cdc1766368a96d0d783d424dd599993`.
+Source and measurements are recorded with each local run under `.git/deferral/2026-10-03/`.
+
+```sh
+node --test tools/source.test.mjs tools/life-history.test.mjs tools/history.test.mjs \
+  tools/provision.test.mjs tools/ownership.test.mjs tools/advisor-api.test.mjs \
+  tools/routing.test.mjs tools/deferral.test.mjs
+node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
+  --years 2 --variants baseline,candidate,off --out /tmp/furlong-deferral
+node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
+  --era 855 --years 0 --out /tmp/furlong-deferral-era
+```
+
+The deferral harness retains authoritative geographic records as well as world/household/land,
+full life and annal history, ownership and account state. It compares every annual graph hash,
+final state and next 16 draws from each RNG stream at matched daily/mixed-builder boundaries.
+Only existing derived caches/graphics and spatial scratch stamps are omitted. Pause geometry
+attribute/instance buffers and shader fields match parent; post-RAF settled projections also
+match a fresh pure rebuild. Player tax changes, repeated requests, slow/pause, phone rendering,
+world replacement and retained/retried faults are exercised.
+
+Retained lot/detail updates still use the original RAF/time-based cadence. Matched-boundary
+comparisons establish that schedule; they do not establish renderer-independent determinism
+across arbitrary frame schedules. Six-second hardware Metal Chrome samples exercise the real
+animate loop at speed 5, but are short performance samples. Graph fingerprint/CDP time is
+excluded from throughput claims; function timings are inclusive and must not be summed twice.
+Forced month-end builders are boundary stress/attribution, not the production invocation schedule.
+
+The full history recorder remains experimental/off. No long-run conservation clearance is claimed:
+one-year matched sea/inland soaks retain the parent's whole-realm money-audit defect. Household
+ownership/inheritance and food/payment conservation focused tests remain required.
+
+## Measured result, 3 October 2026
+
+Tested `index.html` SHA256:
+`ee91e9451c5b16fe1773b0fabb81e4b25ea55fbaf46bd5b024cb84c85c0ac2b2`.
+109 focused tests pass. Two-year sea 1001/inland 2002 histories and AD855 starts match parent
+state/RNG and settled geometry/fields. Both actual fastest-speed views settle correctly, including
+normal paused lot refreshes, with catch-up tails of 0.679/0.668 seconds in the final two-year run.
+Phone views show the map at 390×844 with linked shaders, no overflow and zero game/console errors.
+
+Two-year forced monthly-boundary attribution (candidate CPU milliseconds):
+
+| Work | Sea | Inland |
+| --- | ---: | ---: |
+| 720 complete simulation ticks | 3316.8 | 4481.8 |
+| tickEconomy, included in ticks | 1006.8 | 1427.8 |
+| tickHouseholds, included in ticks | 173.4 | 277.7 |
+| tickLand, included in ticks | 37.3 | 58.8 |
+| 24 retained mixed detail/lot rebuilds | 791.3 | 960.4 |
+| 25 authoritative track builders, bridge prep included | 547.0 | 567.2 |
+| 25 fence preparations | 2.2 | 2.8 |
+| Coalesced track projection | 16.7 | 11.4 |
+| Coalesced fence projection | 9.3 | 17.3 |
+
+The matched parent's track builders cost 696.2/741.0 ms, fences 137.3/164.3 ms and walls
+21.7/32.4 ms. Candidate defers the reconstructible fraction; path/bridge/map work remains.
+These inclusive timings and forced invocation counts explain the saved graphics cost; they do
+not imply equal percentage savings in production. Full-history elapsed time includes hashing/CDP.
+
+A final six-second Metal Chrome sample advances 130.19/103.00 days per second with deferral.
+Same-source disabled samples advance 125.19/100.96: about 4%/2% more throughput. Earlier isolated
+samples showed only 1–2%; these short runs establish a modest benefit, not a stable benchmark or
+solution to the dominant simulation cost. Reaching a later era receives no deferral speedup.
+
+Matched one-year four-world soaks preserve food/population summaries and the existing money
+audit failure: residuals -658.201, -946.031, +665.830 and -739.911 (1001 sea/inland, 2002 sea/inland).
+No tolerance is relaxed. Longer soaks and complete frame-schedule independence remain unproven.
+
+The deferral harness initializes the canvas size before its emulated phone resize to avoid
+Chrome mobile viewport autoscaling around a stale wide canvas while RAF is suppressed. This
+checks the settled emulated view, not production desktop-to-mobile resize behavior. Fresh
+390×844 touch/WebGL1 boots are checked separately with `render-check.mjs`.
+
+<<<FILE docs/HISTORY.md>>>
+# History recording
+
+Life ledgers now retain every recorded event, including prehistory and mercenaries.
+Death and archival preserve the ledger. Person cards display the entire ledger.
+The simulation still archives other working fields at death; this change does
+not make those fields available in existing seed/command saves.
+
+## Experimental snapshot/log archive
+
+Append `&history=full` to a world URL to audit the recorder. The flag is read
+before boot normalizes the URL. It is deliberately off by default: exhaustive
+graph scans are too expensive for normal fast-forward.
+
+The founding snapshot precedes prehistory. Ordered, reversible changes cover
+simulation days, wrapped player commands, settings, deferred tracks/fences,
+boot completion, input boundaries and frames that advance the simulation.
+Life and annal events include prehistory. The archive contains:
+
+- World fields, household accounts, ownership, inheritance, people and kinship.
+- Land parcels, masks, flood state, tree records, spatial hashes and tracks.
+- RNG states and town-planner contexts, including their private spatial maps.
+- Stable object identity, cycles, Map/Set order, property descriptors and exact
+  typed-array bytes. Binary changes use 4096-byte pages.
+- Source identity, sequence numbers and both sides of each changed node.
+
+Accessors are never invoked by capture: some allocate inventory when read.
+Graphics handles and executable behavior become inert metadata on import.
+Shader distance fields, meshes, labels and other reconstructible GPU state
+are excluded. The authoritative land mask and construction records remain.
+
+Storage is browser-local IndexedDB, with gzip-compressed chunks. A recording
+failure pauses the simulation and blocks another day. Unwritten chunks remain
+in memory and are included in export after a storage failure. Browser eviction,
+an abrupt process exit or navigation before pending writes finish can still
+lose an uncommitted tail. `pagehide` is a best effort, not a durability guarantee.
+
+Local developer API:
+
+```js
+FURLONG_HISTORY.status()
+const archive = await FURLONG_HISTORY.export() // waits for pending commits
+await FURLONG_HISTORY.download()              // local .json.gz file
+const reader = FURLONG_HISTORY.open(archive)
+const founding = reader.seek(0)
+const last = reader.seek(archive.steps.length - 1)
+```
+
+`seek` reconstructs archived data. It does not replace the running engine.
+Old Save/Resume remains the seed/command format. The new archive deliberately
+has `continuation: false`; loading executable closures or evaluating code from
+a save file would be unsafe and insufficient to restore the engine correctly.
+
+## Coverage and remaining work
+
+### Storage outcome journal
+
+Physical storage emits ordered mutation and decision records into a separate,
+always-on local journal. Recording copies each event immediately; compression,
+checksumming and IndexedDB writes run asynchronously. Chunks leave memory only
+after the chunk and its manifest commit together. At the pending-byte watermark,
+fast-forward waits before starting another day. It never discards records or
+interrupts a day merely to satisfy the watermark.
+
+Each session records its world parameters and executable inline-source SHA256.
+Chunks carry consecutive sequence ranges, content hashes and predecessor hashes.
+The tagged JSON encoding preserves absent versus undefined fields, unusual
+numbers and array holes. Records must contain plain data and stable entity IDs.
+
+```js
+FURLONG_STORAGE_LOG.status()
+await FURLONG_STORAGE_LOG.flush()
+for await (const record of FURLONG_STORAGE_LOG.records()) { /* inspect */ }
+const stream = FURLONG_STORAGE_LOG.stream() // bounded, tagged JSONL export
+const sessions = await FURLONG_STORAGE_LOG.saved()
+const older = await FURLONG_STORAGE_LOG.open(sessions[0].id)
+for await (const record of older.records()) { /* verifies persisted chunks */ }
+```
+
+A failed write pauses progress and retains the uncommitted tail for current-session
+export. Previous committed sessions remain readable after a browser restart.
+Browser eviction, clearing site data or closing before an asynchronous commit can
+lose data; `pagehide` flushing is only best effort. Export to durable external
+storage and a player-facing storage-management interface remain future work.
+This journal covers storage, not the entire engine. It does not yet hydrate a
+running game; its manifest therefore retains `continuation: false`.
+
+### Engine coverage
+
+This is a validated foundation, **not a claim of 100% complete engine replay**.
+
+1. Replace full graph scans with mutation logging; retain the independent
+   state comparison in tests as a coverage audit. Constructor/local-reference
+   escape paths, typed-array writes, Map/Set operations, accessors and deletions
+   must all be covered before removing the audit.
+2. Record intra-day outcomes which disappear before a transaction finishes.
+   A daily state delta alone cannot recover every intermediate decision.
+3. Complete the mutation-boundary audit. Paused-frame effects and arbitrary
+   direct writes outside wrapped operations may wait until the next capture.
+4. Add versioned engine hydration for ownership views, accessors, planner
+   closures and pending petition actions. Then verify fresh-browser resume and
+   continued simulation against a control. RNG hydration alone is insufficient.
+5. Add durable checkpoints, efficient seeking, browser-restart recovery,
+   bounded archive export, storage-management UI and explicit timeline forks.
+
+Fast-forward can postpone graphics construction, keeping only the latest dirty
+version. Economic land area, legal ownership, crops, building layouts, collision
+and routing inputs must remain current. `buildTracks`, `rebuildDetails` and
+other mixed functions need their simulation effects separated from projection
+work before they can be deferred safely.
+
+## Validation
+
+Tested `index.html` SHA256:
+`2605816afdb024e49898c55917d7d93df0c419408e0217cffc90f8aa29277170`.
+
+- 97 focused tests: ownership/inheritance, provisioning, routing, source,
+  advisor, uncapped lives, exact graph reconstruction, byte-page changes,
+  atomic capture failure, corruption/sequence checks and RNG restoration.
+- Native Chrome/Metal M4 Max: sea seed 1001 and inland seed 2002, day-by-day
+  archive reconstruction with an independent descriptor-based oracle, seeking
+  both forward and backward, JSON import, nonzero render calls and no errors.
+- Injected IndexedDB failure: pause, no further day, downloadable unwritten tail.
+- Normal mode: two years per world compared with `b987c6c`; annual world hashes
+  and next 16 draws of all three RNG streams match. The comparison deliberately
+  excludes `ev` and the new private `historyCells` adapter; all other fields
+  considered by the existing performance harness remain included.
+
+An isolated 12-day timing run, excluding initial snapshot persistence, measured
+162–192 ms per capture, normally twice per day; gzip 13–15 ms per flushed batch;
+IndexedDB commits 3–4 ms per batch. Commit latency is a browser measurement,
+not a physical drive benchmark. Capture dominates. Do not use the overlapping
+verification runs to make throughput claims.
+
+Local evidence: `.git/history/2026-10-03/`. These are short history tests and
+two-year normal-mode comparisons, not long-run release clearance. The existing
+global money-ledger reconciliation defect remains outside this change; focused
+ownership and food/money tests pass.
+
+<<<FILE docs/HOUSEHOLDS.md>>>
+# Household ownership
+
+A household has a stable `hh…` identity, members, a head, an account, a home, debts and creditor records, population cohorts by community, and daily hunger. Changing its head preserves the account. Personal health, age, skills, kinship and careers remain individual.
+
+Each community keeps an owner inventory indexed by the household or institutional account. `held` is bought/retained stock; `sale` is stock offered on the market; `reserve` records minimum prices; `animals` is the owner's local byre. All game goods use this ownership model. Inventory quantities exist once: market Maps are views of the owner inventory. Purchases move quantities from offered stock into the buyer's intended use; carriage moves purchased stock or offered stock with its owner. Remote holdings retain their location.
+
+Legacy head fields (`w`, `herd`, `bh`, debt and economic counters) project the household account. Only the head exposes the purse, preventing duplicate censuses. Account transfers to another member still reach the household. `s._lard` is an aggregate compatibility view, used for reconciliation and diagnostics; households eat from their own inventory. The town's physical `stores` remain a custody cache for production, shipping, construction and shocks. Output may briefly be pending in `_made`; it is assigned before consumption. Spoilage reduces pending output and every owner's claims together.
+
+Food is replenished daily if necessary, subject to ownership, actual payment, credit limits, reservation prices and retained grain. Milk/meat food and fleece belong to the byre owner. Homespun consumes the family's own wool; workshops consume their buyer's inputs and own the output. Winter fodder belongs to its owner: one family's full haystack cannot conceal another family's shortage. Relief is explicitly distributed by population and hunger. The hall's pantry belongs to the great house and feeds its own table.
+
+The community's population is the sum of household cohorts. Daily births/deaths use each household's hunger; community hunger and food fulfillment are population-weighted household aggregates. Community prosperity responds to these aggregates. Existing plague, recruiting and migration code adjusts the aggregate through a compatibility setter that distributes changes over cohorts. The named parish roll remains a periodically reconciled projection of continuous population, not a second stock of people. New places without a named roll have an explicit cohort, provisioned by the local lord until named households arrive.
+
+## Household transitions
+
+Marriage merges independent accounts, inventories and debts. A dependent child receives a modest parental portion, not the parents' entire purse. Adult household formation creates a new account; inherited land/building rights follow their beneficiary. A full household move preserves its identity and carries purchased goods and animals; offered goods and land remain at their physical location. An individual departure receives a proportional share of movable stock and obligations. A bridal move includes resident dependents; a levied child is not copied from an army into the parish.
+
+## Inheritance
+
+There was no single medieval rule for every region, century, tenure and kind of property. The game's common-household model distinguishes:
+
+- **Land and buildings:** existing cultural presets remain eldest-son or partible succession. Minors can inherit; descendants represent a deceased child. Daughters, near kin and a surviving spouse prevent automatic escheat. `s.custom.land` can specify `eldest`, `partible` or `youngest`. Strip/building identifiers allocate indivisible properties; this is approximate apportionment, not a division of every plot by area/value. Land records retain a household owner and a named beneficiary; work/occupation is separate. Superior lordship and tenure remain separate existing rights.
+- **Widow use:** land held by an heir retains the widow's lifetime dower share of family crop proceeds. The default is one third and can be overridden. The household home survives a head change.
+- **Movables:** debts are settled before division. Insolvent estates transfer chattels in kind at local prices; unpaid debt is recorded in the estate, not imposed as personal debt on minor heirs. English households from AD 1180 use widow/children/soul thirds (halves where widow or children are absent); elsewhere the default is a simplified widow/kin division. Kin sharing one household receive their combined shares in that account. The soul share goes to the parish, with the lord/crown as institutional custodian if no parish exists. `s.custom.movables` can override the preset.
+- **Servile holdings:** a default heriot transfers one best beast to the lord. It does not seize the entire household stock. This can be disabled with `s.custom.heriot=false`.
+- **Natural children:** paternal land eligibility follows local custom; the Celtic/Welsh preset permits it, while maternal rights remain. `s.custom.naturalLand` can override this. The pedigree is treated as acknowledged paternity; the game does not model a separate recognition lawsuit.
+- **Guardianship and later payments:** a minor household retains its holdings and a guardian reference. Debts subsequently repaid to a dead lender follow that person's estate shares. Extinct/merged accounts retain successor references for outstanding transactions. Noble titles and institutional coffers continue through their existing dynastic systems.
+
+These are explicit game abstractions. The kin default, uniform heriot/dower defaults, regional culture presets, guardianship management and in-kind debt settlement do not purport to reproduce every medieval jurisdiction or procedural law. The simulation does not yet distinguish individual trusts or testamentary bequests within a co-resident household's common purse.
+
+The historical distinction between inherited land and movable chattels, creditors' priority, and late-twelfth-century English widow/children/soul shares follows the [Magna Carta Project's Clause 26 commentary](https://magnacarta.cmp.uea.ac.uk/read/magna_carta_1215/Clause_26?com=aca) and [Clause 27 text and commentary](https://magnacarta.cmp.uea.ac.uk/read/magna_carta_1215/Clause_27?com=aca). Early Welsh equal division among acknowledged sons, including natural sons, is described by [Oxford's Medieval Welsh Law](https://academic.oup.com/reference/62978/reference-article-abstract/565162571) and the [Open University's early Welsh law account](https://www.open.edu/openlearn/history-the-arts/introduction-law-wales/content-section-1.1). Cultural presets outside these examples are inherited simulation conventions, not independently validated national legal codes.
+
+## Validation
+
+```sh
+node --test tools/source.test.mjs tools/provision.test.mjs tools/ownership.test.mjs
+node tools/ownership-replay.mjs tools/soak-results/replay-new
+node tools/soak.mjs --seeds 688673834,1001,2002,3003,4004 \
+  --coast sea,land --years 20 --par 5 --audit 120 \
+  --out tools/soak-results/ownership-new
+node tools/soak.mjs --seeds 688673834 --coast sea --years 0 \
+  --render 0 --devices laptop --cpu 1 --speeds 5 \
+  --out tools/soak-results/ownership-render-new
+```
+
+The focused tests execute actual ownership, market, population and inheritance functions; unrelated rendering/politics are stubbed. The browser tools use native Chrome, Metal on this Mac, and reject software rendering. Simulation remains JavaScript on the CPU; rendering uses the GPU. Each run freezes the source and records hashes. Results are local and ignored by Git. Seed/journal saves rebuild these accounts by replay; old saves retain their format but may unfold differently under changed economics.
+
+Realm-wide money reconciliation still fails on baseline defects, including initial lord wealth without a flow entry and prepaid wages mislabelled as minted money. The harness now completes initial household registration before its baseline census and counts any remaining unmigrated purse. It does not relax the reconciliation threshold. Passing ownership fixtures or a replay is not a clean realm-wide monetary audit.
+
+### Recorded results — 2 October 2026
+
+Final `index.html` SHA256: `7dab1670f07749f01c331b996fe41b23719e0d6613661ff96f5c3bf6487f3dac`.
+
+- All 58 source, ownership, inheritance and provisioning tests pass. Log: `tools/soak-results/ownership-tests-final.txt`.
+- Exact-source native Chrome save/resume replay agrees at day 360 for household identity, membership, heads, cash, debt, population and local held/offered/animal inventories; zero simulation errors. Evidence: `tools/soak-results/ownership-replay-final/result.json`, `before.json`, `after.json`.
+- Exact-source ten-world, five-year matched sea/inland soak completes with no simulation errors, NaN money or invalid population; the realm and wall checks pass. Every world still fails the unchanged global money reconciliation check. Evidence: `tools/soak-results/ownership-final-5/summary.md` and yearly JSONL.
+- Exact-source animated realm and street smoke checks at speed 5 pass on Apple M4 Max Metal: finite frames and population, zero simulation errors. Evidence: `tools/soak-results/ownership-render-checked/s688673834-sea.render.json`. These are correctness checks, not a performance clearance.
+- The preceding source `9656f00c9836a8c669f5591d847a37924a41a5b2ba35e4e2a2ab8e634a5510da` completes all ten matched worlds for twenty years with the same result: no simulation errors, global money reconciliation fails. It includes the bridal/army duplicate-person correction but predates three final changes: same-day household census invalidation, fresh person lookup for new property owners, and monthly provisioning to the unnamed cohort's own pantry. Focused regressions and the final five-year cohort cover those three changes. Evidence: `tools/soak-results/ownership-release-20/summary.md`. This is not a twenty-year validation of the final source.
+
+The older `ownership-final-20` run is superseded: it exposed the bridal/army duplicate-person bug and is retained as failure evidence. The earlier food-only comparison in `PROVISIONING.md` is historical evidence, not a paired comparison of the full household architecture. No 200-year run completed. Integration must rerun checks on the combined source; these results do not establish main-branch integration or release readiness.
+
+<<<FILE docs/INTEGRATOR_PROMPT.md>>>
+Integrate the three workstreams in `/Users/alexwall/dev/furlong-kingdom-annals`. Inspect `git worktree list`, each checkout's status, and repository instructions first. Preserve all uncommitted work; do not reset, clean, or replace whole files.
+
+Use a clean `codex/integration` worktree. Establish the complete game baseline from `claude/annals-kingdom-sim-oop6ub` before worker integration; main originally lacked its commits. Workers include `codex/provisioning` (household ownership, inheritance, provisioning and soak harness), `codex/rendering-realism`, and UI work in the main worktree. Reverify branches and paths.
+
+Wait for each worker's explicit ready handoff: committed SHA, scope, checks and limitations. Do not treat an idle chat or partial fix as completion. Merge commits, resolve overlapping `index.html` changes by behavior, and preserve all three implementations.
+
+Validate the combined source: household ownership and customary inheritance tests, food and money conservation, rendering checks, and hardware-GPU-backed Chrome smoke and multi-seed sea/inland soaks. Record the tested source hash. Investigate failures against baseline; keep the money reconciliation threshold intact. Check seed/journal save replay.
+
+Once all workers are ready and combined checks pass, update local main without overwriting dirty work. Report integrated SHAs, resulting main SHA, checks and remaining defects. Push, publish or deploy only when explicitly authorized. Keep coordination records local.
+
+<<<FILE docs/INVENTORY.md>>>
+# Livestock repair — engine baseline livestock-1, 3 October 2026
+
+This intentionally changes future economic and demographic outcomes relative to
+`9753322dea76eeca750a928e9133cf38d17f211d`. Existing person, life and annal
+records remain intact. Seed/command saves regenerated by the new engine follow
+its corrected outcomes; old snapshot archives retain their original quantities
+and source identity. This is not an archive migration or a performance-only change.
+
+## First violating transactions
+
+Fresh hardware-GPU Chrome, sea seed/fate 1001, AD 850:
+
+- Original parent, day 20: `takeHorses` requisitions one horse without removing
+  local title. Porthcrug has 18.745237122178807 physical horses and
+  19.745237122178807 claims immediately after the transaction. This is the
+  earliest original-parent violation under the combined title oracle.
+- Repair-stage source, day 41: `herdInit` allocates household animals without surrendering existing
+  sale title. Lignonne has 204.9716049064345 physical sheep but
+  358.70030858626035 combined private and sale claims. Initial allotment now
+  transfers the corresponding fraction of existing title.
+- Original parent, day 500: a sheep shipment leaves Ponte di Cala. Physical sheep decline from
+  11.179889427201612 to 4.0261877627808325; private claims remain
+  7.228924178825603 pending the next herd synchronization.
+- Original parent, day 502: `moveHouseholdGoods` resets `_herdLast` to the smaller physical count
+  without first applying that pending loss. Claims now permanently exceed
+  physical animals. Subsequent birth scaling magnifies phantom claims, and
+  `herdProduce` produces grain and wool from them.
+
+These traces use different boundaries and repair stages: day 20 counts every
+animal title; day 502 isolates private byres. Movement now synchronizes both communities before transferring title and
+physical animals, then records the resulting physical baseline.
+
+A second trace exposed imported animals being mistaken for births:
+`herdSync` multiplied private claims by every positive physical delta.
+Rougecastel's physical sheep rose from 8.543860228727755 to 49.513826339382035;
+28.051600269091477 private sheep became 162.56610326973734.
+`herdBirth` now credits actual births explicitly. Imports and purchased title
+cannot trigger a second birth allocation.
+
+Another trace exposed a custody error in annual purchases: a transaction in
+Lignonne credited the household head's home byre at Rougecastel. Local
+transactions now pass their custody site explicitly; the yearly herd census
+reads that site's owner ledger, including remote owners. Canonical market
+mutation also uses owner account keys; shared displayed seller names cannot
+redirect a write into another household's inventory.
+
+Culls, siege deaths, murrain and raids now remove animal title with physical
+beasts through `herdLoss`. Lord byres' winter losses remove offered/held claims,
+preventing later purchases of dead animals. Private winter losses stay with the
+byre whose hay ran short. Missing animal fields no longer become NaN through
+`undefined -= 0`; corrupt non-finite claims throw without erasing their evidence.
+Cancelled shipments of at most half a unit now retain purchased stock under
+the merchant: the former cancellation subtracted its physical quantity twice
+while dropping the cargo. Payment remains a conserved purchase. Mustered
+horses surrender local title while remaining physically counted in the host.
+Pooled settlement transfers carry private animal title proportionally, including
+tiny balances. Purchases and consumption retain every positive residual;
+reconciliation no longer deletes positive offers below 0.001 units. Herd
+synchronization no longer skips small nonzero losses. These are intentional
+changes to the former numerical truncation rules.
+
+## Checks and limits
+
+`node --test tools/inventory.test.mjs` exercises the precise export → movement →
+birth sequence, actual births versus imports, initial allotment, small shipment cancellation,
+muster and raid conservation, sale/private
+losses, tiny balances, migration, remote inheritance and corrupt claims.
+`node --test tools/*.test.mjs` includes existing ownership, provisioning, life,
+history, routing, advisor and script syntax checks.
+
+`node tools/inventory-trace.mjs OUT candidate|GIT_REF YEARS SEED sea|land` runs
+fresh isolated hardware-GPU Chrome and records source identity, annual statistics
+and the first non-finite or over-physical combined animal title claim at herd/ownership
+boundaries. The floating-point error bound is 32 × machine epsilon × the
+largest observed quantity for that community/good × owner count. Using the
+ending quantity alone incorrectly rejects cancellation: moving
+4.477105034977209 physical sheep against a claim one ULP larger leaves a
+8.881784197001252e-16 residual claim. The audit retains that evidence; the
+engine never truncates it to satisfy the oracle. Physical dispatch can temporarily precede monthly ownership
+synchronization; the audit distinguishes that pending interval from a baseline
+reset which makes the discrepancy permanent. It is an independent recomputation,
+not a quantity cap or a reconciliation used to repair the simulated world.
+
+The repair introduces no capacity limits and changes no history-retention rule.
+It does not establish complete goods custody equality, monetary reconciliation,
+archive continuation or renderer-independent replay. Those require separate
+integrated checks. Existing unnamed/unoffered remainder belongs to the lord;
+full physical lot accounting remains separate work.
+
+Local validation before storage integration: all 125 Node tests pass on source
+`dff8d1942cfbb6676664fe5de5817772b914482d4a94f91be3edf0e8d25e9469`.
+Fresh sea seed/fate 1001 completed 7,200 days on Apple M4 Max/Metal with zero
+caught errors and no over-physical combined animal title at the instrumented
+boundaries. Final grain was 63,899.362267438875 and population
+3,075.650527952854. That browser run used source
+`939a2d4ae1a980cfc4c05aa31c0ccf97e7cd8e8c86c30aa68b16180296123d9d`,
+before the final positive-residual retention change. Final-source and integrated
+storage checks must identify their own source hash; this run is not their proof.
+
+The final canonical availability read also uses each seller's own reservation
+and retained-grain metadata. All 126 Node tests pass on final source
+`9a4a3f6fb321b3a7e25f43aab5a19e056621bd869c87777dc53d5fa6bc6a200b`.
+
+Final-source inland seed/fate 2002 completed 7,200 days on Apple M4 Max/Metal
+with zero caught errors and no over-physical combined animal title at the
+instrumented transaction and daily boundaries. Final grain was
+81,927.00038292265 and population 2,732.871849649368. This run used the final
+source hash above. Concurrent short integration correctness checks make this
+run unsuitable for performance comparisons. Evidence remains local under
+`.git/storage/2026-10-03/inventory/final-quote-inland20` in the primary repository.
+
+The soak money oracle now pairs each declared prepaid `<cause*` payout with its
+synthetic negative `<>lost` mirror. On the original parent, seed 1001 sea first
+failed at day 11 garrison pay: total purses changed by -1.46e-11 while the old
+oracle expected +5.311443334054959 coins. The source debits the lord/crown
+before paying townsmen; this was flow interpretation, not minting or an omitted
+purse. The corrected original-parent phase audit completes day 360 without a
+phase residual above 0.01. This is not an annual or mature-world clearance.
+Twelve pure oracle fixtures retain detection of unfunded null payouts, missing
+upstream debits and omitted recipient purses, and cover external inflow/outflow,
+ordinary transfers, prepaid wages, looted-coin redistribution and null recipients.
+The annual 0.01 threshold remains. Engine money transactions are unchanged.
+
+`tools/soak.mjs --inventory 1` enables independent checks before and after each
+whole simulated day. It validates finite nonnegative stores and animal claims;
+combined livestock claims cannot exceed physical beasts within the observed
+input-magnitude floating bound. Unoffered lord remainder is reported separately,
+so this is not a daily title-equality requirement. The bound retains positive tiny
+claims; it never mutates quantities. Canonical storage checks independently sum
+lots, exclude transit from settlement stores, validate forward/reverse indices,
+unique lot IDs, active compatible locations, capacity and existing total/occupancy
+caches. Corruption fixtures cover each check and tiny/cancellation/transit cases.
+
+These are matching and validity checks, not a complete production/consumption
+conservation ledger. They do not establish that correctly matched quantities
+were legitimately created, or that every historical tiny balance was retained.
+Event replay and explicit transaction fixtures address different questions.
+The first inventory failure appears in annual JSON and fails `inventoryMatched`;
+the audit preserves it through later years. Waiting between days uses the sticky
+fault-aware outcome `wait()`, including the independent storage-event harness.
+
+<<<FILE docs/PERFORMANCE.md>>>
+# Simulation performance
+
+Fresh maps, every daily tick, every named person and household, and existing ownership and
+inheritance rules remain intact. No era presets, saved-world bank, actor culling or SQLite were added.
+The app remains a single HTML file with no build step.
+
+## Algorithms
+
+- Settlement population totals are computed lazily from the household ledger. Ledger set/delete/clear
+  and household recomposition invalidate the total. Summation retains the original household order;
+  incremental arithmetic would introduce different rounding.
+- The person index and household census are reused until membership changes. Birth, death, household
+  registration, parish removal, migration and military return invalidate the index. The census retains
+  the existing same-day invalidation rules.
+- Caravan quotes compute distance and freight once per town pair, and destination price once per good.
+- Routing computes one shortest-path tree per origin and road revision, rather than searching again
+  for every destination. Queue order, strict comparison on ties, road condition, paving, crossings,
+  polylines and travel times follow the previous search. Unreachable pairs are cached until revision.
+
+## Worker boundary
+
+One background worker precomputes route trees from immutable numeric road graphs. Its code is made
+from the same `routingTree` function used for synchronous misses; there is no second routing engine.
+Results use transferable numeric buffers. The main thread accepts results only for the current
+route-cache identity and revision. One graph is in flight and at most the latest replacement is queued.
+Construction, posting or execution failures fall back to the synchronous kernel.
+
+`&worker=off` disables the routing worker for comparison. The setting is captured before boot
+normalizes the world link. Worker activity/failures are available in `ROUTING.stats`.
+
+This boundary separates routing computation. **The main thread still owns the simulation, RNG,
+rendering and input.** Moving the entire simulation into a worker remains further work: town-planner
+closures, account projections, Three.js mutations, petitions and commands need explicit boundaries
+and a bounded view-update protocol. A routing worker alone does not remove every long simulation tick.
+
+Era startup now yields by elapsed time, roughly every 40 ms, rather than blocking for three simulated
+years. It still advances every day. A single expensive tick can exceed that budget.
+
+## Verification
+
+```sh
+node --test tools/source.test.mjs tools/provision.test.mjs tools/ownership.test.mjs \
+  tools/advisor-api.test.mjs tools/routing.test.mjs
+node tools/performance-check.mjs --baseline 8c35b973 --seeds 1001:sea,2002:land \
+  --years 20 --variants baseline,candidate,off --out /tmp/furlong-performance
+node tools/render-check.mjs --baseline 8c35b973 --seeds 1001:sea,2002:land \
+  --days 720 --out /tmp/furlong-render
+node tools/ownership-replay.mjs /tmp/furlong-replay
+node tools/performance-check.mjs --baseline 8c35b973 --seeds 1001:sea \
+  --era 860 --years 0 --boot-timeout 600 --out /tmp/furlong-era
+```
+
+The performance comparison runs worlds serially in native Chrome with the hardware GPU. Each source
+is snapshotted and hashed. Annual graph fingerprints retain numeric precision, reference identity,
+Map/Set/array order, household accounts, goods, genealogy, terrain, land, annals and modifiers; derived
+caches and graphics objects are excluded. Subsequent draws from all three RNG streams are compared.
+The worker-disabled run must prove it stayed disabled. DOM/UI intervals and rendering are suppressed
+equally; deferred monthly land work and annual autosaves are flushed.
+
+Reported daily CPU time excludes fingerprinting and the first warm-up year. It is an undrawn history
+measurement, separate from frame rate and actual later-era boot time. Use `tools/soak.mjs` for food,
+money, long histories and drawn scenarios; its [limits](SOAK.md) still apply. The existing whole-realm
+money-audit failures must remain failures even when a candidate exactly matches baseline.
+
+`--era` additionally compares actual boot from a freshly generated map through every prehistory day.
+With `--years 0`, it checks the completed boot state and subsequent RNG draws without claiming daily
+timings. Increase `--boot-timeout` for expensive eras. Controlled comparisons suppress the periodic
+house-panel refresh; live UI timing and very long histories require separate validation.
+
+An inventory index based on proxies was measured and removed: proxy access and iterator overhead
+made it slower. Any further optimization must demonstrate both behavior equality and measured benefit.
+
+Capturing market offers was also rejected. A twenty-year comparison first diverged on day 6,067:
+two inventories can project the same household head, and settling an earlier offer changes a later
+quantity. Market availability and settlement retain their live scans. A regression test freezes the
+baseline behavior; correcting the underlying inventory alias requires separate ownership validation.
+
+## Validated source, 3 October 2026
+
+`index.html` SHA256: `0a3808bf2f1c3c4a7df7cfdba6890c59e7cf043239778eb722bb4052a01526ec`.
+Baseline: main commit `8c35b973c21dcbdb73aeb8b04d6b725e227674d4`.
+
+- All 85 focused tests pass, including ownership, inheritance, food/payment conservation and routing.
+- Seeds 1001 sea and 2002 inland match baseline for twenty years: every annual full-state fingerprint
+  and subsequent RNG draw, with the routing worker both enabled and disabled.
+- Desktop rendering after 720 days, touch/WebGL1 at 390×844 after 90 days, and the 360-day household
+  save/replay pass. Shaders, camera uniforms, geometry, draw calls and texture budgets match baseline.
+- Four worlds (1001/2002 × sea/inland) complete ten-year GPU-backed soaks and sixteen drawn smoke
+  scenarios without simulation errors. Finite population/money, living realms and sane walls pass.
+  Whole-realm money reconciliation fails in all four, as on baseline; no tolerance was relaxed.
+
+On this Mac's M4 Max, the isolated 1001-sea history averaged 39.22 ms/day on baseline and 29.88 ms/day
+on the candidate over years 2–20: 31% more daily throughput. Worker-disabled candidate averaged
+28.85 ms/day. This establishes algorithm gains; it does not establish an additional worker speedup.
+Inland timings overlapped other validation and are excluded from performance claims. These are
+undrawn history timings, not frame-rate or later-century guarantees. Mature simulation still runs
+on the main thread. Raw snapshots, diagnostics and coordination records remain local under `.git`.
+
+Actual fresh-map AD860 startup also matches full state and RNG draws in both worlds, with the worker
+on and off. Enabled startup took 34.57→33.47 seconds (sea) and 47.75→45.88 seconds (inland): only
+3–4% less waiting. The longest 20-ms startup heartbeat interval fell from 12.42→0.79 seconds and
+18.59→0.85 seconds; p95 intervals fell from about 84 ms to 58–63 ms. This improves responsiveness,
+but does not make later-era starts immediate. Very long eras and full simulation-worker migration
+remain unvalidated and unfinished respectively.
+
+<<<FILE docs/PROVISIONING.md>>>
+# Food replenishment — 2 October 2026
+
+This report records the earlier, food-only fix at source hash `f5b61c…`. The subsequent [household ownership implementation](HOUSEHOLDS.md) supersedes its communal-larder architecture; the measured before/after cohort below remains evidence for that earlier fix, not a forecast for the ownership refactor.
+
+Households bought a month's food on their town's monthly market day. When growth, migration or lost stocks exhausted that larder early, `tickPopulation` recorded hunger even when food remained for sale and households could afford it. Population consumption also preceded the monthly market, so a shortage could trigger famine immediately before that day's scheduled purchases.
+
+`topUpFood` now buys the missing portion of today's meal before consumption. It first takes each household's own stock, then clears purchases of the cheaper available food and substitutes the other food for any remaining shortfall. Existing money, bread-credit limits, seller reservations and grain retained by other farming households still constrain purchases. No food is given away or money created.
+
+New grain and fish are offered by their producers before an extra purchase; physical food and ownership are reconciled for spoilage. This draws only food from accumulated output, leaving other goods for the usual monthly market. The monthly household, craft and price reckonings continue.
+
+## Direct reproduction
+
+Native Chrome replayed coastal seed 688673834 through day 132 with the original source. Two identical histories then advanced to day 133; one used the original functions, and one replaced only the four changed provisioning/population functions before advancing.
+
+Port-Neuf began both comparisons with 133.048 people, 1,100.152 grain, 883.058 fish and only 0.428 purchased grain. Its daily net need was 1.329; household purses held 756.441 coins in total.
+
+| After population consumption | Original | Fixed |
+|---|---:|---:|
+| Hunger | 0.678002 | 0 |
+| Grain remaining | 1,099.724 | 1,098.854 |
+| Fish remaining | 883.058 | 883.027 |
+
+The extra purchase conserved realm money to floating-point precision (3.6e−12 coin difference). This isolates the provisioning defect without attributing later divergent histories to one mechanism.
+
+Local replay outputs: [original](../tools/soak-results/provision-replay/baseline.json), [fixed](../tools/soak-results/provision-replay/fixed.json). The replay script and source hashes are retained beside them.
+
+## Twenty-year comparison
+
+Five seeds (`688673834,1001,2002,3003,4004`), each coastal and inland, completed AD 850–870 in native headless Chrome 154 on the Apple M4 Max Metal GPU. Node was 25.2.1. Famine exposure is famine-flag people-days divided by total people-days.
+
+| Metric | Original | Fixed |
+|---|---:|---:|
+| Coastal famine exposure | 3.18% | 0.74% |
+| Inland famine exposure | 2.93% | 1.44% |
+| Overall famine exposure | 3.05% | 1.09% |
+| Overall mean hunger, weighted by people-days | 0.0638 | 0.0284 |
+| High-hunger place-days with a day's fish still stored | 24,988 | 10,844 |
+| Fish eaten by residents | 602,080 | 723,114 |
+
+Aggregate famine exposure declined by about 64%. This is a descriptive ten-world comparison, not a guarantee for every seed: inland seed 4004 increased from 2.40% to 2.75%. Hunger, purchases, deaths, famine events and subsequent random draws change histories; differences in population, settlement counts and later timing follow from those changed histories.
+
+Remaining hunger can reflect inability to pay or borrow, food retained by other owners, seller prices, and genuine shortage. The fix addresses failure to replenish between markets; physical stores alone do not establish that every household can obtain food.
+
+All ten fixed worlds completed without recorded simulation errors, nonfinite population or money, extinct realms, or excessive wall ratios. Annual money-flow reconciliation still fails in both cohorts. The first 120 days' audit shows no population-phase reconciliation discrepancy after this change; the pre-existing domain, project and garrison discrepancies remain. The run therefore exits nonzero despite completing every world.
+
+The extra market work increases population-phase cost (12.1% of measured tick time in the fixed cohort versus 3.2% originally). Final places range from 15 to 124 versus 13 to 89 originally; therefore total timing differences also include changed realm sizes. This is a correctness fix, not a performance improvement. Profiles are retained for future optimization.
+
+Local evidence: [fixed summary](../tools/soak-results/provision-final-20/summary.md), [original summary](../tools/soak-results/provision-baseline-20/summary.md), [weighted calculations](../tools/soak-results/provision-final-20/comparison.json). Frozen source hashes are original `da2f5569408bccf4dec95b0d1f88f320229fef62797f0e2f21d459695a33389f` and fixed `f5b61c00e0805588288809d57b16532a526d3d5211717aaaaa1afd54d146a6b5`.
+
+## Checks
+
+```sh
+node --test tools/provision.test.mjs
+node tools/soak.mjs --seeds 688673834,1001,2002,3003,4004 \
+  --coast sea,land --years 20 --par 6 --profile 20 --audit 120 \
+  --out tools/soak-results/provision-final-20-new
+```
+
+Fourteen focused tests cover an exhausted larder after growth, fish/grain substitution, penniless producers' own food, inability to pay, funded and exhausted credit, craft fees and the lord's payment limit, other farmers' grain reserves, ownership of new catches, spoilage, fair allocation of scarce food, and avoiding purchases when the larder is sufficient. Eleven defect cases fail against the original source; all fourteen pass against the fixed source. Unrelated rendering, land and political systems are stubbed in these tests; complete-world runs exercise them together.
+
+A separate animated smoke run exercised realm and street views at maximum speed on the Metal GPU, advancing both from AD 850 to AD 855 without recorded errors. [Drawing measurements](../tools/soak-results/provision-render-smoke/s688673834-sea.render.json) are retained; this was not a matched before/after performance comparison. Its zero-year annual summary does not measure famine or money.
+
+The 200-year soak was interrupted when work was redirected to this fix; neither cohort establishes long-term calibration. The change is isolated on `codex/provisioning`, based on `36648d5`, in `/Users/alexwall/.codex/worktrees/provisioning/furlong-kingdom-annals`. Integration status and final ownership validation are recorded separately in the local worker handoff.
+
 <<<FILE docs/SIM_DEBT.md>>>
 # Simulation debt
 
@@ -14757,6 +15464,343 @@ inflows and outflows year by year from AD 850.
 | C12 | two population models | the count follows a capacity reckoned from building slots and trade tallies; the named households live by what they earn; the two part (towns empty with prosperity at 100, or swell past their folk) | measure capacity from the households' own living | partly: prosperity is now the margin families live by (whether they buy their bread, what they have put by); the count's ceiling is still reckoned from land, trade and workshops |
 | C16 | assarting pace | strips stay with their holders and heirs; new households are landless and found hamlets with a chance each quarter: a 400-year history spreads ~1,300 souls over ~85 hamlets | holdings let or shared before the young leave; a pioneer party gathers over years | open (calibration) |
 | C17 | meadow on dry ground | any strip may go to hay when hay pays: half the ploughland can turn to meadow, and the ploughmen go short of bread | meadow on wet bottomland; dry ground mown for little | open (calibration) |
+
+## Household ownership follow-up — October 2026
+
+Stable household accounts now own purses, debts, local inventories, animals and property rights; community population and hunger aggregate household cohorts. Named parish people remain a reconciled projection of continuous population (the C12 caveat), rather than an independent economic population. Food consumption, craft inputs/output, spoilage, relief, marriage, migration and customary inheritance preserve owner claims. See [HOUSEHOLDS.md](HOUSEHOLDS.md) for abstractions, historical sources and verification. Global money-flow defects and long-run calibration remain open.
+
+<<<FILE docs/SOAK.md>>>
+# Soak and profile
+
+`tools/soak.mjs` drives isolated headless Chrome instances through CDP. It needs Node with its built-in WebSocket (verified with Node 25.2.1) and Chrome/Chromium; no packages or build step. Chrome uses the hardware GPU (Metal on macOS); the harness rejects reported software rasterizers. The JavaScript simulation itself runs on the CPU. It leaves the game source unchanged. Source snapshots, measurements and browser profiles stay local.
+
+A short matched sample:
+
+```sh
+node tools/soak.mjs --seeds 688673834,1001,2002,3003,4004 \
+  --coast sea,land --years 20 --par 8 --profile 20 --audit 120 \
+  --out tools/soak-results/sample
+```
+
+The intended long soak:
+
+```sh
+node tools/soak.mjs --seeds 688673834,1001,2002,3003,4004 \
+  --coast sea,land --years 200 --par 8 --profile 100,200 --audit 120 \
+  --out tools/soak-results/centuries
+```
+
+Drawing, measured separately from busy parallel soaks:
+
+```sh
+node tools/soak.mjs --seeds 2002 --coast land --years 1 \
+  --render 0 --devices laptop,phone --cpu 1,4 --speeds 1,5 \
+  --profile 0 --par 1 --out tools/soak-results/drawing
+```
+
+For an older realm, use `--years 20 --render 20`. Each device/CPU/view/speed scenario reloads and repeats the undrawn history, so a large matrix takes considerable time. All scenarios begin at the same simulated day, then advance at the selected speed. Their recorded end dates can differ. Screen emulation and CPU throttling measure this host; they do not establish performance on physical phones or other laptops.
+
+`--help` lists the remaining options. Choose a fresh output directory; existing yearly logs and profiles are never overwritten. SIGINT/SIGTERM terminate the harness's Chrome instances and retain completed measurements.
+
+## Measurements
+
+Each year records population and places, famine onsets and place-days, hunger and famine weighted by people-days, grain and tilled furlongs per head, fish production, household purchase and consumption, high-hunger days with food still stored, money by holder (including both craft pools) and its flow-book residual, simulation errors, wall proportions, deserted houses, heap, per-phase time and route calls. Tilled furlongs are a count, not hectares.
+
+The `fishBought` and `grainBought` counters cover `clearMarket` orders. They exclude direct `purchase` calls, including the daily top-up's use of a producer's own food and purchases for charity. They are partial market-clearance measures, not all household acquisitions. Consumption includes those additional sources.
+
+The frame loop is suppressed before boot. The harness yields after monthly land work so deferred tracks and fences finish before subsequent days use them. It also flushes the annual autosave. This avoids year-sized batches of delayed land callbacks. Undrawn histories are useful comparisons; equivalence to continuously rendered play is a separate check.
+
+`msDay` includes measurement overhead, timer yields and deferred land work. `tickMsDay` measures the daily tick calls alone. The first `--audit` days additionally census purses around every phase, so their timing includes audit overhead. CPU profiles include work executed between the start and stop commands, including deferred callbacks. Parallel run timings describe that workload on this host.
+
+Famine days per place-year use the actual daily number of places; villages count in both numerator and denominator. Famine flags are narrower than hunger: the game only declares a new famine above 100 people. Before the baseline purse census, the harness registers household accounts and counts any remaining unmigrated personal purse. Each household balance is counted once. Drawing scenarios also assert finite frame measurements, finite population and zero simulation errors.
+
+Money fails reconciliation if any year's residual exceeds 0.01 coin. This is a bookkeeping check: prepaid wages labelled as payments without a payer can create a residual without losing actual coin. Netting residuals across years would hide cancelling faults.
+
+## Local evidence
+
+- `run.json`: source and harness SHA256 hashes, runtime, arguments and start time.
+- `index.snapshot.html`: the exact game source loaded by that run.
+- `<world>.browser.json`: Chrome version and protocol information.
+- `<world>.jsonl`: one completed year's measurements per line.
+- `<world>.summary.json`: updated after each completed year.
+- `<world>-y<N>.cpuprofile`: raw DevTools CPU profile.
+- `<world>.render.json`: drawing measurements, saved after each scenario.
+- `summary.json` and `summary.md`: completed-run results.
+
+Exit status is nonzero for a failed world or failed check; a completed run can correctly fail because the simulation's ledger does not reconcile. Partial logs alone do not establish completion of the requested duration. Results under `tools/soak-results/` are git-ignored.
+
+<<<FILE docs/STORAGE-EVENTS.md>>>
+# Independent storage event replay
+
+`node tools/storage-event-check.mjs OUT SOURCE_HTML DAYS SEED sea|land` copies
+and hashes the selected source, boots isolated hardware-GPU Chrome, and steps
+whole days. Accepted storage events alone reconstruct all lots and locations
+from empty ledgers. Each day compares every own data field against a separate
+live-descriptor walk, including metadata and property presence. It never calls
+`lotState`, `locationState` or `storageRecordState` for its actual-state oracle.
+Owner/building references use stable identities; other values retain undefined,
+nonfinite numbers, negative zero, array holes and additional array properties.
+Reserved-looking metadata keys are escaped independently.
+
+After daily checks, the harness flushes the journal and replays persisted
+`STORAGE_OUTCOMES.records()` in batches of 1,000 records, again from empty
+ledgers. It checks contiguous per-settlement sequences, unique live lot IDs
+across settlements, and exact final state. Evidence includes source identity,
+GPU metadata, accepted and persisted events, latest live state and result.
+Boot timeout, simulation errors, malformed sequences or field differences fail.
+A backpressure retry does not advance the day counter. This is correctness
+instrumentation and makes no performance claim.
+
+Ten fixtures cover metadata changes, missing/extra fields, location changes,
+missing/reordered events, cross-settlement identity, unusual values and arrays.
+
+Frozen integration source SHA256
+`0e2054a57172acc644701c9f0781a93a834e584422b70dcbd33ca910cc5c394a`
+passed sea seed/fate 1001 through day 60: 462,431 accepted storage outcomes and
+462,432 persisted records reproduced 12 ledgers, 4,147 lots and 131 locations.
+The additional persisted record is the journal begin marker. All daily own-field
+comparisons passed. Local evidence is in the primary repository's
+`.git/storage/2026-10-03/inventory/storage-events-final60`.
+
+This establishes event completeness for lots and locations in this bounded
+sequence. It does not establish world hydration, project-state replay,
+long-duration behavior, economic conservation or semantic correctness of each
+transaction. Independent inventory and money audits remain necessary.
+
+The final batched-replay harness also passes the same frozen source through day
+10: 53,212 accepted outcomes and 53,213 persisted records, 2,129 lots and 51
+locations. Evidence is `storage-events-stream10` beside the 60-day evidence.
+
+<<<FILE docs/STORAGE-PERFORMANCE.md>>>
+# Lossless title-matching optimization
+
+`storageTitles` retains the same claim order, lot order, physical quantities, stable IDs and
+outcome records. It does not discard small positive balances or suppress mutations.
+
+An external WeakMap remembers owner/good groups that previously needed no mutation: every lot
+was kept whole, no pending-purchase field needed removal, and all claim remainders were exactly
+zero. Reuse requires the same ordered claim kinds/goods and bit-exact quantities. Matching skips
+only this certified no-op pass; allocation, roundoff checks and coalescing remain in their original
+order. The parent still emits every genuine split, title transfer, metadata change and merge.
+
+Every lot outcome invalidates the current, prior and split/merge source owner for that good.
+Location outcomes invalidate all certificates. Generic metadata changes participate automatically.
+The cache is absent from authoritative ledgers and history snapshots; rebuilding it means starting
+without certificates and using the original pass. Canonical mutations must use the recorded ledger
+boundaries, as required for complete history. Claim deletion/replacement and chartered timber/char
+claims retain the original fallback.
+
+The immutable claim sum is computed once per pass. Tolerance work is skipped only when unmet need
+and previously accepted roundoff are both exactly zero. Any positive residual retains the original
+checking and recording. No purchase, charity, material-completion or other caller boundary changes.
+
+## Verification
+
+Parent: `40492fc6c0233522c6b8a15dd5cfe71674c12446`.
+Tested index.html SHA256:
+`d5c03ce093996c0f0c68228f9adf69b9fa0244400a4114369c6778f633db106b`.
+
+```sh
+node --test tools/*.test.mjs
+node tools/storage-title-check.mjs --baseline 40492fc --seeds 1001:sea,2002:land \
+  --days 270 --out /tmp/furlong-title270
+```
+
+The native Metal Chrome harness commissions a grange on a fresh map and retains the real compressed
+IndexedDB journal. It uses identical explicit 15-day yields, 30-day flushes and 1,024-record chunks
+in both sources, replacing the automatic flush timer only in test snapshots. It compares every
+chunk's SHA256, all 30-day world/land/geography/history graph hashes, final state and subsequent RNG
+draws. Storage quantity/occupancy caches are derived and excluded from graphs; their canonical
+ordered lots and all outcome records remain compared. Other existing derived-cache exclusions
+follow the performance harness. This establishes the stated schedule, not arbitrary-frame history.
+
+233 Node tests pass, including exact parent event/state fixtures for tiny residuals, pending fields,
+future metadata, custody changes, destruction, claim deletion/replacement, purchase and charity.
+A 50-owner fixture skips 50 annotations that are all parent no-ops, with identical event streams.
+No previously emitted event is omitted. Browser results and limitations are recorded locally under
+`.git/storage/2026-10-03/`.
+
+## Costs and remaining work
+
+The day270 sea regression retains all 3,007,505 records, byte-exact chunk hashes and all stable lot
+IDs. Inclusive title-matching CPU falls from 8.892 to 6.897 seconds (~22%); complete tick CPU from
+36.971 to 35.300 seconds (~4.5%). Sources ran serially on Metal, but other validation processes were
+concurrent; these are attribution/sample results, not an isolated throughput guarantee. Timings
+include instrumentation, and nested counters must not be summed twice.
+
+An earlier frozen-source audit found day270 alone emitted 378,214 records, largely provisioning,
+charitable gifts and reconciliation split/transfer/metadata/merge records. Tagged text and full lot
+snapshots produce a large synchronous tail; day-boundary admission does not bound a single day.
+This optimization preserves that genuine event stream, so it does not solve the journal-memory
+burst. Remaining lossless options are compact schema/dictionary encoding, ordered composite indexes
+that preserve each caller's iteration order, and a reviewed resumable simulation/recording boundary.
+Skipping positive quantities or suppressing recorded mutations is not an optimization option.
+
+The inland2002 run also passes every check through day270 with all 3,885,726 tagged records.
+Title-matching CPU10.239→8.103 seconds (~21% less); complete ticks36.541→34.308 seconds (~6% less),
+with the same concurrency/instrumentation limitations. Both worlds retain exact final state and
+next16 draws from each of the three RNG streams. No long-run economic-defect clearance is claimed.
+
+<<<FILE docs/STORAGE.md>>>
+# Physical storage — engine version 2
+
+Non-livestock quantities occupy canonical custody lots. `s.stores` is an ordered,
+cached sum over lots outside transit; held/sale tables remain legal claims.
+Claims cannot create physical goods. Matching an unsupported claim raises a
+fault rather than manufacturing goods, clamping stocks, or silently forgiving
+an inconsistency. Roundoff tolerance scales with machine epsilon, magnitude,
+and summand count; positive quantities are never deleted by an epsilon rule.
+Livestock remain on the separate explicit herd transaction boundary.
+
+Each lot has a stable realm-qualified ID, physical good, exact quantity, owner,
+availability and location. Ownership changes retain its location. Charcoal
+claims use actual timber custody. Shipment quantity derives from its transit
+lots; arrival moves the same lot records between ledgers. Robbery retains the
+recovered share and records the lost share. Household migration and settlement
+pooling also move existing records. Legal and physical losses are paired.
+
+`StorageLedger` maintains rebuildable membership by good, location, owner and
+availability. Cached totals never become a third quantity ledger. Every claim
+set/delete/defineProperty/table replacement invalidates its physical good through
+local Proxy views. Their raw backing tables remain in `storageClaimTables` for
+snapshot inspection. Balanced consumption acknowledges its own revision so the
+next household need not scan all claims again. Compatible lots coalesce with an
+explicit old-ID/new-ID outcome; every additional semantic own field participates
+in compatibility, and unfamiliar object metadata prevents coalescing.
+
+## Buildings and sites
+
+Sound completed map buildings provide shared finite load-volume. Grain uses one
+volume per game unit; hay three, timber/wool/stone two, ore 1.5, tools 0.5, and
+other registered goods one. These are game calibrations, not historical tonnages.
+
+| Building | Base volume | Intake | Base labour | Timber / stone | Paid days |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Grange | 800 | grain, hay, wool | 360 crowns | 24 / 0 | 90 |
+| Granary | 600 | grain, hay | 500 crowns | 20 / 20 | 120 |
+| Warehouse | 1,000 | all non-livestock goods | 700 crowns | 30 / 30 | 150 |
+
+Each tier adds half the base capacity. Deposits and direct protected-location
+creation share capacity admission; rejected goods remain at their original
+location. Ruin/removal exposes surviving contents without erasing them. Repairs
+restore capacity, but do not teleport exposed goods back indoors.
+
+Works lets the player choose a building and click its site on the map. A survey checks terrain, street, collision,
+reserved-project, field-route and market-route checks. It shows ground compensation,
+material prices, working days, capacity and handling cost before commission.
+The preview remains outside world state. The committed command carries settlement,
+building type, exact coordinates and payer, so replay needs neither an open panel
+nor a pending survey. Ownership and site suitability are checked again at execution.
+Projects buy materials, compensate ground through the existing land-payment path,
+and pay daily wages. Unfunded, obstructed or unavailable-material projects stall;
+capacity activates at completion. Authority loss cancels an institutional project.
+Daily payment/progress, stalls and terminal state carry a stable project ID.
+
+Households and institutional owners compare exposed goods and estimated avoided
+loss with five-year capital recovery and carriage before commissioning. Merchant
+households prefer warehouses; other investors prefer granges. They may decline.
+Private granges admit their owner's goods; communal and merchant facilities accept
+shared intake. The legacy settlement-wide granary flag grants no extra protection
+under the new engine and its migration is recorded explicitly.
+
+## Collection, carriage and losses
+
+Bulk production remains a town aggregate. Grain/hay enter an honestly labelled
+aggregate collection location at the area-weighted cultivated-land centroid;
+it is not a claim that the first field produced the whole harvest. Other goods
+enter the settlement yard. Parcel-by-parcel harvest custody is future work.
+
+Local collection follows open street routes plus traversable access connectors.
+Water, lakes, steep access, walls without street access, disconnected streets,
+stopped-up streets, quarantine and siege can block carriage. Throughput is a
+shared daily volume-distance budget; handling costs 0.00002 crowns per unit per
+route metre, paid to the existing carriage-work recipients. Facilities nearer
+production therefore collect more cheaply and sooner. Surveyed market distance
+also informs investment and the player's choice.
+
+Exposed stock is retained without a numerical stock cap and spoils at four times
+base. Sound granges/granaries/warehouses use 0.45/0.4/0.65 of base spoilage.
+Every actual loss names the lot, owner, location, good, quantity and cause.
+Existing stock migrates uncovered without truncation. These rules intentionally
+change future economics and require a new baseline.
+
+## History and verification
+
+Storage outcomes carry settlement identity, stable actor/location/lot/project
+IDs, exact quantity changes, complete changed lot/location/project projections,
+and both-ledger departure/arrival records. The root integration supplies the
+browser-local durable `storageOutcome` sink, fault assertion and day-boundary
+backpressure. The isolated implementation uses an in-memory outcome collector
+only when that sink is absent; it is suitable for focused tests and the short
+smoke, not an unbounded production run. Existing chronicles and life logs remain.
+
+The independent Node reducer reconstructs lots/locations from the outcome stream,
+including splitting, title and metadata changes, empty/occupied destruction and
+cross-town cargo. This does not establish complete game-history reconstruction,
+executable hydration, resumable archives, or old-engine replay equivalence.
+
+Run `node --test tools/*.test.mjs`. Native GPU smoke:
+
+```sh
+node tools/render-check.mjs --seeds 1001:sea --days 30 --out /tmp/storage-smoke
+```
+
+Tested `index.html` SHA256:
+`856740681809f2def9820a57c800914904325a01c48654e7d8b7e507addeaebf`.
+All 132 focused tests pass. Exact-source native Chrome/Metal sea seed 1001 passes
+30 simulated days and shader/camera/live-rebuild/church checks. Earlier smoke
+failures exposed the purchased-timber/charcoal alias bug and are retained locally;
+the final run validates its correction. Evidence:
+`.git/storage/2026-10-03/storage/standalone-smoke-3/` and `focused-final.txt`.
+
+This is a short standalone check. No mature storage soak, measured speedup,
+combined-source validation, release, deployment or publication is claimed.
+The root integration adds map picking and explicit saved command arguments, with
+fresh-realm command replay and survey-state separation regressions. The inventory
+alias repair, durable journal and corrected UI require combined browser and mature
+soak validation before a production handoff.
+
+### Cargo reference correction
+
+Read-only integration review reproduced a multi-seller shipment bug: coalescing
+retired a lot ID while the caravan retained that lot object, so a ten-unit load
+could report fifteen and resurrect the retired record on arrival. Cargo quantity,
+arrival and robbery now resolve current canonical location membership and stable
+IDs. Two regressions cover coalescing followed by arrival and robbery.
+
+The follow-up source hash is
+`a006bfeb4ef8b87fd177662fcd97901de9496d3a06132fb1dc7caf8a7d5ff058`.
+All 134 focused tests pass; `git diff --check` passes. This follow-up has no new
+GPU smoke: the earlier native GPU result applies to the preceding source only.
+Combined-source browser validation remains the integrator's responsibility.
+
+### Semantic metadata correction
+
+Lot, location and project projections now retain every own plain data field,
+including explicit undefined, special numbers, bigint and array holes. Actor and
+building references use stable IDs; executable values, accessors, cycles and
+non-plain objects reject before mutation. Metadata annotations cannot alter indexed
+core fields; those require explicit custody/title/quantity operations. Removal is
+an explicit annotation argument, distinct from assigning undefined.
+
+An independent raw-field oracle validates these projections and property presence;
+it does not call the projection under test. Source
+`923fc95a69b26052307f35f869f75e6ee9c34abe99962a5be75e625097a7f2d6`
+passes all 136 focused tests and source checks. No new GPU result is claimed.
+
+Floating-point cancellation is checked against a per-good arithmetic error budget. Physical additions, merges, splits and removals, and legal claim writes record their observed operand magnitudes; each contributes twice machine epsilon times the sum of operand magnitudes. Claim matching also allows its summation error. Matching checks this budget across all unmatched claims, records accepted roundoff with input provenance, then propagates the accumulated bound to later boundaries: matching or an exact-looking balance does not erase uncertainty incurred by earlier arithmetic. It never deletes tiny physical lots or legal balances, nor creates stock to conceal discrepancies; a deficit exceeding the arithmetic budget faults. This diagnostic budget is derived numerical uncertainty, not stock or ownership.
+
+Unfinished construction installs available timber and stone incrementally. Each paid material receipt consumes existing stock once and records installed quantity on the project; later ordinary consumption cannot reclaim these inputs. Labour and protected capacity open only after both material requirements are fulfilled. Cancellation leaves spent material as sunk work, with the unfinished project history retained.
+
+Base granges require 24 timber, 360 crowns of labour and 90 working days, with no stone: the game treats their footing as earth and their structure as timber. This calibration makes early-era storage feasible before the existing quarry-opening year 950; granaries and warehouses retain their stone requirements. Unfinished stone requirements enter the existing monthly quarry demand and stone-price/transport calculations. These are explicit game rules, not historical cost estimates.
+
+Purchased relief is an explicit completed title transaction. Church-door gifts, charitable household purchases and commanded relief pass the actual purchasing account into food distribution; pending purchase lots transfer to recipient households at their existing physical locations before held claims are credited. Pending protection is released only for the transferred units. Distribution assigns the last recipient the exact remaining quantity, retaining positive fractional balances.
+
+Purchase completion selects the purchasing account's canonical pending lot IDs. Crediting a held claim clears pending protection for precisely those units; cargo clears it at dispatch. Army provisions and foreign exports consume the explicit buyer's purchase, avoiding the generic setter's pooled pending order. Intertown purchased relief retains lot IDs and origin/destination events before recipient title distribution. These boundaries preserve neighbours' completed claims even when another purchase occurs before the next matching pass.
+
+A foreign ship cancelling a purchased load below its one-unit departure minimum retains the exact paid goods in the foreign buyer's local held inventory, completing purchase custody. Loads that sail retain their exact positive quantity in the ship manifest; displayed rounding never changes the recorded shipment.
+
+When no eligible household head can buy necessities, provision may use the lord's purse for an orphan household. The payer and recipient remain explicit: the lord's completed pending purchase transfers title to the recipient before its pantry is credited, while custody stays at the seller's location. A settlement with no household recipient retains the institutional account as recipient. This applies to every provisioned good, including timber, cloth and tools.
 
 </script>
 </body>
