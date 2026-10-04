@@ -3064,6 +3064,8 @@ function storageCargoRaid(c,fence){if(typeof storageOutcomeAssert==='function')s
 function storageCompleteHeld(s,who,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(who),physical=g==='char'?'timber':g;let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==physical||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q);K.annotate(p,{claimGood:g},['pendingPurchase']);left-=q;if(!(left>0))break;}}
 function storagePurchased(s,who,g,qty,operation){const K=s.storage,owner=accountOwner(who);let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;operation(K,l,q);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-purchase-completion',null,left,{good:g,owner:storageOwnerId(owner)});storageInvariantFault('Unbacked purchase completion '+g+': '+left);}return qty-left;}
 function storageConsumePurchased(s,who,g,qty,cause){return storagePurchased(s,who,g,qty,(K,l,q)=>K.remove(l,q,cause));}
+function buyBuildingMaterial(s,g,who,qty){purchase(s,g,who,qty);const got=purchase.got;if(got>0){if(s.storage)storageConsumePurchased(s,who,g,got,'construction-material');else s.stores[g]-=got;}return got;} // legacy works may finish with partial local supply; only the buyer's actual purchase is installed
+
 function storageMovePurchased(s,d,who,g,qty){const B=storageInit(d);storageBindGood(d,g);return storagePurchased(s,who,g,qty,(A,l,q)=>{if(A===B)return;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event('purchased-relief-arrival',p,q,{from,origin:A.realmId});});}
 function stockOf(s,who){who=accountOwner(who);const M=s._owners||(s._owners=new Map());let x=M.get(who);if(!x){x={held:{},sale:{},reserve:{},animals:{}};M.set(who,x);}storageBindClaims(s,x);return x;}
 function pantry(s,who){return stockOf(s,who).held;}
@@ -4626,7 +4628,7 @@ function tickCastles(){
     else if(n.k==='wardStone')s.ward.stone=true;else if(n.k==='towers'){c.towers+=2;if(ad>=1200)c.round=true;}else if(n.k==='gate')c.gate=1;else if(n.k==='barb')c.gate=2;
     else if(n.k==='round')c.round=true;else if(n.k==='repair')c.dmg=0;else if(n.k==='hall'&&hall){hall.tier=2;hall.h=ARCH.hall[2]*1.3;updateBuildingInstance(hall);}
     if(!ok){c.tried[n.k]=year();return;}
-    spend(hi,cost);if(Lh)book(Lh,'castle works',-cost);wages(s,cost,'castle works');purchase(s,'stone',houseAcct(hi),useS);s.stores.stone=have-useS;
+    spend(hi,cost);if(Lh)book(Lh,'castle works',-cost);wages(s,cost,'castle works');buyBuildingMaterial(s,'stone',houseAcct(hi),useS);
     const who=Lh?Lh.name:'The crown',kn=casKeep(s),cn=kn&&buildingName(kn)||'the castle of '+s.name;
     const t={repair:`Masons make good the battered curtain of ${cn}; the breaches are walled up.`,keep:k0motte?`${who} has the timber tower of ${cn} pulled down and a keep of stone raised on the motte.`:`${who} rebuilds the keep of ${s.name} as a great tower of stone.`,
       bailey:`The palisade of the bailey at ${cn} is taken down and the bailey walled in stone.`,ward:`${who} throws ${n.t} at ${s.name}; the houses within the yard are pulled down.`,wardStone:`The palisade about ${cn} is rebuilt in stone.`,towers:`Two towers are added to the curtain of ${cn}.`,
@@ -5170,7 +5172,7 @@ function tickChurches(){
       else if(n.k==='tower'){grew=s._lay.live.grow(b,b.w,b.d+n.dl,ch.W*n.dl/2);if(!grew){ch.towerY=year();continue;}} // the tower is built on to the west end
       else if(n.k==='aisle'||n.k==='trans')grew=s._lay.live.grow(b,b.w+n.dw,b.d,0);
       if((n.k==='long'||n.k==='aisle'||n.k==='trans')&&!grew){ch.cramped=true;ch.crampY=year();continue;} // hemmed in: it saves for other works meanwhile
-      buildWorks(s,cost,b,'church works');purchase(s,'stone',b,useS);s.stores.stone=have-useS;ch.cramped=false; // the masons' and carters' wages, and the stone paid to the quarry
+      buildWorks(s,cost,b,'church works');buyBuildingMaterial(s,'stone',b,useS);ch.cramped=false; // the masons' and carters' wages, and the stone paid to the quarry
       if(n.k==='aisle')ch.aisles++;else if(n.k==='trans')ch.trans=true;else if(n.k==='stone'){ch.stone=true;b.tier=2;b.h=ARCH.temple[2]*1.3*(s.kind==='village'?0.75:1);}
       else if(n.k==='bell')ch.tower=1;else if(n.k==='tower'){ch.tower=2;orientCh(b);}else if(n.k==='porch')ch.porch=true;else if(n.k==='gothic')ch.gothic=true;
       else if(n.k==='spire')ch.spire=1;else if(n.k==='twin')ch.tower=3;else if(n.k==='ctower')ch.ctower=true;else if(n.k==='spire2')ch.spire=2;
@@ -9519,7 +9521,7 @@ function tickThreats(){
   // rebuilding: once the rubble is cleared, a burned house goes up again as soon as there are households wanting roofs and the means to pay the builders; while the town has empty houses, its ruins wait
   if(day()%10===0)for(const s of W.settlements){const p=(s.folk&&s.folk.length?crowding(s)>0:s.pop>housing(s))?0.3:0;if(p<=0)continue;for(const b of s.buildings){
     if(b.state==='ruin'&&!b.deserted&&b.rebuildT<1e8&&day()>b.rebuildT-120&&chance('sim',p)){
-      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);rehouse(s,b);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');purchase(s,'timber',own,tq);s.stores.timber-=tq;} // the owner rebuilds, and pays for it
+      b.state='sound';s.ruinCount=Math.max(0,s.ruinCount-1);rehouse(s,b);updateBuildingInstance(b);{const own=ownerAcct(b,s),tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),own,'building');buyBuildingMaterial(s,'timber',own,tq);} // the owner rebuilds, and pays for it
     }
   }}
   // lightning ignition
@@ -9796,7 +9798,7 @@ function tickHistory(){ // once a year for each place (staggered): the town's ow
     else if(s.wallRad&&s.kind!=='village'&&!s.siegeBy&&year()-(s._wallYr||-99)>=10&&(bid=wallBid(s,L))){ // a new circuit when the suburbs outside are worth walling and the murage can pay for the new stretches
       if(!bid.same&&L.live.wall()){s.murage-=bid.cost;wages(s,bid.cost,'walls');s._wallPop=s.pop;s._wallYr=year();const h=s.history[s.history.length-1];did=`${s.name} has outgrown its walls: a new circuit takes in the suburbs${h&&/keeps (\d+)%/.test(h.t)?`, keeping ${h.t.match(/keeps (\d+)%/)[1]}% of the old wall`:''}.`;}
       else s._wallYr=year()+5;} // the old wall still serves: ask again in fifteen years
-    else if(s.walls===1&&AD()>=1150&&(s.murage||0)>=wallCost(s,true)&&townThreat(s)*townWorth(s)*0.1>wallCost(s,true)&&hasStone(s,'wall')&&L.live.stoneWall()&&(purchase(s,'stone',s,Math.min(s.stores.stone||0,stoneFor(s,'wall'))),useStone(s,'wall'),s.murage-=wallCost(s,true),wages(s,wallCost(s,true),'walls'),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
+    else if(s.walls===1&&AD()>=1150&&(s.murage||0)>=wallCost(s,true)&&townThreat(s)*townWorth(s)*0.1>wallCost(s,true)&&hasStone(s,'wall')&&L.live.stoneWall()&&(buyBuildingMaterial(s,'stone',s,Math.min(s.stores.stone||0,stoneFor(s,'wall'))),s.murage-=wallCost(s,true),wages(s,wallCost(s,true),'walls'),true))did=`The burghers of ${s.name} take down their palisade and wall the town in stone.`;
     else if(AD()>=1000&&s.pop>150&&parishNeed(s)&&L.live.parish())did=`A new parish church is built for a growing quarter of ${s.name}.`;
     else if(s.kind!=='village'&&AD()>=1220&&s.wallRad&&s.pop>1100&&chance('sim',0.2)&&L.live.friary())did=`Friars are given ground by the wall of ${s.name} for their house.`;
     else if(s.kind!=='village'&&AD()>=1150&&(s.role==='crossing'||s.kind==='capital'&&s.river)&&s.pop>900&&chance('sim',0.1)&&L.live.neustadt())did=`The lord plants a “New Town” across the river from ${s.name}: one straight street of equal plots.`;
@@ -9830,7 +9832,7 @@ function builtReach(s){ // how far the built-up ground reaches now (nine houses 
 function wardPrice(a){return Math.round(12*Math.max(0,a._ltY??a._lt??0));} // a dozen years' purchase of what its lord draws from it: rents, his share of the harvest, the market's tolls
 function moveStock(a,b,g,x){const T=a.stores[g]||0;if(!(x>0)||!(T>0))return;x=Math.min(x,T);initOwnership(a);initOwnership(b);if(LU[g]!==undefined){herdSync(a);herdSync(b);}const f=x/T,L=mkt(a,g),R=a.rsv&&a.rsv[g];if(a.storage&&!BEASTS.includes(g)){const A=a.storage,B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);for(const id of [...A.byGood.get(g)||[]]){const lot=A.lots.get(id);if(!lot||A.locations.get(lot.location)?.transit)continue;const q=lot.qty*f;if(!(q>0))continue;const part=A.split(lot,q),from=part.location;A.event('custody-departure',part,part.qty,{lotAfter:null,destination:B.realmId});A.unindex(part);A.lots.delete(part.id);A.revision++;part.location='yard';B.lots.set(part.id,part);B.index(part);B.revision++;B.event('settlement-transfer',part,q,{from,origin:W.settlements.indexOf(a)});}}
   for(const[w,v]of [...L.ownedEntries()]){const q=v*f;L.set(w,v-q);offer(b,g,w,q,R&&R.get(w));}
-  for(const[w,v]of a._owners){const q=(v.held[g]||0)*f;if(q>0){v.held[g]-=q;storageTitleDirty(a,g);addHeld(b,w,g,q);}}
+  for(const[w,v]of a._owners)for(const claim of g==='timber'?['timber','char']:[g]){const q=(v.held[claim]||0)*f;if(q>0){v.held[claim]-=q;storageTitleDirty(a,claim);addHeld(b,w,claim,q,true);}}
   if(LU[g]!==undefined)for(const[w,v]of a._owners){const q=(v.animals[g]||0)*f;if(q>0){v.animals[g]-=q;const H=stockOf(b,w).animals;H[g]=(H[g]||0)+q;}}
   if(!a.storage||BEASTS.includes(g)){a.stores[g]=T-x;b.stores[g]=(b.stores[g]||0)+x;}if(LU[g]!==undefined){a._herdLast=Object.fromEntries(BEASTS.map(k=>[k,a.stores[k]||0]));b._herdLast=Object.fromEntries(BEASTS.map(k=>[k,b.stores[k]||0]));}}
 function lordTake(s,v){if(v>0)s._lt=(s._lt||0)+v;} // what a place yields its lord this year
@@ -10303,7 +10305,7 @@ function tickGrowth(){ // houses are built for households that have none, as fas
           const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0),lod=heads_(s,h=>h.bh&&!h.bh.removed&&h.bh.s===s&&h.bh.state==='sound'&&(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)&&h.bh.tier<capT&&h.bh.arch!=='cot'&&h.bh.arch!=='court')[0];
           if(lod){const b=lod.bh,c=b.w*b.d*0.6*(W._pl||1),own=ownerAcct(b,s);if(c<=est&&means(own)>=c){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);buildWorks(s,c,own,'building');got++;continue;}}}
         const pay=houseBuyer(s,est);if(!pay)break; // no one will pay for it: they lodge
-        const b=addBuildingLive(s);if(b){got++;b.ownerId=pay.id;const tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),pay.acct,'building');purchase(s,'timber',pay.acct,tq);s.stores.timber-=tq;} // its owner pays the builders and the timber
+        const b=addBuildingLive(s);if(b){got++;b.ownerId=pay.id;const tq=Math.min(4,Math.max(0,s.stores.timber));buildWorks(s,b.w*b.d*0.8*(W._pl||1),pay.acct,'building');buyBuildingMaterial(s,'timber',pay.acct,tq);} // its owner pays the builders and the timber
         if(b&&chance('sim',0.03))emit('trade',3,s.pos,vary('town_grows',[()=>`${s.name} grows: new roofs rise in the ${b.district} quarter.`,()=>`New roofs rise in the ${b.district} quarter, and ${s.name} grows.`,()=>`${s.name} grows; the ${b.district} quarter fills with new roofs.`]));}
       if(!got&&n>0&&(s.growSlots||[]).length===0){ // nowhere left to build: the town builds upward where the rent is dearest
         const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0);
@@ -10339,7 +10341,7 @@ function tickGrowth(){ // houses are built for households that have none, as fas
       const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house')));
       let best=null,bv=0;for(let k=0;k<Math.min(12,ups.length);k++){const b=ups[randi('sim',ups.length)],gain=propValue(b)*25*0.25/(1+0.25*b.tier),cost=b.w*b.d*(b.tier<1?0.8:2.5),v=gain-cost;if(v>bv){bv=v;best=b;}}
       if(best){const b=best,own=ownerAcct(b,s);buildWorks(s,b.w*b.d*(b.tier<1?0.8:2.5),own,'building');
-        b.tier++;if(b.tier===2){purchase(s,'stone',own,Math.min(s.stores.stone||0,stoneFor(s,'house')));useStone(s,'house');}
+        b.tier++;if(b.tier===2){buyBuildingMaterial(s,'stone',own,Math.min(s.stores.stone||0,stoneFor(s,'house')));}
         const a=ARCH[b.arch];
         b.h=a[2]*(0.8+b.tier*0.25);
         updateBuildingInstance(b);
