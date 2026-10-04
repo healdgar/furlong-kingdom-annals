@@ -57,6 +57,13 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
   browser exposes a GPU timer, draw calls, triangles, memory and scene size.
   *Copy report* puts it on the clipboard.
 
+## Automated checks
+
+Run `node tools/soak.mjs --help` for the local, dependency-free Chrome soak and profiler.
+It records yearly famine, population, money reconciliation and simulation errors, plus CPU
+profiles and optional drawing measurements. Commands and measurement limits: [docs/SOAK.md](docs/SOAK.md).
+Measurements remain local under the ignored `tools/soak-results/` directory.
+
 ## An advisor
 
 Bring an AI to your side, on any model, through any agent app that speaks MCP (Claude, a coding agent, an
