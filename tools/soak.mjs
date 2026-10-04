@@ -13,9 +13,10 @@
    Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
             --km N  --y AD (start year: older history replayed first)  --profile year,year  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
-            that makes or loses it, for the first N days)  --out dir  --chrome path */
+            that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path */
 import {spawn} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
+import {inventoryAudit} from './inventory-audit.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
@@ -90,6 +91,8 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     try{return f.apply(this,arguments);}finally{S.T[n]=(S.T[n]||0)+performance.now()-t;
       if(S.audit){const r=money().t-m0-gap(f0,flows()).expect;if(Math.abs(r)>1e-6){const L=S.L[n]||(S.L[n]={r:0,days:0});L.r+=r;L.days++;}}}};}
   S.L={};
+  S.inventory={enabled:${Number(A.inventory||0)>0},first:null,checks:0};const checkInventory=${inventoryAudit.toString()};
+  const auditInventory=()=>{if(!S.inventory.enabled||S.inventory.first)return;const issue=checkInventory(W.settlements,S.inventory,BEASTS,typeof STORAGE_GOODS==='undefined'?{}:STORAGE_GOODS);if(issue)S.inventory.first={day:day(),...issue};};
   const gap=${moneyFlowGap.toString()};
   const money=()=>{let bad=0;const coin=v=>{if(v!==undefined&&!Number.isFinite(v))bad++;return v??0;};const by={crown:coin(W.treasury),houses:0,folk:0,church:0,murage:0,pool:0,hoard:coin(W.dragon?.hoard),escrow:0},seen=new Set(),P=p=>{if(!p||seen.has(p)||p.merc)return;seen.add(p);if(!W.households||!p._hh)by.folk+=coin(p.w);};
     if(W.households)for(const h of W.households.values())by.folk+=coin(h.assets.w);
@@ -111,7 +114,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   S.info=()=>({land,places:W.settlements.length,pop:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),realm:W.name,startAD:AD(),startDay:day(),gpu:(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()});
   S.year=async(aud=0)=>{const Fd0={...S.F},R0={...S.R},T0=Object.assign({},S.T),t0=performance.now(),was=new Map();let famDays=0,onsets=0,famPop=0,hung=0,popDays=0,placeDays=0,tickMs=0;
     for(const s of W.settlements)was.set(s,!!s.famineFlag);
-    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&(STORAGE_OUTCOMES.journal?.fault||STORAGE_OUTCOMES.modelFault))throw e;simErr(e);}tickMs+=performance.now()-tickStart;
+    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{auditInventory();if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}auditInventory();}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&(STORAGE_OUTCOMES.journal?.fault||STORAGE_OUTCOMES.modelFault))throw e;simErr(e);}tickMs+=performance.now()-tickStart;
       if(day()%30===15||day()%360===0)await new Promise(resolve=>setTimeout(resolve,0)); // finish deferred tracks/fences before later days use them, and flush the yearly autosave
       placeDays+=W.settlements.length;for(const s of W.settlements){const f=!!s.famineFlag;if(f){famDays++;famPop+=s.pop;if(!was.get(s))onsets++;}was.set(s,f);hung+=(s.hunger||0)*s.pop;popDays+=s.pop;}}
     const ms=performance.now()-t0,M=money(),F=flows();Y++;
@@ -124,7 +127,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     const T={};for(const k in S.T){const d=S.T[k]-(T0[k]||0);if(d>0.5)T[k]=Math.round(d);}
     const out={y:Y,ad:AD(),auditDays:Math.min(aud,360),ms:Math.round(ms),msDay:+(ms/360).toFixed(2),tickMsDay:+(tickMs/360).toFixed(2),pop:Math.round(pop),folk,places:W.settlements.length,towns,walled,maxWallRatio:+maxWall.toFixed(2),badPop,
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
-      money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
+      inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
       prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
       badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
     M0=M;F0=F;E0=errN;return out;};
@@ -198,7 +201,7 @@ function summarize(w,id,info,bootMs,phases,Y,prof,errs){
   const mint={};for(const y of Y)for(const k in y.minted)mint[k]=(mint[k]||0)+y.minted[k];
   const resid=Y.reduce((t,y)=>t+y.residual,0),errN=Y.reduce((t,y)=>t+y.dErr,0),placeDays=Y.reduce((t,y)=>t+y.placeDays,0)||1;
   const checks={complete:Y.length===YEARS,noSimErrors:errN===0&&!errs.length,popFinite:Y.every(y=>y.badPop===0),noNanMoney:Y.every(y=>!y.nanFlows&&!y.badMoney),realmAlive:(L.pop??info.pop)>0,
-    moneyAccounted:Y.every(y=>Math.abs(y.residual)<=0.01),wallsSane:Y.every(y=>y.maxWallRatio<4)};
+    inventoryMatched:Y.every(y=>!y.inventory?.first),moneyAccounted:Y.every(y=>Math.abs(y.residual)<=0.01),wallsSane:Y.every(y=>y.maxWallRatio<4)};
   return {id,seed:w.seed,fate:w.fate,coast:w.coast,realm:info.realm,gpu:info.gpu,startDay:info.startDay,land:+info.land.toFixed(3),bootMs,phases,years:Y.length,endAD:L.ad??info.startAD,
     pop:{start:info.pop,end:L.pop??info.pop,max:Math.max(info.pop,...Y.map(y=>y.pop))},places:L.places,towns:L.towns,walled:L.walled,
     famine:{daysPerPlaceYear:+(Y.reduce((t,y)=>t+y.famDays,0)/placeDays*360).toFixed(1),onsetsPerYear:+avg(Y,y=>y.famOnsets).toFixed(2),popShare:+(Y.reduce((t,y)=>t+y.famPop,0)/Math.max(1,Y.reduce((t,y)=>t+y.popDays,0))).toFixed(4),hunger:+(Y.reduce((t,y)=>t+y.hungerSum,0)/Math.max(1,Y.reduce((t,y)=>t+y.popDays,0))).toFixed(4),

@@ -120,3 +120,21 @@ Twelve pure oracle fixtures retain detection of unfunded null payouts, missing
 upstream debits and omitted recipient purses, and cover external inflow/outflow,
 ordinary transfers, prepaid wages, looted-coin redistribution and null recipients.
 The annual 0.01 threshold remains. Engine money transactions are unchanged.
+
+`tools/soak.mjs --inventory 1` enables independent checks before and after each
+whole simulated day. It validates finite nonnegative stores and animal claims;
+combined livestock claims cannot exceed physical beasts within the observed
+input-magnitude floating bound. Unoffered lord remainder is reported separately,
+so this is not a daily title-equality requirement. The bound retains positive tiny
+claims; it never mutates quantities. Canonical storage checks independently sum
+lots, exclude transit from settlement stores, validate forward/reverse indices,
+unique lot IDs, active compatible locations, capacity and existing total/occupancy
+caches. Corruption fixtures cover each check and tiny/cancellation/transit cases.
+
+These are matching and validity checks, not a complete production/consumption
+conservation ledger. They do not establish that correctly matched quantities
+were legitimately created, or that every historical tiny balance was retained.
+Event replay and explicit transaction fixtures address different questions.
+The first inventory failure appears in annual JSON and fails `inventoryMatched`;
+the audit preserves it through later years. Waiting between days uses the sticky
+fault-aware outcome `wait()`, including the independent storage-event harness.
