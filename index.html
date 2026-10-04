@@ -7756,7 +7756,7 @@ function onClick(e){
     const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
     if(p){let pkA=null;if(mode==='order'){const pk=resolvePick(e.clientX,e.clientY);if(pk&&pk.type==='army'&&pk.a)pkA=pk.a.id;}
-      jot({k:'place',m:mode,x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA});doPlace(mode,arg,p,pkA);}
+      if(mode!=='storage')jot({k:'place',m:mode,x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA});doPlace(mode,arg,p,pkA);}
     return;
   }
   const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
@@ -7767,6 +7767,7 @@ function onClick(e){
   {const pk=resolvePick(e.clientX,e.clientY);if(pk)showInspect(pk);else{hideInspect();if(cam.follow)cam.follow=null;}return;}
 }
 function doPlace(mode,arg,p,pkA){ // a click on the map in a placing mode: the same in play and when a save is read again
+      if(mode==='storage'){storagePreview(arg.si,arg.arch,p.x,p.z);return;}
       if(mode==='order'){const pk=pkA!=null?W.armies.find(x=>x.id===pkA&&!x.gone):null;if(pk&&pk!==arg){orderArmyAt(arg,pk);return;} // pointed at a host: go and fight it
         const i=nearestSettlementIdx(p.x,p.z),t=W.settlements[i];
         if(dist2d(p.x,p.z,t.pos.x,t.pos.z)<(t.radius||90)*1.4)orderArmy(arg,i);else orderArmyTo(arg,p.x,p.z);}
@@ -11166,8 +11167,12 @@ const WORKS=[ // what a holder can build up in a town of his own: the payoff sho
 
   ['market','Charter a market',800,'its market dues half again; +5 prosperity'],
   ['clearing','Pay assarters to clear the waste',400,'for three years the plough takes in wood and scrub, and reaches further']];
-function storageWorksHTML(s){const si=W.settlements.indexOf(s),R=s.storageReport;return `<div class="dhead" style="margin-top:8px">Storage commission</div><div class="note">Choose the site in map metres. Granges favour fields; warehouses favour markets. Mixed goods share finite load-volume. Capacity opens after paid construction.</div><label>Building <select id="storage-arch-${si}"><option value="grange">Grange · 800 loads · 360 crowns</option><option value="granary">Granary · 600 loads · 500 crowns</option><option value="warehouse">Warehouse · 1000 loads · 700 crowns</option></select></label><label>East <input id="storage-x-${si}" type="number" value="${Math.round(s.pos.x+30)}" style="width:90px"></label><label>North <input id="storage-z-${si}" type="number" value="${Math.round(s.pos.z+30)}" style="width:90px"></label>${cbtn('storage-preview',si,'Survey site',0,'','Checks terrain, occupied ground, and street access before a commission.')}<div id="storage-quote-${si}"></div>${R?`<div class="note">Exposed: ${R.exposed.toFixed(1)} load-volume; hauled today: ${R.moved.toFixed(1)} loads for ${R.handlingCost.toFixed(3)} crowns.</div>`:''}`;}
-function storagePreview(si){const read=k=>document.getElementById('storage-'+k+'-'+si),Q=storageSiteQuote(si,read('arch').value,+read('x').value,+read('z').value,plyH()),out=document.getElementById('storage-quote-'+si);if(!out)return;W.settlements[si].storageQuote=Q;if(!Q.ok){out.textContent=Q.reason;return;}out.innerHTML=`<div class="note">${Q.capacity} load-volume; ${Math.round(Q.cost)} crowns including ${Math.round(Q.land)} for ground; ${Q.timber} timber and ${Q.stone} stone; ${Q.days} paid working days. Market: ${Math.round(Q.marketDistance)} m; fields: ${Number.isFinite(Q.productionDistance)?Math.round(Q.productionDistance)+' m':'unreachable'}. Handling: ${Q.handlingPerLoad.toFixed(3)} crowns per load to market.</div>${cbtn('storage-commission',si,'Commission this site',0,'','The chosen site is rechecked; materials and daily wages are required.')}`;}
+const STORAGE_UI=new WeakMap(); // surveys are UI state; only a committed choice enters the command journal
+function storageWorksHTML(s){const si=W.settlements.indexOf(s),R=s.storageReport,Q=STORAGE_UI.get(s);return `<div class="dhead" style="margin-top:8px">Storage commission</div><div class="note">Choose a building, then its site on the map. Compare access to fields and markets before commissioning it. Capacity opens after paid construction.</div><label>Building <select id="storage-arch-${si}">${Object.entries(STORAGE_TYPES).map(([k,t])=>`<option value="${k}"${Q?.arch===k?' selected':''}>${k[0].toUpperCase()+k.slice(1)} · ${t.capacity} loads</option>`).join('')}</select></label>${cbtn('storage-pick',si,Q?'Choose another site':'Choose site on map',0,'','Surveys terrain, occupied ground and street access.')}<div id="storage-quote-${si}">${storageQuoteHTML(Q)}</div>${R?`<div class="note">Exposed: ${R.exposed.toFixed(1)} load-volume; hauled today: ${R.moved.toFixed(1)} loads for ${R.handlingCost.toFixed(3)} crowns.</div>`:''}`;}
+function storageQuoteHTML(Q){if(!Q)return '';if(!Q.ok)return `<div class="note" role="status">${esc(Q.reason)}</div>`;const command=encodeURIComponent(JSON.stringify({si:Q.si,arch:Q.arch,x:Q.x,z:Q.z,payer:Q.payer}));return `<div class="note" role="status">${Q.capacity} load-volume; estimated ${Math.round(Q.cost)} crowns including ${Math.round(Q.land)} for ground; ${Q.timber} timber and ${Q.stone} stone; ${Q.days} paid working days. Market: ${Math.round(Q.marketDistance)} m; fields: ${Number.isFinite(Q.productionDistance)?Math.round(Q.productionDistance)+' m':'unreachable'}. Handling: ${Q.handlingPerLoad.toFixed(3)} crowns per load to market.</div>${cbtn('storage-commission',command,'Commission this site',0,'','The site is rechecked; construction pays for materials and daily wages.')}`;}
+function storagePick(si){if(REPLAYING)return;const s=W.settlements[si],arch=document.getElementById('storage-arch-'+si)?.value;if(!s||!sovOn()||s.owner!==plyH()||!STORAGE_TYPES[arch])return;setPlaceMode('storage',{si,arch},`Choose a ${arch} site near ${s.name} — Esc to cancel`);}
+function storagePreview(si,arch,x,z){const s=W.settlements[si];if(!s||!sovOn()||s.owner!==plyH())return;STORAGE_UI.set(s,{arch,...storageSiteQuote(si,arch,x,z,plyH())});showInspect({type:'settlement',s});setInspectorView('orders');}
+function storagePlayerCommission(arg){let choice;try{choice=JSON.parse(decodeURIComponent(arg));}catch{return false;}const s=choice&&Number.isInteger(choice.si)&&W.settlements[choice.si];if(!s||!sovOn()||choice.payer!==plyH()||s.owner!==choice.payer||!Object.hasOwn(STORAGE_TYPES,choice.arch)||!Number.isFinite(choice.x)||!Number.isFinite(choice.z))return false;const project=storageCommission(storageSiteQuote(choice.si,choice.arch,choice.x,choice.z,choice.payer));if(project)STORAGE_UI.delete(s);return project;}
 function worksHTML(s){const si=W.settlements.indexOf(s),w=s.works||{};let x='<div class="dhead" style="margin-top:6px">Works</div>';
   for(const[k,l,c,d]of WORKS){const done=k==='clearing'?s.clearUntil>day():w[k];x+=cbtn('s-work',si+':'+k,l,c,done?(k==='clearing'?'under way':'built'):'',d);}return x+storageWorksHTML(s);}
 function settlementWork(si,k){const s=W.settlements[si],me=plyH(),wk=WORKS.find(x=>x[0]===k);if(!s||!wk||s.owner!==me)return;
@@ -11593,8 +11598,8 @@ function runCmd(cmd,arg){
     case 'h-honour':case 'h-hostage':case 'h-match':case 'h-attaint':houseCmd(cmd.slice(2),+arg);break;
     case 'notable':{const n=notableById(+arg);if(n)showInspect({type:'notable',n});break;}
     case 'army':{const a=W.armies.find(x=>x.id===+arg);if(a){showInspect({type:'army',a});flyTo(a._rpos.x,a._rpos.z,420);markManual();}break;}
-    case 'storage-preview':storagePreview(+arg);break;
-    case 'storage-commission':{const s=W.settlements[+arg];if(s&&s.owner===plyH()&&s.storageQuote)storageCommission({...s.storageQuote,payer:plyH()});break;}
+    case 'storage-pick':storagePick(+arg);break;
+    case 'storage-commission':storagePlayerCommission(arg);break;
     case 's-work':{const[a,b]=arg.split(':');settlementWork(+a,b);break;}
     case 's-relief':case 's-garrison':case 's-callout':case 's-levy':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
     case 'a-order':case 'a-hold':case 'a-release':case 'a-disband':case 'a-split':case 'a-merge':case 'a-garrison':armyCmd(cmd.slice(2),arg);break;
@@ -11854,7 +11859,7 @@ function initUI(){
   buildDrawer('crown');
   document.getElementById('drawertoggle').addEventListener('click',toggleDrawer);
   // one delegated handler for every data-cmd control (crown panel, inspector, house & succession rows)
-  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;jot({k:'c',c:t.dataset.cmd,a:t.dataset.arg});runCmd(t.dataset.cmd,t.dataset.arg);}; // every command is written in the journal, so a save can be read again
+  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;if(t.dataset.cmd!=='storage-pick')jot({k:'c',c:t.dataset.cmd,a:t.dataset.arg});runCmd(t.dataset.cmd,t.dataset.arg);}; // committed choices include their arguments; a site survey is only UI state
   document.getElementById('dbody').addEventListener('click',cmdClick);
   document.getElementById('dbody').addEventListener('pointerover',e=>{uiHover=!!(e.target.closest&&e.target.closest('button,select,input'));});
   document.getElementById('dbody').addEventListener('pointerleave',()=>{uiHover=false;});

@@ -41,9 +41,12 @@ creation share capacity admission; rejected goods remain at their original
 location. Ruin/removal exposes surviving contents without erasing them. Repairs
 restore capacity, but do not teleport exposed goods back indoors.
 
-Works offers an explicit building/site survey with terrain, street, collision,
+Works lets the player choose a building and click its site on the map. A survey checks terrain, street, collision,
 reserved-project, field-route and market-route checks. It shows ground compensation,
 material prices, working days, capacity and handling cost before commission.
+The preview remains outside world state. The committed command carries settlement,
+building type, exact coordinates and payer, so replay needs neither an open panel
+nor a pending survey. Ownership and site suitability are checked again at execution.
 Projects buy materials, compensate ground through the existing land-payment path,
 and pay daily wages. Unfunded, obstructed or unavailable-material projects stall;
 capacity activates at completion. Authority loss cancels an institutional project.
@@ -108,8 +111,7 @@ the final run validates its correction. Evidence:
 
 This is a short standalone check. No mature storage soak, measured speedup,
 combined-source validation, release, deployment or publication is claimed.
-The current coordinate-entry UI keeps a transient quote in world state and its
-commission command does not yet journal coordinates/type for seed-command replay.
-Root owns the map-pick and explicit-command correction. The inventory alias repair,
-durable journal and corrected UI must be integrated and audited before a production
-handoff.
+The root integration adds map picking and explicit saved command arguments, with
+fresh-realm command replay and survey-state separation regressions. The inventory
+alias repair, durable journal and corrected UI require combined browser and mature
+soak validation before a production handoff.
