@@ -13,7 +13,7 @@ test('managed claim writer architecture remains reviewed',()=>{
  const a=source.indexOf('function oldHouseholdHead('),b=source.indexOf('function houseFolk(s)');
  // Renewed for hay remnant loss: its settled held/sale debit uses managed claim
  // tables and explicit title invalidation; exact owner/loss/replay tests cover it.
- assert.equal(digest(source.slice(a,b)),"2be58b32f1f39357ecb54ed0ac404b3e8364f74fc09c0be9a40ca09b92d0cfe2");
+ assert.equal(digest(source.slice(a,b)),"41c241da75aef351ec9c42467b60da3df77bb4e7339113cdf6ca539844b7b448");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
