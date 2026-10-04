@@ -13,7 +13,7 @@ const worlds=String(args.seeds||'1001:sea,2002:land').split(',').map(v=>{const[s
 const variants=String(args.variants||'baseline,candidate').split(',');
 if(!Number.isInteger(years)||years<0||!Number.isInteger(era)||era<850||era>1500||!Number.isFinite(bootTimeout)||bootTimeout<1000||worlds.some(w=>!Number.isInteger(w.seed)||!['sea','land'].includes(w.coast))||variants.some(v=>!['baseline','candidate'].includes(v)))throw new Error('invalid years, era, timeout, seed:coast or variants');
 if(fs.existsSync(OUT))throw new Error('choose a fresh evidence directory');fs.mkdirSync(OUT,{recursive:true});
-const sources={baseline:execFileSync('git',['show',(args.baseline||'main')+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:20e6}),candidate:fs.readFileSync(args.source||path.join(ROOT,'index.html'),'utf8')};
+const sources={baseline:args['baseline-source']?fs.readFileSync(args['baseline-source'],'utf8'):execFileSync('git',['show',(args.baseline||'main')+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:20e6}),candidate:fs.readFileSync(args.source||path.join(ROOT,'index.html'),'utf8')};
 const hash=s=>createHash('sha256').update(s).digest('hex');for(const[k,s]of Object.entries(sources))fs.writeFileSync(path.join(OUT,k+'.html'),s);
 const run={sourceSHA256:Object.fromEntries(Object.entries(sources).map(([k,s])=>[k,hash(s)])),harnessSHA256:hash(fs.readFileSync(fileURLToPath(import.meta.url))),args,startedUTC:new Date().toISOString(),node:process.version};
 fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));
@@ -45,7 +45,7 @@ const FINGERPRINT=`(async()=>{const s=${SERIALIZE},buf=await crypto.subtle.diges
 // Paired persistence boundaries make every original tagged record independently comparable.
 // Full journal stays enabled; only automatic flush cadence is replaced by explicit fixed batches.
 const INSTRUMENT=`window.__titleCost={};window.__chunkHashes=[];STORAGE_OUTCOMES.schedule=()=>{};
-for(const name of ['storageTitles','simTick','outcomeJSON']){const fn=window[name];window[name]=function(...args){const t=performance.now();try{return fn.apply(this,args);}finally{const x=__titleCost[name]||(__titleCost[name]={ms:0,n:0});x.ms+=performance.now()-t;x.n++;}};}
+for(const name of ['storageTitles','simTick','outcomeJSON','storageRecordState','storageRoute','storageAccess']){const fn=window[name];window[name]=function(...args){const t=performance.now();try{return fn.apply(this,args);}finally{const x=__titleCost[name]||(__titleCost[name]={ms:0,n:0});x.ms+=performance.now()-t;x.n++;}};}
 {const fn=OutcomeJournal.prototype.append;OutcomeJournal.prototype.append=function(e){this.chunkBytes=Infinity;if(!this.__observedWrite){this.__observedWrite=true;const write=this.write;this.write=async entry=>{await write(entry);__chunkHashes.push({first:entry.first,last:entry.last,hash:STORAGE_OUTCOMES.lastHash});};}const seq=fn.call(this,e);if(this.seq%1024===0)this.seal();return seq;};}`;
 for(const[k,s]of Object.entries(sources)){fs.writeFileSync(path.join(OUT,k+'.source.html'),s);fs.writeFileSync(path.join(OUT,k+'.html'),s.replace('\nboot();','\n'+INSTRUMENT+'\nboot();'));}
 run.instrumentSHA256=hash(INSTRUMENT);fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));

@@ -13,8 +13,10 @@ test('managed claim writer architecture remains reviewed',()=>{
  const a=source.indexOf('function oldHouseholdHead('),b=source.indexOf('function houseFolk(s)');
  // Combined review covers household membership, inherited arithmetic frontiers
  // hay loss debit, safe metadata, successful-pass title caching and explicit
- // pending purchase completion; focused conservation and replay tests remain.
- assert.equal(digest(source.slice(a,b)),"db90b7343267c60131b09c14a29a7b660a6fb9d84bd86250b36525c20137d374");
+ // pending purchase completion and canonical-order lot indexes. Writers, captures,
+ // purchase filtering and arithmetic provenance remain intact; focused tests and
+ // native comparisons against f2e4b93 renew this contract.
+ assert.equal(digest(source.slice(a,b)),"264236ec6c04fefd4717a68eb9f786113e6575cd9441126aae57a7f42717443a");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);

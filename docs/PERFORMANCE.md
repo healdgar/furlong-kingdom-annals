@@ -75,6 +75,110 @@ two inventories can project the same household head, and settling an earlier off
 quantity. Market availability and settlement retain their live scans. A regression test freezes the
 baseline behavior; correcting the underlying inventory alias requires separate ownership validation.
 
+## Storage lot index migration, 4 October 2026
+
+The remaining filtered full-lot scans now use the existing good, owner, location and availability
+indexes. Multi-field queries inspect the smallest bucket. Purchases, physical outflow, spoilage,
+inheritance, cargo dispatch, exposed hauling, investment aggregation, building reports and destruction
+retain canonical lot insertion order, including after index reinsertion and intertown arrivals.
+An external WeakMap tracks that order without adding fields to authoritative state or saves.
+Only its first nonempty query walks all lot keys to initialize the order; subsequent mutations maintain it.
+Existing indexed operations retain their original index order and accounting rules.
+
+`node --test tools/*.test.mjs` passes 274 tests. Seven new regressions compare the former scans,
+exact events, rounding, index order, incoming cargo and bounded index reads. Native Chrome/Metal
+comparisons against `405fed3` match full state, subsequent RNG draws and every storage journal chunk
+through days 30, 60 and 90 in sea seed 1001 and inland seed 2002, including commissioned storage.
+Daily simulation CPU totals improve only 0.5% and 0.8% respectively in this short sample; this is
+within timing variation and does not establish a material end-to-end speedup.
+
+The baseline one-year sea profile attributes 67.3% of tick time to economy, 17.8% to population
+and 12.6% to markets. Repeated accessible street-node searches and terrain checks remain costly.
+The always-on storage journal records 5,026,615 outcomes in that year: 3,019,556,825 encoded bytes
+and 174,044,598 compressed bytes. Record projection and serialization remain substantial CPU costs.
+The exhaustive whole-world history recorder is opt-in and was disabled for these measurements.
+The indexed source also passes the same one-year sea soak with zero simulation errors, zero
+money residual and a fully committed journal. Its 264.79 ms/day versus baseline 262.87 ms/day
+(including profiling, persistence and deferred work) confirms no material overall improvement.
+Validated game source SHA256: `3126749421fa06a34dc368d2dcd91c541888898a390d6207cd1aa9e87d3277df`.
+Local evidence is retained under ignored `tools/soak-results/index-migration-2026-10-04/`.
+
+## Repeated storage routes and journal projection
+
+Storage surveys and daily carriage now share accessible endpoint and street-path searches within
+one synchronous calculation. Nested site quotes reuse the investment survey's cache. Each endpoint
+and path cache admits at most 4,096 entries, then computes misses normally. A graph replacement clears
+both caches; all cache state is released on return or exception. Subsequent calculations recheck current
+terrain, water, walls, quarantine and sieges. Distances retain the original summation order and ties.
+
+Journal projections copy ordinary own data fields using direct assignment, retaining the explicit
+definition needed for `__proto__`. Descriptor inspection still rejects accessors and executable or
+non-plain metadata. Undefined presence, special numbers, bigint, array holes, property order and every
+transient outcome remain intact. Journal encoding and exported archive format remain unchanged.
+Serializer alternatives that slowed representative encoding were discarded.
+
+The local comparison harness now accepts `--baseline-source` to compare an exact uncommitted local
+snapshot and measures route access, routing and record projection as well as daily CPU. Full-state,
+RNG and journal-byte equality remain mandatory.
+
+All 280 tests pass. Final-source native Chrome/Metal sea seed 1001 and inland seed 2002 match
+the preceding indexed source at days 30, 60 and 90: full state, subsequent RNG draws and every
+journal chunk are identical. Synchronous tick execution totals fall 13,634.8→6,933.2 ms (sea, 49%) and
+14,451.3→8,336.8 ms (inland, 42%). Route execution time falls 90% and 85%; record projection falls 47%
+in both. Tagged JSON encoding itself and journal volume are unchanged. These are serial, undrawn,
+instrumented short histories on this host, not mature-world, startup or frame-rate guarantees.
+Final game source SHA256: `9400f2d42344162cb174dfdcb4023b3f2e314c6227c73942900fe7ff59881699`.
+Exact local snapshots, harness, fingerprints and measurements remain under ignored
+`tools/soak-results/routing-journal-2026-10-04/`.
+
+The timer measures elapsed `performance.now()` time inside each synchronous `simTick()` call,
+including nested work and calls rejected by journal backpressure. Both variants make 134 calls
+in the coastal run and 163 in the inland run. Asynchronous persistence waits and rendering are
+outside that timer; this is not an OS CPU counter or a frame-rate measurement. The measured source
+above is the performance checkpoint before journal deduplication or the proposed worker refactor.
+
+### Architectural proposal at the checkpoint
+
+The current `simTick()` already runs daily phases synchronously on the main thread. A daily barrier
+alone will not parallelize that work. A future simulation worker should own the world and RNG,
+process dependent daily phases in order, settle the accounts, then publish a small immutable view
+with its day/revision. UI and rendering consume completed views and submit commands for an atomic
+transaction between days; they do not mutate the authoritative world. Commands must remain usable
+while paused and at life pace, where a simulated day lasts 30 minutes. A command can therefore publish
+a new revision on the same day. Asynchronous calculations return versioned proposals,
+accepted before commit only when their inputs still match. Full-world daily copies should be avoided.
+Journal projection, encoding and persistence can be batched separately with bounded backpressure;
+coalescing a rendered view must never discard required historical outcomes. This worker/day-boundary
+refactor is a proposal, not part of the changes above.
+
+## Integration with the current public release, 4 October 2026
+
+Checkpoint `1c8bb84` is integrated onto public release `f2e4b93`. Its canonical-order lot
+indexes and bounded coordinate/path reuse preserve the release's capture-fault guards,
+native journal worker, immutable captures, active facility/claim indexes, hay remnant
+losses, pending purchase protection and arithmetic provenance. Explicit route-batch
+callers retain their existing API. Recursive plain-data projection uses direct assignment
+with the own-property protection for `__proto__`; record projection already had that optimization.
+
+All 578 tests pass. A stamped-source drawn one-day coastal smoke passes shader compilation,
+camera uniforms, live rebuilds and church variants without browser or simulation errors.
+Serial native Chrome/Metal comparisons against `f2e4b93` pass through
+90 days in sea seed 1001 and inland seed 2002. Full world/land/annal fingerprints and RNG
+states match at days 0/30/60/90, every accepted expanded storage event matches, persisted
+replay matches accepted records, and both journals fully commit. The optional semantic field
+oracle is unsupported in these sources; complete game-history reconstruction is not claimed.
+Timing and correctness use separate fresh browser sessions. End-to-end undrawn timing is
+6,739.4→6,666.2 ms coastal and 8,846.6→8,909.8 ms inland: approximately +1.1% and -0.7%
+throughput, respectively, within variation. The current public release already includes
+other optimizations; the historical 49%/42% checkpoint result is not an additional gain
+against this newer baseline. Neither sample meets the harness's separate 70% encoded-history
+reduction or 2x RAF-throughput gates; neither target is claimed for this integration.
+
+Compared simulation source SHA256: `664b831fd98a0370aee2befc8d588ba6c406d3b37f259ba113882c7884265ac4`.
+Release source SHA256: `f261626ad9f07648c82ac4b64069ae0886223db766de6075b527cb3be84f1d09`; only the visible build stamp differs from the compared source.
+Full snapshots, accepted/persisted fingerprints and measurements remain local under ignored
+`tools/soak-results/performance-deploy-2026-10-04/`.
+
 ## Validated source, 3 October 2026
 
 `index.html` SHA256: `0a3808bf2f1c3c4a7df7cfdba6890c59e7cf043239778eb722bb4052a01526ec`.
