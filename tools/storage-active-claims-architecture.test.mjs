@@ -11,9 +11,9 @@ const digest=s=>createHash('sha256').update(s).digest('hex');
 // This is a source-change tripwire, not a whole-program alias proof.
 test('managed claim writer architecture remains reviewed',()=>{
  const a=source.indexOf('function oldHouseholdHead('),b=source.indexOf('function houseFolk(s)');
- // Renewed for hay remnant loss: its settled held/sale debit uses managed claim
- // tables and explicit title invalidation; exact owner/loss/replay tests cover it.
- assert.equal(digest(source.slice(a,b)),"41c241da75aef351ec9c42467b60da3df77bb4e7339113cdf6ca539844b7b448");
+ // Combined review covers household membership, inherited arithmetic frontiers
+ // and the hay loss debit; focused baseline, conservation and replay tests remain.
+ assert.equal(digest(source.slice(a,b)),"3c8702b453e6f8b04e01abfedd59075fee83856408895dc6d4fcc661ed2a4b85");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
