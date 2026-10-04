@@ -86,3 +86,53 @@ cannot be promised a durable or replayable encoding. Fault-reporting errors
 cannot reopen admission. Legacy encoding follows the same failure rules, while
 old archive reads remain independent. Compact readers reject malformed schemas,
 indexes, delta bases, field counts and special-value tags.
+
+## Off-thread processing of the shipped journal
+
+The always-on storage journal accepts the same ordered records. Append now captures
+owned raw fields immediately, without running JSON or the storage codec. Ordered
+key vectors are shared within transport batches; opaque lot handles keep their
+complete owned values. Mutable metadata is detached before append returns.
+
+A Blob Worker runs the existing codec, UTF-8 encoding, SHA-256, gzip and IndexedDB
+writes. Finished raw batches are posted during the producing tick, so processing
+can overlap an atomic simulation day. The worker processes batches serially and
+acknowledges only after one transaction commits both chunk and manifest. Main
+retains each raw batch until its checked acknowledgement. Archive format, checksum
+chain, canonical readers and tagged export remain compatible; chunk boundaries
+can differ. There are no field watches or graph comparisons.
+
+Raw pending accounting deliberately overestimates storage, with a 16 MiB admission
+watermark and separate 32 MiB estimated raw batch target. Crossing the watermark
+seals a short unfinished batch immediately at the day boundary. A synchronous day
+can exceed the watermark: all its records remain accepted, and another day waits
+for the worker. This does not establish a strict within-day heap limit. Direct
+out-of-band calls must also respect admission. Closing the tab before completion
+can lose its uncommitted tail, as before.
+
+Worker/persistence/protocol failures close admission and retain the complete raw
+pending tail. `records()` and `stream()` combine the acknowledged prefix with that
+tail, including uncertain commits without duplicating records. An independently
+opened archive reads its actual durable prefix. No uncertain write is retried or
+silently moved to another writer. Capture failures retain their rejected context.
+
+`FURLONG_STORAGE_FOREGROUND_AUDIT=true` before boot selects a diagnostic foreground
+pipeline. Worker startup failure uses the same explicit foreground fallback;
+`FURLONG_STORAGE_LOG.status()` reports `processingMode` and `fallbackReason`.
+Foreground processing starts after append returns and preserves all records.
+
+`node --test tools/storage-worker.test.mjs` exercises a real Node worker running the
+embedded browser runtime, with asynchronous atomic IndexedDB fixtures. It checks
+exact accepted/durable streams, opaque handles, own fields, special numbers,
+BigInt, holes, mutable metadata ownership, immediate protocol faults, backpressure,
+injected transaction failure, uncertain acknowledgement and prefix/tail export.
+The fixtures establish pipeline semantics, not browser IndexedDB reliability.
+
+`node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
+matched owned-handle events in fresh processes. A local run measured producer time
+3102→1229 ms and total time 3201→1256 ms; main codec time 2225→0 ms, raw capture
+279 ms and postMessage 136 ms. First worker commit occurred at 57 ms during the
+producer; baseline first commit occurred after the producer at 3116 ms. Main heap
+increase rose 62→127 MB; process RSS increase rose 204→501 MB. All 131,072 records
+committed. These are synthetic Node diagnostics; native Chrome world histories,
+ordinary-play performance and device memory limits require separate validation.

@@ -13021,6 +13021,79 @@ class OutcomeJournal{
   *uncommitted(){for(const entry of this.pending.values())yield* outcomeRecords(entry.text);yield* outcomeRecords(this.rows.join(''));}
   status(){return {mode:this.mode,encodedCharacters:this.encodedCharacters,records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null,rejectedSeq:this.rejected?.seq??null,reportingFault:this.reportingFault||null,persistenceFault:this.persistenceFault?.message||null};}
 }
+// STORAGE OUTCOME WORKER BEGIN
+// Transport capture is not the storage wire codec: native primitives and ordered own fields
+// cross structured clone without losing undefined, holes, nonenumerable or __proto__ fields.
+const OUTCOME_TRANSPORT_HANDLES=new WeakMap();
+// Shared ordered key vectors serialize once per structured-clone batch, not once per row.
+let OUTCOME_TRANSPORT_SCHEMA_COUNT=0;const OUTCOME_TRANSPORT_SCHEMAS=new Map();
+function outcomeTransportSchema(keys){let candidates=OUTCOME_TRANSPORT_SCHEMAS.get(keys.length);if(candidates)for(const schema of candidates){let same=true;for(let i=0;i<keys.length;i++)if(schema[i]!==keys[i]){same=false;break;}if(same)return schema;}
+  if(OUTCOME_TRANSPORT_SCHEMA_COUNT>=4096){OUTCOME_TRANSPORT_SCHEMAS.clear();OUTCOME_TRANSPORT_SCHEMA_COUNT=0;candidates=null;}if(!candidates)OUTCOME_TRANSPORT_SCHEMAS.set(keys.length,candidates=[]);const schema=Object.freeze(keys.slice());candidates.unshift(schema);if(candidates.length>64)candidates.pop();OUTCOME_TRANSPORT_SCHEMA_COUNT++;return schema;
+}
+function outcomeTransportCapture(event){
+  const seen=new Set();let cost=0;
+  const walk=value=>{
+    if(value===null||typeof value!=='object'){if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage outcome value');cost+=typeof value==='string'?128+value.length*24:typeof value==='bigint'?128+String(value).length*24:128;return value;}
+    const handle=typeof STORAGE_CAPTURE_HANDLES==='undefined'?null:STORAGE_CAPTURE_HANDLES.get(value),cached=handle&&OUTCOME_TRANSPORT_HANDLES.get(value);
+    if(cached){cost+=cached.cost;return cached.value;}
+    if(seen.has(value))throw Error('Storage outcomes must contain IDs, not cyclic objects');const array=!handle&&Array.isArray(value),proto=Object.getPrototypeOf(value);if(!handle&&!array&&proto!==Object.prototype&&proto!==null)throw Error('Storage outcomes require plain data');seen.add(value);
+    const initial=cost,trusted=!!handle||typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(value),keys=handle?handle.keys:Reflect.ownKeys(value),values=[];cost+=512;
+    for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=trusted?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');cost+=128+key.length*24;values.push(walk(handle?handle.values[i]:trusted?value[key]:d.value));}
+    seen.delete(value);const packet=Object.freeze({type:array?'array':proto===null?'null':'object',keys:outcomeTransportSchema(keys),values:Object.freeze(values)});if(handle)OUTCOME_TRANSPORT_HANDLES.set(value,{value:packet,cost:cost-initial});return packet;
+  };const value=walk(event);return {value,cost};
+}
+function outcomeTransportRestore(packet){
+  if(packet===null||typeof packet!=='object')return packet;
+  if(!['object','null','array'].includes(packet.type)||!Array.isArray(packet.keys)||!Array.isArray(packet.values)||packet.keys.length!==packet.values.length)throw Error('Invalid storage transport packet');
+  const out=packet.type==='array'?[]:Object.create(packet.type==='null'?null:Object.prototype),seen=new Set();
+  for(let i=0;i<packet.keys.length;i++){const key=packet.keys[i];if(typeof key!=='string'||seen.has(key))throw Error('Invalid storage transport key');seen.add(key);Object.defineProperty(out,key,{value:outcomeTransportRestore(packet.values[i]),enumerable:key!=='length'||packet.type!=='array',writable:true,configurable:key!=='length'||packet.type!=='array'});}return out;
+}
+class RawOutcomeJournal extends OutcomeJournal{
+  constructor(write,options={}){super(write,{chunkBytes:32*1024*1024,...options});this.codec=null;this.processingMode=options.processingMode||'worker';this.eager=options.eager===true;}
+  get ready(){if(!this.fault&&this.bytes>=this.maxPendingBytes)this.seal();return !this.fault&&this.bytes<this.maxPendingBytes;}
+  append(event){this.assert();const seq=this.seq;let capture;try{capture=outcomeTransportCapture(event);}catch(error){throw this.fail(error,{phase:'append-capture',event});}this.rows.push({seq,event:capture.value});this.rowBytes+=capture.cost;this.bytes+=capture.cost;this.seq++;if(this.rowBytes>=this.chunkBytes)this.seal();return seq;}
+  seal(){if(!this.rows.length)return;const entry={chunk:this.chunk++,first:this.rows[0].seq,last:this.rows[this.rows.length-1].seq,records:this.rows,cost:this.rowBytes};this.rows=[];this.rowBytes=0;this.pending.set(entry.chunk,entry);
+    // Dispatch worker batches during the producing tick; retain raw ownership until commit ack.
+    let dispatched;if(this.eager&&!this.persistenceFault){try{dispatched=Promise.resolve(this.write(entry));}catch(error){dispatched=Promise.reject(error);}dispatched.catch(()=>{});}
+    this.chain=this.chain.then(async()=>{if(this.persistenceFault)return;try{const ack=await (dispatched||this.write(entry));if(ack&&(ack.chunk!==entry.chunk||ack.first!==entry.first||ack.last!==entry.last))throw Error('Storage worker acknowledgement differs');this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;this.encodedCharacters+=ack?.encodedCharacters||0;}catch(error){this.persistenceFault=error instanceof Error?error:new Error(String(error));this.fail(error,{phase:'worker-persistence',chunk:entry.chunk});}});}
+  *uncommitted(){for(const entry of this.pending.values())for(const row of entry.records)yield {seq:row.seq,event:outcomeTransportRestore(row.event)};for(const row of this.rows)yield {seq:row.seq,event:outcomeTransportRestore(row.event)};}
+  status(){return {...super.status(),processingMode:this.processingMode,pendingAccounting:'conservative-raw-capture'};}
+}
+class OutcomeWorkerPipeline{
+  constructor(write){this.write=write;this.chunk=0;this.seq=0;this.fault=null;}
+  async process(entry,mode='compact'){
+    if(this.fault)throw this.fault;try{if(entry.chunk!==this.chunk||entry.first!==this.seq||!Array.isArray(entry.records)||!entry.records.length||entry.last!==entry.first+entry.records.length-1)throw Error('Storage worker batch gap');const codec=new OutcomeCodec(),rows=[];let expected=this.seq;
+      for(const row of entry.records){if(row.seq!==expected++)throw Error('Storage worker record gap');const event=outcomeTransportRestore(row.event);rows.push(mode==='legacy'?outcomeJSON({seq:row.seq,event})+'\n':codec.encode(row.seq,event));}
+      const text=rows.join(''),result=await this.write({...entry,text});this.chunk++;this.seq=expected;return {chunk:entry.chunk,first:entry.first,last:entry.last,encodedCharacters:text.length,...result};
+    }catch(error){this.fault=error instanceof Error?error:new Error(String(error));throw this.fault;}
+  }
+}
+function outcomeWorkerRuntime(){
+  let db,meta,pipeline,queue=Promise.resolve(),fault=null;
+  const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
+  const transaction=(stores,write)=>new Promise((resolve,reject)=>{const tx=db.transaction(stores,'readwrite');tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error||Error('Storage history write failed'));try{write(tx);}catch(error){tx.abort();reject(error);}});
+  self.onmessage=message=>{const data=message.data;queue=queue.then(async()=>{try{if(fault)throw fault;
+    if(data.type==='init'){
+      if(pipeline)throw Error('Storage worker already initialized');if(typeof CompressionStream==='undefined'||typeof crypto==='undefined'||!crypto.subtle)throw Error('Worker compression or hashing unavailable');meta=data.meta;
+      db=await new Promise((resolve,reject)=>{const request=indexedDB.open('furlong-storage-outcomes',1);request.onupgradeneeded=()=>{request.result.createObjectStore('games');request.result.createObjectStore('chunks');};request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('Storage history database is blocked'));request.onsuccess=()=>resolve(request.result);});
+      await transaction('games',tx=>tx.objectStore('games').put(meta,meta.id));
+      pipeline=new OutcomeWorkerPipeline(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=meta.lastHash;
+        const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),next={...meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:meta.storedBytes+blob.size,encodedBytes:meta.encodedBytes+bytes.byteLength};
+        await transaction(['games','chunks'],tx=>{tx.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[meta.id,entry.chunk]);tx.objectStore('games').put(next,meta.id);});meta=next;return {meta};});
+      self.postMessage({request:data.request,type:'ready',meta});
+    }else if(data.type==='chunk'){
+      if(!pipeline)throw Error('Storage worker has not begun');const ack=await pipeline.process(data.entry,data.mode);self.postMessage({request:data.request,type:'committed',...ack});
+    }else throw Error('Unknown storage worker message');
+  }catch(error){fault=error instanceof Error?error:Error(String(error));self.postMessage({request:data.request,type:'error',message:fault.message});}});};
+}
+function outcomeWorkerSource(){return 'const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
+class OutcomeWorkerClient{
+  constructor(worker,{timeout=60000}={}){this.worker=worker;this.timeout=timeout;this.next=0;this.requests=new Map();this.fault=null;worker.onmessage=e=>{try{const data=e.data;if(!data||typeof data!=='object'||!Number.isInteger(data.request)||!['ready','committed','error'].includes(data.type))throw Error('Invalid storage worker acknowledgement');const request=this.requests.get(data.request);if(!request)throw Error('Unexpected storage worker acknowledgement');if(data.type!=='error'&&data.type!==request.expected)throw Error('Storage worker acknowledgement type differs');clearTimeout(request.timer);this.requests.delete(data.request);if(data.type==='error'){const error=Error(String(data.message));request.reject(error);this.fail(error);}else request.resolve(data);}catch(error){this.fail(error);}};worker.onerror=e=>{e.preventDefault?.();this.fail(Error(e.message||'Storage worker failed'));};worker.onmessageerror=()=>this.fail(Error('Storage worker message could not be decoded'));}
+  fail(error){if(this.fault)return;this.fault=error;for(const request of this.requests.values()){clearTimeout(request.timer);request.reject(error);}this.requests.clear();this.onFault?.(error);}
+  request(data){if(this.fault)return Promise.reject(this.fault);const request=this.next++;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>this.fail(Error('Storage worker acknowledgement timed out')),this.timeout);this.requests.set(request,{resolve,reject,timer,expected:data.type==='init'?'ready':'committed'});try{this.worker.postMessage({...data,request});}catch(error){this.fail(error);}});}
+  close(){this.worker.terminate();this.fail(Error('Storage worker closed'));}
+}
+// STORAGE OUTCOME WORKER END
 // STORAGE OUTCOME JOURNAL END
 const STORAGE_LEGACY_AUDIT=globalThis.FURLONG_REPLAY_LEGACY_AUDIT===true;
 const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,modelFault:null,
@@ -13029,18 +13102,31 @@ const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-
     const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
     this.meta={format:'furlong-storage-outcomes',version:STORAGE_LEGACY_AUDIT?1:2,encoding:STORAGE_LEGACY_AUDIT?'tagged-json-v1':'compact-storage-v2',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
     this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
-    await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
-    this.journal=new OutcomeJournal(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
+    const onFault=e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');};
+    let client=null,fallbackReason=null;
+    try{
+      if(globalThis.FURLONG_STORAGE_FOREGROUND_AUDIT===true)throw Error('Foreground audit requested');
+      if(typeof Worker==='undefined'||typeof CompressionStream==='undefined')throw Error('Worker or gzip support unavailable');
+      const url=URL.createObjectURL(new Blob([outcomeWorkerSource()],{type:'text/javascript'}));try{client=new OutcomeWorkerClient(new Worker(url));await client.request({type:'init',meta:this.meta});}finally{URL.revokeObjectURL(url);}
+    }catch(error){client?.close();client=null;fallbackReason=String(error.message||error);console.warn('Storage history uses foreground fallback:',fallbackReason);}
+    const mode=STORAGE_LEGACY_AUDIT?'legacy':'compact';let write;
+    if(client){this.workerClient=client;write=async entry=>{const ack=await client.request({type:'chunk',entry:{chunk:entry.chunk,first:entry.first,last:entry.last,records:entry.records},mode});if(ack.type!=='committed'||ack.chunk!==entry.chunk||ack.first!==entry.first||ack.last!==entry.last||ack.meta?.id!==this.meta.id||ack.meta.lastSeq!==entry.last||ack.meta.lastChunk!==entry.chunk)throw Error('Storage worker commit acknowledgement differs');this.meta=ack.meta;this.lastHash=ack.meta.lastHash;this.lastChunk=ack.chunk;return ack;};}
+    else{
+      await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
+      const foreground=new OutcomeWorkerPipeline(async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
       const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:this.meta.storedBytes+blob.size,encodedBytes:this.meta.encodedBytes+bytes.byteLength};
       await new Promise((resolve,reject)=>{const t=this.db.transaction(['games','chunks'],'readwrite');t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history write failed'));});
-      this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;
-    },{mode:STORAGE_LEGACY_AUDIT?'legacy':'compact',onFault:e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');}});
+        this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;return {meta};
+      });write=entry=>foreground.process(entry,mode);
+    }
+    this.journal=new RawOutcomeJournal(write,{mode,processingMode:client?'worker':'foreground-fallback',eager:!!client,onFault});this.fallbackReason=fallbackReason;
+    if(client)client.onFault=error=>this.journal.fail(error,{phase:'worker-channel'});
     this.journal.append({kind:'begin',day:typeof W!=='undefined'&&W?day():0,world:this.meta.world});
   },
   schedule(){if(!this.timer)this.timer=setTimeout(()=>{this.timer=null;this.flush().catch(()=>{});},1000);},
   async flush(){if(this.timer){clearTimeout(this.timer);this.timer=null;}if(this.journal)return this.journal.flush();},
   async wait(){if(this.modelFault)throw this.modelFault;if(this.journal&&!this.journal.ready)await this.flush();},
-  status(){return {id:this.meta?.id,...this.journal?.status(),modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
+  status(){return {id:this.meta?.id,...this.journal?.status(),fallbackReason:this.fallbackReason||null,modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
   async saved(){if(!this.db)throw new Error('Storage history has not begun');return new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
   async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,storageRecords:this.storageRecords,stream:this.stream};},
   async *records(endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq){
