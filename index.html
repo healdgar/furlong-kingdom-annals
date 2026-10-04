@@ -2966,12 +2966,31 @@ class HouseholdPopulation extends Map{
   clear(){for(const s of this.keys())s._popValid=false;super.clear();}
 }
 function populationOf(s){if(!s._popValid){let n=0;for(const h of s.households||[])n+=h.population.get(s)||0;s._popTotal=n;s._popValid=true;}return s._popTotal;}
+// Maintained nonempty household view; complete registry/member history remains authoritative.
+const HOUSEHOLD_MEMBER_INDEXES=new WeakMap();
+const HOUSEHOLD_NATIVE_MAP=Map.prototype,HOUSEHOLD_NATIVE_SET=Set.prototype;
+const HOUSEHOLD_MAP_SIZE=Object.getOwnPropertyDescriptor(Map.prototype,'size').get,HOUSEHOLD_SET_SIZE=Object.getOwnPropertyDescriptor(Set.prototype,'size').get;
+const HOUSEHOLD_MAP_METHODS=Object.fromEntries(['get','set','values'].map(k=>[k,Map.prototype[k]])),HOUSEHOLD_SET_METHODS=Object.fromEntries(['add','delete','clear'].map(k=>[k,Set.prototype[k]]));
+function householdMemberIndexInvalidate(world=W){const C=HOUSEHOLD_MEMBER_INDEXES.get(world);if(C){C.valid=false;if(C.iterating)throw Error('Unmanaged household registry mutation during indexed iteration');}}
+function householdMemberIndex(world=W){const C=HOUSEHOLD_MEMBER_INDEXES.get(world);if(!C?.valid)return null;const d=Object.getOwnPropertyDescriptor(world,'households');
+  if(d?.value!==C.map||Object.getPrototypeOf(C.map)!==HOUSEHOLD_NATIVE_MAP||HOUSEHOLD_MAP_SIZE.call(C.map)!==C.size){householdMemberIndexInvalidate(world);return null;}
+  for(const[k,v]of Object.entries(HOUSEHOLD_MAP_METHODS))if(Object.hasOwn(C.map,k)||Object.getOwnPropertyDescriptor(HOUSEHOLD_NATIVE_MAP,k)?.value!==v){householdMemberIndexInvalidate(world);return null;}return C;}
+function householdMemberIndexSet(h){if(!h||typeof h!=='object')return null;const d=Object.getOwnPropertyDescriptor(h,'members'),M=d?.value;if(!M||Object.getPrototypeOf(M)!==HOUSEHOLD_NATIVE_SET||Object.hasOwn(M,'size')||Object.hasOwn(M,Symbol.iterator)||M[Symbol.iterator]!==Set.prototype.values)return null;
+  for(const[k,v]of Object.entries(HOUSEHOLD_SET_METHODS))if(Object.hasOwn(M,k)||Object.getOwnPropertyDescriptor(HOUSEHOLD_NATIVE_SET,k)?.value!==v)return null;try{HOUSEHOLD_SET_SIZE.call(M);}catch{return null;}return M;}
+function householdMemberIndexRecord(C,id,h){if(!C?.valid)return;const members=householdMemberIndexSet(h);if(!members){householdMemberIndexInvalidate();return;}let entry=C.entries.get(id);if(entry){C.byHousehold.delete(entry.h);C.active=C.active.filter(e=>e!==entry);entry.h=h;entry.members=members;}else{entry={h,members,order:C.next++};C.entries.set(id,entry);}C.byHousehold.set(h,entry);entry.nonempty=HOUSEHOLD_SET_SIZE.call(members)>0;if(entry.nonempty){C.active.push(entry);C.active.sort((a,b)=>a.order-b.order);}C.size=HOUSEHOLD_MAP_SIZE.call(C.map);}
+function householdRegister(h){let M=W.households;if(!M){M=W.households=new Map();HOUSEHOLD_MEMBER_INDEXES.set(W,{map:M,entries:new Map(),byHousehold:new WeakMap(),active:[],next:0,size:0,valid:true,iterating:0});}const C=householdMemberIndex();const result=M.set(h.id,h);householdMemberIndexRecord(C,h.id,h);return result;}
+function householdMemberIndexRefresh(h){const C=householdMemberIndex();if(!C)return;const entry=C.byHousehold.get(h);if(!entry||householdMemberIndexSet(h)!==entry.members){householdMemberIndexInvalidate();return;}const nonempty=HOUSEHOLD_SET_SIZE.call(entry.members)>0;if(nonempty===entry.nonempty)return;let lo=0,hi=C.active.length;while(lo<hi){const m=(lo+hi)>>>1;if(C.active[m].order<entry.order)lo=m+1;else hi=m;}if(nonempty)C.active.splice(lo,0,entry);else if(C.active[lo]===entry)C.active.splice(lo,1);entry.nonempty=nonempty;}
+function householdMemberAdd(h,p){const result=h.members.add(p);householdMemberIndexRefresh(h);return result;}
+function householdMemberDelete(h,p){const result=h.members.delete(p);householdMemberIndexRefresh(h);return result;}
+function householdMemberClear(h){const result=h.members.clear();householdMemberIndexRefresh(h);return result;}
+function householdMemberIndexAdopt(world=W){const map=world.households,C={map,entries:new Map(),byHousehold:new WeakMap(),active:[],next:0,size:0,valid:true,iterating:0};if(HOUSEHOLD_MEMBER_INDEXES.get(world)?.iterating)householdMemberIndexInvalidate(world);HOUSEHOLD_MEMBER_INDEXES.set(world,C);if(!map||Object.getPrototypeOf(map)!==HOUSEHOLD_NATIVE_MAP){C.valid=false;return false;}let iterator;try{iterator=Map.prototype.entries.call(map);}catch{C.valid=false;return false;}for(const[id,h]of iterator){const members=householdMemberIndexSet(h);if(!members||C.byHousehold.has(h)){C.valid=false;return false;}const entry={h,members,order:C.next++};C.entries.set(id,entry);C.byHousehold.set(h,entry);entry.nonempty=HOUSEHOLD_SET_SIZE.call(members)>0;if(entry.nonempty)C.active.push(entry);}C.size=HOUSEHOLD_MAP_SIZE.call(map);return !!householdMemberIndex(world);}
+function* nonemptyHouseholds(){const C=householdMemberIndex();if(!C){yield* (W.households||new Map()).values();return;}C.iterating++;let order=-1;try{while(true){if(!C.valid)throw Error('Unmanaged household registry mutation during indexed iteration');let lo=0,hi=C.active.length;while(lo<hi){const m=(lo+hi)>>>1;if(C.active[m].order<=order)lo=m+1;else hi=m;}if(lo===C.active.length)return;const entry=C.active[lo];order=entry.order;yield entry.h;}}finally{C.iterating--;}}
 function newHousehold(p){const h={household:true,id:'hh'+((W._hhID=(W._hhID||0)+1)),head:p,members:new Set(),assets:{w:0,_debt:0,_owe:[]},population:new HouseholdPopulation(),hunger:0};
-  h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});(W.households||(W.households=new Map())).set(h.id,h);return h;}
-function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)old.members.delete(p);
+  h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});householdRegister(h);return h;}
+function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)householdMemberDelete(old,p);
   if(!old)for(const k of HH_FIELDS){const d=Object.getOwnPropertyDescriptor(p,k);if(d&&'value'in d&&d.value!=null){if(k==='w'||k==='_debt'||k==='_inc')h.assets[k]=(h.assets[k]||0)+d.value;
     else if(k==='_owe')(h.assets._owe||(h.assets._owe=[])).push(...d.value);else if(k==='herd'){const H=h.assets.herd||(h.assets.herd={});for(const g of BEASTS)H[g]=(H[g]||0)+(d.value[g]||0);}else h.assets[k]=d.value;}}
-  p._hh=h;h.members.add(p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
+  p._hh=h;householdMemberAdd(h,p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
     get(){return k==='_fill'?h.assets[k]:h.head===p?h.assets[k]:k==='herd'||k==='_owe'?undefined:0;},
     set(v){if(h.head===p)h.assets[k]=v;}});return h;}
 function householdAccount(p){if(!p||p.merc)return null;if(p.household)return p;if(p._hh)return p._hh;
@@ -10018,13 +10037,13 @@ const PARTIBLE=new Set(['celtic','german','slavic','norse']);
 const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'freehold, for a small quit-rent',lease:'on lease, for a money rent',crop:'as a sharecropper, for half the crop',demesne:'the lord\'s demesne, worked by hired hands'};
 const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
-function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of (W.households||new Map()).values())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
+function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of nonemptyHouseholds())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
 function headsOf(s){return householdsOf(s).map(h=>h.head).filter(p=>p&&!p.dead);} // an orphan household remains an owner even before its heir is grown
 function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant';
 function inheritanceCustom(s){return {land:PARTIBLE.has(s&&s.cult)?'partible':'eldest',movables:s&&s.cult==='anglo'&&AD()>=1180?'thirds':'kin',dower:1/3,heriot:true,naturalLand:s&&s.cult==='celtic',...s&&s.custom};}
-function estateChildren(p){const all=new Set(p.kids||[]);for(const h of (W.households||new Map()).values())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
+function estateChildren(p){const all=new Set(p.kids||[]);for(const h of nonemptyHouseholds())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
   const living=[];const visit=(q,seen)=>{if(seen.has(q))return;seen.add(q);if(!q.dead){living.push(q);return;}for(const r of q.kids||[])visit(r,seen);};for(const q of all)visit(q,new Set());return living.sort((a,b)=>a.b-b.b||a.id-b.id);}
 function estateKin(p){const children=estateChildren(p);if(children.length)return children;
   const parents=[p.ma,p.pa].filter(q=>q&&!q.dead&&!q._dying);if(parents.length)return parents;
@@ -10176,7 +10195,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   for(const t of W.settlements){for(const f of t.furl||[]){if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;
       if(widow&&heir&&heir!==widow){f.dower=widow.id;f.dowerFraction=inheritanceCustom(t).dower;}}if(f.wk===p.id){const to=survivors.find(q=>q.si===W.settlements.indexOf(t)&&ageYrs(q)>=14)||heirs.find(q=>q.si===W.settlements.indexOf(t));f.wk=to?to.id:-1;}}
     for(const b of t.buildings||[])if(b.ownerId===p.id)b.ownerId=heirs.length?heirs[(b.k||0)%heirs.length].id:widow?widow.id:'lord';householdHeadsChanged(t);}
-  if(!isHead){h.members.delete(p);return;}
+  if(!isHead){householdMemberDelete(h,p);return;}
   // Customary heriot is a single best beast from a servile tenant, not seizure of the whole family's goods.
   if(inheritanceCustom(s).heriot&&servile){const H=h.assets.herd||{},best=BEASTS.filter(g=>(H[g]||0)>=1).sort((a,b)=>price(s,b)-price(s,a))[0];if(best){H[best]-=1;offer(s,best,lordAcct(s),1);}}
   repay(p,Math.max(0,h.assets.w||0));
@@ -10188,7 +10207,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   transferOwnership(h,distribution);
   const cash=Math.max(0,h.assets.w||0);h.assets.w=0;for(const[to,f]of shares)acct(to,cash*f);
   h.estate={person:p.id,day:day(),custom:inheritanceCustom(s),shares:shares.map(([to,f])=>[to.household?to.id:to==='crown'?'crown':to.id||'institution',f]),unpaidDebt:Math.max(0,debt-credit)};
-  h.assets._debt=0;h.assets._owe=[];h.members.delete(p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
+  h.assets._debt=0;h.assets._owe=[];householdMemberDelete(h,p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
   p._estateShares=shares;if(!h.head)h.successors=shares;p._heir=h.head||heirs[0]||null;
   if(h.head&&ageYrs(h.head)<18)h.guardian=widow||estateKin(p).find(q=>ageYrs(q)>=18)||null;
   for(const q of new Set([...heirs,...(widow?[widow]:[])]))life(q,`Inherited under the custom of ${s.name} from ${folkName(p)}`);}
