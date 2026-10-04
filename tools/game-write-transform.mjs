@@ -68,9 +68,9 @@ export function transformWrites(source,options={}){
    if(n.type==='UpdateExpression')return c?`${facade}.cellUpdate(()=>${target.name},(${valueName})=>(${target.name}=${valueName}),${n.operator==='++'?1:-1},${n.prefix},(${c.token}),${id})`:`${facade}.update(${obj},${k},${n.operator==='++'?1:-1},${n.prefix},${strict},${id})`;
    const rhs=`(${render(n.right)})`;
    if(n.operator==='=')return c?`${facade}.cellSet((${valueName})=>(${target.name}=${valueName}),${rhs},(${c.token}),${id})`:`${facade}.set(${obj},${k},${rhs},${strict},${id})`;
-   const ref=c?cellRef(c,id,target):`${facade}.ref(${obj},${k},${strict},${id})`;
-   if(logical){const op=n.operator.slice(0,-1),guard=op==='&&'?`${refName}.value`:op==='||'?`!${refName}.value`:`${refName}.value==null`;return `((${refName})=>${guard}?${facade}.compound(${refName},${rhs},"="):${refName}.value)(${ref})`;}
-   return `${facade}.compound(${ref},${rhs},${literal(n.operator.slice(0,-1))})`;
+   const ref=c?cellRef(c,id,target):`${facade}.ref(${obj},${k},${strict},${id})`,compoundMethod=c?'cellCompound':'compound';
+   if(logical){const op=n.operator.slice(0,-1),guard=op==='&&'?`${refName}.value`:op==='||'?`!${refName}.value`:`${refName}.value==null`;return `((${refName})=>${guard}?${facade}.${compoundMethod}(${refName},${rhs},"="):${refName}.value)(${ref})`;}
+   return `${facade}.${compoundMethod}(${ref},${rhs},${literal(n.operator.slice(0,-1))})`;
   }
   if(memberCall){const m=n.callee,method=m.computed&&m.property.type==='Literal'?m.property.value:!m.computed?m.property.name:null;
    if(!MUTATORS.has(method)){site(n,'call','unsupported','unclassified member call may hide native mutation');return raw(n);}
