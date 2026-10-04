@@ -2986,7 +2986,9 @@ const STORAGE_TYPES={grange:{capacity:800,goods:['grain','hay','wool'],protectio
 function storageInvariantFault(message){const error=new Error(message);if(typeof storageModelFault==='function')storageModelFault(error);throw error;}
 const STORAGE_CAPTURE_DATA=new WeakSet();
 function storagePlainData(value,path='metadata',seen=new Set()){if(value===null||typeof value!=='object'){if(typeof value==='function'||typeof value==='symbol')throw Error('Unsupported storage '+path);return value;}if(seen.has(value))throw Error('Cyclic storage '+path);const proto=Object.getPrototypeOf(value);if(!Array.isArray(value)&&proto!==Object.prototype&&proto!==null)throw Error('Non-plain storage '+path);const next=new Set(seen);next.add(value);const out=Array.isArray(value)?new Array(value.length):Object.create(proto===null?null:Object.prototype);for(const key of Reflect.ownKeys(value)){if(Array.isArray(value)&&key==='length')continue;if(typeof key!=='string')throw Error('Symbol storage '+path);const d=Object.getOwnPropertyDescriptor(value,key);if(!('value' in d))throw Error('Accessor storage '+path+'.'+key);Object.defineProperty(out,key,{value:storagePlainData(d.value,path+'.'+key,next),writable:true,enumerable:true,configurable:true});}return out;}
-function storageRecordState(record,refs={}){const out={};for(const key of Reflect.ownKeys(record)){if(typeof key!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(record,key);if(!('value' in d))throw Error('Accessor storage record '+key);const value=Object.prototype.hasOwnProperty.call(refs,key)?refs[key](d.value):storagePlainData(d.value,key);if(key==='__proto__')Object.defineProperty(out,key,{value,writable:true,enumerable:true,configurable:true});else out[key]=value;}return out;}
+function storageRecordStateUnsafe(record,refs={}){const out={};for(const key of Reflect.ownKeys(record)){if(typeof key!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(record,key);if(!('value' in d))throw Error('Accessor storage record '+key);const value=Object.prototype.hasOwnProperty.call(refs,key)?refs[key](d.value):storagePlainData(d.value,key);if(key==='__proto__')Object.defineProperty(out,key,{value,writable:true,enumerable:true,configurable:true});else out[key]=value;}return out;}
+function storageCaptureFault(error,context){if(typeof STORAGE_OUTCOMES!=='undefined'&&STORAGE_OUTCOMES.journal&&typeof STORAGE_OUTCOMES.journal.fail==='function')STORAGE_OUTCOMES.journal.fail(error,context);return error;}
+function storageRecordState(record,refs={}){try{return storageRecordStateUnsafe(record,refs);}catch(error){throw storageCaptureFault(error,{phase:'record-capture',record});}}
 function storageImmutableCapture(out){Object.freeze(out);STORAGE_CAPTURE_DATA.add(out);return out;}
 // Rebuildable capture cache; never part of authoritative ledgers or history graphs.
 const STORAGE_LOT_CAPTURE=new WeakMap();
@@ -3003,18 +3005,19 @@ function storageLotCapture(l){
 // Internal captures own every value synchronously; no authoritative references escape.
 const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_LOT_HANDLES=new WeakMap();
 function storageCompactCaptureActive(){return typeof STORAGE_OUTCOMES!=='undefined'&&STORAGE_OUTCOMES.journal?.mode==='compact'&&globalThis.FURLONG_COMPACT_CAPTURE!==false;}
-function storageLotHandle(l){
+function storageLotHandleUnsafe(l){
   if(!l)return null;if(!storageCompactCaptureActive())return storageLotCapture(l);
   const keys=Reflect.ownKeys(l),values=[],old=STORAGE_LOT_HANDLES.get(l);let unchanged=!!old&&old.keys.length===keys.length;
   for(let i=0;i<keys.length;i++){const k=keys[i];if(typeof k!=='string')throw Error('Symbol storage record');const d=Object.getOwnPropertyDescriptor(l,k);if(!('value'in d))throw Error('Accessor storage record '+k);const value=k==='owner'?storageOwnerId(d.value):storagePlainData(d.value,k);values.push(value);if(unchanged&&(old.keys[i]!==k||!Object.is(old.values[i],value)))unchanged=false;}
   if(unchanged)return old.handle;const handle=Object.freeze({owner:values[keys.indexOf('owner')],id:values[keys.indexOf('id')]}),data={keys,values,handle};STORAGE_CAPTURE_HANDLES.set(handle,data);STORAGE_LOT_HANDLES.set(l,data);return handle;
 }
+function storageLotHandle(l){try{return storageLotHandleUnsafe(l);}catch(error){throw storageCaptureFault(error,{phase:'lot-capture',lot:l&&Object.getOwnPropertyDescriptor(l,'id')?.value,record:l});}}
 function storageExpandOutcome(value,seen=new Set()){
   if(value===null||typeof value!=='object')return value;if(seen.has(value))throw Error('Cyclic storage outcome');seen.add(value);
   const capture=STORAGE_CAPTURE_HANDLES.get(value),array=!capture&&Array.isArray(value),out=array?[]:{},keys=capture?capture.keys:Reflect.ownKeys(value);
   for(let i=0;i<keys.length;i++){const key=keys[i];if(typeof key!=='string')throw Error('Storage outcome symbol key');const d=capture?null:Object.getOwnPropertyDescriptor(value,key);if(d&&!('value'in d))throw Error('Storage outcome accessor');Object.defineProperty(out,key,{value:storageExpandOutcome(capture?capture.values[i]:d.value,seen),enumerable:key!=='length'||!array,writable:true,configurable:key!=='length'||!array});}seen.delete(value);return out;
 }
-function storageObserveOutcome(event){if(typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function')globalThis.FURLONG_STORAGE_AUDIT_OBSERVER(storageExpandOutcome(event));}
+function storageObserveOutcome(event){try{if(typeof STORAGE_OUTCOMES!=='undefined'&&typeof STORAGE_OUTCOMES.journal?.assert==='function')STORAGE_OUTCOMES.journal.assert();if(typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function')globalThis.FURLONG_STORAGE_AUDIT_OBSERVER(storageExpandOutcome(event));}catch(error){throw storageCaptureFault(error,{phase:'audit-observer',event});}}
 globalThis.FURLONG_STORAGE_AUDIT_SUPPORTED=true;
 class StorageLedger {
   constructor(){this.version=2;this.next=1;this.revision=0;this.locations=new Map();this.lots=new Map();this.events=[];this.day=0;this.totals=new Map();this.occupancy=new Map();this.byGood=new Map();this.byLocation=new Map();this.byOwner=new Map();this.byAvailability=new Map();this.roundoff=new Map();}
@@ -12988,32 +12991,35 @@ class OutcomeCodec{
   }
   *decode(text){
     const schemas=[],strings=[],snapshots=[],events=[];
-    const walk=v=>{if(!Array.isArray(v))return v;switch(v[0]){
-      case 2:return undefined;case 3:return v[1]==='-0'?-0:Number(v[1]);case 4:return BigInt(v[1]);case 5:if(v[1]>=strings.length)throw Error('Unknown outcome string');return strings[v[1]];
-      case 0:case 1:case 7:case 8:case 9:case 10:{const snapshot=v[0]===8||v[0]===9,slot=snapshot?v[1]:null,schema=snapshot?v[2]:v[1],keys=schemas[schema];if(!keys)throw Error('Unknown outcome schema');let packed=snapshot?v[3]:v[2];if(v[0]===10){if(!events[schema])throw Error('Missing outcome event base');packed=events[schema].slice();for(let i=0;i<v[2].length;i+=2)packed[v[2][i]]=v[2][i+1];}if(v[0]===7||v[0]===10)events[schema]=packed;if(v[0]===9){const old=snapshots[slot];if(!old||old.schema!==schema)throw Error('Missing outcome delta base');packed=old.values.slice();for(let i=0;i<v[3].length;i+=2)packed[v[3][i]]=v[3][i+1];}
-        const out=v[0]===1?[]:{},refs=[];for(let i=0;i<keys.length;i++){const x=packed[i];if(Array.isArray(x)&&x[0]===6){refs.push([keys[i],OUTCOME_LOT_FIELDS[x[1]]]);continue;}Object.defineProperty(out,keys[i],{value:walk(x),enumerable:keys[i]!=='length'||v[0]!==1,writable:true,configurable:keys[i]!=='length'||v[0]!==1});}
+    const index=(n,length,label)=>{if(!Number.isInteger(n)||n<0||n>=length)throw Error('Invalid outcome '+label);return n;};
+    const changes=(base,delta)=>{if(!Array.isArray(delta)||delta.length%2)throw Error('Invalid outcome delta');const out=base.slice(),used=new Set();for(let i=0;i<delta.length;i+=2){const at=index(delta[i],out.length,'delta index');if(used.has(at))throw Error('Duplicate outcome delta index');used.add(at);out[at]=delta[i+1];}return out;};
+    const walk=v=>{if(!Array.isArray(v)){if(v!==null&&typeof v==='object')throw Error('Invalid compact outcome object');return v;}const lengths={0:3,1:3,2:1,3:2,4:2,5:2,7:3,8:4,9:4,10:3};if(v.length!==lengths[v[0]])throw Error('Invalid compact outcome tag');switch(v[0]){
+      case 2:return undefined;case 3:if(!['-0','NaN','Infinity','-Infinity'].includes(v[1]))throw Error('Invalid outcome number');return v[1]==='-0'?-0:Number(v[1]);case 4:if(typeof v[1]!=='string'||!/^[-]?\d+$/.test(v[1]))throw Error('Invalid outcome bigint');return BigInt(v[1]);case 5:return strings[index(v[1],strings.length,'string')];
+      case 0:case 1:case 7:case 8:case 9:case 10:{const snapshot=v[0]===8||v[0]===9,slot=snapshot?v[1]:null,schema=snapshot?v[2]:v[1],keys=schemas[index(schema,schemas.length,'schema')];if(snapshot)index(slot,4096,'snapshot slot');let packed=snapshot?v[3]:v[2];if(v[0]===10){if(!events[schema])throw Error('Missing outcome event base');packed=changes(events[schema],v[2]);}if(v[0]===7||v[0]===10)events[schema]=packed;if(v[0]===9){const old=snapshots[slot];if(!old||old.schema!==schema)throw Error('Missing outcome delta base');packed=changes(old.values,v[3]);}
+        if(!Array.isArray(packed)||packed.length!==keys.length)throw Error('Invalid outcome field count');const out=v[0]===1?[]:{},refs=[];for(let i=0;i<keys.length;i++){const x=packed[i];if(Array.isArray(x)&&x[0]===6){if(x.length!==2)throw Error('Invalid outcome lot reference');refs.push([keys[i],OUTCOME_LOT_FIELDS[index(x[1],OUTCOME_LOT_FIELDS.length,'lot reference')]]);continue;}Object.defineProperty(out,keys[i],{value:walk(x),enumerable:keys[i]!=='length'||v[0]!==1,writable:true,configurable:keys[i]!=='length'||v[0]!==1});}
         for(const[k,from]of refs){if(!out.lotAfter||!Object.hasOwn(out.lotAfter,from))throw Error('Missing outcome lot reference');Object.defineProperty(out,k,{value:out.lotAfter[from],enumerable:true,writable:true,configurable:true});}
         // Define references in their original position: enumeration order is part of the oracle.
         if(refs.length){const ordered={};for(const k of keys)Object.defineProperty(ordered,k,{value:out[k],enumerable:true,writable:true,configurable:true});if(snapshot)snapshots[slot]={schema,values:packed};return ordered;}
         if(snapshot)snapshots[slot]={schema,values:packed};return out;
       }default:throw Error('Unknown compact outcome tag');}};
-    for(const row of text.trimEnd().split('\n')){if(!row)continue;const packet=JSON.parse(row);if(packet[0]!==2){yield outcomeParse(row);continue;}if(packet.length!==5)throw Error('Invalid compact outcome row');schemas.push(...packet[2]);strings.push(...packet[3]);yield {seq:packet[1],event:walk(packet[4])};}
+    for(const row of text.trimEnd().split('\n')){if(!row)continue;const packet=JSON.parse(row);if(packet[0]!==2){yield outcomeParse(row);continue;}if(packet.length!==5||!Number.isInteger(packet[1])||packet[1]<0||!Array.isArray(packet[2])||!Array.isArray(packet[3]))throw Error('Invalid compact outcome row');for(const keys of packet[2]){if(!Array.isArray(keys)||keys.some(k=>typeof k!=='string')||new Set(keys).size!==keys.length)throw Error('Invalid outcome schema definition');schemas.push(keys);}for(const text of packet[3]){if(typeof text!=='string')throw Error('Invalid outcome string definition');strings.push(text);}yield {seq:packet[1],event:walk(packet[4])};}
   }
 }
 function outcomeRecords(text){return new OutcomeCodec().decode(text);}
 class OutcomeJournal{
   constructor(write,{chunkBytes=1024*1024,maxPendingBytes=16*1024*1024,onFault=()=>{},mode='compact'}={}){this.mode=mode;this.codec=new OutcomeCodec();this.encodedCharacters=0;this.write=write;this.chunkBytes=chunkBytes;this.maxPendingBytes=maxPendingBytes;this.onFault=onFault;this.seq=0;this.chunk=0;this.committed=-1;this.bytes=0;this.rows=[];this.rowBytes=0;this.pending=new Map();this.chain=Promise.resolve();this.fault=null;}
+  fail(error,context){if(!this.fault){this.fault=error instanceof Error?error:new Error(String(error));this.rejected={seq:this.seq,context,error:this.fault.message};try{this.onFault(this.fault);}catch(reportingError){this.reportingFault=String(reportingError);}}return this.fault;}
   assert(){if(this.fault)throw this.fault;}
   get ready(){return !this.fault&&this.bytes<this.maxPendingBytes;}
-  append(event){this.assert();const seq=this.seq,text=this.mode==='legacy'?outcomeJSON({seq,event})+'\n':this.codec.encode(seq,event);if(typeof text!=='string')throw new Error('Storage outcome is not serializable');
+  append(event){this.assert();const seq=this.seq;let text;try{text=this.mode==='legacy'?outcomeJSON({seq,event})+'\n':this.codec.encode(seq,event);if(typeof text!=='string')throw new Error('Storage outcome is not serializable');}catch(error){throw this.fail(error,{phase:'append',event});}
     // UTF-8 and UTF-16 payloads both fit this conservative watermark, plus a row allowance.
     const cost=text.length*3+64;this.encodedCharacters+=text.length;this.rows.push(text);this.rowBytes+=cost;this.bytes+=cost;this.seq++;
     if(this.rowBytes>=this.chunkBytes)this.seal();return seq;}
   seal(){if(!this.rows.length)return;const count=this.rows.length,entry={chunk:this.chunk++,first:this.seq-count,last:this.seq-1,text:this.rows.join(''),cost:this.rowBytes};this.rows=[];this.rowBytes=0;this.codec=new OutcomeCodec();this.pending.set(entry.chunk,entry);
-    this.chain=this.chain.then(async()=>{if(this.fault)return;try{await this.write(entry);this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;}catch(e){this.fault=e instanceof Error?e:new Error(String(e));this.onFault(this.fault);}});}
+    this.chain=this.chain.then(async()=>{if(this.persistenceFault)return;try{await this.write(entry);this.pending.delete(entry.chunk);this.bytes-=entry.cost;this.committed=entry.last;}catch(e){this.persistenceFault=e instanceof Error?e:new Error(String(e));this.fail(e,{phase:'persistence',chunk:entry.chunk});}});}
   async flush(){this.seal();await this.chain;this.assert();return this.committed;}
   *uncommitted(){for(const entry of this.pending.values())yield* outcomeRecords(entry.text);yield* outcomeRecords(this.rows.join(''));}
-  status(){return {mode:this.mode,encodedCharacters:this.encodedCharacters,records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null};}
+  status(){return {mode:this.mode,encodedCharacters:this.encodedCharacters,records:this.seq,committed:this.committed,pendingBytes:this.bytes,pendingChunks:this.pending.size,ready:this.ready,fault:this.fault?.message||null,rejectedSeq:this.rejected?.seq??null,reportingFault:this.reportingFault||null,persistenceFault:this.persistenceFault?.message||null};}
 }
 // STORAGE OUTCOME JOURNAL END
 const STORAGE_LEGACY_AUDIT=globalThis.FURLONG_REPLAY_LEGACY_AUDIT===true;

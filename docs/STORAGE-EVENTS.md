@@ -75,3 +75,14 @@ array holes/additional keys, nested storage-shaped metadata, rollback after an
 invalid append, transient changes, writer failures and observer isolation.
 These checks establish codec fidelity; native whole-game performance and replay
 must be measured separately on the integrated source.
+
+Capture, audit-observer and append-encoding failures are sticky recording faults.
+They pause through the journal fault callback and reject every subsequent append;
+day admission remains closed. Accepted rows retain their exact pending tail and
+can still finish persistence unless the writer itself has failed. A writer
+failure retains all unacknowledged chunks. `journal.rejected` retains the first
+rejected attempt's sequence, phase and context for diagnosis; unsupported input
+cannot be promised a durable or replayable encoding. Fault-reporting errors
+cannot reopen admission. Legacy encoding follows the same failure rules, while
+old archive reads remain independent. Compact readers reject malformed schemas,
+indexes, delta bases, field counts and special-value tags.
