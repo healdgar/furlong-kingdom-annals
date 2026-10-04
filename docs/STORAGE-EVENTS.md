@@ -95,22 +95,21 @@ key vectors are shared within transport batches; opaque lot handles keep their
 complete owned values. Mutable metadata is detached before append returns.
 
 A Blob Worker runs the existing codec, UTF-8 encoding, SHA-256, gzip and IndexedDB
-writes. Finished raw batches are posted during the producing tick, so processing
+writes. Finished batches use exact native binary transport, transferred during the producing tick, so processing
 can overlap an atomic simulation day. The worker processes batches serially and
 acknowledges only after one transaction commits both chunk and manifest. Main
-retains each raw batch until its checked acknowledgement. Archive format, checksum
+retains each sealed binary buffer until its checked acknowledgement; captured object graphs are released. A separate transferable copy preserves fault-tail ownership. Archive format, checksum
 chain, canonical readers and tagged export remain compatible; chunk boundaries
 can differ. There are no field watches or graph comparisons.
 
-Raw pending accounting deliberately overestimates storage, with a 16 MiB admission
-watermark and separate 32 MiB estimated raw batch target. Crossing the watermark
+Unsealed capture accounting deliberately overestimates storage; sealed buffers use their retained byte length plus entry overhead. The admission watermark is 16 MiB, with a separate 32 MiB estimated raw batch target. Crossing the watermark
 seals a short unfinished batch immediately at the day boundary. A synchronous day
 can exceed the watermark: all its records remain accepted, and another day waits
 for the worker. This does not establish a strict within-day heap limit. Direct
 out-of-band calls must also respect admission. Closing the tab before completion
 can lose its uncommitted tail, as before.
 
-Worker/persistence/protocol failures close admission and retain the complete raw
+Worker/persistence/protocol failures close admission and retain the complete binary/unsealed
 pending tail. `records()` and `stream()` combine the acknowledged prefix with that
 tail, including uncertain commits without duplicating records. An independently
 opened archive reads its actual durable prefix. No uncertain write is retried or
@@ -119,7 +118,7 @@ silently moved to another writer. Capture failures retain their rejected context
 `FURLONG_STORAGE_FOREGROUND_AUDIT=true` before boot selects a diagnostic foreground
 pipeline. Worker startup failure uses the same explicit foreground fallback;
 `FURLONG_STORAGE_LOG.status()` reports `processingMode` and `fallbackReason`.
-Foreground processing starts after append returns and preserves all records.
+Foreground mode uses the original OutcomeJournal codec and encoded write path, preserving all records without binary transport.
 
 `node --test tools/storage-worker.test.mjs` exercises a real Node worker running the
 embedded browser runtime, with asynchronous atomic IndexedDB fixtures. It checks
