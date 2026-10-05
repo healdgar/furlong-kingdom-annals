@@ -282,3 +282,14 @@ of 1,000 empty owners and cargo locations, and one shared spoilage setup. A Chro
 boot/death/render check finds 16 churchyards, zero wet plots, one recorded burial
 and no simulation or journal fault. No multi-year performance benchmark was run
 for this batch; these results demonstrate removed work, not a measured speedup.
+
+
+## Woodland resource inspector
+
+Land headings and household holdings now describe current use before the retained
+farming layout. Woodland cards show the owning town's timber stock across all
+owners, existing tree counts and the parcel's contribution to pig-forage capacity.
+Standing timber volume and wildlife populations remain explicitly unmeasured.
+This is a read-only inspector change: no new simulation records, indexes or tick
+work. Fifteen existing focused UI/architecture checks pass, and an isolated
+inspector probe confirms woodland/unclaimed labels and no state mutation.

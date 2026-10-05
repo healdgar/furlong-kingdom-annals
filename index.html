@@ -484,7 +484,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 15:15 UTC · economy scan fixes and parish graveyards</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 16:03 UTC · woodland resource inspector</div></div>
 
 <div id="hud">
   <span id="brand">Furlong</span>
@@ -6718,6 +6718,7 @@ function landUse(f){ // what a furlong is doing now, for the land-use view
   return f.dom>=0?7:0;} // wild ground within a place's reach: its common, grazed rough
 const ARABLE=new Set([LK.FIELD,LK.HUFE,LK.DEMESNE,LK.CLOSE]);
 const KIND_NAME=['','open field','Hufen','meadow','gardens','vineyard','demesne','closes'];
+function landName(f){return f.state===LS.WOOD?'woodland':f.state===LS.PASTURE?'pasture':f.state===LS.SCRUB?'scrub':f.state===LS.BURNT?'burnt land':f.state===LS.WILD?(f.dom>=0?'common grazing and waste':'open land'):KIND_NAME[f.kind]||'worked land';}
 function wpick(cands,score,temp){ // a weighted choice: the better the likelier, never certain (softmax at a temperature)
   if(!cands.length)return null;
   const sc=cands.map(score);let m=-Infinity;for(const v of sc)if(v>m)m=v;
@@ -9159,7 +9160,7 @@ function detailHousehold(s,p){
   const a=p._hh,hd=a?.head||p,H=s._owners?.get(a),rows=[],holdings=[];
   for(const g of [...new Set(['held','sale','animals','reserve'].flatMap(k=>Object.keys(H?.[k]||{})))].sort())rows.push([esc(g),detailNumber(H.held?.[g]||0),detailNumber(H.sale?.[g]||0),detailNumber(H.animals?.[g]||0),detailNumber(H.reserve?.[g]||0)]);
   for(const place of W.settlements){for(const f of place.furl||[]){const owns=a?f.title?.own?.owner===a||!f.title&&f.own===hd.id:f.own===hd.id,works=a?f.title?.work?.owner===a||!f.title&&f.wk===hd.id:f.wk===hd.id;
-    if(owns||works)holdings.push([esc(place.name),`${esc(KIND_NAME[f.kind]||'land')} · ${detailNumber(f.area/10000)} ha`,owns&&works?'Owned and worked':owns?'Owned':'Worked']);}
+    if(owns||works)holdings.push([esc(place.name),`${esc(landName(f))} · ${detailNumber(f.area/10000)} ha`,owns&&works?'Owned and worked':owns?'Owned':'Worked']);}
     for(const b of place.buildings||[])if(!b.removed&&b.state!=='gone'&&(a?b.title?.owner===a||!b.title&&b.ownerId===hd.id:b.ownerId===hd.id))holdings.push([esc(place.name),detailBuilding(b,place),'Owned']);}
   let h=detailTable('detail-pantry',`Household goods in ${esc(s.name)}`,['Good','Held','For sale','Beasts','Reserve target'],rows);
   h+=detailTable('detail-property','Household property and holdings',['Place','Property','Right'],holdings);
@@ -9316,9 +9317,16 @@ function showInspect(pk){
       :f.state===LS.SCRUB?`Thorn and scrub, the wood coming back (${yrs(f.wild0??f.since)} of ~20 years)`
       :f.state===LS.WOOD?'Woodland':f.state===LS.BURNT?'Crops burned by an army; to be ploughed again in spring'
       :s?'Common grazing and waste':'Waste beyond anyone\'s bounds';
-    setHTML(title,(lord?`<img src="${sigURL(f.lord)}">`:'')+esc(f.kind?KIND_NAME[f.kind][0].toUpperCase()+KIND_NAME[f.kind].slice(1):(f.state===LS.WOOD?'Woodland':'Open land')));
+    const name=landName(f);setHTML(title,(lord?`<img src="${sigURL(f.lord)}">`:'')+esc(name[0].toUpperCase()+name.slice(1)));
     sub.textContent='a furlong'+(s?' of '+s.name:'')+(lord?' · '+lord.name:' · unclaimed');
     h+=row('Use',use);
+    if(f.state===LS.WOOD){
+      h+=s?row('Timber stock',`${detailNumber(s.stores?.timber||0)} units in ${esc(s.name)} · all owners`):row('Timber','Standing wood; no town stockpile');
+      h+=row('Standing timber','Wooded ground; standing volume is not measured');
+      h+=row('Resources','Timber, charcoal burning and pig forage');
+      if(s&&(f.lord<0||f.lord===s.owner))h+=row('Pig forage',`Contributes capacity for about ${detailNumber(f.area/10000*1.2/LU.swine)} pigs to ${esc(s.name)}`);
+      h+=row('Wildlife','Hunting ground; game populations are not counted');
+    }
     if(f.held&&lord)h+=row('Held',`<span style="color:#c0392b">by the sword</span>, by ${esc(lord.name)} — it goes back to its people unless a fort holds it`);
     else if(lord)h+=row('Lord',esc(lord.name));
     if(s)h+=row('Worked from',`${esc(s.name)} (${(dist2d(f.x,f.z,s.pos.x,s.pos.z)/1000).toFixed(1)} km)`);
@@ -9329,7 +9337,7 @@ function showInspect(pk){
     if(f.lord>0)h+=row('Price to the crown',`${landPrice(f).toLocaleString()} gold (Buy land decree)`);else if(f.bought)h+=row('Bought','by the crown; its rent goes to the treasury');
     h+=row('Area',`${ha(f.area)} ploughable of ${ha(f.n*225)}`);if(f.crofts)h+=row('Crofts',`${f.crofts} home lot${f.crofts>1?'s':''} carved out of it, each house with its yard and garden`);if(f.core>=0&&W.settlements[f.core])h+=row('Town ground',`the ground of ${esc(W.settlements[f.core].name)}: its houses and yards stand here`);
     if(f.w>1&&f.state===LS.TILLED&&f.kind!==LK.VINE)h+=row('Strips',`${Math.round(f.w)} m wide, running ${f.kind===LK.HUFE?'back from the village street':'down the slope for drainage'}`);
-    if(f.kind===LK.FIELD)h+=row('Great field',['the first','the second','the third'][f.gf]+' of three, in rotation');
+    if(f.kind===LK.FIELD&&f.state===LS.TILLED)h+=row('Great field',['the first','the second','the third'][f.gf]+' of three, in rotation');
     h+=row('Ground',`${bio}, ${Math.round(W.h[c])} m, ${slopeAt(toCell(pk.x),toCell(pk.z))>0.22?'steep':slopeAt(toCell(pk.x),toCell(pk.z))>0.08?'sloping':'level'}`);
     const trees=f.trees.filter(t=>t.shown!==false).length+(f.sap?f.sap.length:0);if(trees)h+=row('Trees',trees+(f.sap?' (young growth)':''));
     if(f.worked)h+=row('History','worked land before'+(f.state===LS.TILLED?'':'; now abandoned'));
