@@ -60,36 +60,9 @@ node tools/replay-check.mjs --baseline 139dd52 --source index.html --days 90 --c
 node tools/replay-check.mjs --baseline 139dd52 --source index.html --days 90 --cadence 30 --seed 1001 --coast sea --variants candidate,baseline --driver tick --mode both --out /tmp/furlong-inventory-sea-new
 ```
 
-## Travel constraint identified, not implemented by this checkpoint
+## Subsequent scope decision
 
-Purchases currently transfer legal title at the seller's existing custody location.
-`storageCompleteHeld` posts a held claim without a trip; consumption can then remove it
-without testing the route from home. The visible walkers do not enforce acquisition.
-
-The requested next behavior is household-specific reachable supply:
-
-- Use the home, physical supplier location, navigable route and round-trip duration.
-- Derive shopping time from available family members and their work; a nonworking
-  member can make a longer trip. Do not impose an arbitrary universal one-hour limit.
-- Distinguish household food already delivered home from distant owned inventory.
-- Index suppliers spatially and reuse route/eligibility results within a safe phase;
-  movement, changed supply, closures and work availability must invalidate affected data.
-- Evaluate only reachable stocked suppliers. Payment, reservations and retained grain
-  still apply. Exclude unavailable lots before purchase allocation, not after payment.
-- Bound a load by the actual available carrier: individual, family cart or caravan;
-  use good volume/weight consistently with storage and transport units. A family cannot
-  obtain caravan quantities without caravan capacity and service.
-- Evaluate trip duration against payload, household consumption, food already held and
-  food needed during the trip. A week-long round trip for one day's food cannot sustain
-  the household; larger caravans can justify longer routes with larger loads.
-- Supply and demand cap useful loads. Reserve committed inventory and freight capacity
-  so concurrent plans cannot sell or carry the same stock twice. Carriers and food en
-  route retain physical custody until arrival; include spoilage and carriage costs.
-- Apply route/time/capacity/supply/demand scoping to warehouse intake and carriage as
-  well as household collection and long-distance caravans; reuse eligible route sets.
-- Food must be obtained/delivered before consumption. A rural farmstead lacking its own
-  obtainable food and reachable supply may go hungry, even when the town has food.
-
-Travel enforcement changes simulation outcomes. Validate it through route/time, delivery,
-family availability, payload/trip viability, shared freight capacity and starvation scenarios plus accounting/replay invariants; it is not
-an outcome-preserving CPU optimization. This checkpoint leaves those rules unchanged.
+Travel enforcement changes simulation outcomes and adds custody/time state and journal
+records. Its unshipped prototype exceeded the processing budget and was withdrawn.
+Continue with outcome-preserving scan/index changes; additional authoritative writes
+are outside this optimization's scope. See `economic-offer-index-check.md`.

@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 00:08 UTC · indexed household inventory</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 01:37 UTC · indexed market offers</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -3200,9 +3200,14 @@ function storageClaimMap(s,M){let C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C)STORAGE_A
 function storageClaimRegister(s,o,x){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C||C.fallback)return;if(C.map!==s._owners||C.map.size!==C.size+1){C.fallback=true;return;}const old=C.records.get(x);if(old){C.fallback=true;return;}for(const kind of ['held','sale'])STORAGE_MANAGED_CLAIM_TABLES.add(x[kind]);C.records.set(x,{o,x,rank:C.next++});C.size=C.map.size;}
 function storageClaimReplace(x,kind,value){STORAGE_MANAGED_CLAIM_TABLES.add(value);x[kind]=value;return value;}
 function storageClaimValue(d){return !d?0:'value'in d&&(d.value===null||['undefined','number','boolean','string'].includes(typeof d.value))?d.value:undefined;}
+// Ordered offer membership includes zero and NaN, preserving market cleanup semantics.
+// The native owner cursor preserves live iteration if an opaque mutation forces fallback.
+function storageOfferActivity(C,r,g,d){if(!C.offers)C.offers=new Map();let list=C.offers.get(g);if(!list)C.offers.set(g,list=[]);let lo=0,hi=list.length;while(lo<hi){const m=(lo+hi)>>>1;if(list[m].rank<r.rank)lo=m+1;else hi=m;}const present=list[lo]===r,active=!!d&&'value'in d&&d.value!==undefined;if(active&&!present)list.splice(lo,0,r);else if(!active&&present)list.splice(lo,1);}
+function* storageOfferOwners(s,g){if(g==='char'){yield* s._owners||[];return;}const C=STORAGE_ACTIVE_CLAIMS.get(s),M=s._owners,eligible=()=>C?.ready&&!C.fallback&&!C.unsafe.has(g)&&C.map===M&&M.size===C.size&&Object.getPrototypeOf(M)===Map.prototype&&M.get===Map.prototype.get&&M.set===Map.prototype.set&&M[Symbol.iterator]===Map.prototype[Symbol.iterator]&&storageTitleDirty===STORAGE_CLAIM_DIRTY_DEFAULT;if(!eligible()){yield* M||[];return;}const cursor=M[Symbol.iterator]();let rank=-1;while(true){if(!eligible()){yield* cursor;return;}const list=C.offers?.get(g)||[];let lo=0,hi=list.length;while(lo<hi){const mid=(lo+hi)>>>1;if(list[mid].rank<=rank)lo=mid+1;else hi=mid;}if(lo===list.length)return;const r=list[lo];rank=r.rank;let next;do{next=cursor.next();}while(!next.done&&next.value[0]!==r.o);if(next.done)return;yield next.value;}}
+
 function storageClaimActivity(s,x,g){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C?.ready||C.fallback||typeof g!=='string')return;const r=C.records.get(x);if(!r){C.fallback=true;return;}const physical=g==='char'?'timber':g,held=x.storageClaimTables?.held,sale=x.storageClaimTables?.sale;
   if(!held||!sale||Object.getPrototypeOf(held)!==Object.prototype||Object.getPrototypeOf(sale)!==Object.prototype){C.fallback=true;return;}const ds=[Object.getOwnPropertyDescriptor(held,physical),Object.getOwnPropertyDescriptor(sale,physical),...(physical==='timber'?[Object.getOwnPropertyDescriptor(held,'char')]:[])];if(ds.some(d=>d&&(!('value'in d)||d.value!==null&&!['undefined','number','boolean','string'].includes(typeof d.value)))){C.unsafe.add(physical);return;}
-  const active=ds.some(d=>storageClaimValue(d)>0);let list=C.goods.get(physical);if(!list)C.goods.set(physical,list=[]);let lo=0,hi=list.length;while(lo<hi){const m=(lo+hi)>>>1;if(list[m].rank<r.rank)lo=m+1;else hi=m;}const present=list[lo]===r;if(active&&!present)list.splice(lo,0,r);else if(!active&&present)list.splice(lo,1);
+  storageOfferActivity(C,r,physical,ds[1]);const active=ds.some(d=>storageClaimValue(d)>0);let list=C.goods.get(physical);if(!list)C.goods.set(physical,list=[]);let lo=0,hi=list.length;while(lo<hi){const m=(lo+hi)>>>1;if(list[m].rank<r.rank)lo=m+1;else hi=m;}const present=list[lo]===r;if(active&&!present)list.splice(lo,0,r);else if(!active&&present)list.splice(lo,1);
 }
 function storageClaimTable(s,x){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C?.ready||C.fallback)return;const tables=x.storageClaimTables;if(!tables){C.fallback=true;return;}const goods=new Set();for(const kind of ['held','sale']){const t=tables[kind];if(!t||Object.getPrototypeOf(t)!==Object.prototype){C.fallback=true;return;}for(const g of Reflect.ownKeys(t)){if(typeof g!=='string'){C.fallback=true;return;}goods.add(g);}}for(const g of goods)storageClaimActivity(s,x,g);}
 function storageClaimInitialize(s){const C=STORAGE_ACTIVE_CLAIMS.get(s);if(!C||C.fallback)return;const M=s._owners;if(C.map!==M||Object.getPrototypeOf(M)!==Map.prototype||M.size!==C.size||M.get!==Map.prototype.get||M.set!==Map.prototype.set||M[Symbol.iterator]!==Map.prototype[Symbol.iterator]){C.fallback=true;return;}C.ready=true;for(const[o,x]of M){const r=C.records.get(x);if(!r||r.o!==o){C.fallback=true;return;}storageClaimTable(s,x);}}
@@ -3293,8 +3298,8 @@ class OwnedMarket extends Map {
   has(w){return this.get(w)!==undefined;}
   delete(w){const x=stockOf(this.s,w)[this.kind],had=this.g in x;delete x[this.g];if(this.kind!=='reserve')storageTitleKnownDirty(this.s,this.g);return had;}
   clear(){for(const x of (this.s._owners||new Map()).values())delete x[this.kind][this.g];if(this.kind!=='reserve')storageTitleKnownDirty(this.s,this.g);}
-  *ownedEntries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w,x[this.kind][this.g]];}
-  *entries(){for(const[w,x]of this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w&&w.household?w.head||w:w,x[this.kind][this.g]];}
+  *ownedEntries(){for(const[w,x]of this.kind==='sale'?storageOfferOwners(this.s,this.g):this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w,x[this.kind][this.g]];}
+  *entries(){for(const[w,x]of this.kind==='sale'?storageOfferOwners(this.s,this.g):this.s._owners||[])if(x[this.kind][this.g]!==undefined)yield[w&&w.household?w.head||w:w,x[this.kind][this.g]];}
   *keys(){for(const[w]of this.entries())yield w;}
   *values(){for(const[,v]of this.entries())yield v;}
   [Symbol.iterator](){return this.entries();}
