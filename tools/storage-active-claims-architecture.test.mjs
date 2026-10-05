@@ -31,7 +31,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // quantity writes. The combined source is reviewed with both test suites.
  // This defaults to numeric balances while explicit false opts into the legacy lot
  // ledger. The outside legacy owner-table mutation corpus below remains pinned.
- assert.equal(digest(source.slice(a,b)),"5c43cd79f1383a91f5dbd1715cec30c523918ac6361ccaa1d6c8e2d39cffb125");
+ // Positive rows and existing owner registration ranks now narrow native queries.
+ // Lazy allocation preflight and phase-local warehouse/spoilage reuse add no
+ // commodity membership index or journal event. Exact b264e07 core and settlement
+ // comparisons plus sparse seller/routing fixtures renew this review.
+ assert.equal(digest(source.slice(a,b)),"e101820869215359971e4630c3186aba7ce6e5e690908e9af7bdeadc2ab5c717");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"3e47927aacdd0447aceabf03c905b6fb20038bbf5437e69e9aacf2b92e3887f0");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
