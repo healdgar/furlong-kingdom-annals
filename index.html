@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 04:28 UTC · economic lookup phase</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 05:51 UTC · coastal land mask</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -527,7 +527,7 @@ function fbm(n2,x,y,oct,lac,gain){
 /* the map: MAPKM km of ground drawn true size (9 by default, or #km=4..15 in the link), standing for a realm ~40x larger.
    Cells stay ~27 m whatever the size, so a bigger map is more ground at the same grain, not the same ground stretched. */
 const MAPKM=(()=>{const m=/[#&]km=(\d+)/.exec(location.hash);return m?Math.max(4,Math.min(15,+m[1])):9;})();
-const SIZE=MAPKM*1000, GRID=Math.round(SIZE*220/6000), CELL=SIZE/GRID, SEA=0;
+const SIZE=MAPKM*1000, GRID=Math.round(SIZE*220/6000), CELL=SIZE/GRID, SEA=0, SEA_SURFACE=SEA+0.5;
 const MAPK=SIZE/6000; // how much wider than the first (6 km) map: counts and reaches that belong to the whole map scale by it
 /* a prebuilt map of a real region can stand in for the generated terrain: REALMAPS[name]={w,h,hgt:(metres, row-major w*h),sea}
    (a survey's heights, scaled down to fit the map); chosen by #map=name in the link. Rivers, soils and sites then follow it. */
@@ -4341,7 +4341,7 @@ function buildTerrain(){
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
     G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10})); // a faint sheen: any stronger and the sun blows the open sea out to white
-    G.sea.position.y=SEA+0.5;scene.add(G.sea);
+    G.sea.position.y=SEA_SURFACE;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
   const riv=newAcc();
@@ -5953,13 +5953,13 @@ function computeMask(){ // per cell: may it be ploughed (R), planted with vines 
   const lakes=W.settlements.filter(s=>s.lake);
   for(let cz=0;cz<GRID;cz++)for(let cx=0;cx<GRID;cx++){
     const c=cIdx(cx,cz),bio=W.biome[c],x=cellX(cx),z=cellZ(cz),sl=slopeAt(cx,cz);
-    let wet=!!W.water[c];
+    let wet=!!W.water[c]||!!W.coastal&&W.h[c]<=SEA_SURFACE;
     if(!wet)for(const s of lakes)if(dist2d(x,z,s.lake.dam.x,s.lake.dam.z)<420&&lakeAt(s,x,z,1)){wet=true;break;}
     const hard=bio===B.ROCK||bio===B.SNOW;
     m[c*4]=!wet&&!hard&&bio!==B.MARSH&&sl<0.22?255:0;
     const south=cz>0&&cz<GRID-1?(W.h[cIdx(cx,cz-1)]-W.h[cIdx(cx,cz+1)])/(2*CELL):0; // falls away to the south (+z)
     m[c*4+1]=!wet&&!hard&&sl>0.06&&sl<0.45&&south>0.05&&W.h[c]<260?255:0;
-    m[c*4+2]=0;m[c*4+3]=255;
+    m[c*4+2]=0;m[c*4+3]=wet?0:255;
     let fl=0;if(!wet&&sl<0.1)for(let dz=-2;dz<=2&&!fl;dz++)for(let dx=-2;dx<=2;dx++){const nx=cx+dx,nz=cz+dz;if(inB(nx,nz)&&W.water[cIdx(nx,nz)]===2){fl=1;break;}}
     flood[c]=fl;
   }
@@ -6401,7 +6401,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
   { float e=max(abs(wp.x),abs(wp.y))-uSize*0.5+(lnoise(wp*0.0033)-0.5)*260.+(lnoise(wp*0.011)-0.5)*120.; // the known world frays at its edge into the country beyond, not a ruled line
       vec3 far=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.45,0.6,lnoise(wp*0.0024)))*(0.9+0.2*lnoise(wp*0.025));
       if(e>-700.)diffuseColor.rgb=mix(diffuseColor.rgb,far,smoothstep(-700.,0.,e)*0.8); }
-  { // lordship: each lord's land edged in his colours where it meets another's; land held by the sword hatched
+  if(vWP.y>uSea+0.5&&texture2D(uMask,(wp+uSize*0.5)/uSize+0.5/uGrid).a>0.5){ // territorial ink stays above the water and outside rivers and lakes
     vec4 L1=texture2D(uLord,(c1+0.5)/uFN),L2=texture2D(uLord,(c2+0.5)/uFN);
     if(uTerr>1.5&&uTerr<2.5&&L1.b>0.004){float v=L1.b;vec3 hv=v<0.5?mix(vec3(0.18,0.35,0.75),vec3(0.95,0.85,0.3),v*2.):mix(vec3(0.95,0.85,0.3),vec3(0.85,0.18,0.12),v*2.-1.);
       diffuseColor.rgb=mix(diffuseColor.rgb,hv,0.55);} // what the land is worth: its yield, and how near it lies to those who will buy its crop
@@ -12358,6 +12358,7 @@ function drawLandMap(g,S){ // the estate surveyor's hand: furlongs hatched along
     return[a,b,Math.abs((fx-(pa[0]+pb[0])/2)*nx/L+(fz-(pa[1]+pb[1])/2)*nz/L)*FG];};
   for(let yy=0;yy<S;yy++)for(let xx=0;xx<S;xx++){
     const x=(xx+0.5)*px-SIZE/2,z=(yy+0.5)*px-SIZE/2,[f,f2,eb]=near2(x,z),o=(yy*S+xx)*4,c=cIdx(toCell(x),toCell(z));
+    if(!m[c*4+3])continue; // submerged ground carries no parcel or territorial ink
     if(f.lord!==f2.lord&&f.lord>=0&&eb<px*1.6){const hc=lordColor(f.lord);ink(o,hc>>16&255,hc>>8&255,hc&255,0.85);continue;} // the lord's bound, in his colours
     if(f.held&&((xx+yy)%7)<2){const hc=lordColor(f.lord);ink(o,hc>>16&255,hc>>8&255,hc&255,0.5);} // held by the sword
     if(f.dom!==f2.dom&&eb<px*0.8&&(f.dom>=0||f2.dom>=0)&&((xx+yy)>>1)%3!==0){ink(o,122,52,38,0.55);continue;} // the parish bound, dotted
