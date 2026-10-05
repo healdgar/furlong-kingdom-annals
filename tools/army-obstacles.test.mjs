@@ -1,0 +1,42 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const names=['armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath'];
+const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
+function fixture(){const W={settlements:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
+ const c=vm.createContext({W,G,SIZE:2000,CELL:10,SEA_SURFACE:.5,COG_MPD:100,PORT_DELAY:2,MARCH_MPD:40,
+ hAt:()=>10,fortGround:()=>10,riverAt:()=>null,day:()=>5,
+ toCell:x=>Math.max(0,Math.min(19,Math.floor((x+100)/10))),inB:(i,j)=>i>=0&&j>=0&&i<20&&j<20,cIdx:(i,j)=>j*20+i,
+ dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),emit:()=>{},houseAcct:id=>id,buyBuildingMaterial:()=>0,
+ segDist:(x,z,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,t=Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1)));return Math.hypot(x-a.x-dx*t,z-a.z-dz*t);},
+ fortCircuits:s=>s.circuits||[],fortCenter:c=>c,wallRadAt:c=>c.r,wallKindAt:()=>0,wallBuilt:()=>true,wallDmgAt:c=>c.damage||0,
+ fortGateAngles:()=>[0],hostileTo:(a,s)=>a.house!==s.owner,activeFort:s=>s.circuits?.[0],inPoly:()=>false,
+ armySimPos:()=>({x:7,z:9})});vm.runInContext(names.map(extract).join('\n'),c);return{c,W,G};}
+test('a host detours around a rotated building using the existing footprint hash',()=>{const{c,W}=fixture();const b={x:0,z:0,w:8,d:8,rot:Math.PI/4,state:'sound'};
+ W.settlements=[{owner:0,_lay:{placed:{near:()=>[b]}}}];c.a={house:0};c.P=[{x:-15,z:0},{x:15,z:0}];
+ assert.equal(vm.runInContext('armySegmentClear(a,P[0],P[1])',c),false);const path=vm.runInContext('armyLandPath(a,P)',c);assert.ok(path?.length>2);c.path=path;
+ assert.equal(vm.runInContext('path.slice(1).every((q,k)=>armySegmentClear(a,path[k],q))',c),true);
+ b.removed=true;assert.equal(vm.runInContext('armySegmentClear(a,P[0],P[1])',c),true);});
+test('friendly gates and actual breaches pass; hostile intact gates and wall spans block',()=>{const{c,W}=fixture();const wall={x:0,z:0,r:10,wallRad:new Float32Array(32).fill(10)};W.settlements=[{owner:0,circuits:[wall]}];c.a={house:0};
+ assert.equal(vm.runInContext('armyObstacle(a,10,0)',c),null);assert.equal(vm.runInContext('armyObstacle(a,0,10)',c),'wall');c.a.house=1;
+ assert.equal(vm.runInContext('armyObstacle(a,10,0)',c),'wall');wall.damage=.8;assert.equal(vm.runInContext('armyObstacle(a,0,10)',c),null);
+ wall.damage=0;c.s=W.settlements[0];const goal=vm.runInContext('armyDestination(a,s,{x:30,z:0})',c);assert.equal(goal.x,38);});
+test('deep or broad rivers require an existing bridge; narrow shallow water can be forded',()=>{const{c,G}=fixture();let river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12};c.riverAt=()=>river;c.a={house:0};
+ assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');river.hw=5;river.y=10.9;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);
+ river.y=13;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');G.bridgeSpans.push({a:{x:-15,z:0},b:{x:15,z:0},hw:3,x0:-15,x1:15,z0:-3,z1:3});
+ assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);assert.equal(vm.runInContext('armyObstacle(a,0,8)',c),'river');});
+test('a failed order preserves current field position and cannot teleport to its old town',()=>{const{c}=fixture();c.a={house:0,state:'march',chase:8,fieldTo:{x:50,z:50}};
+ assert.equal(vm.runInContext('armyRouteBlocked(a)',c),false);assert.equal(c.a.state,'idle');assert.deepEqual({...c.a.field},{x:7,z:9});assert.equal(c.a.fieldTo,null);assert.equal(c.a.chase,null);});
+test('bounded search cannot cut a thin obstacle or steep bank diagonally',()=>{const{c}=fixture();c.a={house:0};c.fortGround=(x,z)=>x>=0?20:10;
+ assert.equal(vm.runInContext('armySegmentClear(a,{x:-2,z:0},{x:2,z:0})',c),false);
+ assert.equal(vm.runInContext('armyDetour(a,{x:-900,z:-900},{x:900,z:900},144)',c),null);});
+test('raft construction retains partial timber receipts and permits crossing only after completion',()=>{const{c,W}=fixture();let stock=10,total=0,now=5;
+ W.settlements=[{owner:0,pos:{x:10,z:10}}];c.a={house:0,at:0,state:'idle',strength:100,supply:40,horses:0};c.day=()=>now;
+ c.riverAt=()=>({a:{x:0,z:-50},b:{x:0,z:50},hw:5,y:13});c.buyBuildingMaterial=(s,g,who,q)=>{assert.equal(g,'timber');const got=Math.min(stock,q);stock-=got;total+=got;return got;};
+ assert.equal(vm.runInContext('buildArmyRaft(a,0,0)',c),false);assert.equal(c.a.raftWork.used,10);assert.equal(c.a.raft,undefined);
+ stock=16;assert.equal(vm.runInContext('buildArmyRaft(a,0,6)',c),true);assert.equal(total,26);assert.equal(stock,0);assert.equal(c.a.raft.timber,26);assert.equal(c.a.raft.a.z,0);assert.equal(c.a.raft.b.z,0);assert.equal(c.a.raftWork,null);
+ assert.equal(vm.runInContext('armyRaftAt(a,0,0)',c),false);assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');
+ now=c.a.raft.readyDay;assert.equal(vm.runInContext('armyRaftAt(a,0,0)',c),true);assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);assert.equal(c.a.supply,37);
+ c.riverAt=()=>({a:{x:0,z:-50},b:{x:0,z:50},hw:20,y:13});assert.equal(vm.runInContext('buildArmyRaft(a,0,0)',c),false);assert.equal(total,26);});
