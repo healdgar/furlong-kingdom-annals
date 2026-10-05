@@ -13,6 +13,8 @@ import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {fileURLToPath} from 'node:url';
+import {auditUIReferences} from './ui-reference-audit.mjs';
+import {auditChurchyardsNative} from './graveyard-audit.mjs';
 const CHROME=process.env.CHROME||['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium'].find(p=>fs.existsSync(p)),RENDER=true;
 class CDP{ // the least of the DevTools protocol: send a command, await its answer, listen for events
   constructor(url){this.ws=new WebSocket(url);this.n=0;this.wait=new Map();this.subs=new Map();
@@ -253,6 +255,28 @@ function serviceRoadCheck(){
   return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.riverWheel&&m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
 }
 
+function uiReferencesCheck(audit){
+  const uiBefore=document.body.classList.contains('hideui');document.body.classList.remove('hideui');
+  const scenes=[],names=()=>[...W.settlements.map(s=>s.name),...W.houses.map(h=>h.name),...W.notables.flatMap(n=>[n.name,fullTitle(n)]),...(W.fams||[]).map(f=>f.n),...W.settlements.flatMap(s=>[...(s.folk||[]),...(s.dead||[])].flatMap(p=>[folkName(p),p.sur])),...(W.travellers||[]).map(t=>folkName(t.p)),...(W.armies||[]).map(a=>a.name),...(W.banditCamps||[]).map(c=>c.name),...W.settlements.flatMap(s=>(s.buildings||[]).map(b=>b.nm)),...Object.keys(GOODBASE).flatMap(g=>[g,g[0].toUpperCase()+g.slice(1)]),...Object.keys(TRADE_W).flatMap(t=>[t,t[0].toUpperCase()+t.slice(1)]),...Object.values(ARCH).map(a=>a[4])];
+  const record=(name,ids)=>{const results=ids.map(id=>audit(document.getElementById(id),names())).filter(r=>r.visibleTextNodes);scenes.push({name,results,valid:results.length>0&&results.every(r=>r.valid)});};
+  const s=W.capital,head=s.folk.find(p=>p._hh?.head===p&&!p.dead&&famName(p)),to=W.settlements.find(t=>t!==s),h=head._hh,ev={day:day(),cat:'trade',pri:2,pos:s.pos,text:`The ${famName(head)} household leaves ${s.name} for ${to.name}, where a brewer can do better.`};
+  contextDismiss();flyTo(s.pos.x,s.pos.z,420);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);
+  postEventDialog(ev);eventBubbleUpdate();record('event bubble',['eventbubbletext']);
+  const bubble=document.getElementById('eventbubbletext'),householdLink=[...bubble.querySelectorAll('a.nm')].find(a=>a.dataset.nm==='household:'+h.id||a.dataset.nm.startsWith('choose:')&&JSON.parse(decodeURIComponent(a.dataset.nm.slice(7))).includes('household:'+h.id)),places=[...bubble.querySelectorAll('a.nm')].filter(a=>/^s\d+$/.test(a.dataset.nm));
+  const migration={household:!!householdLink,places:places.length===2,trade:!!bubble.querySelector('[data-nm^="trade:"]')};
+  householdLink?.click();if(infoUI.reference?.startsWith('choose:')){record('household name chooser',['infobody']);document.querySelector(`#infobody [data-nm="household:${h.id}"]`)?.click();}migration.opensHousehold=infoUI.reference==='household:'+h.id;record('household',['infobody']);
+  showEventDialog(ev);contextExpand(true);record('event details',['eventtext']);
+  const eventLinks=[...document.querySelectorAll('#eventtext a.nm')],victim=eventLinks.find(a=>a.dataset.nm==='s'+W.settlements.indexOf(to)),text=document.createTextNode(victim.textContent);victim.replaceWith(text);const catchesMissing=audit(document.getElementById('eventtext'),names()).missing.some(m=>m.name===to.name);text.replaceWith(victim);
+  const savedHref=victim.getAttribute('href');victim.removeAttribute('href');const catchesDeadLink=audit(document.getElementById('eventtext'),names()).deadLinks.includes(to.name);victim.setAttribute('href',savedHref);
+  const trade=eventLinks.find(a=>a.dataset.nm.startsWith('trade:'));trade?.click();migration.opensTrade=infoUI.kind==='reference'&&infoUI.reference.startsWith('trade:');record('trade',['infobody']);
+  for(const pk of [{type:'settlement',s},{type:'person',p:head,s},{type:'notable',n:W.monarch},...s.buildings.slice(0,6).map(b=>({type:'building',b})),...(s.furl||[]).slice(0,2).map(f=>({type:'land',f,x:f.x,z:f.z})),...s.streets.slice(0,1).map(st=>({type:'street',s,st})),...W.roads.slice(0,1).map(r=>({type:'road',r})),...G.rivStrips.slice(0,1).map(st=>({type:'river',st,o:riverAt(st.pts[0].x,st.pts[0].z,0)})),...W.armies.filter(a=>!a.gone).slice(0,1).map(a=>({type:'army',a})),...W.banditCamps.slice(0,1).map(camp=>({type:'camp',camp})),...s.buildings.filter(b=>b._graveyard&&!b._graveyard.removed).slice(0,1).map(b=>({type:'churchyard',s,b,yard:b._graveyard}))]){try{showInspect(pk);contextExpand(true);record('inspector '+pk.type,['inspbody','inspsub','contextsummary']);}catch(e){scenes.push({name:'inspector '+pk.type,valid:false,error:e.stack||String(e)});}}
+  for(const kind of ['timeline','accounts']){openInfo(kind,kind==='accounts'?s:null);contextExpand(true);record(kind,['infobody']);}
+  for(const tab of ['crown','rates','acts','world']){selectTab(tab);setDrawerClosed(false);contextExpand(true);record('menu '+tab,['dbody']);}
+  const lineCount=allLines.length,entries=entryCount;chronicleAdd(ev);setChronMin(false);contextShow('chron');contextExpand(true);record('annals',['chronlist']);chronList().lastElementChild.remove();allLines.length=lineCount;entryCount=entries;
+  contextDismiss();if(uiBefore)document.body.classList.add('hideui');
+  return{scenes,migration,catchesMissing,catchesDeadLink,valid:catchesMissing&&catchesDeadLink&&Object.values(migration).every(Boolean)&&scenes.every(s=>s.valid)};
+}
+
 function paidCrossingCheck(){
   const before=JSON.stringify(G.bridgeSpans),s=W.capital,r=G.rivStrips.find(r=>!r.canal&&r.pts.length>12),k=Math.floor(r.pts.length/2),p=r.pts[k],a=r.pts[k-1],b=r.pts[k+1],L=dist2d(a.x,a.z,b.x,b.z)||1,nx=-(b.z-a.z)/L,nz=(b.x-a.x)/L,d=r.hw[k]+20,
     P=[{x:p.x-nx*d,z:p.z-nz*d},p,{x:p.x+nx*d,z:p.z+nz*d}],n=s.streets.length;
@@ -365,6 +389,8 @@ async function check(which,w){
       }
     }
     if(which==='candidate'&&args.ui)result.ui=await ev(c,`(${uiIntegrationCheck.toString()})()`);
+    if(which==='candidate'&&args.graveyards)result.graveyards=await ev(c,`(${auditChurchyardsNative.toString()})()`);
+    if(which==='candidate'&&args['ui-references'])result.uiReferences=await ev(c,`(${uiReferencesCheck.toString()})(${auditUIReferences.toString()})`);
     if(which==='candidate'&&args['service-roads'])result.paidCrossings=await ev(c,`(${paidCrossingCheck.toString()})()`);
     if(which==='candidate'&&args['service-roads'])result.serviceRoads=await ev(c,`(${serviceRoadCheck.toString()})()`);
     return result;
@@ -379,6 +405,8 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   if(args['world-visuals'])row.worldVisuals=!!candidate?.worldVisuals?.valid;
   if(args.seasons)row.seasons=!!candidate?.seasons?.valid;
   if(args.ui)row.ui=!!candidate?.ui?.valid;
+  if(args['ui-references'])row.uiReferences=!!candidate?.uiReferences?.valid;
+  if(args.graveyards)row.graveyards=!!candidate?.graveyards?.valid;
   if(args['service-roads']){row.serviceRoads=!!candidate?.serviceRoads?.valid;row.paidCrossings=!!candidate?.paidCrossings?.valid;}
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row[args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{

@@ -496,7 +496,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 19:06 UTC · after 96b1fbd</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 20:24 UTC · after 0ea55a8</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -2006,14 +2006,26 @@ function layoutSettlement(s){
     for(const o of placed.near(f.x,f.z,Math.hypot(f.w,f.d)/2+gap))if(!o.removed&&obbOverlap(F,o))return false;
     return true;
   };
-  const reserveChurchyard=b=>{if(b.arch!=='temple'||b.castle||b.friary)return null;if(b._graveyard){b._graveyard.removed=false;b._graveyard.churchyardOf=b;return b._graveyard;}
-    const maxW=b.w+11,side0=hash01(Math.round(b.x*3.1+b.z*7.7))>0.5?1:-1,c=Math.cos(b.rot),sn=Math.sin(b.rot);
-    for(const side of[side0,-side0]){const ox=side*(maxW/2+6.5),f={x:b.x+ox*c,z:b.z-ox*sn,w:11,d:14.4,rot:b.rot};
-      if(!fits(f,0))continue;let clear=true;
-      for(let x=-5;x<=5&&clear;x+=2)for(let z=-7;z<=7;z+=2){const X=f.x+x*c+z*sn,Z=f.z-x*sn+z*c;
-        if(!buildable(X,Z)||nearStreet(X,Z,0.8)||inPlace(X,Z,1.2)){clear=false;break;}}
-      if(!clear)continue;const yard={...f,arch:'churchyard',state:'sound',inst:true,churchyardOf:b,side,removed:false};b._graveyard=yard;placed.add(yard,Math.hypot(yard.w,yard.d)/2+1);return yard;
-    }return null;};
+  const registerYard=y=>placeChurchyardInHash(placed,y),yardLotConflict=(y,b)=>!!G.land?._surveyed&&!!b.lot?.length&&placed.near(y.x,y.z,100).some(o=>o!==y&&o.arch!=='churchyard'&&(y.adjunct||o!==b)&&o.lot?.length>2&&graveyardPolygonsOverlap(y.poly,o.lot)),reserveChurchyard=b=>{if(b.arch!=='temple'||b.castle||b.friary)return null;if(b._graveyard){const y=b._graveyard;let parcelOK=true;if(!y.adjunct&&b.lot?.length){const clipped=graveyardClipToParcel(y.poly,b.lot);parcelOK=graveyardSetShape(y,clipped);}if(parcelOK&&!yardLotConflict(y,b)&&(!G.land?._surveyed||graveyardLandClear(s,y.poly,y.adjunct?null:furlongAt(b.x,b.z)?.k))){y.removed=false;y.churchyardOf=b;registerYard(y);return y;}rejectChurchyardCandidate(b);}
+    const WID=14,DEP=17,side0=hash01(Math.round(b.x*3.1+b.z*7.7))>0.5?1:-1,c=Math.cos(b.rot),sn=Math.sin(b.rot),origin=G.land&&furlongAt(b.x,b.z),originParcel=origin?.k;
+    const make=(x,z,rot,adjunct)=>{const f={x,z,w:WID,d:DEP,rot};let poly=graveyardShape(x,z,rot,WID/2-0.45,DEP/2-0.45,Math.round(x*3+z*7));
+      if(!adjunct&&b.lot?.length){poly=graveyardClipToParcel(poly,b.lot);if(!poly)return null;}
+      const candidate={...f,poly,adjunct};if(!fits(f,0)||!graveyardLandClear(s,poly,adjunct?null:originParcel)||yardLotConflict(candidate,b))return null;
+      let access=null;if(adjunct){const dx=x-b.x,dz=z-b.z,L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,lx=ux*c-uz*sn,lz=ux*sn+uz*c,
+        from={x:b.x+ux*(Math.abs(lx)*b.w/2+Math.abs(lz)*b.d/2+1),z:b.z+uz*(Math.abs(lx)*b.w/2+Math.abs(lz)*b.d/2+1)},
+        to={x:x-ux*(Math.abs(lx)*WID/2+Math.abs(lz)*DEP/2+0.7),z:z-uz*(Math.abs(lx)*WID/2+Math.abs(lz)*DEP/2+0.7)},
+        walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
+        access=armyLandPath(walker,[from,to]);if(!access||!graveyardPathClear(s,access))return null;}
+      const yard={...f,poly,area:polyArea(poly),capacity:24,adjunct,access,arch:'churchyard',state:'sound',inst:true,churchyardOf:b,removed:false};if(!adjunct&&!graveyardSetShape(yard,poly))return null;return yard;};
+    // First look beside the church, inside the church's own furlong and outside worked plots.
+    const churchPlot=[];for(const side of[side0,-side0]){const off=b.w/2+WID/2+1.5,x=b.x+side*off*c,z=b.z-side*off*sn,yard=make(x,z,b.rot,false);if(yard)churchPlot.push(yard);}
+    const local=chooseChurchyardSite(churchPlot,[]);if(local){b._graveyard=local;registerYard(local);return local;}
+    // If the church parcel is occupied, seek nearby waste or a wooded glade; the footpath must stay dry and passable.
+    const options=[];for(const r of[23,32,41,50,59])for(let k=0;k<16;k++){const a=k/16*Math.PI*2,x=b.x+Math.cos(a)*r,z=b.z+Math.sin(a)*r,yard=make(x,z,b.rot,true);if(!yard)continue;
+      const f=G.land?.F?furlongAt(x,z):null,cost=!f?2:f.kind===LK.NONE?0:f.state===LS.WOOD?1:ARABLE.has(f.kind)?3:2;options.push({yard,cost:cost+r*0.002,r,a});}
+    const best=chooseChurchyardSite([],options);if(!best)return null;
+    b._graveyard=best;registerYard(best);
+    return best;};
   function place(arch,tier,f,district,hm,extra){
     const a=ARCH[arch];
     const b={arch,tier,x:f.x,z:f.z,rot:f.rot,w:f.w,d:f.d,h:a[2]*(0.8+tier*0.25)*(hm||1),
@@ -2112,9 +2124,9 @@ function layoutSettlement(s){
   const churchAccess=b=>{if(b.removed||b.state==='gone')return false;const ch=chOf(b),door=ch.door==='W'?locW(b,0,(ch.W||1)*(b.d/2+1.2)):locW(b,ch.door*(b.w/2+1.2),0),p={x:door[0],z:door[1]},candidates=[];
     for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge'&&!st.churchAccess&&(!st.castlePath||b.castle))for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L2,0,1),x=a.x+dx*t,z=a.z+dz*t; if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),hw:st.hw||2});}
     candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
-    if(s.streets.some(st=>st.churchAccess&&!st.hidden&&!st.gone&&st.pts.length>2&&dist2d(st.pts[1].x,st.pts[1].z,p.x,p.z)<2&&st.pts.slice(2).every((q,k)=>armySegmentClear(walker,st.pts[k+1],q))&&candidates.some(q=>dist2d(q.x,q.z,st.pts[st.pts.length-1].x,st.pts[st.pts.length-1].z)<q.hw+1.5)))return true;
+    if(s.streets.some(st=>st.churchAccess&&!st.hidden&&!st.gone&&st.pts.length>2&&dist2d(st.pts[1].x,st.pts[1].z,p.x,p.z)<2&&st.pts.slice(2).every((q,k)=>armySegmentClear(walker,st.pts[k+1],q))&&candidates.some(q=>dist2d(q.x,q.z,st.pts[st.pts.length-1].x,st.pts[st.pts.length-1].z)<q.hw+1.5))){finishChurchyard(s,b,addStreet);return true;}
     for(const q of candidates.slice(0,24)){if(q.d<q.hw+1.5&&armySegmentClear(walker,p,q))return true;const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(!path)continue;
-      const face=ch.door==='W'?locW(b,0,(ch.W||1)*b.d/2):locW(b,ch.door*b.w/2,0);path.unshift({x:face[0],z:face[1]});addStreet(path,1.3,'lane',{straight:true,churchAccess:true,castlePath:!!b.castle});return true;}
+      const face=ch.door==='W'?locW(b,0,(ch.W||1)*b.d/2):locW(b,ch.door*b.w/2,0);path.unshift({x:face[0],z:face[1]});addStreet(path,1.3,'lane',{straight:true,churchAccess:true,castlePath:!!b.castle});finishChurchyard(s,b,addStreet);return true;}
     return false;};
   const serviceAccess=b=>{if(b.removed||b.state==='gone')return false;
     if(b.st?.serviceAccess&&!b.st.hidden&&!b.st.gone)return true;
@@ -2932,7 +2944,7 @@ function layoutSettlement(s){
   };
   for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
     if(!b.inst&&Math.abs(dist2d(b.x,b.z,R.x,R.z)-wallRadAt(R,Math.atan2(b.z-R.z,b.x-R.x)))<Math.hypot(b.w,b.d)/2+2)unplace(b);
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,churchAccess,serviceAccess,quayAccess,live:liveOps};
+  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,churchAccess,serviceAccess,quayAccess,finishYards:()=>{for(const b of s.buildings)if(b.arch==='temple'&&!b.removed&&!b.castle&&!b.friary){reserveChurchyard(b);finishChurchyard(s,b,addStreet);}},live:liveOps};
   // History owns a stable context object; observing it never advances a random stream.
   const context={};s._lay.historyState=()=>Object.assign(context,{idx,role,C,count,HW,RHW,era,early,motteAge,E,FRAC,roads,t0x,t0z,rAng,mode,ux,uz,vx,vz,quay,vilName,HOME,TRADES,wallAges,bastioned,
     isCap,isTown,isVil,R0,Rmax,curE,live,foundLine,oldVil,plazaC,church,keep,focus,built,parishes,friaryDone,neuDone});
@@ -6676,10 +6688,9 @@ function rebuildDetails(){
     }else if(b.arch==='court'){drawCourt(b,put);
     }else if(b.arch==='temple'){drawChurch(b,put); // nave, aisles, chancel, towers and the rest, as built
       const yard=b._graveyard;
-      if(yard&&!yard.removed&&!b.castle&&!b.friary){const n=Math.min(24,b.ch?.burials||0),c=Math.cos(yard.rot),sn=Math.sin(yard.rot),atY=(x,z)=>[yard.x+x*c+z*sn,yard.z-x*sn+z*c];
-        for(const[ox,oz,sx,sz]of[[0,-7.2,11,0.3],[0,7.2,11,0.3],[-5.5,0,0.3,14.4],[5.5,0,0.3,14.4]]){const[X,Z]=atY(ox,oz);put('box',X,hAt(X,Z)+0.18,Z,yard.rot,sx,0.36,sz,0x777267,3);}
-        for(let j=0;j<n;j++){const col=j%4,row=Math.floor(j/4),[X,Z]=atY(-4.2+col*2.8,-6.2+row*2.35),y=hAt(X,Z);
-          put('box',X,y+0.16,Z,yard.rot,1.05,0.28,0.62,0x8b887f,3);if(j<12){put('box',X,y+0.86,Z,yard.rot,0.16,1.25,0.16,0xaaa69b,3);put('box',X,y+1.05,Z,yard.rot,0.62,0.16,0.16,0xaaa69b,3);}}
+      if(yard&&!yard.removed&&!b.castle&&!b.friary){const N=yard.poly?.length||0;
+        if(yard.adjunct&&N>2)for(let j=0;j<N;j++){const a=yard.poly[j],q=yard.poly[(j+1)%N],dx=q.x-a.x,dz=q.z-a.z,L=Math.hypot(dx,dz),n=Math.max(1,Math.ceil(L/2.4));for(let k=0;k<n;k++){const t=(k+0.5)/n,X=a.x+dx*t,Z=a.z+dz*t;put('box',X,hAt(X,Z)+0.28,Z,Math.atan2(dz,dx),L/n+0.08,0.56,0.42,0x777267,3);}}
+        const graves=graveyardMarkers(yard,graveyardBurials(b.s,b).length);for(const g of graves){const gy=hAt(g.x,g.z);if(g.kind==='tomb')put('box',g.x,gy+0.18,g.z,g.rot,1.05,0.28,0.68,0x89857b,3);else put('box',g.x,gy+0.52,g.z,g.rot,0.76,0.92,0.22,0xaaa69b,3);}
       }
     }else if(b.arch==='keep'&&b.motte){ // a timber tower: a steep shingled roof and a fighting gallery
       const[x,z]=at(b,0,0);put('box',x,b.y+h*0.78,z,b.rot,b.w*1.25,1.2,b.d*1.25,0x5f4630);put('pyr',x,b.y+h,z,b.rot,b.w*1.3,h*0.55,b.d*1.3,0x4a3a2a);
@@ -6771,6 +6782,7 @@ function rebuildDetails(){
       b._inCastle=false;
       for(const C of castleKeepOut(S)){const d=dist2d(b.x,b.z,C.x,C.z); // the castle is its own round parcel, ditch and palisade its bounds: lots outside stop short of it
         if(d<C.r+1)b._inCastle=true;else{const nx=(b.x-C.x)/d,nz=(b.z-C.z)/d;cut(-nx,-nz,-(nx*C.x+nz*C.z+C.r+(C.motte?0.3:0.9)),-9);}} // up to the palisade or the ditch's lip, which bound it
+      for(const y of S._lay?.placed?.near(b.x,b.z,Rx+20)||[])if(y.arch==='churchyard'&&!y.removed&&y.churchyardOf!==b){const H=graveyardLotClip(y,b);if(H)cut(H.nx,H.nz,H.c,-9);}
       b.lot=P;
       for(let k=0;k<P.length;k++){const a=P[k],c=P[(k+1)%P.length],e=a.e;if(e===-9||e===undefined)continue;
         if(e>=0){const key=Math.min(e,b.idx)+'_'+Math.max(e,b.idx);if(edges.has(key))continue;edges.set(key,[a,c,b,e]);}
@@ -6785,6 +6797,7 @@ function rebuildDetails(){
         putTilt('fence',x,(y0+y1)/2-0.25,z,ry,-Math.atan2(y1-y0,sl),t===2?0.45:0.2,t===2?1.35:1.05,Math.hypot(sl,y1-y0)+0.1,col(t));}}
     featLots();G.lotMs=performance.now()-T0;
   }
+  for(const s of W.settlements)s._lay?.finishYards?.(); // lot polygons are authoritative; move any outlying church plot to an accessible adjunct parcel
   if(G.sails)for(const g of G.sails){scene.remove(g);disposeTree(g);}
   G.sails=sails.map(b=>{ // a cross of four sails on the windward face, turning about the hub
     const g=new THREE.Group(),c=Math.cos(b.rot),sn=Math.sin(b.rot),o=b.d/2+0.7,cross=new THREE.Group(),mt=new THREE.MeshLambertMaterial({color:0xd8d0c0});
@@ -7247,6 +7260,7 @@ function markLot(P){ // a house's yard is no longer ploughland: the strips stop 
   if(ch&&G.land.maskTex)G.land.maskTex.needsUpdate=true;}
 function markSettlementBuilt(s){
   for(const b of s.buildings)markBuilt(b.x,b.z,Math.hypot(b.w,b.d)/2+8);
+  if(G.land._surveyed)for(const b of s.buildings)if(b.lot?.length&&b._graveyard&&!b._graveyard.removed)markChurchyardBuilt(s,b._graveyard);
   if(s.wallRad){const R=Math.max(...s.wallRad)+80;
     for(let cz=toCell(s.pos.z-R);cz<=toCell(s.pos.z+R);cz++)for(let cx=toCell(s.pos.x-R);cx<=toCell(s.pos.x+R);cx++){
       if(!inB(cx,cz))continue;const x=cellX(cx),z=cellZ(cz),a=Math.atan2(z-s.pos.z,x-s.pos.x);
@@ -7329,6 +7343,7 @@ function genLand(){
   for(const s of W.settlements)Wt+=s.pop*landWt(s);
   G.land.perHead=Wt>0?0.82*A/Wt:1000;
   for(const s of W.settlements)tillTo(s,s.pop*landWt(s)*G.land.perHead);
+  G.land._surveyed=true;for(const s of W.settlements)s._lay?.finishYards?.();
   // textures the terrain shader reads
   const sd=new Uint8Array(FN*FN*4),dd=new Uint8Array(FN*FN*4);
   G.land.seedTex=new THREE.DataTexture(sd,FN,FN,THREE.RGBAFormat);G.land.dataTex=new THREE.DataTexture(dd,FN,FN,THREE.RGBAFormat);
@@ -7403,7 +7418,7 @@ function trackGraph(){
   const vid=p=>{const k=tgKey(p);let i=V.get(k);if(i===undefined){i=pts.length;V.set(k,i);pts.push({x:p.x,z:p.z});adj.push([]);}return i;};
   for(const f of G.land.F){const P=furlongPoly(f);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length];if(a.nb<0)continue;
     const ia=vid(a),ib=vid(b);if(ia===ib)continue;const ek=ia<ib?ia+'_'+ib:ib+'_'+ia;if(E.has(ek))continue;
-    let wet=false;for(let t=0.1;t<1;t+=0.2)if(W.water[cIdx(toCell(a.x+(b.x-a.x)*t),toCell(a.z+(b.z-a.z)*t))]){wet=true;break;}if(wet)continue;
+    let wet=false;for(let t=0.1;t<1;t+=0.2){const ci=cIdx(toCell(a.x+(b.x-a.x)*t),toCell(a.z+(b.z-a.z)*t));if(W.water[ci]||G.land.mask[ci*4+2]){wet=true;break;}}if(wet)continue;
     const L=dist2d(a.x,a.z,b.x,b.z),dh=Math.abs(hAt(a.x,a.z)-hAt(b.x,b.z)),e={a:ia,b:ib,k:ek,L,c:L*(1+8*dh/Math.max(1,L))};E.set(ek,e);adj[ia].push(e);adj[ib].push(e);}}
   return G.tg={V,pts,adj,E};}
 function buildTracks(){
@@ -8372,6 +8387,75 @@ function buildHerdMeshes(){
   G.herdMesh={sheep:mk('sheep',1.6,1.1,1,0xdcd6c8,3000),cattle:mk('cattle',2.6,1.5,1.1,0x7a5236,1600),horses:mk('horses',2.4,1.7,0.8,0x4a3426,700),swine:mk('swine',1.3,0.8,0.8,0xc99a8a,1400)};
   G.herdOwner={sheep:new Int16Array(3000),cattle:new Int16Array(1600),horses:new Int16Array(700),swine:new Int16Array(1400)};G.herdPos=[];}
 function inPolyXZ(P,x,z){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],q=P[j];if((a.z>z)!==(q.z>z)&&x<(q.x-a.x)*(z-a.z)/(q.z-a.z)+a.x)c=!c;}return c;}
+function graveyardShape(x,z,rot,rx=7,rz=8.5,seed=0){ // a bounded irregular parish plot, measured inside its land parcel
+  const P=[],n=14,c=Math.cos(rot),sn=Math.sin(rot);for(let k=0;k<n;k++){const a=k/n*Math.PI*2,r=0.88+0.18*hash01(seed*17+k*7.31),u=Math.cos(a)*rx*r,v=Math.sin(a)*rz*r;P.push({x:x+u*c+v*sn,z:z-u*sn+v*c});}return P;
+}
+function graveyardClipToParcel(subject,parcel){ // retain the portion inside the convex surveyed church lot
+  if(!subject?.length||parcel?.length<3)return null;let P=subject.slice(),area=0;for(let i=0;i<parcel.length;i++){const a=parcel[i],b=parcel[(i+1)%parcel.length];area+=a.x*b.z-b.x*a.z;}const sign=area>=0?1:-1;
+  for(let i=0;i<parcel.length&&P.length;i++){const a=parcel[i],b=parcel[(i+1)%parcel.length],inside=p=>sign*((b.x-a.x)*(p.z-a.z)-(b.z-a.z)*(p.x-a.x))>=-1e-7,out=[];
+    for(let j=0;j<P.length;j++){const s=P[j],e=P[(j+1)%P.length],si=inside(s),ei=inside(e);if(si)out.push(s);if(si!==ei){const dx=e.x-s.x,dz=e.z-s.z,ex=b.x-a.x,ez=b.z-a.z,den=dx*ez-dz*ex;if(Math.abs(den)>1e-10){const t=((a.x-s.x)*ez-(a.z-s.z)*ex)/den;out.push({x:s.x+t*dx,z:s.z+t*dz});}}}P=out;}
+  return P.length>=3&&polyArea(P)>=1?P:null;
+}
+function graveyardSetShape(yard,P){ // recenter a clipped parcel and admit only plots with real monument capacity
+  if(!yard||!P?.length||P.length<3)return false;let twice=0,cx=0,cz=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],q=a.x*b.z-b.x*a.z;twice+=q;cx+=(a.x+b.x)*q;cz+=(a.z+b.z)*q;}if(Math.abs(twice)<1e-8)return false;cx/=3*twice;cz/=3*twice;
+  const c=Math.cos(yard.rot||0),sn=Math.sin(yard.rot||0),uv=P.map(p=>({u:(p.x-cx)*c-(p.z-cz)*sn,v:(p.x-cx)*sn+(p.z-cz)*c}));yard.poly=P;yard.x=cx;yard.z=cz;yard.uMin=Math.min(...uv.map(p=>p.u));yard.uMax=Math.max(...uv.map(p=>p.u));yard.vMin=Math.min(...uv.map(p=>p.v));yard.vMax=Math.max(...uv.map(p=>p.v));yard.w=yard.uMax-yard.uMin;yard.d=yard.vMax-yard.vMin;yard.area=polyArea(P);
+  if(yard.area<25)return false;const slots=graveyardMarkers(yard,24).length;if(slots<4)return false;yard.capacity=slots;return true;
+}
+function placeChurchyardInHash(placed,yard){if(!yard)return null;if(!placed.near(yard.x,yard.z,1).includes(yard))placed.add(yard,Math.hypot(yard.w,yard.d)/2+1);return yard;}
+function rejectChurchyardCandidate(b){if(!b?._graveyard)return false;b._graveyard.removed=true;b._graveyard=null;G.detDirty=true;return true;}
+function bestChurchyardFallback(options){options.sort((a,b)=>a.cost-b.cost||a.r-b.r||a.a-b.a);return options[0]?.yard||null;}
+function chooseChurchyardSite(onChurchProperty,fallback){return onChurchProperty?.[0]||bestChurchyardFallback(fallback||[]);}
+function graveyardLotClip(yard,b){ // a supporting half-plane keeps every other residential parcel outside the grave polygon
+  const P=yard.poly||[];if(P.length<3)return null;const cross=(o,a,q)=>(a.x-o.x)*(q.z-o.z)-(a.z-o.z)*(q.x-o.x),Q=P.slice().sort((a,b)=>a.x-b.x||a.z-b.z),lo=[],hi=[];
+  for(const q of Q){while(lo.length>1&&cross(lo[lo.length-2],lo[lo.length-1],q)<=0)lo.pop();lo.push(q);}for(let k=Q.length-1;k>=0;k--){const q=Q[k];while(hi.length>1&&cross(hi[hi.length-2],hi[hi.length-1],q)<=0)hi.pop();hi.push(q);}lo.pop();hi.pop();const h=[...lo,...hi];if(h.length<3)return null;
+  let best=null,score=-Infinity;for(let k=0;k<h.length;k++){const a=h[k],q=h[(k+1)%h.length],dx=q.x-a.x,dz=q.z-a.z,L=Math.hypot(dx,dz)||1,nx=dz/L,nz=-dx/L,v=(b.x-a.x)*nx+(b.z-a.z)*nz;if(v>score){score=v;best={nx:-nx,nz:-nz,c:-(nx*(a.x)+nz*a.z+0.2)};}}
+  return score>0.01?best:null;
+}
+function graveyardLandClear(s,P,parcel=null){ // existing furlongs are the land-use authority; no active crop, pasture or occupied croft is taken
+  if(P.length<3)return false;let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const q of P){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);z0=Math.min(z0,q.z);z1=Math.max(z1,q.z);}
+  for(const q of P)if(!graveyardSampleClear(s,q.x,q.z,parcel))return false;
+  const step=1.5;for(let x=x0+step/2;x<x1;x+=step)for(let z=z0+step/2;z<z1;z+=step)if(inPolyXZ(P,x,z)&&!graveyardSampleClear(s,x,z,parcel))return false;
+  return true;
+}
+function graveyardFootprintInside(yard,x,z,sx,sz,rot=yard.rot||0){const c=Math.cos(rot),sn=Math.sin(rot),corners=[[-sx/2,-sz/2],[sx/2,-sz/2],[sx/2,sz/2],[-sx/2,sz/2]],world=corners.map(([u,v])=>({x:x+u*c+v*sn,z:z-u*sn+v*c}));
+  for(const p of world)if(!inPolyXZ(yard.poly,p.x,p.z))return false;for(let k=0;k<4;k++){const a=world[k],b=world[(k+1)%4],n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)/0.2));for(let j=1;j<n;j++){const t=j/n;if(!inPolyXZ(yard.poly,lerp(a.x,b.x,t),lerp(a.z,b.z,t)))return false;}}return true;}
+function graveyardInsideParcel(parcel,P){if(!parcel?.length||!P?.length)return false;const contains=(x,z)=>inPolyXZ(parcel,x,z)||parcel.some((a,i)=>segDist(x,z,a,parcel[(i+1)%parcel.length])<1e-6);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)/0.5));if(!contains(a.x,a.z))return false;for(let j=1;j<n;j++){const t=j/n;if(!contains(lerp(a.x,b.x,t),lerp(a.z,b.z,t)))return false;}}return true;}
+function graveyardPolygonsOverlap(A,B){if(!A?.length||!B?.length)return false;if(A.some(p=>inPolyXZ(B,p.x,p.z))||B.some(p=>inPolyXZ(A,p.x,p.z)))return true;for(let i=0;i<A.length;i++)for(let j=0;j<B.length;j++)if(segSegDist(A[i],A[(i+1)%A.length],B[j],B[(j+1)%B.length])<0.01)return true;return false;}
+function graveyardSampleClear(s,x,z,parcel){
+  const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj)||W.water[cIdx(ci,cj)]||hAt(x,z)<=SEA+0.8||riverAt(x,z,0.5)||lakeAt(s,x,z,0))return false;
+  if(!G.land?.F)return true;
+  const f=furlongAt(x,z);if(!f||(parcel!=null&&f.k!==parcel))return false;
+  if(parcel!=null&&G.land.mask?.[cIdx(ci,cj)*4+2]===255)return true; // existing parish property already excluded from agricultural area
+  if(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.BURNT||f.state===LS.SCRUB||f.crofts)return false;
+  return true;
+}
+function graveyardPathClear(s,P){
+  for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k],n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)/2));for(let j=0;j<=n;j++){const t=j/n;if(!graveyardSampleClear(s,lerp(a.x,b.x,t),lerp(a.z,b.z,t),null))return false;}}
+  return P.length>1;
+}
+function graveyardBurials(s,b,limit=24){const cutoff=day()-20*360;return (s.dead||[]).filter(p=>p?.burial===b&&Number.isFinite(p.dd)&&p.dd>=cutoff).sort((a,b)=>b.dd-a.dd).slice(0,limit);}
+function graveyardMarkers(yard,count){
+  const P=yard.poly||[],out=[];if(P.length<3)return out;
+  const c=Math.cos(yard.rot||0),sn=Math.sin(yard.rot||0),step=2.65,u0=yard.uMin??-yard.w/2,u1=yard.uMax??yard.w/2,v0=yard.vMin??-yard.d/2,v1=yard.vMax??yard.d/2;for(let v=v0+1.4;v<v1-1&&out.length<count;v+=step)for(let u=u0+1.4+(Math.round((v-v0)/step)%2)*0.7;u<u1-1&&out.length<count;u+=step){const x=yard.x+u*c+v*sn,z=yard.z-u*sn+v*c,kind=out.length%4===0?'tomb':'stone',[sx,sz]=kind==='tomb'?[1.05,0.68]:[0.76,0.22];if(!graveyardFootprintInside(yard,x,z,sx,sz))continue;out.push({x,z,rot:yard.rot||0,kind});}
+  return out;
+}
+function markChurchyardBuilt(s,yard){ // reserve intersected 15 m land cells and clear only trees inside the actual boundary
+  if(!G.land?.mask||!yard?.poly?.length)return;const P=yard.poly,mask=G.land.mask,affected=new Set();let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;
+  for(const q of P){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);z0=Math.min(z0,q.z);z1=Math.max(z1,q.z);}
+  const c0=toCell(x0-8),c1=toCell(x1+8),r0=toCell(z0-8),r1=toCell(z1+8),hit=(cx,cz)=>{const ax=cellX(cx)-7.5,bx=cellX(cx)+7.5,az=cellZ(cz)-7.5,bz=cellZ(cz)+7.5,C=[[ax,az],[bx,az],[bx,bz],[ax,bz]];
+    if(C.some(([x,z])=>inPolyXZ(P,x,z))||P.some(q=>q.x>=ax&&q.x<=bx&&q.z>=az&&q.z<=bz))return true;
+    for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length];for(let j=0;j<4;j++){const u={x:C[j][0],z:C[j][1]},v={x:C[(j+1)%4][0],z:C[(j+1)%4][1]};if(segSegDist(a,b,u,v)<0.01)return true;}}return false;};
+  for(let cz=Math.max(0,r0);cz<=Math.min(GRID-1,r1);cz++)for(let cx=Math.max(0,c0);cx<=Math.min(GRID-1,c1);cx++){
+    const x=cellX(cx),z=cellZ(cz);if(!hit(cx,cz))continue;
+    const i=cIdx(cx,cz);if(mask[i*4+2]!==255){mask[i*4+2]=255;const f=furlongAt(x,z);if(f)affected.add(f);}
+  }
+  for(const f of affected)refreshArea(f);if(affected.size&&G.land.maskTex)G.land.maskTex.needsUpdate=true;
+  const R=Math.max(x1-x0,z1-z0)/2+3;if(G.treeHash)for(const t of G.treeHash.near((x0+x1)/2,(z0+z1)/2,R))if(!t.cut&&inPolyXZ(P,t.x,t.z)){t.cut=true;showTree(t,false);}
+}
+function finishChurchyard(s,b,addStreet){const yard=b?._graveyard;if(!yard||yard.removed||!G.land?._surveyed||!b.lot?.length)return;
+  if(yard.adjunct&&!yard.footpath&&yard.access?.length>1&&addStreet){yard.footpath=addStreet(yard.access,0.85,'lane',{name:null,churchyardAccess:true,serviceAccess:'churchyard'});if(yard.footpath){G.roadsDirty=true;G.detDirty=true;for(const q of yard.access)clearLandAt(q.x,q.z,1.1);}}
+  markChurchyardBuilt(s,yard);
+}
 function insetPoly(P,d){ // the field's outline drawn in behind its fence
   let cx=0,cz=0;for(const q of P){cx+=q.x;cz+=q.z;}cx/=P.length;cz/=P.length;
   return P.map(q=>{const L=dist2d(q.x,q.z,cx,cz)||1;return {x:q.x+(cx-q.x)/L*d,z:q.z+(cz-q.z)/L*d};});}
@@ -9570,12 +9654,13 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
   let gpk=null;
   if(gp){PICK_SLACK=Math.max(0,gd*5/pkScale()-2);try{gpk=groundPick(gp.x,gp.z);}finally{PICK_SLACK=0;}} // ~5 px of slack, in metres
   if(town){ // inside a town, a click is the town, unless it lands on its wall, or (close up) on a street or the river
-    if(gpk&&(gpk.type==='wall'||(gpk.type==='street'||gpk.type==='river')&&cam.cur.dist<350))return gpk;
+    if(gpk&&(gpk.type==='wall'||(gpk.type==='street'||gpk.type==='river'||gpk.type==='churchyard')&&cam.cur.dist<350))return gpk;
     return town;}
   return gpk;
 }
 function groundPick(x,z){ // what lies on the ground here: a wall, a road or street, a river, or else the land itself
   for(const s of W.settlements)for(const c of fortCircuits(s)){const C=fortCenter(c),a=Math.atan2(z-C.z,x-C.x);if(wallKindAt(c,a)!==1&&Math.abs(dist2d(x,z,C.x,C.z)-wallRadAt(c,a))<3+PICK_SLACK)return{type:'wall',s,circuit:c};}
+  for(const s of W.settlements){const near=s._lay?.placed?.near(x,z,1)||[];for(const yard of near)if(yard.arch==='churchyard'&&!yard.removed&&yard.poly&&inPolyXZ(yard.poly,x,z))return{type:'churchyard',s,b:yard.churchyardOf,yard};}
   for(const s of W.settlements)for(const st of s.streets||[]){if(st.hidden||st.kind==='edge')continue;const P=st.pts;
     for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<st.hw+1.5+PICK_SLACK)return{type:'street',s,st};}
   for(const r of W.roads){const P=r.drawn||r.path;for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<5.5+PICK_SLACK)return{type:'road',r};}
@@ -9624,14 +9709,14 @@ function eventViewCandidate(recent,now,project,bounds,held=null){
     if(p&&p.d>0&&p.x>=12&&p.x<=bounds.width-12&&p.y>=bounds.top+12&&p.y<=bounds.height-12&&(!held||item.ev===held))return{ev:item.ev,point:p};}return null;
 }
 function postEventDialog(ev){
-  if(!contextUI.ready||!ev.pos)return;const now=performance.now();eventUI.recent=eventUI.recent.filter(e=>e.until>now||e.ev===eventUI.hold);eventUI.recent.push({ev,until:now+12000});if(eventUI.recent.length>40)eventUI.recent.splice(eventUI.recent[0].ev===eventUI.hold?1:0,1);eventBubbleUpdate();
+  if(!contextUI.ready||!ev.pos)return;const now=performance.now();eventUI.recent=eventUI.recent.filter(e=>e.until>now||e.ev===eventUI.hold);eventUI.recent.push({ev,until:now+12000});if(eventUI.recent.length>40)eventUI.recent.splice(eventUI.recent[0].ev===eventUI.hold?1:0,1);
 }
 function eventBubbleUpdate(){
   const bubble=document.getElementById('eventbubble');if(!bubble||!contextUI.ready)return;
   const bounds={width:innerWidth,height:innerHeight,top:document.getElementById('hud').getBoundingClientRect().bottom};
   const q=eventViewCandidate(eventUI.recent.filter(e=>!eventUI.closed.has(e.ev)),performance.now(),p=>p?{...pickScr(p.x,hAt(p.x,p.z)+4,p.z)}:null,bounds,eventUI.hold);
   bubble.hidden=!q||!!activeUIDialog||!!placeMode;if(!q)eventUI.hold=null;if(bubble.hidden)return;
-  if(eventUI.bubble!==q.ev){eventUI.bubble=q.ev;document.getElementById('eventbubbletitle').textContent=eventTitle(q.ev);document.getElementById('eventbubbletext').textContent=q.ev.text;}
+  if(eventUI.bubble!==q.ev){eventUI.bubble=q.ev;document.getElementById('eventbubbletitle').textContent=eventTitle(q.ev);setHTML(document.getElementById('eventbubbletext'),esc(q.ev.text));}
   let pos=contextPlacement(q.point,bubble.offsetWidth,bubble.offsetHeight,bounds,null);
   const panel=document.getElementById('contextpanel');if(!panel.hidden){const r=panel.getBoundingClientRect();if(pos.x<r.right&&pos.x+bubble.offsetWidth>r.left&&pos.y<r.bottom&&pos.y+bubble.offsetHeight>r.top){
     pos=contextPlacement(q.point,bubble.offsetWidth,bubble.offsetHeight,bounds,pos.side==='left'?'right':'left');
@@ -9647,7 +9732,7 @@ function showEventDialog(ev){
 }
 function inspectEventPlace(){const ev=eventUI.current;if(!ev?.pos)return;const p=ev.pos,si=nearestSettlementIdx(p.x,p.z),s=W.settlements[si];
   markManual();flyTo(p.x,p.z,300);const pk=s&&dist2d(p.x,p.z,s.pos.x,s.pos.z)<Math.max(120,(s.radius||60)*2)?{type:'settlement',s}:groundPick(p.x,p.z);if(pk)showInspect(pk);}
-const infoUI={kind:'about',town:null};
+const infoUI={kind:'about',town:null,reference:null};
 function accountBalances(town=null){
   const places=town?[town]:W.settlements,by={crown:town?0:(W.treasury||0),houses:0,households:0,church:0,townFunds:0,craftFunds:0,hoard:town?0:(W.dragon?.hoard||0),escrow:0},seen=new Set(),churches=new Set();let debt=0;
   const account=a=>{if(!a||seen.has(a))return;seen.add(a);by.households+=a.assets?.w??a.w??0;debt+=a.assets?._debt??a._debt??0;};
@@ -9678,6 +9763,7 @@ function accountSheetHTML(town=null,prefix='ledger'){
   return h;
 }
 function infoHTML(){
+  if(infoUI.kind==='reference')return referenceInfoHTML();
   if(infoUI.kind==='about')return '<p>Furlong: Kingdom Annals</p><p>A living realm of households, towns, trade and dynasties.</p><p>© 2026 Six Cailloux, LLC.</p><p>Released under the <a href="LICENSE" target="_blank" rel="noopener">MIT licence</a>, retaining the original source notice: Copyright (c) 2026 healdgar.</p>';
   if(infoUI.kind==='timeline'){
     const rows=[['Now',esc(dateStr())],['History begins','AD '+W.startAD],['Annals begin','AD '+START_AD],['Years since the annals began',detailNumber(Math.max(0,AD()-START_AD))],['Monarch',esc(fullTitle(W.monarch))],['Current reign began',esc(dateStr(W.reignStart||0))],['Recorded annals',detailNumber(entryCount)]];
@@ -9694,12 +9780,12 @@ function infoHTML(){
     h+='<h3>Town balance sheets</h3><nav class="detail-jumps" aria-label="Town accounts">'+W.settlements.map((s,i)=>'<button data-account-town="'+i+'">'+esc(s.name)+'</button>').join('')+'</nav>';
   }return h;
 }
-function openInfo(kind,town=null){
+function openInfo(kind,town=null,reference=null){
   const active=document.activeElement;if(active?.closest('#hud'))contextUI.opener=active.closest('#toolmenu')?document.getElementById('menubtn'):active;else if(contextUI.kind!=='info')contextUI.opener=null;
   if(inspTarget)hideInspect();
   const refresh=kind==='accounts-refresh',content=document.getElementById('contextcontent'),scroll=refresh?content.scrollTop:0;
-  if(!refresh){infoUI.kind=kind;infoUI.town=town;contextUI.scroll.delete('info');}
-  setHTML(document.getElementById('infobody'),infoHTML());contextShow('info');contextExpand(infoUI.kind==='accounts');
+  if(!refresh){infoUI.kind=kind;infoUI.town=town;infoUI.reference=reference;contextUI.scroll.delete('info');}
+  setHTML(document.getElementById('infobody'),infoHTML());contextShow('info');contextExpand(infoUI.kind==='accounts'||infoUI.kind==='reference');
   content.scrollTop=scroll;
   if(!document.getElementById('contextpanel').contains(document.activeElement))document.getElementById(contextUI.expanded?'contextsize':'contexttitle').focus();
 }
@@ -9709,6 +9795,7 @@ function contextAnchor(pk){
   switch(pk.type){
     case 'settlement':case 'wall':case 'beast':p=(pk.s||W.settlements[pk.si])?.pos;break;
     case 'building':p=pk.b;break;
+    case 'churchyard':p=pk.yard;break;
     case 'event':p=pk.ev?.pos;break;
     case 'army':p=agentPos(pk.a||pk.army);break;
     case 'notable':case 'tree':{const n=pk.n||pk.x;if(isN(n)){const w=notableWhere(n);p=w?.army?agentPos(w.army):w;}else p=n?.bh||W.settlements[n?.si]?.pos;break;}
@@ -9737,7 +9824,7 @@ function contextPlacement(anchor,width,height,viewport,side){
 function contextTitle(){
   const k=contextUI.kind;
   if(k==='event')return esc(eventTitle(eventUI.current));
-  if(k==='info')return infoUI.kind==='about'?'About Furlong':infoUI.kind==='timeline'?'The timeline':infoUI.town?esc(infoUI.town.name)+' · Accounts':'Kingdom ledger';
+  if(k==='info')return infoUI.kind==='reference'?esc(referenceTitle(infoUI.reference)):infoUI.kind==='about'?'About Furlong':infoUI.kind==='timeline'?'The timeline':infoUI.town?esc(infoUI.town.name)+' · Accounts':'Kingdom ledger';
   if(k==='insp')return document.getElementById('insptitle').innerHTML;
   if(k==='drawer')return {crown:'The Crown',rates:'Rates',acts:'Acts',over:'Map overlays',world:'The realm'}[drawerTab];
   if(k==='chron')return esc('The Annals of '+W.name);
@@ -9858,8 +9945,8 @@ function detailSettlement(s){
 function detailHousehold(s,p){
   const a=p._hh,hd=a?.head||p,H=s._owners?.get(a),rows=[],holdings=[];
   for(const g of [...new Set(['held','sale','animals','reserve'].flatMap(k=>Object.keys(H?.[k]||{})))].sort())rows.push([esc(g),detailNumber(H.held?.[g]||0),detailNumber(H.sale?.[g]||0),detailNumber(H.animals?.[g]||0),detailNumber(H.reserve?.[g]||0)]);
-  for(const place of W.settlements){for(const f of place.furl||[]){const owns=a?f.title?.own?.owner===a||!f.title&&f.own===hd.id:f.own===hd.id,works=a?f.title?.work?.owner===a||!f.title&&f.wk===hd.id:f.wk===hd.id;
-    if(owns||works)holdings.push([esc(place.name),`${esc(landName(f))} · ${detailNumber(f.area/10000)} ha`,owns&&works?'Owned and worked':owns?'Owned':'Worked']);}
+  for(const [si,place] of W.settlements.entries()){for(const [fi,f] of (place.furl||[]).entries()){const owns=a?f.title?.own?.owner===a||!f.title&&f.own===hd.id:f.own===hd.id,works=a?f.title?.work?.owner===a||!f.title&&f.wk===hd.id:f.wk===hd.id;
+    if(owns||works)holdings.push([esc(place.name),`<a class="nm" data-nm="land:${si}:${fi}">${esc(landName(f))}</a> · ${detailNumber(f.area/10000)} ha`,owns&&works?'Owned and worked':owns?'Owned':'Worked']);}
     for(const b of place.buildings||[])if(!b.removed&&b.state!=='gone'&&(a?b.title?.owner===a||!b.title&&b.ownerId===hd.id:b.ownerId===hd.id))holdings.push([esc(place.name),detailBuilding(b,place),'Owned']);}
   let h=detailTable('detail-pantry',`Household goods in ${esc(s.name)}`,['Good','Held','For sale','Beasts','Reserve target'],rows);
   h+=detailTable('detail-property','Household property and holdings',['Place','Property','Right'],holdings);
@@ -9923,6 +10010,16 @@ function showInspect(pk){
     if(s.history&&s.history.length)h+=`<section class="detail-section" id="detail-history" aria-labelledby="detail-history-title"><h4 class="dhead" id="detail-history-title">History</h4><div class="agline">${s.history.map(x=>(x.yr?`<i>AD ${W.startAD+x.yr-1}:</i> `:x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div></section>`;
     flyToBtn(fb,'Visit',()=>flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340));
     if(sovOn())actsH=settlementActsHTML(s);
+  }else if(pk.type==='churchyard'){
+    const {s,b,yard}=pk,markers=graveyardMarkers(yard,yard.capacity||24),recent=graveyardBurials(s,b,markers.length);
+    setHTML(title,esc(yard.adjunct?'Parish graveyard':'Churchyard'));sub.textContent=s.name;
+    h+=row('Parish',`<a class="nm" data-nm="${buildingReference(b)}">${esc(buildingName(b)||'Parish church')}</a>`);
+    h+=row('Plot',`${detailNumber(yard.area||polyArea(yard.poly))} m² · ${yard.adjunct?'separate parcel with a low boundary wall':'on church property'}`);
+    h+=row('Access',yard.adjunct?'Footpath from the church':'Beside the church');
+    h+=row('Grave spaces',`${markers.length} · fixed plot; reused after 20 years`);
+    h+=row('Recorded burials',detailNumber(chOf(b).burials||0));
+    if(recent.length)h+=detailTable('detail-burials','Recent burials',['Person','Died'],recent.map(p=>[detailPerson(p),esc(dateStr(p.dd))]));
+    flyToBtn(fb,'Visit',()=>flyTo(yard.x,yard.z,100));
   }else if(pk.type==='building'){
     const b=pk.b;
     const bn=buildingName(b),what=(TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4];
@@ -9939,7 +10036,7 @@ function showInspect(pk){
     if(b.arch==='temple'&&b.state!=='gone'){const ch=chOf(b);h+=row('Fabric',esc(chFabric(b)));
       h+=row('Congregation',`room for ~${chCap(b)} standing${ch.cong?`; a parish of ${ch.cong}${chCap(b)<ch.cong*0.5?' — crowded at mass':''}`:''}`);
       h+=row('Fabric fund',`${Math.round(ch.fund)} crowns${ch.next?`; saving for ${ch.next.t} (${Math.round(ch.next.cr+ch.next.st*0.6)} if the stone is bought)`:''}${ch.cramped?'; no room to grow':''}`);
-      if(!b.castle&&!b.friary){const total=ch.burials||0,recent=(b.s.dead||[]).slice(-240).filter(p=>p?.burial?.ch===ch||!p?.burial&&parishOf(b.s)===b).slice(-80);h+=row('Churchyard',`${b._graveyard?'plot kept beside the church':'no clear plot was available'} · ${total} recorded burial${total===1?'':'s'}${recent.length?` · recent burials: ${recent.map(detailPerson).join(', ')}`:''}${total>recent.length?` · ${total-recent.length} earlier`:''}`);}}
+      if(!b.castle&&!b.friary){const total=ch.burials||0,recent=(b.s.dead||[]).slice(-240).filter(p=>p?.burial?.ch===ch||!p?.burial&&parishOf(b.s)===b).slice(-80);h+=row('Churchyard',`${b._graveyard?`<a class="nm" data-nm="${graveyardReference(b)}">${b._graveyard.adjunct?'separate graveyard, linked by footpath':'churchyard on church property'}</a>`:'no clear plot was available'} · ${total} recorded burial${total===1?'':'s'}${recent.length?` · recent burials: ${recent.map(detailPerson).join(', ')}`:''}${total>recent.length?` · ${total-recent.length} earlier`:''}`);}}
     if(b.arch==='keep'||b.arch==='hall'){const residents=notableResidents(b);if(residents.length){h+=row('Lodging',residents.map(n=>`<a class="nm" data-nm="n${n.id}">${esc(fullTitle(n))}</a>`).join(', '));const R=notableResidence(residents[0]);h+=row('Security',b.arch==='keep'?`private chambers in the keep${R.lines?`; ${R.lines} surrounding defensive circuit${R.lines===1?'':'s'} intact`:''}`:'the hall; no keep available');}}
     if(b.home0&&b.why&&b.why.since)h+=row('Opened',`AD ${b.why.since}, in what was a ${ARCH[b.home0][4]}`);
     h+=row('State',b.state);
@@ -10150,6 +10247,7 @@ function showInspect(pk){
     if(pk.camp.patrol)h+=row('Crown riders','on the way');
     flyToBtn(fb,'Visit',()=>flyTo(pk.camp.x,pk.camp.z,260));
   }
+  sub._h=null;setHTML(sub,esc(sub.textContent));
   setHTML(body,h);setHTML(acts,actsH); // live refresh only touches the DOM when something changed
   if(opening)sheet('insp');el.style.display='flex';document.body.classList.add('inspecting');document.getElementById('inspx').textContent=inspectReturn?'Back':'Close';document.getElementById('inspx').setAttribute('aria-label',inspectReturn?'Back to realm controls':'Close inspector');
   if(changed){inspectorView='details';contextUI.side=null;contextUI.scroll.delete('insp');document.getElementById('contextcontent').scrollTop=0;}setInspectorView(inspectorView);contextShow('insp');scheduleLayout();
@@ -12814,14 +12912,74 @@ function emit(cat,pri,pos,text,opts){
   fxEvent(ev);
   return ev;
 }
-function nameLinker(){ // every town, house and living notable the annals name, longest first
-  const k=W.settlements.length+'|'+W.houses.map(h=>h.name).join()+'|'+W.notables.length+'|'+Math.floor(day()/60);
-  if(G._nl&&G._nl.k===k)return G._nl;const map=new Map();
-  W.settlements.forEach((s,i)=>map.set(s.name,'s'+i));W.houses.forEach((h,i)=>{if(h.name&&!h.extinct)map.set(h.name,'h'+i);});
-  for(const n of livingNotables())if(n.alive)map.set(fullTitle(n),'n'+n.id);
-  const names=[...map.keys()].filter(x=>x&&x.length>2).sort((a,b)=>b.length-a.length).map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
-  return G._nl={k,map,re:names.length?new RegExp('(?<![\\wÀ-ÿ])('+names.join('|')+')(?![\\wÀ-ÿ])','g'):null};}
-function linkNames(html){const L=nameLinker();return L.re?html.replace(L.re,m=>`<a class="nm" data-nm="${L.map.get(m)}">${m}</a>`):html;}
+function referenceRegex(map){const names=[...map.keys()].sort((a,b)=>b.length-a.length).map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));return names.length?new RegExp('(?<![\\p{L}\\p{N}_])('+names.join('|')+')(?![\\p{L}\\p{N}_])','gu'):null;}
+function referenceAdd(map,name,code){if(!name)return;const key=esc(name),old=map.get(key);if(!old)map.set(key,code);else if(old!==code){const choices=old.startsWith('choose:')?JSON.parse(decodeURIComponent(old.slice(7))):[old];if(!choices.includes(code))choices.push(code);map.set(key,'choose:'+encodeURIComponent(JSON.stringify(choices)));}}
+function nameLinker(){ // the small existing annals cache; full household/property resolution is render-only
+  const k=W.settlements.map(s=>s.name).join('|')+'|'+W.houses.map(h=>h.name).join('|')+'|'+W.notables.length+'|'+(W.armies||[]).length+'|'+Math.floor(day()/60);
+  if(G._nl?.world===W&&G._nl.k===k)return G._nl;const map=new Map();
+  W.settlements.forEach((s,i)=>referenceAdd(map,s.name,'s'+i));W.houses.forEach((h,i)=>referenceAdd(map,h.name,'h'+i));
+  for(const n of livingNotables()){referenceAdd(map,fullTitle(n),'n'+n.id);referenceAdd(map,n.name,'n'+n.id);}
+  for(const a of W.armies||[])referenceAdd(map,a.name,'a'+a.id);
+  return G._nl={world:W,k,map,re:referenceRegex(map)};
+}
+function referenceMap(html,scope){ // transient candidates from the places actually mentioned; no simulation index or writes
+  const text=html.toLowerCase(),map=new Map(),add=(n,c)=>{if(n&&text.includes(esc(n).toLowerCase()))referenceAdd(map,n,c);};
+  for(const [n,c]of nameLinker().map)if(text.includes(n.toLowerCase()))map.set(n,c);
+  for(const n of W.notables){add(fullTitle(n),'n'+n.id);add(n.name,'n'+n.id);}
+  for(const [i,f]of (W.fams||[]).entries())add(f.n,'family:'+i);
+  for(const [si,s]of W.settlements.entries()){
+    for(const p of [...(s.folk||[]),...(s.dead||[])]){add(folkName(p),'p'+p.id);const h=p._hh;if(h&&h.head===p)add((famName(p)||folkName(p))+' household','household:'+h.id);if(p.sur)add(p.sur,'surname:'+encodeURIComponent(p.sur));}
+    for(const b of s.buildings||[])if(!b.removed&&b.state!=='gone')add(b.nm,buildingReference(b,s));
+    for(const [ti,st]of (s.streets||[]).entries())if(!st.gone)add(st.name,'street:'+si+':'+ti);
+  }
+  for(const t of W.travellers||[]){add(folkName(t.p),'p'+t.p.id);const h=t.p._hh;if(h?.head===t.p)add((famName(t.p)||folkName(t.p))+' household','household:'+h.id);}
+  const si=scope?W.settlements.indexOf(scope):-1;
+  for(const g of Object.keys(GOODBASE)){add(g,'good:'+si+':'+g);add(g[0].toUpperCase()+g.slice(1),'good:'+si+':'+g);}
+  for(const tr of Object.keys(TRADE_W)){add(tr,'trade:'+si+':'+tr);add(tr[0].toUpperCase()+tr.slice(1),'trade:'+si+':'+tr);}
+  for(const a of Object.keys(ARCH))if(ARCH[a][4])add(ARCH[a][4],'structure:'+si+':'+a);
+  for(const c of W.banditCamps||[])add(c.name,'camp:'+c.id);
+  return map;
+}
+function linkNames(html,scope){ // preserve markup, attributes and existing controls; link only eligible text
+  const map=scope===undefined?nameLinker().map:referenceMap(html,scope),re=scope===undefined?nameLinker().re:referenceRegex(map),stack=[];
+  if(!re)return html;
+  return html.replace(/<!--[\s\S]*?-->|<[^>]*>|[^<]+/g,token=>{
+    if(token[0]==='<'){const m=token.match(/^<\s*(\/?)\s*([\w-]+)/);if(m){const tag=m[2].toLowerCase();if(m[1]){for(let i=stack.length-1;i>=0;i--)if(stack[i].tag===tag){stack.length=i;break;}}else if(!/\/\s*>$/.test(token)&&!['br','hr','img','input','meta','link','wbr'].includes(tag))stack.push({tag,skip:['a','button','summary','select','textarea','code','pre','script','style'].includes(tag)||/\sdata-(?:cmd|pk|detail-building|detail-settlement)\s*=/.test(token)});}return token;}
+    if(stack.some(t=>t.skip))return token;
+    return token.replace(re,m=>{const code=map.get(m);return `<a class="nm" href="#ref=${encodeURIComponent(code)}" data-nm="${esc(code)}">${m}</a>`;});
+  });
+}
+function graveyardReference(b,s=b.s){return 'graveyard:'+W.settlements.indexOf(s)+':'+b.x+':'+b.z;}
+function buildingReference(b,s=b.s){return 'building:'+W.settlements.indexOf(s)+':'+b.x+':'+b.z+':'+b.arch;}
+function referenceTown(pk){return pk?.s||pk?.b?.s||W.settlements[pk?.p?.si]||W.settlements[pk?.a?.at]||null;}
+function eventReferenceTown(ev){return ev?.pos?W.settlements[nearestSettlementIdx(ev.pos.x,ev.pos.z)]:null;}
+function linkRenderedReferences(el,html,scope){if(el._refHTML===html&&el._refScope===scope)return el._refResult;el._refHTML=html;el._refScope=scope;return el._refResult=linkNames(html,scope);}
+function linkAnnals(){for(const el of chronList().querySelectorAll('.centry,.creign'))if((el._annalEvent||el._annalReign)&&!el._linkedReferences){const ev=el._annalEvent;el.innerHTML=ev?'<span class="cd">'+esc(dateStr(ev.day))+'.</span> '+linkNames(esc(ev.text),eventReferenceTown(ev)):linkNames(esc(el._annalReign),null);el._linkedReferences=true;decorateControls(el);}}
+function referenceTitle(code){const [kind,si,key]=String(code||'').split(':');if(kind==='family')return W.fams[+si]?.n+' family';if(kind==='surname')return decodeURIComponent(si)+' family';if(kind==='household'){const h=W.households?.get(si);return (h?.head?famName(h.head)||folkName(h.head):si)+' household';}if(kind==='choose')return 'Choose a reference';if(kind==='good'||kind==='trade')return key[0].toUpperCase()+key.slice(1);if(kind==='structure')return ARCH[key]?.[4]||key;return 'Reference';}
+function referenceInfoHTML(){
+  const code=infoUI.reference,[kind,id,key]=code.split(':'),s=infoUI.town,towns=s?[s]:W.settlements;
+  const personRows=P=>P.map(p=>[detailPerson(p),esc(W.settlements[p.si]?.name||'Away'),esc(p.dead?'Deceased':p.tr||'No recorded trade')]);
+  if(kind==='household'){const h=W.households?.get(id);if(!h)return '<p>This household is no longer recorded.</p>';return h.head?'<p>'+detailPerson(h.head)+' · '+esc(referenceTitle(code))+'</p>'+detailHousehold(W.settlements[h.head.si]||h.home,h.head):detailTable('reference-household',referenceTitle(code),['Person','Place','Trade'],personRows([...(h.members||[])]));}
+  if(kind==='family'||kind==='surname'){const name=kind==='surname'?decodeURIComponent(id):null,P=[];for(const t of W.settlements)for(const p of [...(t.folk||[]),...(t.dead||[])])if(name?famName(p)===name:p.fam===+id)P.push(p);return detailTable('reference-family',referenceTitle(code),['Person','Place','Trade'],personRows(P));}
+  if(kind==='choose'){const codes=JSON.parse(decodeURIComponent(code.slice(7)));return '<p>Several recorded entities share this name.</p>'+codes.map(c=>{const target=referenceTarget(c);return `<p><a class="nm" data-nm="${esc(c)}">${esc(target?.label||referenceTitle(c))}</a>${target?.town?' · '+esc(target.town.name):''}</p>`;}).join('');}
+  if(kind==='trade')return detailTable('reference-trade',referenceTitle(code),['Person','Place','Trade'],personRows(towns.flatMap(t=>(t.folk||[]).filter(p=>!p.dead&&p.tr===key))));
+  if(kind==='good')return detailTable('reference-good',referenceTitle(code),['Place','In store','Crowns / unit'],towns.map(t=>[`<a class="nm" data-nm="s${W.settlements.indexOf(t)}">${esc(t.name)}</a>`,detailNumber(t.stores?.[key]||0),detailNumber(t.px?.[key]??GOODBASE[key])]));
+  if(kind==='structure')return detailTable('reference-structures',referenceTitle(code),['Building','Place','State'],towns.flatMap(t=>(t.buildings||[]).filter(b=>b.arch===key&&!b.removed).map(b=>[detailBuilding(b,t),`<a class="nm" data-nm="s${W.settlements.indexOf(t)}">${esc(t.name)}</a>`,esc(b.state)])));
+  return '<p>No current record.</p>';
+}
+function referenceTarget(code){const [kind,si,bi]=code.split(':'),s=W.settlements[+si];
+  if(kind==='graveyard'){const parts=code.split(':'),b=s?.buildings.find(b=>b.x===+bi&&b.z===+parts[3]&&b._graveyard&&!b._graveyard.removed);return b?{pick:{type:'churchyard',s,b,yard:b._graveyard},label:'Graveyard of '+(b.nm||'the parish church'),town:s}:null;}
+  if(kind==='building'){const parts=code.split(':'),b=s?.buildings.find(b=>b.x===+bi&&b.z===+parts[3]&&b.arch===parts[4]);return b?{pick:{type:'building',b},label:b.nm||ARCH[b.arch][4],town:s}:null;}
+  if(kind==='street'){const st=s?.streets[+bi];return st?{pick:{type:'street',s,st},label:st.name||STREET_NAME[st.kind],town:s}:null;}
+  if(kind==='land'){const f=s?.furl[+bi];return f?{pick:{type:'land',f,x:f.x,z:f.z},label:landName(f),town:s}:null;}
+  if(kind==='camp'){const camp=W.banditCamps.find(c=>c.id===+si);return camp?{pick:{type:'camp',camp},label:camp.name||'Bandit camp'}:null;}
+  if(/^p\d+$/.test(code)){const f=findPerson(+code.slice(1));return f?{pick:{type:'person',...f},label:folkName(f.p),town:f.s}:null;}
+  if(/^n\d+$/.test(code)){const n=notableById(+code.slice(1));return n?{pick:{type:'notable',n},label:fullTitle(n)}:null;}
+  if(/^s\d+$/.test(code)){const town=W.settlements[+code.slice(1)];return town?{pick:{type:'settlement',s:town},label:town.name,town}:null;}
+  if(/^h\d+$/.test(code)){const house=W.houses[+code.slice(1)],town=house&&W.settlements[house.seat];return house?{label:house.name,town}:null;}
+  if(/^a\d+$/.test(code)){const a=W.armies.find(a=>a.id===+code.slice(1));return a?{pick:{type:'army',a},label:a.name,town:W.settlements[a.at]}:null;}
+  return null;
+}
 function goPerson(p,s){ // fly to wherever this person is now (walking the streets, on the road, at home) and keep them in view
   if(!p)return;markManual();const now=day()+(W.clock.frac||0);
   const tr=(W.travellers||[]).find(t=>t.p===p&&now>=t.depart&&now<t.arrive);
@@ -12847,6 +13005,8 @@ function notableWhere(n){ // with the host they command, otherwise in the keep o
 function goNotable(n){markManual();const w=notableWhere(n);if(!w)return;
   if(w.army){const p=w.army._rpos||armySimPos(w.army);flyTo(p.x,p.z,260);cam.follow=w.army;}else flyTo(w.x,w.z,220);}
 function goName(code){ // fly to it and open its card
+  if(!code)return;
+  if(code.includes(':')){const target=referenceTarget(code);if(target){const pos=contextAnchor(target.pick);if(pos){markManual();flyTo(pos.x,pos.z,260);}showInspect(target.pick);}else if(/^(household|family|surname|choose|good|trade|structure):/.test(code)){const si=+code.split(':')[1];openInfo('reference',/^(good|trade|structure):/.test(code)?W.settlements[si]||null:null,code);}return;}
   const t=code[0],v=+code.slice(1);markManual();
   if(t==='s'){const s=W.settlements[v];if(s){flyTo(s.pos.x,s.pos.z,420);showInspect({type:'settlement',s});}}
   else if(t==='h'){const h=W.houses[v],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(s)flyTo(s.pos.x,s.pos.z,520);if(n)showInspect({type:'notable',n});else if(s)showInspect({type:'settlement',s});}
@@ -12860,13 +13020,14 @@ document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#cr
 function chronicleAdd(ev){
   allLines.push('['+dateStr(ev.day)+'] '+ev.text);
   const el=document.createElement('div');
-  el.className='centry';el.dataset.cat=ev.cat;
-  el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(ev.text.replace(/</g,'&lt;')); // names in the entry fly to what they name
+  el.className='centry';el.dataset.cat=ev.cat;el._annalEvent=ev;
+  el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(esc(ev.text)); // names in the entry fly to what they name
   if(ev.pos){el.setAttribute('role','button');el.tabIndex=0;el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();showEventDialog(ev);});}decorateControls(el);
   if(chronFilter!=='all'&&ev.cat!==chronFilter)el.style.display='none';
   const list=chronList();
   const stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
   list.appendChild(el);
+  if(contextUI.kind==='chron'&&!document.getElementById('chron').classList.contains('min'))linkAnnals();
   entryCount++;
   while(list.children.length>260)list.removeChild(list.firstChild);
   if(stick)list.scrollTop=list.scrollHeight;
@@ -12877,7 +13038,7 @@ function reignHeader(n){
   const ORD=['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth'];
   const t=`Here begin the years of ${n.sex==='f'?'Queen':'King'} ${n.name}${num>1?', '+(ORD[num-1]||num+'th')+' of that name':''}.`;
   allLines.push('\n=== '+t+' ===\n');
-  const el=document.createElement('div');el.className='creign';el.textContent=t;
+  const el=document.createElement('div');el.className='creign';el._annalReign=t;el.innerHTML=linkNames(esc(t));decorateControls(el);
   const list=chronList(),stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
   list.appendChild(el);
   if(stick)list.scrollTop=list.scrollHeight; // don't yank a reader who scrolled back
@@ -12984,7 +13145,9 @@ function spend(hi,c){if(purse(hi)<c)return false;if(hi>0)W.houses[hi].gold=(W.ho
 let uiHover=false;
 function uiBusy(){return uiHover||uiDownAt>0&&performance.now()-uiDownAt<1500||!!document.activeElement?.matches('#dbody input,#dbody select,#dbody textarea,#inspscroll input,#inspscroll select,#inspscroll textarea');} // don't rebuild a button mid-click, or under a pointer resting on it
 function realmPop(){return W.settlements.reduce((t,s)=>t+s.pop,0);}
-function setHTML(el,h){if(el&&el._h!==h){
+function setHTML(el,h){
+  if(el&&W?.settlements&&['inspbody','inspsub','inspacts','infobody','dbody','petition','eventtext','eventbubbletext'].includes(el.id)){const scope=el.id==='infobody'?infoUI.town:el.id==='eventtext'?eventReferenceTown(eventUI.current):el.id==='eventbubbletext'?eventReferenceTown(eventUI.bubble):referenceTown(inspTarget);h=linkRenderedReferences(el,h,scope);}
+  if(el&&el._h!==h){
   const focused=el.contains(document.activeElement)?document.activeElement:null,keys=['id','data-cmd','data-arg','data-cview','data-nm','data-pid','data-detail-jump','data-detail-building','data-detail-settlement'],identity=focused?keys.map(k=>[k,focused.getAttribute(k)]).filter(([k,v])=>v!==null):[];
   const open=[...el.querySelectorAll('details[data-keep-open][open]')].map(d=>d.dataset.keepOpen);el.innerHTML=h;el._h=h;
   for(const d of el.querySelectorAll('details[data-keep-open]'))d.open=open.includes(d.dataset.keepOpen);decorateControls(el);
@@ -13985,7 +14148,7 @@ function allowPinnedCourt(){return UIPrefs.pinCourt&&uiLayout()==='desktop'&&inn
 function applyUIPrefs(){document.body.dataset.uiSize=UIPrefs.size;document.body.classList.toggle('court-pinned',UIPrefs.pinCourt);scheduleLayout();}
 function saveUIPrefs(){try{localStorage.setItem('annals-ui',JSON.stringify(UIPrefs));}catch(_){}applyUIPrefs();}
 
-function setChronMin(on){const c=document.getElementById('chron');c.classList.toggle('min',on);document.body.classList.toggle('chronclosed',on);const b=document.getElementById('chronmin');b.textContent=on?'Open':'Close';b.setAttribute('aria-expanded',String(!on));b.setAttribute('aria-label',on?'Open Annals':'Collapse Annals');scheduleLayout();}
+function setChronMin(on){if(!on&&W?.settlements)linkAnnals();const c=document.getElementById('chron');c.classList.toggle('min',on);document.body.classList.toggle('chronclosed',on);const b=document.getElementById('chronmin');b.textContent=on?'Open':'Close';b.setAttribute('aria-expanded',String(!on));b.setAttribute('aria-label',on?'Open Annals':'Collapse Annals');scheduleLayout();}
 function setDrawerClosed(closed){const d=document.getElementById('drawer');d.classList.toggle('closed',closed);d.inert=closed;document.body.classList.toggle('drawerclosed',closed);document.getElementById('drawertoggle').setAttribute('aria-expanded',String(!closed));if(contextUI.ready&&!closed)contextShow('drawer');scheduleLayout();}
 function sheet(which){
   if(which!=='plan'&&planUI)planClose();
@@ -14022,7 +14185,7 @@ function updateUILayout(){
   if(typeof camera!=='undefined'&&camera){const cx=(left+right)/2,cy=(top+bottom)/2,key=[innerWidth,innerHeight,cx,cy].join(':');if(key!==lastCameraFrame){lastCameraFrame=key;camera.setViewOffset(innerWidth,innerHeight,innerWidth/2-cx,innerHeight/2-cy,innerWidth,innerHeight);}}
 }
 function decorateControls(root){
-  for(const e of root.querySelectorAll('[data-cmd],a.nm,a.pp,a.tr,[data-pk],[data-pv],#terrlegend [data-nm]'))if(!e.matches('button,input,select,textarea')){e.setAttribute('role','button');e.tabIndex=0;}
+  for(const e of root.querySelectorAll('[data-cmd],a.nm,a.pp,a.tr,[data-pk],[data-pv],#terrlegend [data-nm]'))if(!e.matches('button,input,select,textarea')){if(e.matches('a.nm,a.pp,a.tr')){e.setAttribute('href','#ref='+encodeURIComponent(e.dataset.nm||(e.dataset.pid?'p'+e.dataset.pid:e.dataset.tree)));e.removeAttribute('role');}else e.setAttribute('role','button');e.tabIndex=0;}
   for(const e of root.querySelectorAll('input,select,textarea'))if(!e.hasAttribute('aria-label')&&!e.labels?.length){const label=e.closest('.wrow,.slrow')?.querySelector('label')?.textContent||e.closest('.wrow')?.firstChild?.textContent||e.placeholder||e.id;e.setAttribute('aria-label',label.trim());}
 }
 function closeToolMenu(){document.getElementById('menubtn').setAttribute('aria-expanded','false');document.getElementById('toolmenu').hidden=true;}
@@ -18356,6 +18519,24 @@ teleport the castle, duplicate walls or reset building owners and inventories.
   terrain subdivision, high-resolution textures or one draw call per timber post.
   Check frame cost and simulation tick cost separately before making gain claims.
 
+<<<FILE docs/PARISH-GRAVEYARDS.md>>>
+# Parish graveyards
+
+Prefer a small irregular plot within the church's actual property polygon. If that cannot fit, choose a nearby accessible adjunct parcel, favoring waste or woodland over valuable agricultural land. Reject water, active crops, pasture, occupied crofts, buildings, streets, and existing residential parcels. If no suitable plot exists, leave the church without a yard.
+
+Yards reserve space through the existing placement hash. Final land reservation, tree clearing, and footpath creation wait until the survey and property polygons exist. Adjunct paths use existing route checks and paid river crossings; no bridge is created for cemetery access. Adjunct plots have a low boundary wall; church-property yards use the property's existing bounds.
+
+Plain headstones and tomb slabs represent the most recent recorded parish burials, with a fixed maximum of 24 spaces and a 20-year reuse window. Every monument's full footprint must fit the plot. Population death records retain their full history. Clicking the yard opens its parish, plot, capacity, access, and named burial records.
+
+Validation:
+
+```sh
+node --test tools/graveyard-layout.test.mjs tools/parish-graveyard.test.mjs
+node tools/render-check.mjs --seeds 287970763:sea,2002:land --founding 370450810 --views capital --days 0 --graveyards --ui-references --out /tmp/furlong-parish-ui
+```
+
+The native audit checks actual generated plots, church-property containment, residential overlap, dry unworked land, monument footprints, adjunct access, picking, and duplicate hash entries. This is placement and rendering validation, not a long-term economic soak.
+
 <<<FILE docs/PERFORMANCE.md>>>
 # Simulation performance
 
@@ -19378,6 +19559,31 @@ viewport checks are host emulation, not physical-phone measurements.
 This batch makes no simulation speedup claim. Animal age cohorts and event
 explanations are transient graphics/UI state; household pantry, hunger, debt
 and commodity authority remain canonical.
+
+<<<FILE docs/UI-REFERENCE-LINKS.md>>>
+# UI reference links
+
+References in game prose should open their recorded person, household, family, place, building, land parcel, trade, commodity, or army. Shared names offer an explicit choice. Existing controls remain intact; markup and attributes are never name-matched.
+
+Resolution runs when displayed prose changes. Household, property, and historical-person candidates are transient UI data; they add no maintained simulation index, journal entry, or daily accounting work. Hidden annals retain their small existing name cache and receive richer links when opened.
+
+## Tests
+
+Run focused semantic checks:
+
+```sh
+node --test tools/reference-links.test.mjs tools/inspector-details.test.mjs tools/active-title-tick.test.mjs
+```
+
+Run the rendered Chrome audit:
+
+```sh
+node tools/render-check.mjs --seeds 287970763:sea --founding 370450810 --views capital --days 0 --ui-references --out /tmp/furlong-ui-references
+```
+
+`tools/ui-reference-audit.mjs` inspects visible DOM text against canonical game names independently of the production linker. It reports missing references and reference anchors without navigation attributes. The harness visits event bubbles and details, household and trade views, inspectors, timeline, accounts, menus, and annals. It checks household/trade navigation and deliberately removes both a settlement link and an anchor's `href`; both faults must be detected.
+
+The audit covers the views and world exercised by that run. It does not prove every possible event, conditional control, historical state, or link destination. Extend the scenes when adding UI; use additional seeds and `--days` for other world states. Existing clickable entity rows and buttons count as navigation controls, and hidden text, inputs, code, and tooltips are excluded.
 
 <<<FILE docs/game-write-log.md>>>
 # Direct game history prototype
