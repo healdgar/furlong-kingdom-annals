@@ -4676,7 +4676,7 @@ function initGraphics(){
   G.sun.castShadow=true;
   G.sun.shadow.mapSize.set(2048,2048);
   G.sun.shadow.camera.near=1100;G.sun.shadow.camera.far=4100; // the sun stands 2600 m off the eye's focus: a depth range just wide enough for what it lights
-  G.sun.shadow.bias=-0.00012;G.sun.shadow.normalBias=0.6; // ~0.4 m of offset (the old -0.0015 over 5 km was 7.5 m: walls and houses cast only from their tops)
+  G.sun.shadow.bias=-0.000004;G.sun.shadow.normalBias=0.025; // updated below from world-space texel size
   scene.add(G.sun);scene.add(G.sun.target);
   G.hemi=new THREE.HemisphereLight(0xbcd2e8,0x5b5140,0.55);scene.add(G.hemi);
   G.amb=new THREE.AmbientLight(0x404a5a,0.25);scene.add(G.amb);
@@ -5252,7 +5252,8 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     for(let k=1;k<pts.length-1;k++)if(!W8[k]){let j=k;while(j<pts.length-1&&!W8[j])j++; // a dry blip mid-stream (a bar, a bend) does not split the bridge
       if(W8[k-1]&&W8[j]&&j-k<=3&&dist2d(pts[k-1].x,pts[k-1].z,pts[j].x,pts[j].z)<18)for(let m=k;m<j;m++)W8[m]=W8[k-1];k=j;}
     let run=[],wet=null;
-    const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>hw,lift,col,surface});run=[];};
+    const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>hw,lift,col,surface,
+      height:(k,j,x,z)=>(surface?surface(x,z):hAt(x,z))+lift+(0.015-lift)*FR[j]*FR[j]});run=[];}; // crowned road, feathered down to the ground at both verges
     for(let k=0;k<pts.length;k++){
       const w=W8[k];
       if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y,crosses:false};flush();}wet.y=Math.max(wet.y,w.y);wet.crosses=wet.crosses||!!riverAt(pts[k].x,pts[k].z,0);}
@@ -6997,7 +6998,9 @@ function rebuildWalls(){
     }
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(verts,3));geo.setAttribute('color',new THREE.BufferAttribute(cols,3));geo.setAttribute('fortDitch',new THREE.BufferAttribute(ditchAttr,1));geo.setAttribute('fortCleared',new THREE.BufferAttribute(clearAttr,1));geo.setIndex(idx);geo.computeVertexNormals();
     const norm=geo.attributes.normal;
-    for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++)if(i===0||j===0||i===nx||j===nz){const k=j*(nx+1)+i,p=k*3,x=verts[p],z=verts[p+2],bn=sample(baseNorm,x,z),l=Math.hypot(bn[0],bn[1],bn[2])||1;norm.setXYZ(k,bn[0]/l,bn[1]/l,bn[2]/l);}
+    for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){const k=j*(nx+1)+i,p=k*3,x=verts[p],z=verts[p+2],bn=sample(baseNorm,x,z),l=Math.hypot(bn[0],bn[1],bn[2])||1;
+      const changed=sstep(0.02,0.25,Math.abs(verts[p+1]-hAt(x,z))),edge=i===0||j===0||i===nx||j===nz,t=edge?0:changed;
+      const n=new THREE.Vector3(lerp(bn[0]/l,norm.getX(k),t),lerp(bn[1]/l,norm.getY(k),t),lerp(bn[2]/l,norm.getZ(k),t)).normalize();norm.setXYZ(k,n.x,n.y,n.z);}
     norm.needsUpdate=true;
     const baseMat=G.terrain.material,mat=surfaceDetail(baseMat.clone()),terrainHook=baseMat.onBeforeCompile;
     mat.onBeforeCompile=sh=>{terrainHook?.(sh);sh.vertexShader='attribute float fortDitch;attribute float fortCleared;varying float vFortDitch,vFortCleared;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vFortDitch=fortDitch;vFortCleared=fortCleared;');
@@ -7014,7 +7017,7 @@ function rebuildWalls(){
         vec2 fortSoilUV=(fortN.y>max(fortN.x,fortN.z)?vWP.xz:fortN.x>fortN.z?vWP.zy:vWP.xy)/3.6;
         vec3 fortSoil=vec3(0.36,0.29,0.19)*miniatureDetail(3.,fortSoilUV)*(0.84+0.32*fortPatch);
         diffuseColor.rgb=mix(diffuseColor.rgb,fortSoil,smoothstep(0.05,0.9,vFortDitch));
-        float fortSnow=uGroundSnow*0.55*smoothstep(0.4,0.8,vWN.y);
+        float fortSnow=uGroundSnow*0.55*smoothstep(0.4,0.8,vWN.y)*max(vFortCleared,vFortDitch);
         diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.83,0.85,0.87),fortSnow);snowFinish=max(snowFinish,fortSnow);`);};
     mat.customProgramCacheKey=()=>`fort-earthwork-soil-${baseMat.customProgramCacheKey?baseMat.customProgramCacheKey():''}`;
     const mesh=new THREE.Mesh(geo,mat);mesh.castShadow=mesh.receiveShadow=true;mesh.userData={earthwork:true,s,recolorTerrain(){const a=G.terrain?.geometry?.attributes?.color;if(!a)return;const c=geo.attributes.color;for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){const k=j*(nx+1)+i,p=k*3,x=verts[p],z=verts[p+2],bc=sample(a,x,z);c.setXYZ(k,bc[0],bc[1],bc[2]);}c.needsUpdate=true;}};grp.add(mesh);
@@ -14758,7 +14761,8 @@ function animateWorld(dt,now){
   const sx=basis.centre.dot(basis.right),sy=basis.centre.dot(basis.up);
   basis.centre.addScaledVector(basis.right,Math.round(sx/texel)*texel-sx).addScaledVector(basis.up,Math.round(sy/texel)*texel-sy);
   G.sun.position.copy(sunDir).multiplyScalar(2600).add(basis.centre);G.sun.target.position.copy(basis.centre);
-  G.sun.shadow.normalBias=Math.max(0.05,texel*0.7); // close views need a contact-sized offset
+  G.sun.shadow.bias=-Math.max(0.012,texel*0.15)/(sc.far-sc.near); // depth bias in metres, rather than a fixed fraction of the 3 km shadow frustum
+  G.sun.shadow.normalBias=Math.max(0.015,texel*0.3); // contact-sized at close range, scaled for distant texels
   sc.left=-ext;sc.right=ext;sc.top=ext;sc.bottom=-ext;sc.updateProjectionMatrix();
   G.hemi.intensity=0.2+0.36*daylight*eclipseF; // enough fill that sides turned from the sun still read
   G.amb.intensity=0.14+0.08*daylight;
