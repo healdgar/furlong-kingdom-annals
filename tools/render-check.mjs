@@ -8,6 +8,7 @@
    --seasons checks seasonal production shaders and saves matched seasonal views.
    --world-visuals checks winter silhouettes, animal models and river contact.
    --candidate-ref checks an existing commit, useful for reproducing a suspected baseline failure.
+   --reel-smoke exercises the actual RAF loop for three seconds and checks projection cadence/pause.
    --woodland-density allows at most 65% more tree instances; other geometry stays unchanged.
    --river-banks checks flat water and budgets the carved ground and recessed channel bed. */
 import {spawn} from 'node:child_process';
@@ -420,6 +421,20 @@ async function check(which,w){
     if(which==='candidate'&&args['ui-references'])result.uiReferences=await ev(c,`(${uiReferencesCheck.toString()})(${auditUIReferences.toString()})`);
     if(which==='candidate'&&args['service-roads'])result.paidCrossings=await ev(c,`(${paidCrossingCheck.toString()})()`);
     if(which==='candidate'&&args['service-roads'])result.serviceRoads=await ev(c,`(${serviceRoadCheck.toString()})()`);
+    if(which==='candidate'&&args['reel-smoke']){
+      await ev(c,`(()=>{window.__reel={start:performance.now(),day:day(),frames:0,world:0,camera:0,frac:W.clock.frac};
+        window.__reelRunning=true;const world=animateWorld,eye=updateCamera;
+        animateWorld=(...a)=>{__reel.world++;return world(...a)};updateCamera=(...a)=>{__reel.camera++;return eye(...a)};
+        cam.mode='free';cam.manualUntil=Infinity;setDrawerClosed(true);hideInspect();
+        window.requestAnimationFrame=fn=>window.__renderRAF(t=>{if(__reelRunning){if(fn===animate)__reel.frames++;fn(t);}});
+        setSpeed(5);requestAnimationFrame(animate);})()`);
+      await sleep(3000);
+      result.reel=await ev(c,`(()=>{const r={days:day()-__reel.day,seconds:(performance.now()-__reel.start)/1000,frames:__reel.frames,world:__reel.world,camera:__reel.camera,errors:errN,integral:Number.isInteger(day()),unchangedFraction:W.clock.frac===__reel.frac};
+        __reelRunning=false;window.requestAnimationFrame=()=>0;setSpeed(0);const before=__reel.world;animate(performance.now());
+        r.pauseRefresh=__reel.world===before+1&&G.viewSpeed===0;
+        r.valid=r.days>0&&r.frames>0&&r.world>0&&r.world<=Math.ceil(r.seconds*10)+2&&r.camera>=r.frames&&r.errors===0&&r.integral&&r.unchangedFraction&&r.pauseRefresh;
+        return r;})()`);
+    }
     return result;
   }catch(e){return{id,failed:e.message,errors};}finally{kill();}
 }
@@ -435,6 +450,7 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   if(args['ui-references'])row.uiReferences=!!candidate?.uiReferences?.valid;
   if(args.graveyards)row.graveyards=!!candidate?.graveyards?.valid;
   if(args['service-roads']){row.serviceRoads=!!candidate?.serviceRoads?.valid;row.paidCrossings=!!candidate?.paidCrossings?.valid;}
+  if(args['reel-smoke'])row.reel=!!candidate?.reel?.valid;
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row[args['woodland-density']?'woodlandGeometryBudget':args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
       const a=candidate.views[v],b=baseline.views[v];return args['woodland-density']?a.geometryTriangles-a.treeTriangles===b.geometryTriangles-b.treeTriangles&&a.treeInstances>b.treeInstances&&a.treeInstances<=b.treeInstances*1.65&&a.treePlacement.wet===0&&a.treePlacement.uncleared===0:args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});

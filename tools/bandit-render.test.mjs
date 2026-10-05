@@ -12,9 +12,10 @@ test('camp rendering keeps one instance per live member across frames and preser
   const s={pos:{x:2000,z:2000},radius:80,folk:[]},men=[{id:12,si:0,sx:'m'},{id:13,si:0,sx:'f'}],camp={id:4,x:0,z:0,men};
   const mesh=()=>({count:0,instanceMatrix:{count:160},instanceColor:{},setColorAt(){}});
   const G={citList:[],citIdx:[],citizens:mesh(),citKit:mesh(),campMeshes:new Map([[camp,{}]])};
-  const c=vm.createContext({W:{settlements:[s],banditCamps:[camp]},G,cam:{cur:{dist:300,focus:{x:0,z:0}}},camera:{position:{x:0,z:0}},
+  const c=vm.createContext({W:{clock:{day:0},settlements:[s],banditCamps:[camp]},G,cam:{cur:{dist:300,focus:{x:0,z:0}}},camera:{position:{x:0,z:0}},
     dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),hash01:()=>0.4,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),surfY:()=>10,setInst(){},
     THREE:{Color:class{multiplyScalar(){return this;}}}});
+  vm.runInContext("const day=()=>W.clock.day;"+html.match(/^function displayFrac\([^\n]+/m)[0]+html.match(/^function displayDay\([^\n]+/m)[0],c);
   vm.runInContext(draw,c);assert.equal(G.citizens.count,2);
   vm.runInContext(draw,c);assert.equal(G.citizens.count,2);assert.equal(G.citKit.count,2);
   assert.ok(G.citIdx.every((x,i)=>x.p===men[i]&&x.s===s));

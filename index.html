@@ -4296,7 +4296,7 @@ function journey(p,from,to,why){ // p leaves `from` (already off its roll) and j
 function inboundOf(){const m=new Map();for(const t of W.travellers||[])if(!t.errand)m.set(t.to,(m.get(t.to)||0)+1);return m;}
 function errand(p,from,to,why,stay){ // a round trip: there, a stay, and home again; they stay on their own town's roll, but are away
   if(from===to||awayNow(p))return false;const r=route(from,to);if(!r||r.len>2400)return false;
-  const go=Math.max(0.25,r.len/WALK_MPD),d0=day()+(W.clock.frac||0)+frand()*0.4,T=W.travellers||(W.travellers=[]);if(T.length>360)return false;
+  const go=Math.max(0.25,r.len/WALK_MPD),d0=day()+frand()*0.4,T=W.travellers||(W.travellers=[]);if(T.length>360)return false;
   p.away={until:d0+go*2+stay,why,to};
   T.push({p,from,to,why,poly:r.poly,len:r.len,depart:d0,arrive:d0+go,errand:true},{p,from:to,to:from,why,home:true,poly:[...r.poly].reverse(),len:r.len,depart:d0+go+stay,arrive:d0+go*2+stay,errand:true});
   return true;}
@@ -4341,7 +4341,7 @@ function envoyRiders(e){const cap=W.capital;if(!cap||!cap.folk)return;const pool
 function renderTravellers(){
   if(!G.travMesh){const cp=personParts('citizen');G.travMesh=new THREE.InstancedMesh(cp.tint,agentMat(),400);G.travKit=new THREE.InstancedMesh(cp.fixed,agentMat(),400);
     for(const m of[G.travMesh,G.travKit]){for(let i=0;i<400;i++)m.setColorAt(i,new THREE.Color(1,1,1));m.frustumCulled=false;m.count=0;scene.add(m);}}
-  const T=W.travellers||[],now=day()+(W.clock.frac||0),t2=performance.now()/1000;let k=0;G.travIdx=[];
+  const T=W.travellers||[],now=displayDay(),t2=performance.now()/1000;let k=0;G.travIdx=[];
   if(cam.cur.dist<1800)for(const t of T){if(k>=400)break;if(now<t.depart)continue;const f=clamp((now-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1),p=polyPos(t.poly,f);if(!p)continue;
     const x=p.x-Math.sin(p.dir||0)*2.5,z=p.z+Math.cos(p.dir||0)*2.5,y=surfY(x,z)+0.28+(speedIdx===LIFE?Math.abs(Math.sin(t2*7+k))*0.06:0),ry=-(p.dir||0)+Math.PI/2,sc=clamp(cam.cur.dist/320,1,4); // seen from afar, drawn a little larger
     if(cam.follow&&cam.follow.pid===t.p.id)cam.follow.pos={x,z,y};setInst(G.travMesh,k,x,y,z,ry,sc,sc,sc);setInst(G.travKit,k,x,y,z,ry,sc,sc,sc);G.travMesh.setColorAt(k,C1.setHex(t.why==='bride'?0xc9a0a0:t.why==='migrant'?0x7a6448:t.why==='market'?0x8a7a3a:t.why==='kin'?0xa0708a:t.why==='pilgrim'?0xe8e0d0:0x5a6a7a));G.travIdx[k]=t;k++;}
@@ -4392,7 +4392,7 @@ function outWork(s,p,kind,H){ // a place out of doors to work, and a short beat 
   return {A,B:B||A,f};}
 const DAYSEC=1/SPEEDS[LIFE],WS=DAYSEC/600; // a walker's day, in seconds at life pace; WS scales the stays that were reckoned on a ten-minute day
 function warmWalkers(L){ // a town just come into view: play its folk's day forward to this hour at once, so each is already where they would be now
-  const fr=W.clock.frac||0,f0=0.2;if(fr<=f0||!L.length)return;const N=240,step=DAYSEC*(fr-f0)/N;
+  const fr=displayFrac(),f0=0.2;if(fr<=f0||!L.length)return;const N=240,step=DAYSEC*(fr-f0)/N;
   for(let i=1;i<=N;i++){const f=f0+(fr-f0)*i/N;for(const c of L)stepWalker(c,step,f);}}
 function townsfolkFor(s){ // who is about in this town, and where each goes: read from each household's own record of its home; looking never rehouses anyone
   const ch=s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'),g=streetGraph(s),mk=(s.places||[]).find(p=>p.kind==='market')||(s.places||[])[0]||{x:s.pos.x,z:s.pos.z},R=(s.extentR||s.radius||120);
@@ -6988,7 +6988,7 @@ function rebuildDetails(){
     const g=new THREE.Group(),c=Math.cos(b.rot),sn=Math.sin(b.rot),o=b.d/2+0.7,cross=new THREE.Group(),mt=new THREE.MeshLambertMaterial({color:0xd8d0c0});
     for(const[w,hh]of[[0.9,15],[15,0.9]])cross.add(new THREE.Mesh(new THREE.BoxGeometry(w,hh,0.3),mt));
     for(let k=0;k<4;k++){const a=k*Math.PI/2,cl=new THREE.Mesh(new THREE.BoxGeometry(1.6,5.5,0.15),new THREE.MeshLambertMaterial({color:0xefe8d8}));cl.position.set(Math.cos(a+Math.PI/2)*4.2+Math.cos(a)*1.2,Math.sin(a+Math.PI/2)*4.2+Math.sin(a)*1.2,0.2);cl.rotation.z=a;cross.add(cl);} // the sailcloth
-    g.add(cross);g.position.set(b.x+o*sn,b.y+b.h*0.8,b.z+o*c);g.rotation.y=b.rot;cross.rotation.z=b.sailA??hash01(b.x)*6.28;g.userData.b=b;g.userData.cross=cross;scene.add(g);return g;});
+    g.add(cross);g.position.set(b.x+o*sn,b.y+b.h*0.8,b.z+o*c);g.rotation.y=b.rot;cross.rotation.z=hash01(b.x)*6.28+(G.sailAngle||0);g.userData.b=b;g.userData.cross=cross;scene.add(g);return g;});
   for(const a of W.armies||[]){const r=a.raft;if(a.gone||!r)continue;const x=(r.a.x+r.b.x)/2,z=(r.a.z+r.b.z)/2,L=dist2d(r.a.x,r.a.z,r.b.x,r.b.z),rot=-Math.atan2(r.b.z-r.a.z,r.b.x-r.a.x);put('box',x,r.y-0.35,z,rot,L,0.35,3.2,0x6e5334,2);}
   for(const k in G.det){
     const m=G.det[k];m.count=cnt[k]; // unused slots are simply not drawn
@@ -8732,7 +8732,7 @@ function stepGrazingFlock(fl,dt,valid){ // visual state only: independent rests,
 }
 function animateHerds(force){ // keep the visual flock clock still when the simulation is paused
   if(!G.flocks||!G.herdMesh)return;if(!force&&cam.cur.dist>1600)return;
-  const now=day()+(W.clock.frac||0),vt=performance.now()/1000,prev=G._herdTime,dt=prev&&now>prev.game?Math.min(0.25,Math.max(0,vt-prev.real),(now-prev.game)*86400):0;G._herdTime={game:now,real:vt};
+  const now=displayDay(),vt=performance.now()/1000,prev=G._herdTime,dt=prev&&now>prev.game?Math.min(0.25,Math.max(0,vt-prev.real),(now-prev.game)*86400):0;G._herdTime={game:now,real:vt};
   const M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0},pos=[];
   for(const fl of G.flocks){const m=M[fl.k],D=HERDDRAW[fl.k];
     stepGrazingFlock(fl,dt,(x,z)=>(!fl.P||inPolyXZ(fl.P,x,z))&&grazeOK(x,z));
@@ -8827,7 +8827,7 @@ function tickShips(){
     else if(sh.phase==='out'&&now>=sh.t1)W.ships.splice(i,1);}
   if(now%360===5)for(const s of W.settlements)if(s.harbor){s.portLoad=((s._berthDays||0)+(s._shipWait||0)*2)/360;s._berthDays=0;s._shipWait=0;}} // a year's crowding at the waterfront
 function shipPos(sh){ // where a ship is now: on its way in, alongside its berth, or standing out to sea
-  const now=day()+(W.clock.frac||0);
+  const now=displayDay();
   if(sh.phase==='dock'&&sh.berth)return {x:sh.berth.x,z:sh.berth.z,dir:sh.berth.rot+Math.PI/2};
   const f=clamp((now-sh.t0)/Math.max(0.01,sh.t1-sh.t0),0,1),P=sh.poly,t=(sh.phase==='out'?1-f:f)*sh.len;
   let acc=0;for(let k=1;k<P.length;k++){const L=dist2d(P[k-1].x,P[k-1].z,P[k].x,P[k].z);if(acc+L>=t){const u=(t-acc)/(L||1),x=P[k-1].x+(P[k].x-P[k-1].x)*u,z=P[k-1].z+(P[k].z-P[k-1].z)*u;
@@ -9103,8 +9103,12 @@ function spawnCarts(c){
   if(T.length+n>TRAFFIC_CAP)return;
   if(boat&&T.filter(t=>t.info.sea===c.sea&&t.info.river===c.river&&(t.info.sea||t.info.river)).length>=8)return;
   const len=polyLen(c.poly);if(!(len>1))return;
-  for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,d:-k*15-Math.random()*6,spd:len/Math.max(0.2,c.arriveDay-c.departDay)*(0.95+0.1*Math.random()*0.2),
+  for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,offset:-k*15-Math.random()*6,spd:len/Math.max(0.2,c.arriveDay-c.departDay)*(0.95+0.1*Math.random()*0.2),
     info:{origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
+}
+function trafficDistance(t,now=displayDay()){
+  const c=t.cons,elapsed=Math.max(0,(c.halted?day():now)-c.departDay);
+  return Math.min(t.len,t.offset+t.spd*elapsed);
 }
 /* map markers: from altitude every host, outlaw camp and the dragon shows as a round badge that stays legible
    (only caravans had one); scaled with the camera's distance, drawn over the terrain */
@@ -10040,7 +10044,7 @@ function contextAnchor(pk){
     case 'event':p=pk.ev?.pos;break;
     case 'army':p=agentPos(pk.a||pk.army);break;
     case 'notable':case 'tree':{const n=pk.n||pk.x;if(isN(n)){const w=notableWhere(n);p=w?.army?agentPos(w.army):w;}else p=n?.bh||W.settlements[n?.si]?.pos;break;}
-    case 'person':{const t=(W.travellers||[]).find(t=>t.p===pk.p&&day()>=t.depart&&day()<t.arrive);if(t)p=polyPos(t.poly,clamp((day()+(W.clock.frac||0)-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1));if(!p){const c=(G.citList||[]).find(c=>c.p===pk.p&&c.out);p=c||householdHead(pk.p)?.bh||pk.s?.pos;}break;}
+    case 'person':{const t=(W.travellers||[]).find(t=>t.p===pk.p&&day()>=t.depart&&day()<t.arrive);if(t)p=polyPos(t.poly,clamp((displayDay()-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1));if(!p){const c=(G.citList||[]).find(c=>c.p===pk.p&&c.out);p=c||householdHead(pk.p)?.bh||pk.s?.pos;}break;}
     case 'caravan':p=agentPos(pk.c);break;
     case 'envoy':p=agentPos(pk.e);break;
     case 'dragon':p=G.dragonMesh?.position;break;
@@ -10518,6 +10522,9 @@ const BIRTH0=0.046; // the general knob of growth: births a year per soul at eas
 MOD={harvest:1,birth:1,mort:1,trade:1,tax:12,vir:1,leth:1,disaster:1,bandit:1,aggr:1,fert:1,myth:1};
 let speedIdx=1,lastSpeed=1;
 const day=()=>W.clock.day;
+// Presentation interpolation never changes the simulation's date or departure times.
+function displayFrac(){const f=G.clockFrac??W.clock.frac??0;return Number.isFinite(f)?clamp(f,0,0.999):0;}
+function displayDay(){return day()+displayFrac();}
 const year=()=>Math.floor(W.clock.day/360)+1;
 const seasonIdx=()=>Math.floor((W.clock.day%360)/90);
 const seasonDay=()=>Math.floor(W.clock.day%90)+1;
@@ -13120,6 +13127,7 @@ function simTick(){
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
   }
   tickSovereign();
+  tickEnvoys();
   routingPrepare();
   commoditySettleAll();
 }
@@ -13228,7 +13236,7 @@ function referenceTarget(code){const [kind,si,bi]=code.split(':'),s=W.settlement
   return null;
 }
 function goPerson(p,s){ // fly to wherever this person is now (walking the streets, on the road, at home) and keep them in view
-  if(!p)return;markManual();const now=day()+(W.clock.frac||0);
+  if(!p)return;markManual();const now=displayDay();
   const tr=(W.travellers||[]).find(t=>t.p===p&&now>=t.depart&&now<t.arrive);
   let at=null;if(tr){const q=polyPos(tr.poly,clamp((now-tr.depart)/Math.max(0.01,tr.arrive-tr.depart),0,1));if(q)at={x:q.x,z:q.z};}
   if(!at){const c=(G.citList||[]).find(c=>c.p===p&&c.out);if(c)at={x:c.x,z:c.z};}
@@ -13615,6 +13623,7 @@ function envoyPos(e,now){ // where the riders are, on the sim's own clock
   if(now<e.decide){const t=W.settlements[e.to];return {x:t.pos.x+14,z:t.pos.z+10,dir:0};}
   return polyPos(P,clamp(1-(now-e.decide)/Math.max(0.01,e.back-e.decide),0,1));
 }
+function tickEnvoys(){const E=W.envoys;if(!E)return;for(let i=E.length-1;i>=0;i--)if(day()>=E[i].back)E.splice(i,1);}
 function royalHost(){return W.armies.find(a=>a.house===0&&!a.gone&&a.standing)||W.armies.find(a=>a.house===0&&!a.gone);}
 function lordHost(hi){return W.armies.filter(a=>a.house===hi&&!a.gone).reduce((t,a)=>t+a.strength,0);}
 function persuade(req){ // req: {hi, title, text, value (what it costs him, in gold), pos, si, onAccept}
@@ -15001,17 +15010,17 @@ function spawnFlame(x,y,z){
 }
 let dayCycleOn=false; // steady daylight by default — the cycle strobes at high sim speeds
 function currentDayF(){
-  if(isLife()){const f=W.clock.frac||0;return f<0.25?f+1:f;} // at life pace the sun keeps the calendar's day: the folk go out at sunrise and home at dusk
+  if(isLife()){const f=displayFrac();return f<0.25?f+1:f;} // at life pace the sun keeps the calendar's day: the folk go out at sunrise and home at dusk
   if(!dayCycleOn)return 0.42; // pleasant late morning
   // compress night to ~20% of the cycle so the documentary stays watchable
-  const t=(W.visT||0)%1;
+  const t=(G.visT||0)%1;
   return t<0.8?0.25+(t/0.8)*0.5:0.75+((t-0.8)/0.2)*0.5;
 }
 function calmTarget(){const pace=SPEEDS[speedIdx]||0;return pace<=4?0:clamp(Math.log2(pace/4)/Math.log2(30/4),0,1);} // high speeds calm day/night and weather; seasons keep the calendar
 function animateWorld(dt,now){
   G.calm=(G.calm??calmTarget())+(calmTarget()-(G.calm??0))*Math.min(1,dt*1.2); // eases in and out over a second or so, never a jump
   const dayF=currentDayF();
-  const simDay=W.clock.day;
+  const simDay=displayDay();
   /* --- sun / moon / sky --- */
   const el2=Math.sin((dayF-0.25)*2*Math.PI); // sun elevation: dawn .25, noon .5, dusk .75
   const sunDir=new THREE.Vector3(Math.cos(dayF*Math.PI*2)*0.8,el2,Math.sin(dayF*Math.PI*2)*0.55).normalize();
@@ -15079,7 +15088,8 @@ function animateWorld(dt,now){
   for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.visible)wh.rotation.x+=dt*1.4*(wh.userData.direction||1);} // UVs and paddles follow the actual flow
   if(G.sails&&G.sails.length){const w=W.weather.state,gust=0.75+0.25*Math.sin(now*0.23)+0.15*Math.sin(now*0.71);
     const sp=(w==='storm'?1.1:w==='rain'?0.7:w==='overcast'?0.5:w==='snow'?0.35:0.28*clamp(Math.sin(now*0.05+1)*1.5,0,1))*gust; // a fair still day may leave them standing
-    for(const g of G.sails){const c=g.userData.cross;c.rotation.z-=dt*sp;if(g.userData.b)g.userData.b.sailA=c.rotation.z;}}
+    G.sailAngle=(G.sailAngle||0)-dt*sp;
+    for(const g of G.sails)g.userData.cross.rotation.z=hash01(g.userData.b.x)*6.28+G.sailAngle;}
   /* --- weather particles --- */
   const raining=(W.weather.state==='rain'||W.weather.state==='storm')&&calm<0.4;
   const snowing=W.weather.state==='snow'&&calm<0.4;
@@ -15143,11 +15153,11 @@ function animateWorld(dt,now){
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
   const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
-  for(let i=T.length-1;i>=0;i--){const t=T[i];if(!t.cons.halted)t.d+=t.spd*(SPEEDS[speedIdx]||0)*dt; // metres a day, on the calendar's clock: the carts arrive when their goods do
-    if(t.d>=t.len||t.cons.robbed||t.cons.gone){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();}t.info.gone=true;T.splice(i,1);}} // arrived, or driven off by robbers
+  for(let i=T.length-1;i>=0;i--){const t=T[i];
+    if(t.cons.robbed||t.cons.gone){if(t.proxy){scene.remove(t.proxy);t.proxy.geometry.dispose();t.proxy.material.dispose();}t.info.gone=true;T.splice(i,1);}} // consignment state owns arrival; display never delivers goods
   for(const t of T){
-    if(t.d<0)continue; // still loading at the gate
-    const c=t.info,p=polyPos(t.poly,t.d/t.len);
+    const distance=trafficDistance(t,simDay);if(distance<0)continue; // still loading at the gate
+    const c=t.info,p=polyPos(t.poly,distance/t.len);
     if(!p)continue;
     const y=c.sea?SEA+1:(c.river?hAt(p.x,p.z)+1.2:surfY(p.x,p.z)+1.0); // road surface (a bridge deck over water) or water line
     c._rpos={x:p.x,y:y+8,z:p.z};
@@ -15160,7 +15170,7 @@ function animateWorld(dt,now){
       const pool=c.sea?G.cogs:G.barges,k=c.sea?cogI++:bargeI++;
       if(k<pool.length){const g=pool[k];g.visible=true;g.position.set(p.x,y-0.3+Math.sin(now*1.3+k)*0.15,p.z);g.rotation.set(Math.sin(now*0.9+k)*0.03,-(p.dir||0),0);g.scale.setScalar(Math.min(unitScale,c.river?2:3));}
     }else if(ci<TRAFFIC_CAP){
-      const bob=speedIdx&&!t.cons.halted?Math.abs(Math.sin(now*6+t.len+t.d*0.4))*0.12:0; // wheels on ruts (still when paused or held at the siege lines)
+      const bob=speedIdx&&!t.cons.halted?Math.abs(Math.sin(now*6+t.len+distance*0.4))*0.12:0; // wheels on ruts (still when paused or held at the siege lines)
       setInst(G.caravans,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
       setInst(G.cartCovers,ci,p.x,y-0.9+bob,p.z,-(p.dir||0),unitScale,unitScale,unitScale);
       G.cartCovers.setColorAt(ci,C1.setHex(CARGOCOL[c.good]||0xe6d8a8));ci++;
@@ -15183,8 +15193,8 @@ function animateWorld(dt,now){
   for(let i=dotI;i<G.caravanDots.length;i++)G.caravanDots[i].visible=false;
   G.caravans.instanceMatrix.needsUpdate=true;
   /* --- envoys --- */
-  {const E=W.envoys||[],now=W.clock.day;G.envoyMeshes=G.envoyMeshes||new Map();
-    for(let i=E.length-1;i>=0;i--){const e=E[i];if(now>=e.back){const m=G.envoyMeshes.get(e.id);if(m){scene.remove(m);disposeTree(m);G.envoyMeshes.delete(e.id);}dropMarker(e);E.splice(i,1);}}
+  {const E=W.envoys||[],now=simDay;G.envoyMeshes=G.envoyMeshes||new Map();
+    for(const [id,m]of G.envoyMeshes){const e=m.userData.pick.e;if(day()>=e.back){scene.remove(m);disposeTree(m);G.envoyMeshes.delete(id);dropMarker(e);}}
     for(const e of E){let m=G.envoyMeshes.get(e.id);
       if(!m){m=new THREE.Group();const H=W.houses[0],col=new THREE.Color(H.sigilHue[0]),gold=new THREE.Color(H.sigilHue[1]);
         for(const k of[-1.6,1.6]){const horse=new THREE.Mesh(new THREE.BoxGeometry(2.6,1.3,0.9),new THREE.MeshLambertMaterial({color:0x5a4030}));horse.position.set(k,1.5,0);m.add(horse);
@@ -15359,14 +15369,14 @@ function animateWorld(dt,now){
     for(const s of W.settlements){const dd=dist2d(cam.cur.focus.x,cam.cur.focus.z,s.pos.x,s.pos.z);if(dd<nd){nd=dd;nearest=s;}}
     if(nearest&&cam.cur.dist<700&&nd<(nearest.extentR||nearest.radius)+160&&nearest.folk&&nearest.folk.length){ // seen from a fair height, not only from the street
       const s=nearest;
-      if(G.citList.length===0||G.citList[0].s!==s){G.citList=townsfolkFor(s);warmWalkers(G.citList);}
-      const run=speedIdx>0?Math.min(dt,0.1)*(SPEEDS[speedIdx]||0)/SPEEDS[LIFE]:0,fr=W.clock.frac||0,vs=clamp(cam.cur.dist/220,1,2.6);let k=0;G.citIdx=[]; // drawn a little larger from higher up, so a body still reads // the walkers' seconds are the calendar's, at life pace a true second
+      const fresh=G.citList.length===0||G.citList[0].s!==s;if(fresh){G.citList=townsfolkFor(s);warmWalkers(G.citList);}
+      const viewDay=displayDay(),run=fresh||G.walkDay===undefined?0:Math.max(0,viewDay-G.walkDay)*DAYSEC,fr=displayFrac(),vs=clamp(cam.cur.dist/220,1,2.6);G.walkDay=viewDay;let k=0;G.citIdx=[]; // only elapsed calendar time advances this disposable walking projection
       for(const c of G.citList){stepWalker(c,run,fr);if(!c.out)continue;
         const x=c.x,z=c.z,bob=c.walking&&speedIdx===LIFE?Math.abs(Math.sin(c.t*8.5))*0.06:0,yz=surfY(x,z)+0.28+bob;
         if(cam.follow&&cam.follow.pid===c.p.id)cam.follow.pos={x,z,y:yz};setInst(G.citizens,k,x,yz,z,c.ry,c.sc*vs,c.sc*vs,c.sc*vs);setInst(G.citKit,k,x,yz,z,c.ry,c.sc*vs,c.sc*vs,c.sc*vs);G.citizens.setColorAt(k,c.col);G.citIdx[k]=c;k++;if(k>=160)break;}
       G.citizens.count=G.citKit.count=k;
       G.citizens.instanceMatrix.needsUpdate=true;G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
-    }else{G.citList=[];G.citIdx=[];G.citizens.count=G.citKit.count=0;}
+    }else{G.citList=[];G.citIdx=[];G.walkDay=displayDay();G.citizens.count=G.citKit.count=0;}
   }
   // Bandit camps show only their recorded members: these are existing villagers driven out by want,
   // drawn through the shared citizen batches and pick map rather than as new simulated people.
@@ -15415,30 +15425,33 @@ function animateWorld(dt,now){
    ========================================================================= */
 let simAccum=0,lastT=0,hudT=0,overlayT=0,uiT=0,errN=0,errT=0;
 function simErr(e){errN++;if(performance.now()-errT>5000){errT=performance.now();console.error('annals: error caught ('+errN+' so far)',e);}} // one bad tick must not freeze the realm
+function projectWorld(dt,now){
+  const changed=G.viewSpeed!==speedIdx;G.viewSpeed=speedIdx;G.viewElapsed=(G.viewElapsed||0)+dt;
+  if(VISUAL.fast()&&!changed&&G.viewT!==undefined&&now-G.viewT<0.1)return false;
+  const elapsed=G.viewElapsed;G.viewElapsed=0;G.viewT=now;animateWorld(elapsed,now);return true;
+}
+function advanceSimulation(dt,started=performance.now()){
+  if(!Number.isFinite(simAccum))simAccum=0;
+  simAccum+=dt*(SPEEDS[speedIdx]||0);
+  let ticks=0;
+  while(simAccum>=1&&(ticks<1||performance.now()-started<28)){ // daily driver: no camera, animation or DOM work
+    if(speedIdx===0){simAccum=0;break;} // a petition paused the realm mid-frame: stop here, not a dozen days on
+    try{if(simTick()===false)break;}catch(e){simErr(e);}simAccum-=1;ticks++;}
+  const cap=Math.max(45,(SPEEDS[speedIdx]||0)*0.25);if(simAccum>cap)simAccum=cap; // don't spiral if a frame stalls
+  return ticks;
+}
 function animate(t){
   requestAnimationFrame(animate);
   const now=t/1000;
   const rawDt=lastT?now-lastT:0.016; // the true frame interval, for the performance monitor
   let dt=Math.min(0.1,now-lastT||0.016);lastT=now;
-  // advance simulation
-  if(!Number.isFinite(simAccum))simAccum=0;
-  simAccum+=dt*(SPEEDS[speedIdx]||0);
-  let ticks=0;const tb=performance.now();
-  while(simAccum>=1&&(ticks<1||performance.now()-tb<28)){ // time-budgeted, so the fastest speed runs as fast as the machine allows
-    if(speedIdx===0){simAccum=0;break;} // a petition paused the realm mid-frame: stop here, not a dozen days on
-    try{if(simTick()===false)break;}catch(e){simErr(e);}simAccum-=1;ticks++;}
-  const tSim=performance.now(); // (the performance monitor's marks)
-  const cap=Math.max(45,(SPEEDS[speedIdx]||0)*0.25);if(simAccum>cap)simAccum=cap; // don't spiral if a frame stalls
-  W.clock.frac=W.clock.frac||0;
-  if(SPEEDS[speedIdx]>0)W.clock.frac=simAccum; // 0..1 within the current day
+  const tb=performance.now(),ticks=advanceSimulation(dt,tb),tSim=performance.now();
+  if(SPEEDS[speedIdx]>0)G.clockFrac=clamp(simAccum,0,0.999); // queued whole days are not interpolation
   // cinematic sun: a full day/night cycle every ~150 real seconds while running,
   // decoupled from sim speed so high speeds don't strobe the lighting
-  if(SPEEDS[speedIdx]>0)W.visT=(W.visT||0.38)+dt/150;
-  const displayDay=W.clock.day+clamp(W.clock.frac,0,0.999);
-  const saveDay=W.clock.day;W.clock.day=Number.isFinite(displayDay)?displayDay:saveDay;
-  try{director.update(perfNow(),dt);updateCamera(dt,now);animateWorld(dt,now);}
+  if(SPEEDS[speedIdx]>0)G.visT=(G.visT??W.visT??0.38)+dt/150;
+  try{director.update(perfNow(),dt);updateCamera(dt,now);projectWorld(dt,now);}
   catch(e){simErr(e);}
-  finally{W.clock.day=saveDay;} // an error mid-frame must not leave the calendar on a fractional (or worse) day
   const tWorld=performance.now();
   if(G.detDirty&&now-(G.detT||0)>Math.max(0.5,(G.detMs||0)*0.015)){const t0=performance.now();G.detT=now;rebuildDetails();G.detMs=performance.now()-t0;} // the costlier the rebuild, the rarer
   featFlush(now);
