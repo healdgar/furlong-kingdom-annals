@@ -8,6 +8,7 @@
    --seasons checks seasonal production shaders and saves matched seasonal views.
    --world-visuals checks winter silhouettes, animal models and river contact.
    --candidate-ref checks an existing commit, useful for reproducing a suspected baseline failure.
+   --woodland-density allows at most 65% more tree instances; other geometry stays unchanged.
    --river-banks checks flat water and budgets the carved ground and recessed channel bed. */
 import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
@@ -78,6 +79,8 @@ const INSPECT=`(()=>{
   return{errors:errN,glError:gl.getError(),linked:renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS)),webgl2:renderer.capabilities.isWebGL2,
     camera:camera.position.toArray(),terrainEye:eye,textureSizes:[...textures].map(t=>[t.image.width,t.image.height]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]),
     textureCount:renderer.info.memory.textures,triangles:Object.fromEntries(parts.filter(Boolean).map((m,i)=>[i,count(m)])),geometryTriangles:parts.filter(Boolean).reduce((n,m)=>n+count(m),0),riverTriangles:count(G.rivers),terrainTriangles:count(G.terrain),bedTriangles:count(G.riverBed),apronTriangles:count(G.apron),
+    treeTriangles:G.treeChunks.reduce((n,m)=>n+count(m),0),treeInstances:G.treeChunks.reduce((n,m)=>n+m.count,0),
+    treePlacement:{wet:Object.values(G.treeSpots).flat().filter(t=>hAt(t.x,t.z)<=SEA_SURFACE||anyLake(t.x,t.z)||riverAt(t.x,t.z,2)).length,uncleared:Object.values(G.treeSpots).flat().filter(t=>t.shown!==false&&treeGone(furlongAt(t.x,t.z),t)).length},
     herdModels:Object.fromEntries(Object.entries(G.herdMesh||{}).map(([k,m])=>[k,(m.geometry.index?.count||m.geometry.attributes.position.count)/3])),millRaceDraws:(G.wheels||[]).reduce((n,w)=>n+(w.userData.race?.length||0),0),
     render:{...renderer.info.render},shadow:{extent:G.sun.shadow.camera.right,normalBias:G.sun.shadow.normalBias}};
 })()`;
@@ -405,8 +408,8 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   if(args.ui)row.ui=!!candidate?.ui?.valid;
   if(args['service-roads']){row.serviceRoads=!!candidate?.serviceRoads?.valid;row.paidCrossings=!!candidate?.paidCrossings?.valid;}
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
-    row[args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
-      const a=candidate.views[v],b=baseline.views[v];return args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});
+    row[args['woodland-density']?'woodlandGeometryBudget':args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
+      const a=candidate.views[v],b=baseline.views[v];return args['woodland-density']?a.geometryTriangles-a.treeTriangles===b.geometryTriangles-b.treeTriangles&&a.treeInstances>b.treeInstances&&a.treeInstances<=b.treeInstances*1.65&&a.treePlacement.wet===0&&a.treePlacement.uncleared===0:args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});
     row[args['world-visuals']?'waterworksDrawBudget':'sameDrawCalls']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>args['world-visuals']?candidate.views[v].render.calls<=baseline.views[v].render.calls+candidate.views[v].millRaceDraws*1.5+(candidate.views[v].bedTriangles?1:0):candidate.views[v].render.calls===baseline.views[v].render.calls);
     row.textureCountBudget=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].textureCount<=baseline.views[v].textureCount);
     // Inland water reuses the ripple sampler instead of uploading an unused coastal height map.

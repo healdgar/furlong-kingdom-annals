@@ -5714,10 +5714,10 @@ function buildTrees(){
     const i=cIdx(cx,cz),bio=W.biome[i];
     if(bio!==B.FOREST&&bio!==B.PINE)continue;
     if(W.roadCells[i]||W.settlements.some(s=>dist2d(cellX(cx),cellZ(cz),s.pos.x,s.pos.z)<(s.wallR||s.radius)*1.5))continue;
-    const dens=bio===B.FOREST?3:2;
+    const dens=bio===B.FOREST?5:3;
     for(let t=0;t<dens;t++){
       const x=cellX(cx)+ (nj(cx*3+t*7,cz*3)-0.5)*CELL*1.4, z=cellZ(cz)+(nj(cx*3,cz*3+t*13)-0.5)*CELL*1.4;
-      if(anyLake(x,z))continue;
+      if(hAt(x,z)<=SEA_SURFACE||anyLake(x,z))continue;
       const m=nj(cx*7-t*3,cz*7+t*5),edge=[[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>inB(cx+dx,cz+dz)&&W.biome[cIdx(cx+dx,cz+dz)]!==bio);
       // mixed woods: broadleaves with a few conifers, and the small trees of the wood's edge; upland pine with broadleaves low down
       const arr=bio===B.FOREST?(m<0.12?spots.pine:(edge&&m>0.62)||m>0.86?spots.small:spots.dec):(m<0.16&&W.h[i]<320?spots.dec:spots.pine);
@@ -5731,12 +5731,12 @@ function buildTrees(){
     if((bio!==B.MEADOW&&bio!==B.FARM&&bio!==B.MARSH)||W.water[i]||W.roadCells[i]||slopeAt(cx,cz)>0.4)continue;
     const m=nj(cx*11+3,cz*11-7);if(m>(bio===B.MARSH?0.2:0.09))continue;
     const x=cellX(cx)+(nj(cx*5,cz*9)-0.5)*CELL,z=cellZ(cz)+(nj(cx*9,cz*5)-0.5)*CELL;
-    if(anyLake(x,z)||W.settlements.some(s=>dist2d(x,z,s.pos.x,s.pos.z)<(s.wallR||s.radius)*1.1))continue;
+    if(hAt(x,z)<=SEA_SURFACE||anyLake(x,z)||W.settlements.some(s=>dist2d(x,z,s.pos.x,s.pos.z)<(s.wallR||s.radius)*1.1))continue;
     if(G.rivHash&&riverAt(x,z,2))continue;
     (m<0.03?spots.dec:spots.small).push({x,z,s:0.75+nj(cx-4,cz+4)*0.7,v:nj(cx*2,cz*3)});
   }
   // thin evenly to the instance budget (capping in scan order used to plant only the northern forests)
-  for(const k of['dec','pine','small']){const a=spots[k],cap=Math.round((k==='small'?3000:9000)*MAPK*MAPK);if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
+  for(const k of['dec','pine','small']){const a=spots[k],cap=Math.round((k==='small'?4500:13500)*MAPK*MAPK);if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
   /* each species is cut into a 5×5 grid of chunks, each its own instanced mesh with its own bounds, so the renderer
      draws (and shadows) only the woods in view rather than every tree in the realm */
   G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138,14),small:crownMat(0x6f9444,13,[1.8,3.9,2.25])};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
@@ -7829,18 +7829,21 @@ float snowFinish=uGroundSnow*0.35*smoothstep(uSea+0.5,uSea+2.,vWP.y)*smoothstep(
     // Excluded ploughland has a reason: settlement yards stay worn; open waste is rough scrub.
     float built=texture2D(uMask,fu+0.5/uGrid).b;
     float scrub=wild*(1.-smoothstep(0.1,0.8,built))*smoothstep(5.,12.,dB)*smoothstep(3.,8.,dRd)*(1.-smoothstep(0.08,0.22,slope));
-    float clumps=lnoise(wp*0.13),earth=1.-smoothstep(0.24,0.55,clumps);
-    vec3 scrubCol=mix(uSeasonGrass*0.72,mix(vec3(0.38,0.32,0.23),vec3(0.43,0.41,0.36),uDormancy),earth*0.6);
+    // Soft, warped variation: no thresholded square soil islands across open waste.
+    vec2 scrubWarp=vec2(lnoise(wp*0.017),lnoise(wp*0.017+31.7))*18.;
+    float clumps=lnoise((wp+scrubWarp)*0.045)*0.55+lnoise((wp+scrubWarp)*0.11)*0.45;
+    float earth=0.16+(0.5-clumps)*0.3*(1.-smoothstep(0.3,1.5,pixelM));
+    vec3 scrubCol=mix(uSeasonGrass*0.8,mix(vec3(0.38,0.32,0.23),vec3(0.43,0.41,0.36),uDormancy),earth);
     // Randomly turned, asymmetric stem fans; individual strokes fade before they alias.
     vec2 tuftCell=floor(wp/3.4),tuftP=fract(wp/3.4)-0.5;
     float tuftAngle=lh(tuftCell)*6.2831853;vec2 tuftAxis=vec2(cos(tuftAngle),sin(tuftAngle));
     vec2 tuft=vec2(dot(tuftP,tuftAxis),dot(tuftP,vec2(-tuftAxis.y,tuftAxis.x)));
-    tuft-=vec2(lh(tuftCell+17.),lh(tuftCell+43.))*0.28-0.14;
+    tuft-=vec2(lh(tuftCell+17.),lh(tuftCell+43.))*0.7-0.35;
     float stemD=min(abs(tuft.x),min(abs(tuft.x-tuft.y*0.65),abs(tuft.x+tuft.y*0.48)));
     float stemAA=max(0.014,pixelM/3.4*0.7),stems=(1.-smoothstep(0.012,0.012+stemAA,stemD))*smoothstep(-0.3,-0.2,tuft.y)*(1.-smoothstep(0.1,0.31,tuft.y));
-    stems*=smoothstep(0.28,0.65,clumps)*(1.-smoothstep(0.35,1.2,pixelM));
+    stems*=smoothstep(0.28,0.65,clumps)*(1.-smoothstep(0.12,0.5,pixelM));
     scrubCol=mix(scrubCol,mix(vec3(0.58,0.49,0.3),vec3(0.51,0.46,0.36),uDormancy),stems*0.65);
-    c=mix(c,scrubCol,scrub*0.72);
+    c=mix(c,scrubCol,scrub*0.6);
     float yard=wild*smoothstep(0.15,0.8,built)*(1.-smoothstep(12.,32.,min(dB,dRd)));
     c=mix(c,vec3(0.43,0.37,0.27)*miniatureDetail(7.,wp/3.)*(0.96+0.08*n2),yard*0.65);
     vec3 headland=mix(vec3(0.44,0.37,0.25)*miniatureDetail(7.,wp/3.),uSeasonGrass*0.7,smoothstep(0.35,0.72,clumps));
