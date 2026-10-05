@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const source=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||new URL('../index.html',import.meta.url),'utf8');
 const names=['initHousePurse','buyBuildingMaterial','lordAcct','houseAcct','acct','flow','transfer','borrow','mkt','rsv','offer','lard','forSale','avail','purchase','clearMarket','heads_','means','craftWork','shareOutput','reconcile','topUpFood','eatHouseholds','tickPopulation','headsOf','folkIndex','repay','inherit','inheritanceCustom','estateChildren','estateKin','landHeirs','estateShares','offerLand','moveStock','herdOf','herdLoss','herdBirth','herdSync','herdInit','driveOffHerds','takeHorses','ladeOut','dropPerson','yearOfFolk','removeAt','provision','departHousehold'];
 const ownership=source.slice(source.indexOf('function oldHouseholdHead('),source.indexOf('function houseFolk(s)'));
-const functions=names.map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
+const functions=[...names,'publicOrderMen','publicOrderSuppression'].map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
 const constants=['GOODS','GOODBASE','NEED','LU','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','SHARE'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
 
 export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,commodity=false,transformSource,bootstrap=''}={}){
@@ -16,7 +16,7 @@ export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,p
     day:()=>1,year:()=>0,AD:()=>850,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),ageYrs:p=>p.age??30,BEASTS:['sheep','cattle','horses','swine'],
     price:(x,g)=>x.px[g]??1,tilledOf:()=>[],parishOf:()=>null,payAmong:()=>assert.fail('fixture has no demesne wages'),
     tradeCounts:()=>Object.fromEntries(H.map(h=>[h.tr,1])),marketFor:()=>null,book:()=>{},lordTake:()=>{},folkIndex:()=>new Map(H.map(h=>[h.id,h])),carryingCap:()=>1000,
-    emit:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
+    sheltered:()=>0,emit:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
   if(bootstrap)vm.runInContext(bootstrap,C);
   vm.runInContext(`globalThis.FURLONG_COMMODITY_BALANCES=${!!commodity};`,C);
   const program=constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions;

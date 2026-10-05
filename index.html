@@ -6554,6 +6554,12 @@ function wallBuilt(s,a){const B=s.wallBuild;if(!B)return true;return Math.abs(Ma
 function garrisonNeed(s){ // the watch a town keeps: by its people, its walls and castle, and the danger it stands in
   const threat=(s.raidedUntil>day()?1:0)+(houseAtWar(s.owner)?0.8:0)+(s.role==='border'?0.5:0);
   return (s.pop*0.03*(s.walls>0?1.4:1)+(casRing(s)||casKeep(s)?12:0)+6)*(1+0.6*threat);}
+function publicOrderMen(s){return Math.max(0,s.garrison||0)+Math.max(0,sheltered(s,true))+Math.max(0,s.militia||0)*0.5;}
+function publicOrderSuppression(s){ // existing forces restore order gradually; hunger and taxes still drive unrest
+  if(!(s.unrest>10))return 0;
+  return 0.35*clamp(publicOrderMen(s)/(Math.max(20,s.pop)*0.15),0,1)*clamp((s.unrest-10)/30,0,1);}
+function watchRecruitment(s){return Math.max(0,Math.min(40,Math.floor(s.pop*0.12-Math.max(0,s.garrison||0))));}
+function suppressUnrestAmount(s){return Math.min(Math.max(0,s.unrest||0),20,publicOrderMen(s)/Math.max(20,s.pop)*200);}
 function tickGarrisons(){ // monthly: each town musters men to its watch, from its own people, at its lord's charge
   if(day()%30!==11)return;
   for(const s of W.settlements){if(s.siegeBy)continue;const need=garrisonNeed(s),g=s.garrison||0;if(g>=need*0.9||s.pop<40)continue;
@@ -10210,6 +10216,7 @@ function showInspect(pk){
     if(s.cult)h+=row('Tongue',CULT[s.cult].name);
     h+=row('Prosperity',Math.round(s.prosperity));
     h+=row('Unrest',Math.round(s.unrest));
+    h+=row('Keeping order',`${Math.round(publicOrderMen(s))} watch and troops in town · unrest −${publicOrderSuppression(s).toFixed(2)}/day from their presence; hunger and taxes still matter`);
     h+=row('Food stores',Math.round(s.stores.grain+s.stores.fish));
     h+=row('Walls',['none','palisade','stone'][s.walls]||'stone');
     if(s.furl&&s.furl.length){const ar=s.furl.filter(f=>ARABLE.has(f.kind)),n=st=>ar.filter(f=>f.state===st).length,ha=a=>Math.round(a/10000);
@@ -11097,7 +11104,7 @@ function tickPopulation(){let PM=W._pm;
       h.population.set(s,Math.max(0,n+births-deaths));}if(s.pop<5)s.pop=5;
     if(!Number.isFinite(s.pop))s.pop=Math.max(5,Math.min(K,50));
     if(s.recovered>0)s.recovered*=0.9995; // immunity fades over years, not overnight
-    s.unrest=clamp(s.unrest+hunger*1.6+(MOD.tax-12)*0.012-(s.festivalUntil>day()?0.5:0)-0.14,0,100);
+    s.unrest=clamp(s.unrest+hunger*1.6+(MOD.tax-12)*0.012-(s.festivalUntil>day()?0.5:0)-0.14-publicOrderSuppression(s),0,100);
     { // prosperity is the place's surplus, measured: what its land and trade keep beyond its people's needs, the trade passing through, less hunger, disorder and danger; shocks knock it down and it returns toward what the economy supports
       const lm=s._fill!=null&&s.folk&&s.folk.length?(Math.min(0,s._fill-1)*3+0.6*Math.log1p(Math.max(0,s._wealth||0)/(foodYr()*HOUSEHOLD))-0.3):(s._capNow||cap)/Math.max(20,s.pop)-1,tr=(s.tradeV||0)/(s.pop+60); // the margin its families live by: whether they can buy their bread, and what they have put by (before the households are counted, what the land and market could keep)
       const T=clamp(45+35*Math.tanh(1.3*lm)+20*Math.tanh(tr/3)-70*hunger-(s.unrest||0)*0.15-(s.siegeBy?25:0)-(s.quarantineUntil>day()?10:0),1,100);
@@ -11195,12 +11202,12 @@ function tickPolitics(){
   }
   // riots & revolts
   for(const s of W.settlements){
-    if(s.unrest>72&&chance('sim',0.02)){
+    const hold=publicOrderMen(s)/Math.max(20,s.pop)*8,isSeat=W.houses.some(h=>h&&W.settlements[h.seat]===s);
+    if(s.unrest>72&&chance('sim',0.02*(1-clamp(hold,0,0.9)))){
       s.unrest-=14;s.prosperity=clamp(s.prosperity-3,1,100);
       emit('fates',5,s.pos,vary('riot',[()=>`Riot in ${s.name}! The mob overturns the market stalls and cries against the crown.`,()=>`The mob of ${s.name} overturns the market stalls, crying against the crown: there is riot in the streets!`,()=>`${s.name} is in riot; the mob overturns the market stalls and cries against the crown.`,()=>`Riot! In ${s.name} the mob cries against the crown and overturns the market stalls.`,()=>`Market stalls are overturned in ${s.name} by a mob crying against the crown.`,()=>`The mob in ${s.name} cries against the crown, and the market stalls go over; there is riot in the streets.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, riot breaks out in ${s.name}: the mob overturns the market stalls and cries against the crown.`]));
       if(chance('sim',0.3))igniteFire(s,1,'riot');
     }
-    const hold=((s.garrison||0)+sheltered(s))/Math.max(20,s.pop)*8,isSeat=W.houses.some(h=>h&&W.settlements[h.seat]===s); // the watch and any host within keep the town down
     const prRev=clamp((s.unrest-60)/40-hold,0,1)*0.05;
     if(prRev>0&&!s.revolted&&s.kind!=='capital'&&!isSeat&&chance('sim',prRev)){ // any town, the crown's or a lord's, rises when its anger outruns the hand that holds it
       let nh=-1,bd=2600*MAPK;const ow=s.owner; // it looks to a near power at odds with its master; if there is none, the rising has nowhere to go
@@ -11798,7 +11805,7 @@ function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
 function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
-function sheltered(s){const si=W.settlements.indexOf(s),bucket=armySettlementIndex().bySettlement.get(si)||[];let total=0;for(const b of bucket)if(!b.gone&&!b.field&&b.house===s.owner&&(b.state==='idle'||b.state==='arrived'))total+=b.strength;return total;}
+function sheltered(s,peacekeeping=false){const si=W.settlements.indexOf(s),bucket=armySettlementIndex().bySettlement.get(si)||[];let total=0;for(const b of bucket)if(!b.gone&&!b.field&&(b.state==='idle'||b.state==='arrived')&&(peacekeeping?friendlyTown(b,s):b.house===s.owner))total+=b.strength;return total;}
 function prominence(s){ // height of the town above the country within ~300 m: high ground tires an assault
   if(s._prom==null){let t=0;for(let k=0;k<12;k++){const an=k/12*Math.PI*2;t+=hAt(s.pos.x+Math.cos(an)*300,s.pos.z+Math.sin(an)*300);}s._prom=hAt(s.pos.x,s.pos.z)-t/12;}
   return s._prom;}
@@ -13860,7 +13867,7 @@ function settlementCmd(cmd,si){
   const pay=c=>spend(me,c);
   if(cmd==='relief'){if(cdLeft('s_rel'+si)||!pay(250))return;setCd('s_rel'+si,60);
     acct(houseAcct(me),250);purchase(s,'grain',houseAcct(me),s.pop*0.4);giveFood(s,'grain',purchase.got,houseAcct(me));s.unrest=clamp(s.unrest-6,0,100);/* the grain bought in the market and given out */emit('trade',3,s.pos,`${me>0?'Grain from the lord’s barns':'Royal grain'} is distributed at the market cross of ${s.name}.`);}
-  else if(cmd==='garrison'){if(cdLeft('s_gar'+si)||!pay(400))return;setCd('s_gar'+si,60);s.garrison+=40;payAmong(heads_(s,h=>ageYrs(h)<50),400,null,'garrisons');emit('war',3,s.pos,`Forty men-at-arms march into ${s.name} to strengthen its garrison.`);}
+  else if(cmd==='garrison'){const n=watchRecruitment(s),cost=n*10;if(!n||cdLeft('s_gar'+si)||!pay(cost))return;setCd('s_gar'+si,60);s.garrison=(s.garrison||0)+n;payAmong(heads_(s,h=>ageYrs(h)<50),cost,null,'garrisons');emit('war',3,s.pos,`${n} townspeople muster into the local watch of ${s.name} to keep order and guard the gates.`);}
   else if(cmd==='callout'||cmd==='levy'){const watch=cmd==='callout';if(cdLeft('s_lev'+si)||(watch?(s.garrison||0)<20:!pay(300)))return;setCd('s_lev'+si,watch?20:60); // every town can put men in the field: its watch, or a levy of its people
     const want=watch?s.garrison*0.75:Math.min(s.pop*0.12,40+s.pop*0.08),a=raiseArmy(me,si,want,me===0?'crown':'host');if(watch)s.garrison-=a.strength;
     a.name=watch?`The Watch of ${s.name}`:`The Levy of ${s.name}`;a.home=si;a.hold=true;if(!watch)soldiersPay(a,300,null);showInspect({type:"army",a});
@@ -13871,8 +13878,8 @@ function settlementCmd(cmd,si){
     wallWorks(s,up);rebuildWalls(); // raised round the circuit over a season (timber) or years (stone), the old palisade standing until the masons reach it
     emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
   else if(cmd==='seal'){if(cdLeft('s_seal'+si))return;setCd('s_seal'+si,20);sealGates(s,!(s.quarantineUntil>day()));}
-  else if(cmd==='suppress'){if(cdLeft('s_sup'+si)||!pay(150))return;payAmong(heads_(s,h=>ageYrs(h)<50),150,null,'garrisons');setCd('s_sup'+si,30);
-    const hot=s.unrest>80;s.unrest=clamp(s.unrest-20,0,100);s.prosperity=clamp(s.prosperity-5,1,100);
+  else if(cmd==='suppress'){const amount=suppressUnrestAmount(s);if(!(amount>0)||cdLeft('s_sup'+si)||!pay(150))return;payAmong(heads_(s,h=>ageYrs(h)<50),150,null,'garrisons');setCd('s_sup'+si,30);
+    const hot=s.unrest>80;s.unrest=clamp(s.unrest-amount,0,100);s.prosperity=clamp(s.prosperity-5,1,100);
     emit('fates',4,s.pos,`Soldiers clear the streets of ${s.name}; the ringleaders are put in the stocks.`);
     if(hot&&chance('sim',0.3)){igniteFire(s,1,'riot');emit('fates',5,s.pos,`The crowd in ${s.name} fights back, and a torch finds a thatched roof.`);}}
 }
@@ -13897,14 +13904,14 @@ function settlementActsHTML(s){
   const si=W.settlements.indexOf(s);
   if(inRevolt(s.owner)&&s.owner!==plyH())return '<div class="note">Held by rebels — your writ does not run here.</div>';
   if(s.owner!==plyH())return `<div class="note">${esc(W.houses[s.owner].name)} holds ${esc(s.name)}; its lord governs here.${crownOn()?' The crown may ask him (Works: clear a district), or honour, pressure or attaint his house.':''}</div>`;
-  const rel=cdLeft('s_rel'+si),gar=cdLeft('s_gar'+si),sup=cdLeft('s_sup'+si),sl=cdLeft('s_seal'+si),rd=d=>d?`ready in ${d} d`:'';
+  const rel=cdLeft('s_rel'+si),gar=cdLeft('s_gar'+si),sup=cdLeft('s_sup'+si),sl=cdLeft('s_seal'+si),rd=d=>d?`ready in ${d} d`:'',recruits=watchRecruitment(s),suppression=suppressUnrestAmount(s);
   return cbtn('s-relief',si,'Send relief grain',250,rd(rel))+
-    cbtn('s-garrison',si,'Reinforce the garrison (+40)',400,rd(gar))+
+    cbtn('s-garrison',si,`Muster local watch (+${recruits})`,recruits*10,rd(gar)||(!recruits?'watch fully mustered':''),'local recruits; wages continue while they serve; troops in town gradually reduce unrest and deter riots')+
     cbtn('s-callout',si,`Call out the watch as a host (${Math.round((s.garrison||0)*0.75)} men)`,0,rd(cdLeft('s_lev'+si))||((s.garrison||0)<20?'too few':''),'a host you command; a quarter stay to keep the gates')+
     cbtn('s-levy',si,`Levy a host here (~${Math.round(Math.min(s.pop*0.12,40+s.pop*0.08,s.pop*0.25))} men)`,300,rd(cdLeft('s_lev'+si)),'townsmen and villagers called from their work')+
     cbtn('s-walls',si,s.wallBuild?`Masons at work (${Math.round(wallProg(s)*100)}%)`:s.walls>=2?'Walls are stone':(s.walls?'Rebuild the walls in stone':'Raise a palisade'),1500*(s.walls+1),s.wallBuild?'building':s.walls>=2?'complete':'')+
     cbtn('s-seal',si,s.quarantineUntil>day()?'Open the gates':'Seal the gates (quarantine)',0,rd(sl))+
-    cbtn('s-suppress',si,'Suppress unrest (−20)',150,rd(sup))+worksHTML(s);
+    cbtn('s-suppress',si,`Suppress unrest (−${suppression.toFixed(1)})`,150,rd(sup)||(!(suppression>0)?'needs troops and unrest':''),'uses the watch and troops in town; prosperity −5; an angry crowd may fight back')+worksHTML(s);
 }
 function orderArmy(a,si){
   if(!a||a.gone)return false;

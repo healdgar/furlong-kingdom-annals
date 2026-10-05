@@ -11,6 +11,7 @@ const r=vm.createContext({console,history,draws,clamp:(v,a,b)=>Math.max(a,Math.m
 vm.runInContext("'use strict';let W={clock:{day:1},notables:[],legitimacy:70,houses:[{name:'Royal',seat:0}],settlements:[{name:'Town',pos:{x:0,z:0},pop:100,unrest:0,kind:'capital'}],treasury:1000};W.capital=W.settlements[0];function day(){return W.clock.day}function ageOf(n){return Math.floor((day()-n.birthDay)/360)}",r);
 const cast=(old?baseline:source);const start=old?cast.indexOf('let NID=1;'):cast.indexOf('const NOTABLE_INDEXES=');
 vm.runInContext("'use strict';"+cast.slice(start,cast.indexOf('\nconst TRAITS=',start))+fn(cast,'notableById')+fn(cast,'killNotable')+fn(cast,'tickPolitics'),r);
+if(!old)vm.runInContext(fn(cast,'publicOrderMen'),r);
 if(!old)vm.runInContext('notableIndexRebuild()',r);
 r.run=s=>vm.runInContext(s,r);r.world=()=>r.run('W');return r;}
 function pair(){return[realm(true),realm()];}
