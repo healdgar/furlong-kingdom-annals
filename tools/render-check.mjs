@@ -230,6 +230,55 @@ function worldVisualCheck(){
   return{crowns,models,river:{joins,crossSlope,exposed,exposedGround,recessedBed,checked,attributeCapacity,overlayVertices,overlayFailures,slopedBanks,seaLevel,transparentDepth},valid:linked&&crowns.every(c=>c.winter.total<c.summer.total*0.8&&c.winter.total>c.summer.total*0.02&&c.winter.spine>10)&&Object.values(models).every(m=>m.triangles<=216)&&models.horses.height>models.cattle.height&&models.cattle.parts.includes(6)&&!models.horses.parts.includes(6)&&overlayVertices>0&&overlayFailures===0&&slopedBanks&&seaLevel&&transparentDepth&&crossSlope<0.001&&exposedGround===0&&recessedBed===checked&&attributeCapacity&&joins.every(q=>q.water!==undefined&&(q.ground===undefined||q.ground<q.water)&&(q.bed!==undefined&&q.bed<q.water-0.5))};
 }
 
+function uiIntegrationCheck(){
+  const money=()=>JSON.stringify({treasury:W.treasury,households:[...W.households.values()].map(h=>[h.id,h.assets?.w,h.assets?._debt]),stores:W.settlements.map(s=>s.stores)}),before=money();
+  document.body.classList.remove('hideui');contextDismiss();const checks={};
+  for(const [id,kind]of [['brand','about'],['datechip','timeline'],['goldchip','accounts']]){
+    const button=document.getElementById(id);button.focus();button.click();checks[kind]=contextUI.kind==='info'&&infoUI.kind===kind&&document.getElementById('infobody').textContent.length>20;
+    const content=document.getElementById('contextcontent');checks[kind+'Fits']=content.scrollWidth<=content.clientWidth+1;contextDismiss();checks[kind+'Focus']=document.activeElement===button;
+  }
+  openInfo('accounts',W.capital);checks.townAccounts=infoUI.town===W.capital&&document.getElementById('contexttitle').textContent.includes(W.capital.name);
+  const cameraBefore=camera.position.toArray().join(','),kind=contextUI.kind,p=cam.cur.focus,event={cat:'trade',text:'A local grain delivery is completed.',day:day(),pos:{x:p.x,z:p.z}},savedRecent=eventUI.recent;
+  eventUI.recent=[];postEventDialog(event);checks.noTakeover=contextUI.kind===kind&&camera.position.toArray().join(',')===cameraBefore;
+  contextDismiss();eventBubbleUpdate();checks.localExplanation=!document.getElementById('eventbubble').hidden&&eventUI.bubble===event;
+  document.getElementById('eventbubbledetails').click();checks.eventDetails=contextUI.kind==='event'&&contextUI.expanded&&document.getElementById('eventtext').textContent===event.text;
+  contextDismiss();eventUI.recent=savedRecent;eventUI.hold=null;eventBubbleUpdate();
+  const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);checks.uniqueIDs=new Set(ids).size===ids.length;checks.unchanged=before===money();document.body.classList.add('hideui');
+  return{checks,valid:Object.values(checks).every(Boolean)};
+}
+function serviceRoadCheck(){
+  const mills=[],quays=[];for(const s of W.settlements){
+    const g=streetGraph(s),publicStreet=(s.streets||[]).find(st=>!st.hidden&&!st.gone&&!st.castlePath&&st.kind==='road');
+    for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'){
+      const start=serviceDoor(b),n=s.streets.length,ok=s._lay.serviceAccess(b),walker={house:s.owner,settlement:s,placed:s._lay.placed,requireRoadCrossing:true};
+      mills.push({town:s.name,riverWheel:b.millWater?.kind==='river'&&!lakeAt(s,b.millWater.x,b.millWater.z,0),connected:ok&&!!b.st&&!b.st.hidden&&!b.st.gone,idempotent:s.streets.length===n,dry:!armyObstacle(walker,start.x,start.z),clear:!!b.st?.serviceAccess&&b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q)),blocked:b.st?.pts.slice(2).map((q,k)=>{const p=b.st.pts[k+1];if(armySegmentClear(walker,p,q))return null;const n=Math.ceil(dist2d(p.x,p.z,q.x,q.z));for(let i=1;i<=n;i++){const x=lerp(p.x,q.x,i/n),z=lerp(p.z,q.z,i/n),reason=armyObstacle(walker,x,z);if(reason)return{x,z,reason,buildings:s._lay.placed.near(x,z,1).filter(o=>!o.removed&&o.state!=='gone').map(o=>({arch:o.arch,x:o.x,z:o.z,w:o.w,d:o.d}))};}return{p,q,reason:'grade'};}).filter(Boolean)});
+    }
+    for(const q of s.streets)if(q.kind==='quay'&&!q.hidden&&!q.gone){const p=q.pts[Math.floor(q.pts.length/2)],n=s.streets.length,ok=s._lay.quayAccess(q),a=nearestNode(g,p.x,p.z),dest=publicStreet?.pts[0],b=dest?nearestNode(g,dest.x,dest.z):-1;
+      quays.push({town:s.name,connected:ok&&!!streetPath(g,a,b),idempotent:s.streets.length===n});}
+  }
+  let grange=null;
+  for(const s of W.settlements){if(grange)break;const anchor=(s.places||[]).find(p=>p.kind==='market')||s.pos;
+    for(const r of[30,50,80,120,180]){if(grange)break;for(let k=0;k<12;k++){const x=anchor.x+Math.cos(k*Math.PI/6)*r,z=anchor.z+Math.sin(k*Math.PI/6)*r;
+      if(!s._lay.live.storageSite(x,z,'grange',true)||!Number.isFinite(storageRoute(s,{x,z},anchor)))continue;
+      const oldN=s.streets.length,b=s._lay.live.storageSite(x,z,'grange',false);if(!b)continue;
+      const n=s.streets.length,walker={house:s.owner,settlement:s,placed:s._lay.placed,requireRoadCrossing:true};grange={town:s.name,connected:!!b.st?.serviceAccess&&!b.st.hidden&&!b.st.gone,idempotent:s._lay.serviceAccess(b)&&n===s.streets.length,marketRoute:Number.isFinite(storageRoute(s,b,anchor)),clear:b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q))};
+      b.removed=true;s.buildings.splice(s.buildings.indexOf(b),1);for(const st of s.streets.slice(oldN)){st.gone=true;st.hidden=true;}break;
+    }}
+  }
+  return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.riverWheel&&m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
+}
+
+function paidCrossingCheck(){
+  const before=JSON.stringify(G.bridgeSpans),s=W.capital,r=G.rivStrips.find(r=>!r.canal&&r.pts.length>12),k=Math.floor(r.pts.length/2),p=r.pts[k],a=r.pts[k-1],b=r.pts[k+1],L=dist2d(a.x,a.z,b.x,b.z)||1,nx=-(b.z-a.z)/L,nz=(b.x-a.x)/L,d=r.hw[k]+20,
+    P=[{x:p.x-nx*d,z:p.z-nz*d},p,{x:p.x+nx*d,z:p.z+nz*d}],n=s.streets.length;
+  try{
+    for(const kind of['quay','alley','lane','road'])s.streets.push({kind,hw:3,pts:P,serviceAccess:kind==='alley'?'quay':undefined});
+    rebuildRoadMesh();const unchanged=JSON.stringify(G.bridgeSpans)===before;
+    const riverWheels=W.settlements.flatMap(t=>t.buildings.filter(b=>b.arch==='mill'&&!b.removed&&b.state!=='gone').map(b=>({town:t.name,kind:b.millWater?.kind,outsidePond:!lakeAt(t,b.millWater.x,b.millWater.z,0)})));
+    return{unpricedLanesLeaveBridgesUnchanged:unchanged,bridgeCount:G.bridgeSpans.length,riverWheels,valid:unchanged&&riverWheels.every(m=>m.kind==='river'&&m.outsidePond)};
+  }finally{s.streets.splice(n);rebuildRoadMesh();}
+}
+
 async function check(which,w){
   const {c,kill}=await launch(),id=which+'-'+w.seed+'-'+w.coast,errors=[];
   try{
@@ -239,7 +288,7 @@ async function check(which,w){
     await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__renderRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});
     await c.send('Emulation.setDeviceMetricsOverride',{width:Number(args.width||1440),height:Number(args.height||900),deviceScaleFactor:1,mobile:!!args.touch});
     if(args.touch)await c.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${w.seed}&c=${w.coast}`});
+    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${args.founding||w.seed}&c=${w.coast}`});
     const deadline=Date.now()+120000;let ready=false;
     while(Date.now()<deadline){if(errors.length)throw new Error(errors.join('\n'));ready=await ev(c,"document.getElementById('loading')===null&&typeof renderer!=='undefined'");if(ready)break;await sleep(200);}
     if(!ready)throw new Error('boot timeout');
@@ -247,7 +296,7 @@ async function check(which,w){
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
     const gardenView="(()=>{let best=-Infinity,q;for(let i=0;i<G.feat.d2.length;i+=4){if(G.feat.d2[i+2]<255)continue;const k=i/4,x=(k%FR+0.5)*FPX-SIZE/2,z=(Math.floor(k/FR)+0.5)*FPX-SIZE/2,d=Math.hypot(x-W.capital.pos.x,z-W.capital.pos.z);if(d>400)continue;const clearance=Math.min(G.feat.d2[i]/4,G.feat.d1[i]/4,G.feat.d1[i+2]/4),score=clearance-d*0.025;if(score>best){best=score;q=[x,z,38,G.feat.d2[i+3]/255*Math.PI+0.3,0.5];}}if(!q)throw Error('No visible capital garden');return q;})()";
     const joinView="[-3168.1078406073434,-3248.1033372513384,64.11971192656942,3.6702058129495168]"; // reported seed-1001 street view
-    const views={streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
+        const views={mill:"(()=>{const s=W.settlements.find(s=>s.lake&&s.mill)||W.settlements.find(s=>s.mill),b=s.mill;return[b.x,b.z,95,b.rot+1.1];})()",streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       riverMouth:"(()=>{const r=G.rivStrips.find(r=>hAt(r.pts[r.pts.length-1].x,r.pts[r.pts.length-1].z)<SEA+.2)||G.rivStrips[0],p=r.pts.findLast(p=>hAt(p.x,p.z)>SEA+.7)||r.pts[r.pts.length-2];return[p.x,p.z,200,.8,-.35];})()",
@@ -334,6 +383,9 @@ async function check(which,w){
         const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'.png'),Buffer.from(shot.data,'base64'));
       }
     }
+    if(which==='candidate'&&args.ui)result.ui=await ev(c,`(${uiIntegrationCheck.toString()})()`);
+    if(which==='candidate'&&args['service-roads'])result.paidCrossings=await ev(c,`(${paidCrossingCheck.toString()})()`);
+    if(which==='candidate'&&args['service-roads'])result.serviceRoads=await ev(c,`(${serviceRoadCheck.toString()})()`);
     return result;
   }catch(e){return{id,failed:e.message,errors};}finally{kill();}
 }
@@ -345,6 +397,8 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),reflectivity:!!candidate?.reflectivity?.valid,metalModel:!!candidate?.metalModel,gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
   if(args['world-visuals'])row.worldVisuals=!!candidate?.worldVisuals?.valid;
   if(args.seasons)row.seasons=!!candidate?.seasons?.valid;
+  if(args.ui)row.ui=!!candidate?.ui?.valid;
+  if(args['service-roads']){row.serviceRoads=!!candidate?.serviceRoads?.valid;row.paidCrossings=!!candidate?.paidCrossings?.valid;}
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row[args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
       const a=candidate.views[v],b=baseline.views[v];return args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});

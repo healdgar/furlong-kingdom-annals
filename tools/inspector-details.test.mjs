@@ -30,11 +30,12 @@ test('the stock register preserves fractional quantities and reads quotes withou
 test('household details use the enduring owner, include property in other places, and do not create holdings',()=>{
   const a={head:{id:4},members:new Set()},p={id:4,_hh:a};a.members.add(p);
   const stock=Object.freeze({held:{grain:0.25},sale:{cloth:0.5},animals:{sheep:2},reserve:{grain:1.75}});
-  const s={name:'Home',furl:[],buildings:[],_owners:new Map([[a,stock]])},remote={name:'Away',furl:[{kind:'field',area:12000,title:{own:{owner:a,beneficiary:{id:99}},work:{owner:a}}}],buildings:[{state:'sound',title:{owner:a},name:'Inherited house'}]};
-  const tables=[];const C=ctx({s,p,W:{settlements:[s,remote]},KIND_NAME:{field:'Field'},ageYrs:()=>20,detailBuilding:b=>b.name,detailTable:(id,title,heads,rows)=>{tables.push({id,rows});return '';}});
-  vm.runInContext(fn('detailNumber')+'\n'+fn('detailHousehold'),C);vm.runInContext('detailHousehold(s,p)',C);
+  const s={name:'Home',furl:[],buildings:[],_owners:new Map([[a,stock]])},remote={name:'Away',furl:[{kind:1,state:1,area:12000,title:{own:{owner:a,beneficiary:{id:99}},work:{owner:a}}}],buildings:[{state:'sound',title:{owner:a},name:'Inherited house'}]};
+  const tables=[];const C=ctx({s,p,W:{settlements:[s,remote]},LS:{WILD:0,WOOD:1,TILLED:2,PASTURE:3,SCRUB:4,BURNT:5},KIND_NAME:['','open field'],ageYrs:()=>20,detailBuilding:b=>b.name,detailTable:(id,title,heads,rows)=>{tables.push({id,rows});return '';}});
+  vm.runInContext(fn('landName')+'\n'+fn('detailNumber')+'\n'+fn('detailHousehold'),C);vm.runInContext('detailHousehold(s,p)',C);
   assert.equal(tables.find(t=>t.id==='detail-pantry').rows.length,3);const rights=tables.find(t=>t.id==='detail-property').rows;
   assert.equal(rights.length,2);assert.equal(rights[0][2],'Owned and worked');assert.equal(rights[1][2],'Owned');assert.equal(rights[0][0],'Away');
+  assert.match(rights[0][1],/^woodland · /);
   assert.equal(s._owners.size,1);assert.equal(remote._owners,undefined);
 });
 test('expanded court detail retains every memo, full explanations, both ledgers and fractional entries',()=>{

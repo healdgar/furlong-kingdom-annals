@@ -244,3 +244,52 @@ Local ignored evidence: `tools/soak-results/reel-inventory-crash-2026-10-04/`
 (`repeat1` original cargo failure, `pending-trace` production drift,
 `hotfix-final-fresh` and `hotfix-final-resume`), and
 `tools/soak-results/commodity-cargo-fix-final-replay30-2026-10-05/`.
+
+
+## Native scan removal and parish graveyards
+
+Completed against published `b264e07`:
+
+- [x] Crop allocation only recounts the town when the requested quantity exceeds
+  its available unassigned stock and needs a roundoff check.
+- [x] A purchase wholly supplied by the buyer's own stock skips seller enumeration.
+- [x] Native bulk offers reuse positive owner membership and existing registration
+  ranks; empty accounts are excluded and livestock retains its existing path.
+- [x] Warehouse candidates are reused by source and good, with private facilities
+  scoped to their owner. Hauling stops when the daily capacity is exhausted.
+- [x] Daily spoilage shares the facility setup from the storage phase; standalone
+  spoilage still refreshes facilities.
+- [x] Native row queries and totals reuse the existing positive-row membership,
+  excluding empty historical cargo. A scalar ordinal on each canonical facility
+  preserves the original floating-point summation order.
+
+No additional maintained commodity membership index or journal emission call was
+introduced. Market clearing also reuses its existing pooled rows with an advancing
+cursor, retaining the exact shortage arithmetic near exhaustion. Household pantry,
+hunger, debt and daily settlement tracking remain authoritative.
+
+Parish church plots now reserve dry churchyards in the existing placement hash.
+Local deaths retain the existing person object in the town's burial register and
+increment the parish count once; emigrants are excluded. Rendering uses at most
+24 grave markers per church, and the church inspector exposes recent linked
+burials. Church rebuilding reuses the existing yard footprint. Reserving this
+land intentionally changes generated town layouts.
+
+Validation: all 762 source/unit checks pass. Frozen-core and market comparisons
+retain exact quantities and daily settlement output. Counters verify zero routine
+allocation recounts, zero seller scans for fully self-supplied purchases, exclusion
+of 1,000 empty owners and cargo locations, and one shared spoilage setup. A Chrome
+boot/death/render check finds 16 churchyards, zero wet plots, one recorded burial
+and no simulation or journal fault. No multi-year performance benchmark was run
+for this batch; these results demonstrate removed work, not a measured speedup.
+
+
+## Woodland resource inspector
+
+Land headings and household holdings now describe current use before the retained
+farming layout. Woodland cards show the owning town's timber stock across all
+owners, existing tree counts and the parcel's contribution to pig-forage capacity.
+Standing timber volume and wildlife populations remain explicitly unmeasured.
+This is a read-only inspector change: no new simulation records, indexes or tick
+work. Fifteen existing focused UI/architecture checks pass, and an isolated
+inspector probe confirms woodland/unclaimed labels and no state mutation.

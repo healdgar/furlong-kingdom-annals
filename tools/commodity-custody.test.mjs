@@ -66,11 +66,11 @@ test('bandit raid credits v3 cargo proceeds once at the fence and leaves money u
   const fence={name:'fence',owner:0,pos:{x:0,z:0},stores:{grain:0,fish:0},folk:[],buildings:[],pop:0,prosperity:50,unrest:0};
   r.W.settlements.push(fence);
   r.eval(`
-    day=()=>30; chance=()=>true; nearestSettlementIdx=()=>1; polyPos=()=>({x:0,z:0}); dist2d=()=>0;
+    day=()=>30; chance=()=>true; nearestSettlementIdx=()=>1; polyPos=()=>({x:0,z:0}); dist2d=()=>0; globalThis.OUTLAW_MAX=12; recruitBandit=()=>false; outlawCampEnds=()=>{};
     s.stores.grain=10; mkt(s,'grain').clear(); addHeld(s,H[0],'grain',4);
     const cargo={good:'grain',qty:4,m:H[0],dest:1,origin:0,value:4,departDay:0,arriveDay:30,poly:[{x:0,z:0}],sea:false,river:false,robbed:false};
     storageCargoOut(cargo,s); W.caravans=[cargo];
-    W.banditCamps=[0,1,2].map(id=>({id,x:0,z:0,raids:0,born:0,king:null}));
+    W.banditCamps=[0,1,2].map(id=>({id,x:0,z:0,raids:0,born:0,king:null,men:[{id:'member'}],nextRecruit:37}));
     W.treasury=0; globalThis.cargo=cargo; globalThis.fence=W.settlements[1];
   `);
   const moneyBefore=r.coins();
