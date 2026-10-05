@@ -16,7 +16,11 @@ test('managed claim writer architecture remains reviewed',()=>{
  // pending purchase completion and canonical-order lot indexes. Writers, captures,
  // purchase filtering and arithmetic provenance remain intact; focused tests and
  // native comparisons against f2e4b93 renew this contract.
- assert.equal(digest(source.slice(a,b)),"264236ec6c04fefd4717a68eb9f786113e6575cd9441126aae57a7f42717443a");
+ // Consumption now proves small requests through an owned, non-transit lot;
+ // legal/physical writers and arithmetic remain unchanged. Native total/getter
+ // admission and deferred warming preserve cache and override semantics. Frozen
+ // 139dd52 fixtures and native replay comparisons renew this bounded-read review.
+ assert.equal(digest(source.slice(a,b)),"183a88cb077f01a28ae06901cb9bd34e4edc70019be6acd0f4b7b74b13611299");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
