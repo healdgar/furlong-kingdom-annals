@@ -235,8 +235,8 @@ function serviceRoadCheck(){
   const mills=[],quays=[];for(const s of W.settlements){
     const g=streetGraph(s),publicStreet=(s.streets||[]).find(st=>!st.hidden&&!st.gone&&!st.castlePath&&st.kind==='road');
     for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'){
-      const start=serviceDoor(b),n=s.streets.length,ok=s._lay.serviceAccess(b),walker={house:s.owner,settlement:s,placed:s._lay.placed};
-      mills.push({town:s.name,connected:ok&&!!b.st&&!b.st.hidden&&!b.st.gone,idempotent:s.streets.length===n,dry:!armyObstacle(walker,start.x,start.z),clear:!!b.st?.serviceAccess&&b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q)),blocked:b.st?.pts.slice(2).map((q,k)=>{const p=b.st.pts[k+1];if(armySegmentClear(walker,p,q))return null;const n=Math.ceil(dist2d(p.x,p.z,q.x,q.z));for(let i=1;i<=n;i++){const x=lerp(p.x,q.x,i/n),z=lerp(p.z,q.z,i/n),reason=armyObstacle(walker,x,z);if(reason)return{x,z,reason,buildings:s._lay.placed.near(x,z,1).filter(o=>!o.removed&&o.state!=='gone').map(o=>({arch:o.arch,x:o.x,z:o.z,w:o.w,d:o.d}))};}return{p,q,reason:'grade'};}).filter(Boolean)});
+      const start=serviceDoor(b),n=s.streets.length,ok=s._lay.serviceAccess(b),walker={house:s.owner,settlement:s,placed:s._lay.placed,requireRoadCrossing:true};
+      mills.push({town:s.name,riverWheel:b.millWater?.kind==='river'&&!lakeAt(s,b.millWater.x,b.millWater.z,0),connected:ok&&!!b.st&&!b.st.hidden&&!b.st.gone,idempotent:s.streets.length===n,dry:!armyObstacle(walker,start.x,start.z),clear:!!b.st?.serviceAccess&&b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q)),blocked:b.st?.pts.slice(2).map((q,k)=>{const p=b.st.pts[k+1];if(armySegmentClear(walker,p,q))return null;const n=Math.ceil(dist2d(p.x,p.z,q.x,q.z));for(let i=1;i<=n;i++){const x=lerp(p.x,q.x,i/n),z=lerp(p.z,q.z,i/n),reason=armyObstacle(walker,x,z);if(reason)return{x,z,reason,buildings:s._lay.placed.near(x,z,1).filter(o=>!o.removed&&o.state!=='gone').map(o=>({arch:o.arch,x:o.x,z:o.z,w:o.w,d:o.d}))};}return{p,q,reason:'grade'};}).filter(Boolean)});
     }
     for(const q of s.streets)if(q.kind==='quay'&&!q.hidden&&!q.gone){const p=q.pts[Math.floor(q.pts.length/2)],n=s.streets.length,ok=s._lay.quayAccess(q),a=nearestNode(g,p.x,p.z),dest=publicStreet?.pts[0],b=dest?nearestNode(g,dest.x,dest.z):-1;
       quays.push({town:s.name,connected:ok&&!!streetPath(g,a,b),idempotent:s.streets.length===n});}
@@ -246,11 +246,22 @@ function serviceRoadCheck(){
     for(const r of[30,50,80,120,180]){if(grange)break;for(let k=0;k<12;k++){const x=anchor.x+Math.cos(k*Math.PI/6)*r,z=anchor.z+Math.sin(k*Math.PI/6)*r;
       if(!s._lay.live.storageSite(x,z,'grange',true)||!Number.isFinite(storageRoute(s,{x,z},anchor)))continue;
       const oldN=s.streets.length,b=s._lay.live.storageSite(x,z,'grange',false);if(!b)continue;
-      const n=s.streets.length,walker={house:s.owner,settlement:s,placed:s._lay.placed};grange={town:s.name,connected:!!b.st?.serviceAccess&&!b.st.hidden&&!b.st.gone,idempotent:s._lay.serviceAccess(b)&&n===s.streets.length,marketRoute:Number.isFinite(storageRoute(s,b,anchor)),clear:b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q))};
+      const n=s.streets.length,walker={house:s.owner,settlement:s,placed:s._lay.placed,requireRoadCrossing:true};grange={town:s.name,connected:!!b.st?.serviceAccess&&!b.st.hidden&&!b.st.gone,idempotent:s._lay.serviceAccess(b)&&n===s.streets.length,marketRoute:Number.isFinite(storageRoute(s,b,anchor)),clear:b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q))};
       b.removed=true;s.buildings.splice(s.buildings.indexOf(b),1);for(const st of s.streets.slice(oldN)){st.gone=true;st.hidden=true;}break;
     }}
   }
-  return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
+  return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.riverWheel&&m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
+}
+
+function paidCrossingCheck(){
+  const before=JSON.stringify(G.bridgeSpans),s=W.capital,r=G.rivStrips.find(r=>!r.canal&&r.pts.length>12),k=Math.floor(r.pts.length/2),p=r.pts[k],a=r.pts[k-1],b=r.pts[k+1],L=dist2d(a.x,a.z,b.x,b.z)||1,nx=-(b.z-a.z)/L,nz=(b.x-a.x)/L,d=r.hw[k]+20,
+    P=[{x:p.x-nx*d,z:p.z-nz*d},p,{x:p.x+nx*d,z:p.z+nz*d}],n=s.streets.length;
+  try{
+    for(const kind of['quay','alley','lane','road'])s.streets.push({kind,hw:3,pts:P,serviceAccess:kind==='alley'?'quay':undefined});
+    rebuildRoadMesh();const unchanged=JSON.stringify(G.bridgeSpans)===before;
+    const riverWheels=W.settlements.flatMap(t=>t.buildings.filter(b=>b.arch==='mill'&&!b.removed&&b.state!=='gone').map(b=>{const d=millDrive(t,b);return{town:t.name,kind:b.millWater?.kind,drive:d.mode,radius:d.radius,outsidePond:!lakeAt(t,b.millWater.x,b.millWater.z,0),damFeed:!t.lake||!!d.feed&&lakeAt(t,d.feed.a.x,d.feed.a.z,0)&&dist2d(b.millWater.x,b.millWater.z,t.lake.dam.x,t.lake.dam.z)<60&&d.feed.a.y>d.feed.b.y&&(d.mode==='overshot'?d.feed.b.y>d.axleY+d.radius*Math.sqrt(1-0.25**2):d.feed.b.y<d.axleY)};}));
+    return{unpricedLanesLeaveBridgesUnchanged:unchanged,bridgeCount:G.bridgeSpans.length,ponds:W.settlements.filter(s=>s.lake).map(s=>({town:s.name,mill:!!s.mill,dam:s.lake.dam,pondLevel:s.lake.y})),riverWheels,raceMeshes:[G.millRaceWood,G.millRaceWater].filter(Boolean).length,valid:unchanged&&riverWheels.length>0&&[G.millRaceWood,G.millRaceWater].filter(Boolean).length<=2&&riverWheels.every(m=>m.kind==='river'&&m.outsidePond&&m.damFeed)};
+  }finally{s.streets.splice(n);rebuildRoadMesh();}
 }
 
 async function check(which,w){
@@ -262,7 +273,7 @@ async function check(which,w){
     await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__renderRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});
     await c.send('Emulation.setDeviceMetricsOverride',{width:Number(args.width||1440),height:Number(args.height||900),deviceScaleFactor:1,mobile:!!args.touch});
     if(args.touch)await c.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${w.seed}&c=${w.coast}`});
+    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${args.founding||w.seed}&c=${w.coast}`});
     const deadline=Date.now()+120000;let ready=false;
     while(Date.now()<deadline){if(errors.length)throw new Error(errors.join('\n'));ready=await ev(c,"document.getElementById('loading')===null&&typeof renderer!=='undefined'");if(ready)break;await sleep(200);}
     if(!ready)throw new Error('boot timeout');
@@ -270,7 +281,7 @@ async function check(which,w){
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
     const gardenView="(()=>{let best=-Infinity,q;for(let i=0;i<G.feat.d2.length;i+=4){if(G.feat.d2[i+2]<255)continue;const k=i/4,x=(k%FR+0.5)*FPX-SIZE/2,z=(Math.floor(k/FR)+0.5)*FPX-SIZE/2,d=Math.hypot(x-W.capital.pos.x,z-W.capital.pos.z);if(d>400)continue;const clearance=Math.min(G.feat.d2[i]/4,G.feat.d1[i]/4,G.feat.d1[i+2]/4),score=clearance-d*0.025;if(score>best){best=score;q=[x,z,38,G.feat.d2[i+3]/255*Math.PI+0.3,0.5];}}if(!q)throw Error('No visible capital garden');return q;})()";
     const joinView="[-3168.1078406073434,-3248.1033372513384,64.11971192656942,3.6702058129495168]"; // reported seed-1001 street view
-    const views={streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
+    const views={mill:"(()=>{const s=W.settlements.find(s=>s.lake&&s.mill)||W.settlements.find(s=>s.mill),b=s.mill;return[b.x,b.z,95,b.rot+1.1];})()",streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
@@ -354,6 +365,7 @@ async function check(which,w){
       }
     }
     if(which==='candidate'&&args.ui)result.ui=await ev(c,`(${uiIntegrationCheck.toString()})()`);
+    if(which==='candidate'&&args['service-roads'])result.paidCrossings=await ev(c,`(${paidCrossingCheck.toString()})()`);
     if(which==='candidate'&&args['service-roads'])result.serviceRoads=await ev(c,`(${serviceRoadCheck.toString()})()`);
     return result;
   }catch(e){return{id,failed:e.message,errors};}finally{kill();}
@@ -367,7 +379,7 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   if(args['world-visuals'])row.worldVisuals=!!candidate?.worldVisuals?.valid;
   if(args.seasons)row.seasons=!!candidate?.seasons?.valid;
   if(args.ui)row.ui=!!candidate?.ui?.valid;
-  if(args['service-roads'])row.serviceRoads=!!candidate?.serviceRoads?.valid;
+  if(args['service-roads']){row.serviceRoads=!!candidate?.serviceRoads?.valid;row.paidCrossings=!!candidate?.paidCrossings?.valid;}
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row[args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
       const a=candidate.views[v],b=baseline.views[v];return args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});
