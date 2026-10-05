@@ -281,8 +281,8 @@ function paidCrossingCheck(){
   try{
     for(const kind of['quay','alley','lane','road'])s.streets.push({kind,hw:3,pts:P,serviceAccess:kind==='alley'?'quay':undefined});
     rebuildRoadMesh();const unchanged=JSON.stringify(G.bridgeSpans)===before;
-    const riverWheels=W.settlements.flatMap(t=>t.buildings.filter(b=>b.arch==='mill'&&!b.removed&&b.state!=='gone').map(b=>({town:t.name,kind:b.millWater?.kind,outsidePond:!lakeAt(t,b.millWater.x,b.millWater.z,0)})));
-    return{unpricedLanesLeaveBridgesUnchanged:unchanged,bridgeCount:G.bridgeSpans.length,riverWheels,valid:unchanged&&riverWheels.every(m=>m.kind==='river'&&m.outsidePond)};
+    const riverWheels=W.settlements.flatMap(t=>t.buildings.filter(b=>b.arch==='mill'&&!b.removed&&b.state!=='gone').map(b=>{const d=millDrive(t,b);return{town:t.name,kind:b.millWater?.kind,drive:d.mode,radius:d.radius,outsidePond:!lakeAt(t,b.millWater.x,b.millWater.z,0),damFeed:!t.lake||!!d.feed&&lakeAt(t,d.feed.a.x,d.feed.a.z,0)&&dist2d(b.millWater.x,b.millWater.z,t.lake.dam.x,t.lake.dam.z)<60&&d.feed.a.y>d.feed.b.y&&(d.mode==='overshot'?d.feed.b.y>d.axleY+d.radius*Math.sqrt(1-0.25**2):d.feed.b.y<d.axleY)};}));
+    return{unpricedLanesLeaveBridgesUnchanged:unchanged,bridgeCount:G.bridgeSpans.length,ponds:W.settlements.filter(s=>s.lake).map(s=>({town:s.name,mill:!!s.mill,dam:s.lake.dam,pondLevel:s.lake.y})),riverWheels,raceMeshes:[G.millRaceWood,G.millRaceWater].filter(Boolean).length,valid:unchanged&&riverWheels.length>0&&[G.millRaceWood,G.millRaceWater].filter(Boolean).length<=2&&riverWheels.every(m=>m.kind==='river'&&m.outsidePond&&m.damFeed)};
   }finally{s.streets.splice(n);rebuildRoadMesh();}
 }
 

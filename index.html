@@ -496,7 +496,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 18:32 UTC · after f7cfc59</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 20:35 UTC · includes bac0df7</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -1682,12 +1682,12 @@ function roadAccessClear(s,a,b){
 // A service lane is planned once when its building or quay is laid out.
 function serviceRoadPlan(s,p,placed,skip){
   const candidates=[];
-  for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&st.kind!=='quay'&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
+  for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&(st.kind!=='quay'||st.serviceLinked)&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
     const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L,0,1),x=a.x+dx*t,z=a.z+dz*t;
     if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
   candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
   if(armyObstacle(walker,p.x,p.z))return null;
-  for(const q of candidates.slice(0,12)){const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};}
+  const attempted=[];for(const q of candidates){if(armyObstacle(walker,q.x,q.z)||attempted.some(a=>a.st===q.st))continue;attempted.push(q);const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};if(attempted.length===12)break;}
   return null;
 }
 function serviceDoor(b,pad=1.2){
@@ -1696,23 +1696,46 @@ function serviceDoor(b,pad=1.2){
 }
 // Hydraulic siting is deterministic and shared with the wheel renderer. Local +X faces the water.
 function millBankSites(s,radius){
-  const sites=[],C=s.pos,add=(q,nx,nz,y,kind)=>{
+  const sites=[],C=s.pos,add=(q,nx,nz,y,kind,damWidth)=>{
     for(const inset of[1.25,1.6]){
       const wx=q.x-nx*inset,wz=q.z-nz*inset;
       if(!riverAt(wx,wz,0)||lakeAt(s,wx,wz,0)||hAt(wx,wz)>y-1.1)continue;
       const f={x:wx+nx*6.8,z:wz+nz*6.8,w:9,d:9,rot:Math.atan2(nz,-nx)},P=obbCorners(f.x,f.z,9,9,f.rot);
       P.push({x:f.x,z:f.z});for(let i=0;i<4;i++)P.push({x:(P[i].x+P[(i+1)%4].x)/2,z:(P[i].z+P[(i+1)%4].z)/2});
       if(P.some(p=>hAt(p.x,p.z)<SEA+0.8||hAt(p.x,p.z)>y+5.5||riverAt(p.x,p.z,0)||lakeAt(s,p.x,p.z,0)))continue;
-      f.millWater={x:wx,z:wz,y,side:0,offset:6.8,kind};sites.push(f);
+      f.y=Math.max(...P.slice(0,5).map(p=>hAt(p.x,p.z)));f.millWater={x:wx,z:wz,y,side:0,offset:6.8,kind};
+      if(s.lake){const dm=s.lake.dam,up={x:Math.cos(dm.a),z:Math.sin(dm.a)},along=-(wx-dm.x)*up.x-(wz-dm.z)*up.z,head=s.lake.y-y;
+        if(along<4||along>48||dist2d(wx,wz,dm.x,dm.z)>60||head<0.3||head>8.5)continue;
+        const sd=nx*(-up.z)+nz*up.x<0?-1:1,off=damWidth-inset;
+        for(const d of[8,12,20,28]){for(const bank of[1,0.65,0]){const intake={x:dm.x+up.x*d-up.z*off*sd*bank,z:dm.z+up.z*d+up.x*off*sd*bank};
+          if(!lakeAt(s,intake.x,intake.z,0)||dist2d(intake.x,intake.z,wx,wz)>40)continue;
+          f.millWater.intake=intake;const drive=millDrive(s,f),a=drive.feed.a,b=drive.feed.b,n=Math.ceil(dist2d(a.x,a.z,b.x,b.z)/2);let clear=true;
+          for(let k=1;k<n;k++)if(hAt(lerp(a.x,b.x,k/n),lerp(a.z,b.z,k/n))>lerp(a.y,b.y,k/n)-0.18){clear=false;break;}
+          if(clear)break;delete f.millWater.intake;
+        }if(f.millWater.intake)break;}if(!f.millWater.intake)continue;
+      }sites.push(f);
     }
   };
   const reaches=[];
-  for(const r of G.rivStrips)if(!r.canal)for(let k=1;k<r.pts.length-1;k+=2){const q=r.pts[k],d=dist2d(q.x,q.z,C.x,C.z);if(d<radius*0.9&&r.ys[k]>SEA+2)reaches.push({r,k,d});}
+  for(const r of G.rivStrips)if(!r.canal){let damWidth=0;if(s.lake){let dd=Infinity;r.pts.forEach((p,k)=>{const d=dist2d(p.x,p.z,s.lake.dam.x,s.lake.dam.z);if(d<dd){dd=d;damWidth=r.hw[k];}});}
+    for(let k=1;k<r.pts.length-1;k+=2){const q=r.pts[k],d=dist2d(q.x,q.z,C.x,C.z);if(d<radius*0.9&&r.ys[k]>SEA+2)reaches.push({r,k,d,damWidth});}}
   reaches.sort((a,b)=>a.d-b.d);
-  for(const {r,k} of reaches.slice(0,160)){const a=r.pts[k-1],b=r.pts[k+1],l=dist2d(a.x,a.z,b.x,b.z)||1,px=-(b.z-a.z)/l,pz=(b.x-a.x)/l,q=r.pts[k];
-    for(const side of[1,-1])add({x:q.x+px*r.hw[k]*side,z:q.z+pz*r.hw[k]*side},px*side,pz*side,r.ys[k],'river');}
+  for(const {r,k,damWidth} of reaches.slice(0,160)){const a=r.pts[k-1],b=r.pts[k+1],l=dist2d(a.x,a.z,b.x,b.z)||1,px=-(b.z-a.z)/l,pz=(b.x-a.x)/l,q=r.pts[k];
+    for(const side of[1,-1])add({x:q.x+px*r.hw[k]*side,z:q.z+pz*r.hw[k]*side},px*side,pz*side,r.ys[k],'river',damWidth);}
   const focus=s.lake?s.lake.dam:C;
   return sites.sort((a,b)=>dist2d(a.x,a.z,focus.x,focus.z)-dist2d(b.x,b.z,focus.x,focus.z));
+}
+function millDrive(s,b){ // context-sized wheels; the active blade must follow the current at its feed point
+  const w=b.millWater,y=w?.y??b.y,base=b.y??hAt(b.x,b.z),th=b.rot+(w?.side||0)*Math.PI/2,vx=Math.sin(th),vz=Math.cos(th),
+    radius=Math.max(1.1,Math.min(6,(b.h||8.4)*0.8,(b.d||9)*0.7,base-y+0.9)),axleY=y+radius-0.4,r=riverAt(w?.x??b.x,w?.z??b.z,0),
+    flow=r?.a&&r?.b?Math.sign(vx*(r.b.x-r.a.x)+vz*(r.b.z-r.a.z))||1:1;
+  if(!w?.intake||!s.lake)return{mode:'underfed',radius,axleY,direction:-flow,feed:null};
+  const level=s.lake.y-0.08,F=Math.sign(vx*(w.x-w.intake.x)+vz*(w.z-w.intake.z))||flow,side=-F,head=level-y,
+    upperRadius=Math.min(radius,level-(base+0.5)-0.15),overshot=head>=radius*1.5&&upperRadius>=1.1;
+  const R=overshot?upperRadius:radius,Y=overshot?base+0.5:axleY,feedY=overshot?Y+R*Math.sqrt(1-0.25**2)+0.12:y+0.16,
+    offset=side*(overshot?R*0.25:Math.sqrt(Math.max(0,R*R-(feedY-Y)**2)));
+  return{mode:overshot?'overshot':'underfed',radius:R,axleY:Y,direction:overshot?F:-F,
+    feed:{a:{x:w.intake.x,z:w.intake.z,y:level},b:{x:w.x+vx*offset,z:w.z+vz*offset,y:feedY}}};
 }
 function frontFoot(c,arch,tier,rnd){ // a footprint set back from the street edge, facing it
   const a=ARCH[arch],k=0.85+tier*0.15;
@@ -6005,10 +6028,31 @@ function millWheelGeometry(){ // open spokes, two timber rims and sixteen bucket
   const axle=new THREE.CylinderGeometry(0.18,0.18,3.2,8);axle.rotateZ(Math.PI/2);put(uv(axle,'x'),-0.95,0,0);
   const g=mergeGeoms(parts);for(const [part] of parts)part.dispose();return g;
 }
+function millRaceBox(w,h,l){
+  const g=new THREE.BoxGeometry(w,h,l),p=g.attributes.position,n=g.attributes.normal,uv=[];
+  for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i);uv.push(Math.abs(n.getZ(i))>.5?x:y,z);}
+  g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(uv,2));return g;
+}
+function millRaceRibbon(points,width,vertices,indices,uvs){
+  const P=points.map(p=>new THREE.Vector3(p.x,p.y,p.z));
+  for(let i=0;i<P.length;i++){
+    const tangent=(i===0?P[1].clone().sub(P[0]):i===P.length-1?P[i].clone().sub(P[i-1]):P[i+1].clone().sub(P[i-1])).normalize();
+    let side=new THREE.Vector3(tangent.z,0,-tangent.x).normalize();if(side.lengthSq()<.1)side.set(1,0,0);
+    const d=side.multiplyScalar(width/2),base=vertices.length/3;
+    vertices.push(P[i].x-d.x,P[i].y-d.y,P[i].z-d.z,P[i].x+d.x,P[i].y+d.y,P[i].z+d.z);
+    const v=i/(P.length-1)*Math.max(1,P.length-1);uvs.push(0,v,width,v);
+    if(i){const a=base-2,b=base-1,c=base,d=base+1;indices.push(a,c,b,b,c,d);}
+  }
+}
 function rebuildMillWheels(){
-  for(const wh of G.wheels||[]){scene.remove(wh.userData.pivot);if(wh.userData.raceGroup)scene.remove(wh.userData.raceGroup);for(const m of wh.userData.race||[])m.geometry.dispose();}
+  for(const wh of G.wheels||[])scene.remove(wh.userData.pivot);
+  if(G.millRaceWood){scene.remove(G.millRaceWood);G.millRaceWood.geometry.dispose();G.millRaceWood=null;}
+  if(G.millRaceWater){scene.remove(G.millRaceWater);G.millRaceWater.geometry.dispose();G.millRaceWater=null;}
   G.wheels=[];if(!G.millWheelGeo)G.millWheelGeo=millWheelGeometry();
   if(!G.millWheelMat){G.millWheelMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millWheelMat.defines={...G.millWheelMat.defines,MINI_STRUCTURE_UV:1};}
+  const raceWood=[],waterPos=[],waterIdx=[],waterUv=[];let hasRace=false;
+  if(!G.millRaceWoodMat){G.millRaceWoodMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millRaceWoodMat.defines={...G.millRaceWoodMat.defines,MINI_STRUCTURE_UV:1};}
+  if(!G.millRaceWaterMat)G.millRaceWaterMat=new THREE.MeshBasicMaterial({color:0x78b9c8,transparent:true,opacity:0.68,side:THREE.DoubleSide,depthWrite:false});
   for(const s of W.settlements){const b=s.mill;if(!b||b.removed||b.state==='gone')continue;
     let water=b.millWater;
     if(!water){ // retained chronicles: pick the water-facing side, without moving their saved buildings
@@ -6018,56 +6062,44 @@ function rebuildMillWheels(){
           if(r||lake){if(!best||d<best.d)best={d,side:k,y:lake?s.lake.y:r.y};break;}}}
       if(!best)continue;water={...best,kind:'legacy'};
     }
-    const k=water.side,off=water.offset||((k%2?b.d:b.w)/2+1.6),plan=millOutletPlan(s,b,water,off),th=plan.th;
+    const drive=typeof millDrive==='function'?millDrive(s,b.millWater?b:{...b,millWater:water}):null;
+    const k=water.side,th=b.rot+k*Math.PI/2,off=water.offset||((k%2?b.d:b.w)/2+1.6);
     const wh=new THREE.Mesh(G.millWheelGeo,G.millWheelMat),pivot=new THREE.Group();pivot.rotation.y=th;
-    pivot.position.set(plan.x,millWheelCentre(plan),plan.z);
+    const radius=drive?.radius||4,axleY=drive?.axleY??(water.y+3.05);
+    wh.scale.y=wh.scale.z=radius/4;wh.userData.direction=drive?.direction||1;
+    pivot.position.set(b.x+Math.cos(th)*off,axleY,b.z-Math.sin(th)*off);
     wh.castShadow=wh.receiveShadow=true;wh.userData.building=b;pivot.add(wh);scene.add(pivot);G.wheels.push(wh);wh.userData.pivot=pivot;
-    wh.userData.flowSign=plan.sign;wh.userData.hydraulics=plan;wh.userData.race=[];
-    if(plan.head>0.65){const group=buildMillRace(plan,b,pivot.position.y);scene.add(group);wh.userData.race=group.children;wh.userData.raceGroup=group;}
+    if(drive?.feed?.a&&drive?.feed?.b){
+      hasRace=true;const a=drive.feed.a,q=drive.feed.b,A=new THREE.Vector3(a.x,a.y,a.z),B=new THREE.Vector3(q.x,q.y,q.z),delta=B.clone().sub(A),len=delta.length();
+      const tangent=delta.clone().normalize(),side=new THREE.Vector3(delta.z,0,-delta.x).normalize();if(side.lengthSq()<.1)side.set(1,0,0);
+      const up=tangent.clone().cross(side).normalize(),quat=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(side,up,tangent));
+      const addBoard=(x,y,w,h,l)=>{const g=millRaceBox(w,h,l),pos=A.clone().add(B).multiplyScalar(.5).addScaledVector(side,x).addScaledVector(up,y);raceWood.push([g,new THREE.Matrix4().compose(pos,quat,new THREE.Vector3(1,1,1))]);};
+      addBoard(0,-.12,.78,.12,len);addBoard(-.43,.02,.12,.36,len);addBoard(.43,.02,.12,.36,len);
+      const line=[];for(let j=0;j<=8;j++){const t=j/8,p=A.clone().lerp(B,t);p.y+=.015;line.push(p);}
+      millRaceRibbon(line,.42,waterPos,waterIdx,waterUv);
+      // The stream follows the working blades and returns downstream to the river.
+      const C=new THREE.Vector3(pivot.position.x,axleY,pivot.position.z),plane=new THREE.Vector3(Math.sin(th),0,Math.cos(th)),flow=drive.direction||1;
+      const river=riverAt(C.x,C.z,0),arc=[B.clone()],startAng=Math.atan2(B.clone().sub(C).dot(plane),B.y-C.y);
+      if(river){const level=river.y+.1;let prev=B.clone(),hit=null;
+        for(let j=1;j<=24;j++){const t=j/24,ang=startAng+flow*t*Math.PI,rad=radius+.12,next=C.clone().addScaledVector(plane,Math.sin(ang)*rad);next.y=axleY+Math.cos(ang)*rad+.1;
+          if(next.y<=level){const f=clamp((prev.y-level)/(prev.y-next.y),0,1);hit=prev.clone().lerp(next,f);hit.y=level;arc.push(hit);break;}
+          arc.push(next);prev=next;
+        }
+        if(hit){arc.push(hit.clone().addScaledVector(plane,(drive.mode==='underfed'?-flow:flow)*Math.min(2,radius*.6)));millRaceRibbon(arc,.28,waterPos,waterIdx,waterUv);}
+      }
+    }
   }
+  if(raceWood.length){const geo=mergeGeoms(raceWood);for(const [g]of raceWood)g.dispose();G.millRaceWood=new THREE.Mesh(geo,G.millRaceWoodMat);G.millRaceWood.castShadow=true;G.millRaceWood.receiveShadow=true;scene.add(G.millRaceWood);}
+  if(hasRace&&waterPos.length){const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(waterPos,3));geo.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(waterUv,2));geo.setIndex(waterIdx);geo.computeVertexNormals();G.millRaceWater=new THREE.Mesh(geo,G.millRaceWaterMat);G.millRaceWater.renderOrder=3;scene.add(G.millRaceWater);}
 }
-function millOutletPlan(s,b,water,off){ // render hydraulics without moving saved buildings or changing their ownership
-  let th=b.rot+water.side*Math.PI/2,x=b.x+Math.cos(th)*off,z=b.z-Math.sin(th)*off,y=riverDrawAt(x,z)??water.y;
-  const direct=riverAt(x,z,3),sign=direct&&((direct.b.x-direct.a.x)*Math.sin(th)+(direct.b.z-direct.a.z)*Math.cos(th))<0?1:-1;
-  const L=s.lake;if(!L||dist2d(x,z,L.dam.x,L.dam.z)>180){
-    if(!direct)return{x,z,y,th,sign,head:0};
-    const dx=direct.b.x-direct.a.x,dz=direct.b.z-direct.a.z,len=Math.hypot(dx,dz),ux=dx/len,uz=dz/len;
-    let fx=Math.sin(th),fz=Math.cos(th);if(fx*ux+fz*uz<0){fx=-fx;fz=-fz;}
-    const source={x:x-ux*12,z:z-uz*12,y:0},tail={x:x+ux*12,z:z+uz*12,y};source.y=riverDrawAt(source.x,source.z)??y;tail.y=riverDrawAt(tail.x,tail.z)??y;
-    return{x,z,y,th,sign,head:Math.max(0,source.y-y),source,tail,fx,fz};
-  }
-  const dm=L.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,side=(b.x-dm.x)*nx+(b.z-dm.z)*nz>=0?1:-1;
-  const reach=riverAt(dm.x+dx*8,dm.z+dz*8,8)||direct;if(!reach)return{x,z,y,th,sign,head:0};
-  for(const inset of[1.2,3,5,8]){const w=Math.max(1,reach.hw-inset),wx=dm.x+dx*7+nx*side*w,wz=dm.z+dz*7+nz*side*w;
-    if(riverAt(wx,wz,1)&&hAt(wx,wz)<reach.y-0.6){x=wx;z=wz;break;}}
-  if(inPoly(L.poly,x,z))return{x,z,y,th,sign,head:0};
-  y=riverDrawAt(x,z)??reach.y;th=Math.atan2(-(z-b.z),x-b.x);
-  let fx=Math.sin(th),fz=Math.cos(th);if(fx*dx+fz*dz<0){fx=-fx;fz=-fz;}
-  const source={x:dm.x-dx*5+nx*side*Math.min(reach.hw*0.5,6),z:dm.z-dz*5+nz*side*Math.min(reach.hw*0.5,6),y:L.y};
-  if(!inPoly(L.poly,source.x,source.z)){source.x=dm.x-dx*10;source.z=dm.z-dz*10;}
-  const tail={x:dm.x+dx*24,z:dm.z+dz*24,y:Math.min(y,riverDrawAt(dm.x+dx*24,dm.z+dz*24)??y)};
-  return{x,z,y,th,sign:fx*Math.sin(th)+fz*Math.cos(th)>0?-1:1,head:L.y-y,source,tail,fx,fz};
-}
-function millWheelCentre(p){return p.head>5?p.source.y-1.3:p.y+3.05;}
-function millInlet(p){const side=Math.sqrt(Math.max(1,16-(p.source.y-millWheelCentre(p))**2));return{x:p.x-p.fx*side,z:p.z-p.fz*side,y:p.source.y};}
-function millSluiceSlots(s){const dm=s.lake.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,out=[];
-  for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'&&b.millWater){const w=b.millWater,p=millOutletPlan(s,b,w,w.offset||((w.side%2?b.d:b.w)/2+1.6));if(p.head<=0.65)continue;
-    const a=p.source,c=millInlet(p),da=(a.x-dm.x)*dx+(a.z-dm.z)*dz,dc=(c.x-dm.x)*dx+(c.z-dm.z)*dz;if(da>=0||dc<=0)continue;
-    const t=-da/(dc-da),x=a.x+(c.x-a.x)*t,z=a.z+(c.z-a.z)*t,u=(x-dm.x)*nx+(z-dm.z)*nz;if(Math.abs(u)<dm.w/2)out.push([Math.max(-dm.w/2,u-1.15),Math.min(dm.w/2,u+1.15)]);}
-  return out.sort((a,b)=>a[0]-b[0]);}
-function buildMillRace(p,b,centreY){ // sluice, falling sheet, tailrace and a shaft back to the mill
-  const water=newAcc(),parts=[],put=(w,h,d,x,y,z,ry=0)=>{const g=new THREE.BoxGeometry(w,h,d),m=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(0,ry,0)),new THREE.Vector3(1,1,1));parts.push([g,m]);};
-  const feedY=p.source.y,inlet=millInlet(p),bottom={...inlet,y:p.y+0.2};
-  let along=0;const sheet=(a,c)=>{const dx=c.x-a.x,dz=c.z-a.z,L=Math.hypot(dx,dz),fx=L>0.01?dx/L:p.fx,fz=L>0.01?dz/L:p.fz,base=water.p.length/3;
-    for(const q of[a,c])for(const s of[-1,1]){water.p.push(q.x-fz*s*0.7,q.y,q.z+fx*s*0.7);water.n.push(L>0.01?0:-p.fx,L>0.01?1:0,L>0.01?0:-p.fz);C1.setHex(L>0.01?0x326d86:0x81afbf);water.c.push(C1.r,C1.g,C1.b);water.uv.push(s*0.7,along);water.tangent.push(fx,fz);water.bank.push(4);}water.i.push(base,base+1,base+2,base+1,base+3,base+2);along+=Math.hypot(L,c.y-a.y);};
-  sheet(p.source,inlet);sheet(inlet,bottom);sheet(bottom,p.tail);
-  const dx=inlet.x-p.source.x,dz=inlet.z-p.source.z,len=Math.hypot(dx,dz),angle=Math.atan2(dx,dz),nx=len?dz/len:1,nz=len?-dx/len:0;
-  for(const s of[-1,1])put(0.25,0.65,len,(p.source.x+inlet.x)/2+nx*s*0.85,feedY-0.12,(p.source.z+inlet.z)/2+nz*s*0.85,angle);
-  put(1.9,0.2,len,(p.source.x+inlet.x)/2,feedY-0.22,(p.source.z+inlet.z)/2,angle);
-  const shaft=Math.hypot(p.x-b.x,p.z-b.z);put(shaft,0.3,0.3,(p.x+b.x)/2,centreY,(p.z+b.z)/2,p.th);
-  const g=mergeGeoms(parts);for(const [geo]of parts)geo.dispose();
-  G.millRaceStone=G.millRaceStone||miniatureMaterial(5,[2,2],{color:0x8f8776});G.millRaceWater=G.millRaceWater||waterMaterial({vertexColors:true,side:THREE.DoubleSide},true);
-  const group=new THREE.Group(),stone=new THREE.Mesh(g,G.millRaceStone);stone.castShadow=stone.receiveShadow=true;group.add(stone,accMesh(water,G.millRaceWater));return group;
+function millSluiceSlots(s){ // cut the dam where the actual fitted wheel's feeder crosses it
+  const dm=s.lake.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,out=[];
+  for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'&&b.millWater){
+    const feed=millDrive(s,b).feed;if(!feed)continue;
+    const a=feed.a,c=feed.b,da=(a.x-dm.x)*dx+(a.z-dm.z)*dz,dc=(c.x-dm.x)*dx+(c.z-dm.z)*dz;if(da>=0||dc<=0)continue;
+    const t=-da/(dc-da),x=a.x+(c.x-a.x)*t,z=a.z+(c.z-a.z)*t,u=(x-dm.x)*nx+(z-dm.z)*nz;
+    if(Math.abs(u)<dm.w/2)out.push([Math.max(-dm.w/2,u-0.6),Math.min(dm.w/2,u+0.6)]);
+  }return out.sort((a,b)=>a[0]-b[0]);
 }
 function hash01(n){const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
 /* ---------------- a church is built in parts, as its parish can pay ----------------
@@ -10764,12 +10796,12 @@ function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
     storageInit(s);storageTick(s);storageInvestment(s);const phaseK=commodityActive(s)?s.storage:undefined;
-    const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=[s.stores.grain,s.stores.fish,s.stores.timber,s.stores.ore];
+    const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=['grain','fish','timber','ore'].map(g=>phaseK?phaseK.quantity(null,g,'unassigned'):s.stores[g]);
     s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92*(s.landF??1))*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF*(s._wcF??1)*(waterMill(s)&&AD()>=1250?1.25:1); // the woodcutters' axes; and a water-driven saw more
     s.stores.ore+=s.res.ore*0.05*workF;
-    ['grain','fish','timber','ore'].forEach((g,i)=>made(s,g,s.stores[g]-P0[i])); // what the fields, waters, woods and mines gave today: the year's offers in the market
+    ['grain','fish','timber','ore'].forEach((g,i)=>made(s,g,(phaseK?phaseK.quantity(null,g,'unassigned'):s.stores[g])-P0[i])); // credit actual unassigned production; summing all owners before and after can invent a rounding excess
     if(s._shopY!==year()){s._shopY=year();let sm=0,dy=0;for(const b of s.buildings)if(b.state==='sound'&&!b.removed){if(b.arch==='smithy')sm+=1+b.tier*0.5;else if(b.arch==='dyer')dy+=1+b.tier*0.5;}
       let vine=0;for(const f of s.furl||[])if(f.kind===LK.VINE&&f.state===LS.TILLED)vine+=f.area;s._smiths=sm;s._dyers=dy;s._vineHa=vine/1e4;} // the workshops and vineyards the place has, counted once a year
     { // crafts where there are workshops and the stuff to work: iron and charcoal into tools at the smithies, wool into cloth at the looms (every cottage spins and weaves a little), grapes into wine
@@ -14842,7 +14874,7 @@ function animateWorld(dt,now){
   G.waterU.uWaterTime.value=now;
   if(G.rivers)G.rivers.position.y=W.flooding>0?2.6:0; // fixed banks; surface ripples belong in the shader
   if(G.sea)G.sea.position.y=SEA_SURFACE; // surface ripples change the normals, not the outlet elevation
-  for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.userData.raceGroup)wh.userData.raceGroup.visible=wh.visible;if(wh.visible)wh.rotation.x+=dt*1.4*(wh.userData.flowSign||-1);} // UVs and paddles follow the actual flow
+  for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.visible)wh.rotation.x+=dt*1.4*(wh.userData.direction||1);} // UVs and paddles follow the actual flow
   if(G.sails&&G.sails.length){const w=W.weather.state,gust=0.75+0.25*Math.sin(now*0.23)+0.15*Math.sin(now*0.71);
     const sp=(w==='storm'?1.1:w==='rain'?0.7:w==='overcast'?0.5:w==='snow'?0.35:0.28*clamp(Math.sin(now*0.05+1)*1.5,0,1))*gust; // a fair still day may leave them standing
     for(const g of G.sails){const c=g.userData.cross;c.rotation.z-=dt*sp;if(g.userData.b)g.userData.b.sailA=c.rotation.z;}}
@@ -18853,9 +18885,9 @@ The 200-year soak was interrupted when work was redirected to this fix; neither 
 - [x] Street graph links and near-end joins cannot cross water without a built highway. The existing graph's node hash also serves construction access queries; no second spatial index is introduced.
 - [x] Urban frontage and prospective lanes require a connection to the town. Houses cannot reach their street across unbridged water.
 - [x] Rural homes and field hovels require a dry connection through built tracks or the town's existing highways. Unused parcel edges do not grant access.
-- [x] Mill wheels face flowing river water outside the pond, preferring the river bank nearest the dam. A stagnant pond alone is not a river-mill site.
+- [x] Mill wheels face flowing river water outside the pond, with pond-fed mills immediately downstream of the dam. A short timber flume feeds an overshot wheel when the head exceeds three-quarters of the context-fitted diameter and reaches the upper rim; otherwise it feeds an underfed wheel. Bank height and building clearance bound diameter. Rotation follows the water at the active blades, and discharge returns to the river. Sites without a downhill feeder are rejected. A stagnant pond alone is not a river-mill site.
 
-Access is checked during layout and construction. No daily walking budgets, new journal receipts, commodity records or maintained spatial indexes are added. Household pantry, hunger and debt tracking are unchanged.
+Access is checked during layout and construction. Service planning tries at most twelve distinct streets; repeated highway samples cannot monopolize those attempts. Inaccessible mill sites remain unbuilt. Race geometry is batched into two shared meshes. No daily walking budgets, new journal receipts, commodity records or maintained spatial indexes are added. Household pantry, hunger and debt tracking are unchanged.
 
 Checks: focused crossing, frontage, rural track, service-door and mill fixtures; the full Node suite; native WebGL coastal/inland rendering, existing funded crossings, injected unpriced quay/lane crossings, mill wheel positions and service-road connectivity. Renderer artifacts remain local under `/tmp/furlong-paid-crossings-*`.
 

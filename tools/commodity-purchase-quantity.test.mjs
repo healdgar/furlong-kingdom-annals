@@ -42,6 +42,27 @@ function purchaseQty(r){return r.eval("[...s.storage.entries({owner:accountOwner
 const source=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||new URL('../index.html',import.meta.url),'utf8');
 const madeFunction=source.match(/^function made\b[\s\S]*?(?=^function |^const |^\/\*|$(?![\s\S]))/m)[0];
 
+test('daily production follows its credited balance across many existing owners',()=>{
+  const r=fixture({grain:0,fish:0});r.eval(madeFunction);
+  const economy=source.slice(source.indexOf('function tickEconomy()'));
+  const production=economy.slice(economy.indexOf('    const workF='),economy.indexOf('    if(s._shopY'));
+  r.eval(`
+    s.storage.adjust('yard','grain',null,'unassigned',.1,'initial');s._made.grain=.1;
+    const n=2000,values=[];let sum=0;
+    for(let i=0;i<n;i++){const v=Math.pow(i+1,-.37)*(1+((i*7919)%997)/997);values.push(v);sum+=v;}
+    for(let i=0;i<n;i++){s.storage.location('field'+i);s.storage.adjust('field'+i,'grain','seller'+i,'held',1024*values[i]/sum,'initial');}
+    for(const g of ['fish','timber','ore'])storageBindGood(s,g);
+    s.plagueDead=0;s._bearA=1;s.res={fish:0,forest:0,ore:0};MOD.harvest=1;
+    globalThis.ownedBefore=JSON.stringify([...s.storage.entries({good:'grain'})].filter(r=>r.owner!==null));
+  `);
+  for(let i=1;i<=90;i++){
+    r.eval(`{const phaseK=s.storage,seasonF=.7;s._gYield=${(Math.sin(i*7.919)+1)*.5}/seasonF/(s.pop/(s.pop+1));${production}}`);
+    assert.equal(r.eval('s._made.grain'),r.eval("s.storage.quantity(null,'grain','unassigned')"),`day ${i}: pending output is actual unassigned grain`);
+  }
+  assert.equal(r.eval("JSON.stringify([...s.storage.entries({good:'grain'})].filter(r=>r.owner!==null))"),r.eval('ownedBefore'));
+  near(r.s.stores.grain,1024+r.eval('s._made.grain'));
+});
+
 test('pending production records the credited balance before migration',()=>{
   const r=fixture({grain:0,fish:0});r.eval(madeFunction);
   r.W.settlements.push({name:'destination',pos:{x:1,z:1},stores:{grain:0,fish:0},folk:[],buildings:[]});
