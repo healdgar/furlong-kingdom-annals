@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 01:37 UTC · indexed market offers</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 02:14 UTC · indexed tracks and exposed storage</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -3077,7 +3077,7 @@ globalThis.FURLONG_STORAGE_AUDIT_SUPPORTED=true;
 const STORAGE_FACILITY_INDEXES=new WeakMap();
 const STORAGE_FACILITY_MAP=Map.prototype,STORAGE_FACILITY_MAP_ENTRIES=Map.prototype.entries,STORAGE_FACILITY_MAP_SIZE=Object.getOwnPropertyDescriptor(Map.prototype,'size').get;
 const STORAGE_FACILITY_MAP_METHODS=Object.fromEntries(['values','get','set','delete','clear'].map(k=>[k,Map.prototype[k]]));
-function storageFacilityIndexInit(K){const C={map:K.locations,entries:new Map(),facilities:[],next:0,size:0,valid:true,iterating:0};STORAGE_FACILITY_INDEXES.set(K,C);return C;}
+function storageFacilityIndexInit(K){const C={map:K.locations,entries:new Map(),facilities:[],uncovered:[],next:0,size:0,valid:true,iterating:0};STORAGE_FACILITY_INDEXES.set(K,C);return C;}
 function storageFacilityInvalidate(K){const C=STORAGE_FACILITY_INDEXES.get(K);if(C){C.valid=false;if(C.iterating)throw Error('Unmanaged facility mutation during indexed iteration');}}
 function storageFacilityIndex(K){const C=STORAGE_FACILITY_INDEXES.get(K);if(!C?.valid)return null;
   const field=Object.getOwnPropertyDescriptor(K,'locations');
@@ -3086,10 +3086,11 @@ function storageFacilityIndex(K){const C=STORAGE_FACILITY_INDEXES.get(K);if(!C?.
   return C;
 }
 function storageFacilityRecordData(n){return !!n&&typeof n==='object'&&Object.getPrototypeOf(n)===Object.prototype&&Object.values(Object.getOwnPropertyDescriptors(n)).every(d=>'value'in d);}
+function storageFacilityMembership(list,entry,active){let lo=0,hi=list.length;while(lo<hi){const mid=(lo+hi)>>>1;if(list[mid].order<entry.order)lo=mid+1;else hi=mid;}const present=list[lo]===entry;if(active&&!present)list.splice(lo,0,entry);else if(!active&&present)list.splice(lo,1);}
 function storageFacilityIndexRecord(K,id,n){const C=STORAGE_FACILITY_INDEXES.get(K);if(!C?.valid)return;
-  const d=Object.getOwnPropertyDescriptor(n,'building');if(!storageFacilityRecordData(n)){storageFacilityInvalidate(K);return;}
-  let entry=C.entries.get(id);if(!entry){entry={id,n,order:C.next++,facility:false};C.entries.set(id,entry);}else entry.n=n;
-  if(entry.facility||d?.value){C.facilities=C.facilities.filter(e=>e!==entry);if(d?.value){C.facilities.push(entry);C.facilities.sort((a,b)=>a.order-b.order);}}entry.facility=!!d?.value;C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);
+  const d=Object.getOwnPropertyDescriptor(n,'building'),exposed=Object.getOwnPropertyDescriptor(n,'exposed');if(!storageFacilityRecordData(n)){storageFacilityInvalidate(K);return;}
+  let entry=C.entries.get(id);if(!entry){entry={id,n,order:C.next++,facility:false,uncovered:false};C.entries.set(id,entry);}else entry.n=n;
+  if(entry.facility!==!!d?.value){storageFacilityMembership(C.facilities,entry,!!d?.value);entry.facility=!!d?.value;}if(entry.uncovered!==!!exposed?.value){storageFacilityMembership(C.uncovered,entry,!!exposed?.value);entry.uncovered=!!exposed?.value;}C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);
 }
 function storageFacilityAdopt(K){if(STORAGE_FACILITY_INDEXES.get(K)?.iterating)storageFacilityInvalidate(K);const C=storageFacilityIndexInit(K);try{STORAGE_FACILITY_MAP_SIZE.call(C.map);}catch{C.valid=false;return false;}if(Object.getPrototypeOf(C.map)!==STORAGE_FACILITY_MAP){C.valid=false;return false;}
   for(const[id,n]of STORAGE_FACILITY_MAP_ENTRIES.call(C.map))storageFacilityIndexRecord(K,id,n);return !!storageFacilityIndex(K);
@@ -3097,13 +3098,18 @@ function storageFacilityAdopt(K){if(STORAGE_FACILITY_INDEXES.get(K)?.iterating)s
 function storageFacilityLocationSet(K,id,n){const C=storageFacilityIndex(K);if(C&&!storageFacilityRecordData(n))storageFacilityInvalidate(K);
   const result=K.locations.set(id,n);storageFacilityIndexRecord(K,id,n);return result;
 }
-function storageFacilityLocationDelete(K,id){const C=storageFacilityIndex(K),result=K.locations.delete(id);if(C&&result){const entry=C.entries.get(id);C.entries.delete(id);C.facilities=C.facilities.filter(e=>e!==entry);C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);}return result;}
-function storageFacilityLocationClear(K){const C=storageFacilityIndex(K),result=K.locations.clear();if(C){C.entries.clear();C.facilities=[];C.size=0;}return result;}
+function storageFacilityLocationDelete(K,id){const C=storageFacilityIndex(K),result=K.locations.delete(id);if(C&&result){const entry=C.entries.get(id);C.entries.delete(id);if(entry?.facility)storageFacilityMembership(C.facilities,entry,false);if(entry?.uncovered)storageFacilityMembership(C.uncovered,entry,false);C.size=STORAGE_FACILITY_MAP_SIZE.call(C.map);}return result;}
+function storageFacilityLocationClear(K){const C=storageFacilityIndex(K),result=K.locations.clear();if(C){C.entries.clear();C.facilities=[];C.uncovered=[];C.size=0;}return result;}
 function storageFacilityBuilding(K,id,building){const C=storageFacilityIndex(K),n=K.locations.get(id);if(!n)throw Error('Unknown facility location');
   if(C&&!storageFacilityRecordData(n))storageFacilityInvalidate(K);if(Object.is(n.building,building))return n;if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=K.locationState(n);n.building=building;storageFacilityIndexRecord(K,id,n);K.revision++;K.event('facility-membership',null,0,{location:id,before,locationAfter:K.locationState(n)});return n;
 }
 function* storageFacilityLocations(K){const C=storageFacilityIndex(K);if(!C){yield* K.locations.values();return;}C.iterating++;let order=-1;
   try{while(true){if(!C.valid)throw Error('Unmanaged facility mutation during indexed iteration');let lo=0,hi=C.facilities.length;while(lo<hi){const mid=(lo+hi)>>>1;if(C.facilities[mid].order<=order)lo=mid+1;else hi=mid;}if(lo===C.facilities.length)return;const entry=C.facilities[lo];order=entry.order;yield entry.n;}}finally{C.iterating--;}
+}
+// Reuse facility admission and location order; cargo archives are never exposure candidates.
+function* storageExposedLocations(K){const C=storageFacilityIndex(K),M=K.locations;
+  if(!C||'exposed'in Object.prototype||Object.prototype.hasOwnProperty.call(M,Symbol.iterator)||STORAGE_FACILITY_MAP[Symbol.iterator]!==STORAGE_FACILITY_MAP_ENTRIES){yield* M;return;}C.iterating++;let order=-1;
+  try{while(true){if(!C.valid)throw Error('Unmanaged facility mutation during indexed iteration');let lo=0,hi=C.uncovered.length;while(lo<hi){const mid=(lo+hi)>>>1;if(C.uncovered[mid].order<=order)lo=mid+1;else hi=mid;}if(lo===C.uncovered.length)return;const entry=C.uncovered[lo];order=entry.order;yield [entry.id,entry.n];}}finally{C.iterating--;}
 }
 // Arithmetic ancestry is a max-union of native ledger contributions, not copied totals.
 // Native settlements remain in their original array slots (wards are not removed).
@@ -3138,7 +3144,7 @@ class StorageLedger {
   unindex(l){STORAGE_LOT_ORDER.get(this)?.ids.delete(l.id);this.byGood.get(l.good)?.delete(l.id);this.byLocation.get(l.location)?.delete(l.id);this.byOwner.get(l.owner)?.delete(l.id);this.byAvailability.get(l.availability)?.delete(l.id);this.dirty(l);}
   orderedLots(ids){if(!ids.length)return [];let order=STORAGE_LOT_ORDER.get(this);if(!order){order={ids:new Map(),next:0};for(const id of this.lots.keys())order.ids.set(id,order.next++);STORAGE_LOT_ORDER.set(this,order);}return ids.map(id=>this.lots.get(id)).filter(Boolean).sort((a,b)=>order.ids.get(a.id)-order.ids.get(b.id));}
   matching(fields){const entries=Object.entries(fields);let ids;for(const[k,v]of entries){const bucket=this[{good:'byGood',location:'byLocation',owner:'byOwner',availability:'byAvailability'}[k]]?.get(v);if(!bucket?.size)return [];if(!ids||bucket.size<ids.size)ids=bucket;}if(!ids)throw new Error('Storage query requires an indexed field');const matches=[];for(const id of ids){const l=this.lots.get(id);if(l&&entries.every(([k,v])=>l[k]===v))matches.push(id);}return this.orderedLots(matches);}
-  exposedLots(){const ids=[];for(const[id,n]of this.locations)if(n.exposed)for(const lotId of this.byLocation.get(id)||[])ids.push(lotId);return this.orderedLots(ids);}
+  exposedLots(){const ids=[];for(const[id,n]of storageExposedLocations(this))if(n.exposed)for(const lotId of this.byLocation.get(id)||[])ids.push(lotId);return this.orderedLots(ids);}
   relocate(l,id,availability=l.availability,cause='custody-move'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),from=l.location;this.byLocation.get(from)?.delete(l.id);this.occupancy.delete(from);l.location=id;if(l.availability!==availability){this.byAvailability.get(l.availability)?.delete(l.id);let A=this.byAvailability.get(availability);if(!A)this.byAvailability.set(availability,A=new Set());A.add(l.id);l.availability=availability;}let ids=this.byLocation.get(id);if(!ids)this.byLocation.set(id,ids=new Set());ids.add(l.id);this.dirty(l);this.revision++;this.event(cause,l,l.qty,{from,before});}
   compatible(a,b){const keys=l=>Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty');const A=keys(a),B=keys(b);return A.length===B.length&&A.every(k=>Object.prototype.hasOwnProperty.call(b,k)&&Object.is(a[k],b[k]));}
   coalesce(g,eligible){const groups=new Map();for(const id of [...this.byGood.get(g)||[]]){const l=this.lots.get(id);if(!l||eligible&&!eligible(l))continue;let M=groups.get(l.owner);if(!M)groups.set(l.owner,M=new Map());const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(keys.some(k=>{if(typeof k!=='string')return true;const v=l[k],t=typeof v;return v!==null&&t!=='string'&&t!=='boolean'&&t!=='undefined'&&(t!=='number'||!Number.isFinite(v)||Object.is(v,-0));}))continue;const key=JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));const keep=M.get(key);if(!keep||!this.compatible(keep,l)){M.set(key,l);continue;}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),qty=l.qty;this.unindex(l);this.lots.delete(l.id);this.rounding(g,'merge',keep.qty,qty);keep.qty+=qty;this.dirty(keep);this.revision++;this.event('lot-merged',l,qty,{before,lotAfter:null,sourceLotAfter:this.captureLot(keep),into:keep.id});}}
@@ -6108,12 +6114,19 @@ function trackGraph(){
 function buildTracks(){
   if(!G.land)return;const T=trackGraph(),used=new Set(),N=T.pts.length,F=G.land.F;
   const rural=[];for(const o of W.settlements)for(const b of o.buildings)if(b.rural&&!b.removed&&b.state!=='gone')rural.push(b);
+  // Scratch wrappers keep spatial stamps out of authoritative towns and buildings.
+  const townNodes=W.settlements.map(o=>({x:o.pos.x,z:o.pos.z,o})),yardNodes=rural.map(b=>({x:b.x,z:b.z,b})),fields=new Map();
+  const townRadius=n=>Math.max(n.o.extentR||n.o.radius||60,n.o.radius||60),finite=n=>Number.isFinite(n.x)&&Number.isFinite(n.z);
+  const towns=townNodes.every(n=>finite(n)&&Number.isFinite(townRadius(n))&&townRadius(n)>=0&&townRadius(n)<=4096)?makeHash(256):null,yards=yardNodes.every(finite)?makeHash(64):null;
+  if(towns)for(const n of townNodes)towns.add(n,townRadius(n));if(yards)for(const n of yardNodes)yards.add(n,12);
+  const candidates=(hash,nodes,x,z)=>hash&&Number.isFinite(x)&&Number.isFinite(z)?hash.near(x,z,0):nodes;
+  for(const f of F)if((f.state===LS.TILLED||f.state===LS.PASTURE)&&f.kind!==LK.NONE){let list=fields.get(f.dom);if(!list)fields.set(f.dom,list=[]);list.push(f);}
   const SH=new Map(),sk=(i,j)=>i*100003+j;for(const o of W.settlements)for(const st of o.streets||[]){if(st.gone||st.kind==='edge')continue;const P=st.pts; // every street (made or waiting), hashed by 20 m cells
     for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k];for(let t=0;t<=1;t+=0.25){const i=Math.floor((a.x+(b.x-a.x)*t)/20),j=Math.floor((a.z+(b.z-a.z)*t)/20),q=sk(i,j);if(!SH.has(q))SH.set(q,[]);SH.get(q).push([a,b,st.hw||3]);}}}
   const onStreet=(x,z)=>{const i=Math.floor(x/20),j=Math.floor(z/20);for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){const L=SH.get(sk(i+di,j+dj));if(L)for(const[a,b,hw]of L)if(segDist(x,z,a,b)<hw+6)return true;}return false;};
-  const urban=(x,z)=>W.settlements.some(o=>dist2d(x,z,o.pos.x,o.pos.z)<(o.extentR||o.radius||60))||rural.some(b=>Math.abs(b.x-x)<12&&Math.abs(b.z-z)<12)||onStreet(x,z); // a town's own ground is bought and laid out in lots and yards; a farmstead's yard is its own
+  const urban=(x,z)=>candidates(towns,townNodes,x,z).some(({o})=>dist2d(x,z,o.pos.x,o.pos.z)<(o.extentR||o.radius||60))||candidates(yards,yardNodes,x,z).some(({b})=>Math.abs(b.x-x)<12&&Math.abs(b.z-z)<12)||onStreet(x,z); // a town's own ground is bought and laid out in lots and yards; a farmstead's yard is its own
   W.settlements.forEach((s,si)=>{
-    const fs=F.filter(f=>f.dom===si&&(f.state===LS.TILLED||f.state===LS.PASTURE)&&f.kind!==LK.NONE);if(!fs.length)return;
+    const fs=fields.get(si)||[];if(!fs.length)return;
     const R=(s.extentR||s.radius||60)+15;let a0=-1,bd=1e18;
     for(let i=0;i<N;i++){const d=dist2d(T.pts[i].x,T.pts[i].z,s.pos.x,s.pos.z);if(d>R*4)continue;const dd=Math.abs(d-R);if(dd<bd){bd=dd;a0=i;}}
     if(a0<0)return;
@@ -6124,7 +6137,7 @@ function buildTracks(){
     while(heap.length){const[dc,v]=pop();
       if(dc>dist[v])continue;if(dc>6000)break;
       for(const e of T.adj[v]){const w=e.a===v?e.b:e.a,P=T.pts[w];let c=e.c;const Pv=T.pts[v];if(v!==a0&&(urban(P.x,P.z)||urban((P.x+Pv.x)/2,(P.z+Pv.z)/2)))continue; // the lanes stop at the town's edge and go round the farmyards
-        for(const o of W.settlements)if(o!==s&&dist2d(P.x,P.z,o.pos.x,o.pos.z)<(o.radius||60))c*=5; // not through another village's yards
+        for(const {o} of candidates(towns,townNodes,P.x,P.z))if(o!==s&&dist2d(P.x,P.z,o.pos.x,o.pos.z)<(o.radius||60))c*=5; // not through another village's yards
         if(dc+c<dist[w]){dist[w]=dc+c;via[w]=e;push(dist[w],w);}}}
     for(const f of fs){let t=-1,td=1e18;for(const q of furlongPoly(f)){const i=T.V.get(tgKey(q));if(i!==undefined&&dist[i]<td){td=dist[i];t=i;}}
       for(let v=t,g=0;v>=0&&v!==a0&&via[v]&&g<400;g++){const e=via[v];used.add(e.k);v=e.a===v?e.b:e.a;}}});

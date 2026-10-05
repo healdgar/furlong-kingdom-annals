@@ -23,7 +23,10 @@ test('managed claim writer architecture remains reviewed',()=>{
  // Sale iteration uses derived offer membership; its native Map cursor preserves
  // live fallback. No legal/physical writer or journal event changes. Sparse and
  // opaque mutation fixtures plus exact 34846e4 native replay renew this review.
- assert.equal(digest(source.slice(a,b)),"23ed10d66473b920e96552415b0266beebdff35cc49b8441e39dd816013f9a7a");
+ // Exposure queries reuse the admitted external facility index; membership
+ // maintenance preserves live order without full-array sorting. Canonical ledger
+ // writers, claim arithmetic, and outcome records remain unchanged.
+ assert.equal(digest(source.slice(a,b)),"558b59bb561a9cbb8f83b6d972557be5ca4c0e9f0904fb0fe67dabbc91c38478");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
