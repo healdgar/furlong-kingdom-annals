@@ -4,6 +4,52 @@ Fresh maps, every daily tick, every named person and household, and existing own
 inheritance rules remain intact. No era presets, saved-world bank, actor culling or SQLite were added.
 The app remains a single HTML file with no build step.
 
+## Fast-forward limits and next work
+
+The fastest player speed requests 360 days/second. `animate` executes daily ticks
+on the main thread for up to 28 ms per frame, then animates the world, rebuilds
+dirty geometry, refreshes UI and renders. A slow single tick can exceed that
+budget. Later-era generation also executes every day, although it omits the
+normal frame loop. Removing rendering alone cannot solve slow era generation.
+850 to 1066 requires 77,760 daily ticks. One simulated year per second allows
+only 2.78 ms per day before display and persistence costs.
+
+This batch removes repeated work without additional simulation indexes or events:
+
+- Daily feeding prepares ownership and food reconciliation once; independent
+  food top-up calls still prepare their own inputs.
+- Monthly wage payments retain only the first five sorted poor candidates,
+  enough for four recipients after excluding the payer. Payment order and ties
+  remain unchanged.
+- A household's migration roots are evaluated once for its destination search,
+  rather than scanning its fields for each destination.
+- Hidden Crown and realm panels skip their periodic reconstruction. Opening a
+  panel refreshes its data immediately. Crown reference linking otherwise
+  searches living and historical people even when the drawer is hidden.
+
+All 916 source tests pass. Focused tests cover household food, hunger, debt and money equivalence, wage
+recipient ordering, migration-root values and panel visibility. They establish
+removed work, not a measured whole-game speedup or century-scale clearance.
+
+Remaining architectural work, in order:
+
+1. Eliminate remaining household-by-population and owner-history scans using
+   authoritative household membership and existing active balance membership.
+   Preserve ordering where it affects RNG, inheritance or money.
+2. Separate display projection from daily state changes. `animateWorld` currently
+   mutates traffic, envoy and actor state; throttling it wholesale is unsafe.
+   Keep authoritative changes in simulation, then refresh visible geometry and
+   animation at a bounded cadence during reeling.
+3. Move the serial daily engine behind the existing worker boundary, with one
+   authoritative world, ordered player commands and bounded display deltas.
+   A worker improves responsiveness; it does not make the same CPU work cheaper.
+4. Measure matched drawn and undrawn runs on the resulting source, including
+   later-year cost growth and persistence backpressure. Faster short fixtures
+   cannot establish practical fast-forward throughput.
+
+Daily pantry, hunger and debt settlement remains required. Monthly and annual
+decisions should run only when due; no coarser approximation is enabled here.
+
 ## Algorithms
 
 - Settlement population totals are computed lazily from the household ledger. Ledger set/delete/clear

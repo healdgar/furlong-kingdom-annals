@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 21:05 UTC · after 9ba3ba6</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 21:45 UTC · remove repeated reel work</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -10090,6 +10090,7 @@ function contextShow(kind){
   contextUI.kind=kind;contextUI.side=changed?null:contextUI.side;
   const el=document.getElementById('contextpanel');el.hidden=false;
   const child=document.getElementById(CONTEXT_IDS[kind]);if(child&&child.parentElement.id!=='contextcontent')document.getElementById('contextcontent').append(child);
+  if(changed&&kind==='drawer'){refreshCrownPanel(true);refreshHousePanel(true);}
   contextSync();if(changed)document.getElementById('contextcontent').scrollTop=contextUI.expanded?(contextUI.scroll.get(kind)||0):0;
   contextPosition();if(changed&&contextUI.expanded)document.getElementById('contextsize').focus();
 }
@@ -10753,17 +10754,17 @@ function reconcile(s,heads,goods=GOODS){if(commodityActive(s)){commodityReconcil
       if(g==='wool'){let sh=0;for(const h of heads)sh+=(h.herd&&h.herd.sheep)||0;const all=Math.max(sh,s.stores.sheep||0);for(const h of heads)if(h.herd&&h.herd.sheep>0)offer(s,'wool',h,d*h.herd.sheep/Math.max(1,all));if(all>sh)offer(s,'wool',lordAcct(s),d*(all-sh)/all);else if(!sh)offer(s,'wool',lordAcct(s),d);}
       else offer(s,g,lordAcct(s),d);}
     else if(T<have-1e-6){const f=have>0?T/have:0;for(const[w,v]of L.ownedEntries())L.set(w,v*f);if(Ld[g])Ld[g]*=f;if(g==='timber'&&Ld.char)Ld.char*=f;}}}
-function topUpFood(s,need,PM){const H=householdsOf(s),plans=[];let short=0;
+function topUpFood(s,need,PM,prepared=false){const H=householdsOf(s),plans=[];let short=0;
   for(const h of H){const n=h.population.get(s)||0,L=pantry(s,h),herd=h.assets.herd||{},home=0;
     const q=Math.max(0,n*(NEED.grain+NEED.fish)-home-(L.grain||0)-(L.fish||0));if(q>1e-9){plans.push({owner:h,buyer:h.head||lordAcct(s),q});short+=q;}}
   if(!(short>0)||s.stores.grain+s.stores.fish<=0)return;
-  const heads=heads_(s,()=>true);shareOutput(s,W.settlements.indexOf(s),PM,heads,true);reconcile(s,heads,['grain','fish']);
-  // Reconciliation may have removed spoiled food from a crock since the demand was reckoned.
-  for(const pl of plans){const L=pantry(s,pl.owner),n=pl.owner.population.get(s)||0,Hd=pl.owner.assets.herd||{},home=0;pl.q=Math.max(0,n*(NEED.grain+NEED.fish)-home-(L.grain||0)-(L.fish||0));}
+  if(!prepared){const heads=heads_(s,()=>true);shareOutput(s,W.settlements.indexOf(s),PM,heads,true);reconcile(s,heads,['grain','fish']);
+    // Standalone callers may have reckoned demand before spoilage was reconciled.
+    for(const pl of plans){const L=pantry(s,pl.owner),n=pl.owner.population.get(s)||0;pl.q=Math.max(0,n*(NEED.grain+NEED.fish)-(L.grain||0)-(L.fish||0));}}
   const cut={grain:0.3,fish:0.25},take=(pl,g,q)=>{const gift=accountOwner(pl.buyer)!==accountOwner(pl.owner);if(gift)storageGiftTitle(s,pl.buyer,pl.owner,g,q);commodityCreditPurchase(s,pl.owner,g,q,gift);pl.q=Math.max(0,pl.q-q);craftWork(s,pl.buyer,MARGIN[g],Math.min(Math.max(0,means(pl.buyer)),q*price(s,g)*cut[g]/(1-cut[g])));};
   for(const pl of plans)for(const g of ['grain','fish']){const q=Math.min(pl.q,mkt(s,g).get(pl.buyer)||0);if(q>0){purchase(s,g,pl.buyer,q);take(pl,g,purchase.got);}}
   for(const g of ['grain','fish'].sort((a,b)=>price(s,a)/(1-cut[a])-price(s,b)/(1-cut[b]))){const got=clearMarket(s,g,plans.map(pl=>[pl.buyer,pl.q]));plans.forEach((pl,i)=>take(pl,g,got[i]));}}
-function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s);shareOutput(s,W.settlements.indexOf(s),PM,heads_(s,()=>true),true);reconcile(s,headsOf(s),['grain','fish']);topUpFood(s,0,PM);let hungry=0,total=0,homeDay=0;
+function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s);shareOutput(s,W.settlements.indexOf(s),PM,heads_(s,()=>true),true);reconcile(s,headsOf(s),['grain','fish']);topUpFood(s,0,PM,true);let hungry=0,total=0,homeDay=0;
   for(const h of H){const n=h.population.get(s)||0,Hd=h.assets.herd||{},home=0,need=Math.max(0,n*(NEED.grain+NEED.fish)-home);
     let got=consumeOwned(s,h,'grain',need*0.75);got+=consumeOwned(s,h,'fish',need-got);got+=consumeOwned(s,h,'grain',need-got);
     h.hunger=need>0?clamp(1-got/need,0,1):0;h.assets._fill=1-h.hunger;hungry+=h.hunger*n;total+=n;homeDay+=home;}
@@ -10799,7 +10800,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
         if(got*pg2>foodYr()*0.3&&h._giveY!==year()){h._giveY=year();life(h,`Gave bread to hungry neighbours`);}}}}
   s._fill=sn>0?sf/sn:1;s._wealth=heads.length?sw/heads.length:0; // how well the place lives, as others hear of it
   s._homeDay=homeFood/30; // what the families' own beasts put on the table each day
-  if(pay2.length){const poor=heads.filter(h=>(h.w||0)<foodYr()*0.5).sort((a,b)=>(a.w||0)-(b.w||0));for(const[h,v]of pay2){const L=poor.filter(q=>q!==h).slice(0,4);if(L.length)payAmong(L,v,h,'wages');}} // the poorest go into service and take day-work
+  if(pay2.length){const poor=heads.filter(h=>(h.w||0)<foodYr()*0.5).sort((a,b)=>(a.w||0)-(b.w||0)).slice(0,5);for(const[h,v]of pay2){const L=poor.filter(q=>q!==h).slice(0,4);if(L.length)payAmong(L,v,h,'wages');}} // four recipients need only the first five candidates when the payer is excluded
   for(const h of heads)if(h._debt>0)repay(h,Math.max(0,(h.w||0)-foodYr()/12*(size.get(h)||1))); // debts paid out of what is left once the month's bread is put by
   {let lu=0;for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too
     if(lu>0){purchase(s,'hay',lordAcct(s),lu*10/12);commodityCreditPurchase(s,lordAcct(s),'hay',purchase.got);}}
@@ -12820,9 +12821,9 @@ function tickHouseholds(){
     // a family goes where it would do better, if the road is worth it (one choice in a few years)
     if(!W.prehistory||AD()>=W.startAD)for(const h of heads){if(h.role||h.outlawCampId||(h._movedY||-99)>year()-5||s.siegeBy)continue;const mem=hhMembers(s,h);if(!mem.length||mem.some(p=>p.outlawCampId))continue;
       const kin=[...new Set([...kinOf(h),...(h.sp?kinOf(h.sp):[])])],skip=new Set(mem);
-      const here=tradeIncome(s,h.tr)+amenity(s,h,mem)+living(s)+kinNear(s,kin,skip)-rentOfHome(s,h)-((s.raidedUntil>day()||s.siegeBy)?foodYr()*2:0)-(s.hunger||0)*foodYr()*4;let best=-1,bg=0;
+      const here=tradeIncome(s,h.tr)+amenity(s,h,mem)+living(s)+kinNear(s,kin,skip)-rentOfHome(s,h)-((s.raidedUntil>day()||s.siegeBy)?foodYr()*2:0)-(s.hunger||0)*foodYr()*4;let best=-1,bg=0,roots;
       for(let j=0;j<Ss.length;j++){const o=Ss[j];if(j===si||o.siegeBy||closedToTrade(o))continue;const d=dist2d(s.pos.x,s.pos.z,o.pos.x,o.pos.z);if(d>7000*MAPK)continue;
-        const roots=foodYr()*((s.furl||[]).filter(f=>f.own===h.id).length*0.8+(h.herd?BEASTS.reduce((t2,k)=>t2+(h.herd[k]||0)*LU[k],0):0)*0.4+(h.bh&&h.bh.ownerId===h.id?2:0)+0.5); // land, beasts and a house of its own hold a family where it is
+        if(roots===undefined)roots=foodYr()*((s.furl||[]).filter(f=>f.own===h.id).length*0.8+(h.herd?BEASTS.reduce((t2,k)=>t2+(h.herd[k]||0)*LU[k],0):0)*0.4+(h.bh&&h.bh.ownerId===h.id?2:0)+0.5); // the family's roots are the same for every destination it considers
         const there=tradeIncome(o,h.tr)+amenity(o,h,mem)+living(o)+kinNear(o,kin,skip)-lotRentAt(o,o.pos.x,o.pos.z)*2-(o.hunger||0)*foodYr()*4,cost=(d/1000*0.4+2)*mem.length/5*foodYr()*0.3+roots/5,g2=there-here-cost; // its trade there, the rent of a modest house, against the road and the cost of setting up anew
         if(g2>bg){bg=g2;best=j;}}
       if(best>=0&&frand()<clamp(bg/Math.max(1,Math.abs(here))*0.25,0,0.25)){const o=Ss[best];h._movedY=year();householdAccount(h).movingTo=best;
@@ -14308,8 +14309,11 @@ function crownPanelHTML(){
   h+=`<button class="wbtn" data-cmd="sov-off" style="margin-top:10px">Lay down the crown</button>`;
   return crownSections(h,false);
 }
-function refreshCrownPanel(){
-  if(drawerTab!=='crown'||uiBusy())return;
+function drawerVisible(){
+  return !document.body.classList.contains('watch')&&!document.body.classList.contains('hideui')&&!document.getElementById('drawer').classList.contains('closed')&&(!contextUI.ready||contextUI.kind==='drawer'&&!document.getElementById('contextpanel').hidden);
+}
+function refreshCrownPanel(force=false){
+  if(drawerTab!=='crown'||!force&&(!drawerVisible()||uiBusy()))return;
   setHTML(document.getElementById('dbody'),crownPanelHTML());
 }
 function runCmd(cmd,arg){
@@ -14578,11 +14582,12 @@ function buildDrawer(tab){
     });
     document.getElementById('btnlabels').addEventListener('click',()=>{G.labelsOn=!G.labelsOn;});
     document.getElementById('btnwatch').addEventListener('click',toggleWatch);
-    refreshHousePanel();
+    refreshHousePanel(true);
   }
   decorateControls(body);
 }
-function refreshHousePanel(){
+function refreshHousePanel(force=false){
+  if(drawerTab!=='world'||!force&&!drawerVisible())return;
   const hp=document.getElementById('housepanel');if(!hp)return;
   let h='';
   W.houses.forEach((house,hi)=>{
