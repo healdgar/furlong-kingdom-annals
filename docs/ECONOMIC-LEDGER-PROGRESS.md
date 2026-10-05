@@ -10,7 +10,7 @@ collection events, or additional lot-split machinery.
 - [x] Phase 2: validate external distance, army-location, and vacant-residence indexes.
 - [x] Phase 3: replace bulk physical lots and independent held/sale claims together.
 - [x] Phase 4: journal daily owner/facility deltas; explicit save/export flushes can amend the same day.
-- [ ] Phase 5: household outcome comparison remains unresolved; replay, conservation, and performance checks pass.
+- [ ] Phase 5: exact demographic equivalence remains unproven; the user authorized publishing the tested checkpoint with the disclosed outcome differences.
 
 The phase-2 caches belong outside saved world state and emit no journal events.
 Current `moveIn` already discovers vacancies once per call; any retained index
@@ -60,7 +60,7 @@ over two years); no speedup or journal reduction is claimed for this phase.
 Evidence: `tools/soak-results/economic-roadmap-lookups30-final-2026-10-04` and
 `tools/soak-results/economic-roadmap-lookups2y-final-2026-10-04`.
 
-## Native balance checkpoint (not published)
+## Native balance checkpoint
 
 The version-3 engine uses numeric facility/good/owner/availability balances as
 its authority. Town stocks and household held/sale views read these same numbers.
@@ -123,8 +123,10 @@ Financial/stock totals also diverge: household debt ranges from about -30% to
 +20% and held food from +2% to +54%. Those changes are not deleted household
 tracking, but conservation does not establish statistical equivalence. Full death
 rate distributions have not been compared. The roadmap's demographic acceptance
-criterion and the user's allowance for only small explained differences remain
-unresolved; the native default is committed privately, not published.
+criterion remains unproven. After these differences were disclosed, the user
+explicitly authorized merging the checkpoint into the upgraded main and publishing
+it for testing. Individual tracking remains intact; identical trajectories are
+not claimed.
 
 Evidence beneath local ignored `tools/soak-results/`:
 `commodity-settlement-candidate30-final-2026-10-04`,
@@ -138,7 +140,8 @@ verified; measurements above count all storage records.
 ## Submerged coastal ground
 
 Published separately as `8b715e2`, with the validated lookup caches. The integrated
-legacy-engine source passes all 656 tests. Native balances remain on this branch.
+legacy-engine source passed all 656 tests. The numeric checkpoint now integrates
+with the later UI/material release described below.
 
 The visible sea is at SEA + 0.5 m, while the old land mask admitted coastal
 heights between SEA and that surface. The existing mask now excludes this wet
@@ -154,6 +157,51 @@ origin/main and live Pages matched commit `8b715e2` exactly at publication (inde
 
 A concurrent graphics/UI integration subsequently advanced main to `a931337`,
 retaining the shoreline fix and the legacy engine. Pages was reverified against
-that main exactly. The numeric checkpoint is based on `8b715e2`; publication
-requires integration and validation against the current main without dropping its
-newer rendering/UI changes.
+that main exactly. The numeric checkpoint was merged with `a931337` without
+source conflicts, preserving its context card, detail sheets, material textures,
+waterwheels, parchment and shoreline corrections. Two test tripwires were
+reconciled after source review; neither required a gameplay rollback.
+
+## Combined release validation
+
+Source SHA256: `f1bb306ad948de1e5e41335c6a454db170c50ff613c593d6a209771fbc19ed12`.
+Build: `2026-10-05 06:27 UTC · daily commodity balances`.
+
+- All 747 source/unit tests pass.
+- Hardware Chrome desktop rendering passes for 1001 sea and 2002 land through
+  thirty days: loaded material images, linked shaders, camera uniforms, live
+  rebuilding and church variants. A 390×844 touch/WebGL1 coastal run passes the
+  same checks. These are host viewport checks, not physical-device measurements.
+- The context card, expanded settlement table, household register and pantry sheet
+  work against the numeric ledger. At a 527px viewport, the household sheet has
+  no horizontal document overflow; the parchment surface loads.
+
+Rendering evidence: local ignored
+`tools/soak-results/commodity-main-render-2026-10-04` (including `mobile`).
+The rendering harness used the same local HTTP/asset adaptation as the UI release.
+The simulation source is unchanged by that harness adaptation.
+
+
+- Four worlds (1001/2002, sea/land) pass two years of daily inventory and annual
+  money checks on this combined source. No simulation errors, inventory mismatch,
+  nonfinite money or journal fault occurred; every annual money residual is zero.
+  Instrumented timings overlap rendering and are not comparative performance evidence.
+- Independent thirty-day replay passes all 31 boundaries; all 372 accepted storage
+  envelopes match persisted replay and hashes. This proves the v3 balance history,
+  not full saved-game hydration or exact v2/v3 household equivalence.
+- A subsequent serial 30-day sample compares with the current UI release
+  `a931337`: 28.64 versus 16.58 days/second (1.728x); 373 versus 207,586 total
+  journal records; 5,680,974 versus 39,421,890 encoded bytes (85.59% reduction).
+  The 1.5x throughput and 80% volume roadmap gates pass. The tick driver does not
+  establish a fastest-player 2x gate. The candidate-only CLI summary has null
+  comparative ratios; `roadmap-gates.json` computes them from both completed runs.
+
+Further local evidence: `commodity-main-audit2y-2026-10-04`,
+`commodity-main-baseline30-2026-10-04`, and
+`commodity-main-candidate30-2026-10-04` under `tools/soak-results/`.
+
+Known limitations remain: analytical household reach and full demographic
+comparison are unfinished. Two-year conservation is not century-scale clearance.
+Year-two hunger with food in the same town still occurs; aggregate stock does not
+prove that a hungry household owns or can afford it. This integration publishes
+the approved checkpoint without claiming those broader questions are resolved.

@@ -26,11 +26,13 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // phase-local facility candidates preserve managed writer and event order.
  // Native admission retains full scans for observer callbacks and overrides.
  // Frozen 3067ee5 comparisons and journal-append replay validate this batch.
- // The numeric-balance core/runtime now resides in this reviewed region. It
- // defaults to numeric balances while explicit false opts into the legacy lot
+ // The numeric-balance core/runtime now resides in this reviewed region.
+ // Main adds a read-only household inspector; UI/material additions introduce no
+ // quantity writes. The combined source is reviewed with both test suites.
+ // This defaults to numeric balances while explicit false opts into the legacy lot
  // ledger. The outside legacy owner-table mutation corpus below remains pinned.
  assert.equal(digest(source.slice(a,b)),"5c43cd79f1383a91f5dbd1715cec30c523918ac6361ccaa1d6c8e2d39cffb125");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
- assert.equal(digest(outside),"25e04d108fe4b912ecf335cc19eb26fb52c2219ef6e18bba3381bc755df62813");
+ assert.equal(digest(outside),"3e47927aacdd0447aceabf03c905b6fb20038bbf5437e69e9aacf2b92e3887f0");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });
