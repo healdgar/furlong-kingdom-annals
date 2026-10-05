@@ -4592,7 +4592,8 @@ function surfaceDetail(mat){
   return mat;
 }
 function miniatureMaterial(cell,metres,options={},grainAlong=false){ // world coordinates keep joined fence/bridge sections continuous
-  const mat=surfaceDetail(new THREE.MeshLambertMaterial(options));
+  const polished=cell===-2||cell===10;
+  const mat=surfaceDetail(polished?new THREE.MeshPhongMaterial({...options,specular:0x14171b,shininess:35}):new THREE.MeshLambertMaterial(options));
   mat.onBeforeCompile=sh=>{
     miniatureShader(sh);sh.uniforms.uMiniCell={value:cell};sh.uniforms.uMiniScale={value:new THREE.Vector2(...metres)};sh.uniforms.uGrainAlong={value:grainAlong?1:0};
     sh.vertexShader='varying vec3 vMiniWP,vMiniN,vMiniAlong,vMiniUp;\n#ifdef MINI_STRUCTURE_UV\nattribute vec2 aSurfaceUV;varying vec2 vMiniUV;\n#endif\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
@@ -4619,6 +4620,7 @@ function miniatureMaterial(cell,metres,options={},grainAlong=false){ // world co
       coord=vMiniUV;if(cell>4.5&&cell<5.5&&an.y>max(an.x,an.z))cell=2.;
       #endif
       diffuseColor.rgb*=miniatureDetail(cell,coord/uMiniScale);`);
+    if(polished)reflectiveShader(sh,'step(9.5,cell)*step(cell,10.5)','0.04',0.35);
   };return mat;
 }
 function roadMaterial(joins){
@@ -4638,8 +4640,31 @@ function roadMaterial(joins){
   };
   return mat;
 }
+// Reflect the same sky that surrounds the map. No reflection camera, extra texture or draw pass.
+// Direct Phong highlights still use the sun/torches and their actual shadow maps.
+function reflectiveShader(sh,finish,f0,strength=1){
+  Object.assign(sh.uniforms,{uReflectTop:G.skyU.top,uReflectBottom:G.skyU.bot});
+  sh.fragmentShader=sh.fragmentShader.replace('#include <common>',`#include <common>
+    uniform vec3 uReflectTop,uReflectBottom;
+    vec3 reflectedSky(vec3 ray){
+      float h=max(ray.y,0.)*0.5+0.5;
+      vec3 sky=mix(uReflectBottom,uReflectTop,pow(h,0.7));
+      return mix(sky,uReflectBottom*vec3(0.62,0.7,0.74),clamp(-ray.y*4.,0.,1.));
+    }`)
+    .replace('#include <lights_phong_fragment>',`#include <lights_phong_fragment>
+      float finish=clamp(${finish},0.,1.);
+      material.specularColor*=finish;`)
+    .replace('#include <lights_fragment_end>',`#include <lights_fragment_end>
+      vec3 viewDir=normalize(vViewPosition);
+      float fresnel=${f0}+(1.-${f0})*pow(1.-clamp(dot(normal,viewDir),0.,1.),5.);
+      vec3 skyRay=inverseTransformDirection(reflect(-viewDir,normal),viewMatrix);
+      float reflectance=fresnel*finish*${Number(strength).toFixed(3)};
+      reflectedLight.directDiffuse*=1.-reflectance;
+      reflectedLight.indirectDiffuse*=1.-reflectance;
+      reflectedLight.indirectSpecular+=reflectedSky(skyRay)*reflectance;`);
+}
 function waterMaterial(options,channel=false,sea=false){
-  const mat=surfaceDetail(new THREE.MeshPhongMaterial(options));
+  const mat=surfaceDetail(new THREE.MeshPhongMaterial({...options,shininess:70,specular:0x08090a}));
   if(channel)mat.defines={...mat.defines,MINI_CHANNEL:1};
   if(sea)mat.defines={...mat.defines,MINI_SEA:1};
   mat.onBeforeCompile=sh=>{
@@ -4663,12 +4688,13 @@ function waterMaterial(options,channel=false,sea=false){
       vec2 waterAcross=length(waterGrad)>0.0001?normalize(waterGrad):normalize(vec2(0.7,0.3));
       vec2 waterAlong=vec2(-waterAcross.y,waterAcross.x);
       vec2 waterUV=vec2(dot(waterWP,waterAlong),dot(waterWP,waterAcross));
-      vec2 waterDrift=vec2(0.,-uWaterTime*0.04);float waterPhase=waterUV.y*0.7-uWaterTime*0.65;
+      vec2 waterDrift=vec2(0.,-uWaterTime*0.04);
       #ifdef MINI_CHANNEL
       waterAlong=normalize(vWaterTangent);waterAcross=vec2(-waterAlong.y,waterAlong.x);
-      waterUV=vWaterUV.yx;waterDrift=vec2(-uWaterTime*0.055,0.);waterPhase=vWaterUV.y*0.75-uWaterTime*0.9;
+      waterUV=vWaterUV.yx;waterDrift=vec2(-uWaterTime*0.055,0.);
       #endif
       vec3 rippleTex=texture2D(uWaterRippleMap,waterUV/vec2(16.,24.)+waterDrift).rgb;
+      float waterFinish=1.;
       float detail=dot(rippleTex,vec3(0.2126,0.7152,0.0722))/0.3721;
       float visible=uWaterRippleReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(waterUV/vec2(16.,24.))));
       diffuseColor.rgb*=mix(1.,clamp(detail,0.75,1.5),visible*0.95); // sparse ripples, no bitmap foam overlay
@@ -4684,7 +4710,7 @@ function waterMaterial(options,channel=false,sea=false){
       #endif
       #ifdef MINI_CHANNEL
       float shoreNoise=surfaceFilteredNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
-      float shore=1.-smoothstep(0.2,shoreWidth,vWaterBank);
+      float shore=1.-smoothstep(0.2,shoreWidth,vWaterBank);waterFinish=1.-shore;
       vec3 wetGravel=vec3(0.37,0.36,0.29)*miniatureDetail(3.,waterWP/2.5);
       diffuseColor.rgb=mix(diffuseColor.rgb,wetGravel,shore*0.92);
       diffuseColor.a*=smoothstep(0.,0.45+shoreNoise*0.65,vWaterBank);
@@ -4692,8 +4718,13 @@ function waterMaterial(options,channel=false,sea=false){
       #endif
       `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
       float ripple=(1.-smoothstep(600.,1500.,distance(vWaterWP,uSurfaceEye)))*(1.-smoothstep(0.8,3.,surfaceFootprint(waterWP)));
-      vec2 tilt=(waterAlong*sin(waterPhase)+waterAcross*cos(waterPhase*0.43))*0.022*ripple;
+      // Irregular, flow-aligned waves break up the highlight; periodic sine bands looked like a comb.
+      vec2 waveUV=waterUV*vec2(0.28,0.48)+waterDrift*3.;
+      float wave=surfaceNoise(waveUV);
+      vec2 slope=vec2(surfaceNoise(waveUV+vec2(0.18,0.))-wave,surfaceNoise(waveUV+vec2(0.,0.18))-wave);
+      vec2 tilt=(waterAlong*slope.x+waterAcross*slope.y)*0.16*ripple;
       normal=normalize(normal+mat3(viewMatrix)*vec3(tilt.x,0.,tilt.y));`);
+    reflectiveShader(sh,'waterFinish','0.0204');
   };return mat;
 }
 function bridgeMaterial(){ // the deck joins the paved road; piers share the existing ashlar tile
@@ -5099,7 +5130,7 @@ function buildTerrain(){
   // sea
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
-    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10},false,true)); // a faint sheen: any stronger and the sun blows the open sea out to white
+    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92},false,true));
     G.sea.position.y=SEA_SURFACE;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
@@ -5137,8 +5168,8 @@ function buildTerrain(){
     for(const q of P){lk.p.push(q.x,y,q.z);lk.n.push(0,1,0);C1.setHex(0x356a8f);lk.c.push(C1.r,C1.g,C1.b);}
     for(let i=1;i<P.length-1;i++)lk.i.push(base,base+i+1,base+i);
   }
-  if(lk.i.length){G.lakes=accMesh(lk,waterMaterial({vertexColors:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide}));scene.add(G.lakes);}
-  G.rivers=accMesh(riv,waterMaterial({vertexColors:true,transparent:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide,
+  if(lk.i.length){G.lakes=accMesh(lk,waterMaterial({vertexColors:true,side:THREE.DoubleSide}));scene.add(G.lakes);}
+  G.rivers=accMesh(riv,waterMaterial({vertexColors:true,transparent:true,side:THREE.DoubleSide,
     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3},true));
   scene.add(G.rivers);
   rebuildRoadMesh();
@@ -5324,7 +5355,7 @@ function wallAtlas(){ /* one bay of one storey per tile, tiled across each face 
   const t=new THREE.CanvasTexture(c);t.anisotropy=4;return t;
 }
 function wallMaterial(){ // walls laid out in whole storeys and bays for every face, whatever the house's size
-  const m=surfaceDetail(new THREE.MeshLambertMaterial({map:G.wallTex||(G.wallTex=wallAtlas())}));
+  const m=surfaceDetail(new THREE.MeshPhongMaterial({specular:0x24282c,shininess:120,map:G.wallTex||(G.wallTex=wallAtlas())}));
   m.onBeforeCompile=sh=>{
     miniatureShader(sh);
     sh.vertexShader='attribute float aKind;attribute vec2 aFront;attribute float aBase;\nvarying vec2 vFace;varying vec2 vDim;varying float vKind;varying float vFrontDot;varying float vBase;\n'+
@@ -5335,7 +5366,8 @@ function wallMaterial(){ // walls laid out in whole storeys and bays for every f
   vKind=abs(normal.y)>0.5?-1.0:aKind;vBase=aBase;
   vec3 iwn=normalize(mat3(instanceMatrix)*normal);vFrontDot=dot(iwn.xz,aFront);`);
     sh.fragmentShader='varying vec2 vFace;varying vec2 vDim;varying float vKind;varying float vFrontDot;varying float vBase;\n'+SURFACE_GLSL+
-      sh.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
+      sh.fragmentShader.replace('#include <map_fragment>',`float glassFinish=0.;
+#ifdef USE_MAP
   if(vKind>=0.0){
     float mat=mod(vKind,4.0),kind=floor(vKind/4.0+0.01);
     float hb=max(1.0,vDim.y-vBase),nst=max(1.0,floor(hb/2.8+0.35)),sh=hb/nst,yv=vFace.y-vBase;
@@ -5348,6 +5380,16 @@ function wallMaterial(){ // walls laid out in whole storeys and bays for every f
     else if(front&&mid&&mat<2.5){row=2.0;col=(mat>0.5&&mat<1.5)?1.0:0.0;}
     float fv=fract(yv/sh);
     vec4 texelColor=texture2D(map,vec2((col+clamp(fu,0.03,0.97))/4.0,1.0-(row+1.0-clamp(fv,0.03,0.97))/3.0));
+    if(yv>=0.&&row<1.5&&col<1.5){
+      vec2 pane=vec2(fu,1.-fv)*64.;
+      vec4 bounds=col<0.5?(row<0.5?vec4(22.,14.,42.,40.):vec4(22.,20.,42.,42.)):
+        (row<0.5?vec4(24.,12.,40.,40.):vec4(24.,18.,40.,42.));
+      float aa=max(0.6,surfaceFootprint(vFace/vec2(bw,sh))*64.);
+      vec2 middle=(bounds.xy+bounds.zw)*0.5;
+      float edge=min(min(pane.x-bounds.x,bounds.z-pane.x),min(pane.y-bounds.y,bounds.w-pane.y));
+      glassFinish=smoothstep(1.,1.+aa,edge)*smoothstep(0.6,0.6+aa,abs(pane.x-middle.x))*smoothstep(0.6,0.6+aa,abs(pane.y-middle.y));
+      glassFinish*=1.-smoothstep(2.,6.,aa); // unresolved windows must not sparkle at map scale
+    }
     if(yv<0.0)texelColor.rgb*=0.72;
     diffuseColor*=mapTexelToLinear(texelColor);
     if((mat<0.5||abs(mat-2.)<0.5)&&texelColor.r>0.45&&diffuseColor.r>0.28)diffuseColor.rgb=mix(diffuseColor.rgb,texelColor.rgb*vec3(0.9,0.87,0.78),0.6);
@@ -5357,6 +5399,7 @@ function wallMaterial(){ // walls laid out in whole storeys and bays for every f
     diffuseColor.rgb*=1.-0.09*smoothstep(vDim.y-0.5,vDim.y,vFace.y);
   }
 #endif`);
+    reflectiveShader(sh,'glassFinish','0.04');
   };
   return m;
 }
@@ -5383,7 +5426,7 @@ function roofTexture(){ // tile or thatch courses running along the ridge
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;return t;
 }
 function roofMaterial(){ // metre-sized courses; the triangular ends are walls, not roof covering
-  const mat=surfaceDetail(new THREE.MeshLambertMaterial({map:G.roofTex||(G.roofTex=roofTexture())}));
+  const mat=surfaceDetail(new THREE.MeshPhongMaterial({specular:0x14171b,shininess:35,map:G.roofTex||(G.roofTex=roofTexture())}));
   mat.onBeforeCompile=sh=>{
     miniatureShader(sh);
     sh.uniforms.uGableAtlas={value:G.wallTex};
@@ -5406,6 +5449,7 @@ function roofMaterial(){ // metre-sized courses; the triangular ends are walls, 
           float cell=vRoofKind<0.5?8.:vRoofKind>1.5?10.:9.;
           diffuseColor.rgb*=miniatureDetail(cell,vRoofUV/vec2(2.4,2.4));
         }`);
+    reflectiveShader(sh,'step(1.5,vRoofKind)*(1.-vGable)','0.04',0.35);
   };
   return mat;
 }
@@ -6250,7 +6294,7 @@ function updateBuildingInstance(b){
   C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
   G.bodies.setColorAt(i,C1);
   const RA=G.roofs.geometry.attributes;RA.aGableColor.setXYZ(i,C1.r,C1.g,C1.b);RA.aKind.setX(i,G.bodies.geometry.attributes.aKind.getX(i)%4);
-  const covering=roofCol===0x4f5866||roofCol===0x606876||b.motte?2:b.tier===0&&b.arch!=='inn'||tL&&!tL.ch.stone?0:1;
+  const covering=b.motte?1:roofCol===0x4f5866||roofCol===0x606876?2:b.tier===0&&b.arch!=='inn'||tL&&!tL.ch.stone?0:1;
   RA.aRoofKind.setX(i,covering);for(const a of['aGableColor','aKind','aRoofKind'])RA[a].needsUpdate=true;
   const ruined=b.state==='ruin'||b.state==='rubble';
   if(b.arch==='court'&&!ruined){const fr=Math.min(6,b.d*0.36),[X,Z]=locW(b,0,b.d/2-fr/2);setInst(G.roofs,i,X,b.y+h,Z,b.rot,b.w*1.03,fr*0.6,fr*1.15);}
@@ -8119,14 +8163,14 @@ function buildLabels(){
 /* ---------------- agents: caravans, cogs, armies, dragon, bandits, citizens */
 const CARGOCOL={grain:0xe6d8a8,fish:0xb9c6cc,timber:0x9a7a52,ore:0x8e8a84,tools:0xa7aeb6,cloth:0xb88fb0,wine:0xa65a62};
 /* ---------------- small models, each one geometry with vertex colours ------------------ */
-function colGeom(parts){ // [[geometry, matrix, hex]] → one geometry; tintable parts use 0xffffff
-  const pos=[],nor=[],col=[],nm=new THREE.Matrix3(),v=new THREE.Vector3(),c=new THREE.Color();
-  for(const[g0,m,hex]of parts){
+function colGeom(parts){ // [[geometry, matrix, hex, iron?]] → one geometry; tintable parts use 0xffffff
+  const pos=[],nor=[],col=[],finish=[],hasIron=parts.some(p=>p[3]),nm=new THREE.Matrix3(),v=new THREE.Vector3(),c=new THREE.Color();
+  for(const[g0,m,hex,iron=0]of parts){
     const g=g0.index?g0.toNonIndexed():g0;nm.getNormalMatrix(m);c.setHex(hex);
     const P=g.attributes.position,Nn=g.attributes.normal;
     for(let i=0;i<P.count;i++){
       v.fromBufferAttribute(P,i).applyMatrix4(m);pos.push(v.x,v.y,v.z);
-      v.fromBufferAttribute(Nn,i).applyNormalMatrix(nm);nor.push(v.x,v.y,v.z);col.push(c.r,c.g,c.b);
+      v.fromBufferAttribute(Nn,i).applyNormalMatrix(nm);nor.push(v.x,v.y,v.z);col.push(c.r,c.g,c.b);if(hasIron)finish.push(iron);
     }
     if(g!==g0)g.dispose();
   }
@@ -8134,6 +8178,7 @@ function colGeom(parts){ // [[geometry, matrix, hex]] → one geometry; tintable
   out.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   out.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));
   out.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  if(hasIron)out.setAttribute('aFinish',new THREE.Float32BufferAttribute(finish,1));
   return out;
 }
 const TM=(x,y,z,rx,ry,rz,sx,sy,sz)=>new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),
@@ -8146,8 +8191,8 @@ function personParts(kind){ // faces +z, feet at y=0, ~1.8 m tall
   const tint=[[BOX(0.5,0.78,0.3),TM(0,1.18,0),0xffffff],[BOX(0.14,0.62,0.16),TM(-0.33,1.2,0,0,0,0.08),0xffffff],[BOX(0.14,0.62,0.16),TM(0.33,1.2,0,0,0,-0.08),0xffffff]];
   const tint2=[];
   if(kind==='soldier'){
-    fixed.push([new THREE.ConeGeometry(0.21,0.3,7),TM(0,1.9,0),0x8d949c],[BOX(0.46,0.05,0.46),TM(0,1.76,0),0x7d848c],
-      [BOX(0.05,2.9,0.05),TM(0.42,1.35,0.05),0x6a5033],[new THREE.ConeGeometry(0.07,0.35,4),TM(0.42,2.95,0.05),0xa7aeb6]);
+    fixed.push([new THREE.ConeGeometry(0.21,0.3,7),TM(0,1.9,0),0x8d949c,1],[BOX(0.46,0.05,0.46),TM(0,1.76,0),0x7d848c,1],
+      [BOX(0.05,2.9,0.05),TM(0.42,1.35,0.05),0x6a5033],[new THREE.ConeGeometry(0.07,0.35,4),TM(0.42,2.95,0.05),0xa7aeb6,1]);
     tint2.push([BOX(0.07,0.64,0.52),TM(-0.4,1.12,0.12),0xffffff]);
   }else{
     fixed.push([new THREE.CylinderGeometry(0.19,0.21,0.12,7),TM(0,1.86,0),0x6b5a44]); // a cap or hood
@@ -8214,8 +8259,14 @@ function wingGeom(){ // a bat wing from the shoulder along +x: arm bones, finger
   bone(P[0],P[1],0.45);bone(P[1],P[2],0.35);for(const t of tips)bone(P[2],t,0.16);
   return{membrane:g,bones:colGeom(bones)};
 }
-function agentMat(){ // small figures get a touch of self-light so they read against the grass from any side
-  return new THREE.MeshLambertMaterial({vertexColors:true,emissive:0x1a1816});
+function agentMat(iron=false){ // self-light keeps small figures readable; only their iron fittings reflect
+  if(!iron)return new THREE.MeshLambertMaterial({vertexColors:true,emissive:0x1a1816});
+  const mat=new THREE.MeshPhongMaterial({vertexColors:true,emissive:0x1a1816,specular:0x8b939d,shininess:80});
+  mat.onBeforeCompile=sh=>{
+    sh.vertexShader='attribute float aFinish;varying float vFinish;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvFinish=aFinish;');
+    sh.fragmentShader='varying float vFinish;\n'+sh.fragmentShader;
+    reflectiveShader(sh,'vFinish','0.55',0.8);
+  };return mat;
 }
 /* Trade runs on the sim clock (a consignment is days on the road, and can be robbed or carry plague);
    what you see on the roads is its traffic: each consignment sends out a little convoy of carts (or a
@@ -8279,7 +8330,7 @@ function buildAgents(){
   const sp=personParts('soldier');
   G.soldiers=new THREE.InstancedMesh(sp.tint,agentMat(),1500);
   G.soldierShields=new THREE.InstancedMesh(sp.tint2,agentMat(),1500);
-  G.soldierKit=new THREE.InstancedMesh(sp.fixed,agentMat(),1500);
+  G.soldierKit=new THREE.InstancedMesh(sp.fixed,agentMat(true),1500);
   const white=new THREE.Color(1,1,1),allocColors=m=>{for(let i=0;i<m.count;i++)m.setColorAt(i,white);}; // colour buffer sized to capacity (it is sized by .count)
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){allocColors(m);m.frustumCulled=false;m.count=0;scene.add(m);}
   { // a company's standard: a pole and a pennon in the house's colours

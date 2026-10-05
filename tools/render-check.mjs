@@ -103,6 +103,49 @@ function gardenBearingCheck(){
   }finally{renderer.setRenderTarget(old);geometry.dispose();material.dispose();tex.dispose();target.dispose();}
 }
 
+// Exercise production materials under two unlike skies, without changing the simulation.
+// Matte controls catch accidental sheen on timber, unglazed windows, thatch or gables.
+function reflectivityCheck(){
+  const target=new THREE.WebGLRenderTarget(96,96),old=renderer.getRenderTarget(),top=G.skyU.top.value.clone(),bot=G.skyU.bot.value.clone();
+  const clear=renderer.getClearColor(new THREE.Color()),alpha=renderer.getClearAlpha(),geometries=[],materials=[];
+  const stage=new THREE.Scene(),light=new THREE.DirectionalLight(0xffffff,0.7);light.position.set(2,8,4);stage.add(light,new THREE.AmbientLight(0xffffff,0.3));
+  const view=new THREE.PerspectiveCamera(40,1,0.1,100),a=new Uint8Array(96*96*4),b=new Uint8Array(a.length),results={};
+  function measured(name,mesh,eye,focus=[0,0,0]){
+    geometries.push(mesh.geometry);materials.push(mesh.material);stage.add(mesh);view.position.set(...eye);view.lookAt(...focus);view.updateMatrixWorld(true);
+    G.skyU.top.value.setRGB(0.8,0.1,0.1);G.skyU.bot.value.setRGB(0.8,0.1,0.1);
+    renderer.render(stage,view);renderer.readRenderTargetPixels(target,0,0,96,96,a);
+    G.skyU.top.value.setRGB(0.1,0.1,0.8);G.skyU.bot.value.setRGB(0.1,0.1,0.8);
+    renderer.render(stage,view);renderer.readRenderTargetPixels(target,0,0,96,96,b);
+    let changed=0,total=0;for(let i=0;i<a.length;i+=4){const d=Math.abs(a[i]-b[i])+Math.abs(a[i+2]-b[i+2]);if(d>2)changed++;total+=d;}
+    results[name]={changedPixels:changed,meanDifference:total/(96*96)};stage.remove(mesh);
+  }
+  function kit(finish){const g=new THREE.PlaneGeometry(2,2),n=g.attributes.position.count;
+    g.setAttribute('aFinish',new THREE.Float32BufferAttribute(new Array(n).fill(finish),1));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(new Array(n).fill([0.55,0.58,0.61]).flat(),3));const m=new THREE.InstancedMesh(g,agentMat(true),1);m.setMatrixAt(0,new THREE.Matrix4());m.setColorAt(0,new THREE.Color(0xffffff));return m;}
+  function roof(kind){const g=G.roofs.geometry.clone();
+    for(const[k,w,v]of [['aGableColor',3,[0.6,0.6,0.6]],['aKind',1,[1]],['aRoofKind',1,[kind]]])g.setAttribute(k,new THREE.InstancedBufferAttribute(new Float32Array(v),w));
+    const m=new THREE.InstancedMesh(g,roofMaterial(),1);m.setMatrixAt(0,new THREE.Matrix4().makeScale(3,3,3));m.setColorAt(0,new THREE.Color(0x606876));return m;}
+  function wall(kind){const g=new THREE.BoxGeometry(1,1,1);g.translate(0,0.5,0);
+    g.setAttribute('aKind',new THREE.InstancedBufferAttribute(new Float32Array([kind]),1));g.setAttribute('aFront',new THREE.InstancedBufferAttribute(new Float32Array([0,0]),2));g.setAttribute('aBase',new THREE.InstancedBufferAttribute(new Float32Array([0]),1));
+    const m=new THREE.InstancedMesh(g,wallMaterial(),1);m.setMatrixAt(0,new THREE.Matrix4().makeScale(3.1,2.8,3.1));return m;}
+  try{
+    renderer.setRenderTarget(target);renderer.setClearColor(0,1);
+    const water=()=>{const g=new THREE.PlaneGeometry(4,4);g.rotateX(-Math.PI/2);return new THREE.Mesh(g,waterMaterial({color:0x2e6285}));};
+    measured('waterAbove',water(),[0,6,0.1]);measured('waterGrazing',water(),[0,1,6]);
+    measured('iron',kit(1),[1,0,4]);measured('timberControl',kit(0),[1,0,4]);
+    measured('slate',roof(2),[4,5,5],[0,1,0]);measured('thatchControl',roof(0),[4,5,5],[0,1,0]);
+    measured('glass',wall(1),[0,1.4,7],[0,1.4,0]);measured('unglazedControl',wall(2),[0,1.4,7],[0,1.4,0]);
+    const kitFinish=G.soldierKit.geometry.attributes.aFinish,kitColour=G.soldierKit.geometry.attributes.color;
+    let iron=0,wrongFinish=0;for(let i=0;i<kitFinish.count;i++){const metal=kitColour.getZ(i)>kitColour.getX(i);if(kitFinish.getX(i)>0.5)iron++;if(metal!==(kitFinish.getX(i)>0.5))wrongFinish++;}
+    results.ironMask={ironVertices:iron,otherVertices:kitFinish.count-iron,wrongFinish};
+    results.valid=['waterAbove','waterGrazing','iron','slate','glass'].every(k=>results[k].changedPixels>0)&&
+      ['timberControl','thatchControl','unglazedControl'].every(k=>results[k].changedPixels===0)&&
+      results.waterGrazing.meanDifference>results.waterAbove.meanDifference&&iron>0&&wrongFinish===0;
+    return results;
+  }finally{G.skyU.top.value.copy(top);G.skyU.bot.value.copy(bot);renderer.setRenderTarget(old);renderer.setClearColor(clear,alpha);
+    for(const g of geometries)g.dispose();for(const m of materials)m.dispose();target.dispose();}
+}
+
 async function check(which,w){
   const {c,kill}=await launch(),id=which+'-'+w.seed+'-'+w.coast,errors=[];
   try{
@@ -119,7 +162,7 @@ async function check(which,w){
     await ev(c,"(async()=>{if(!await G.miniatureReady||!await G.waterRippleReady)throw Error('material images failed to load')})()");
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
     const gardenView="(()=>{let best=-Infinity,q;for(let i=0;i<G.feat.d2.length;i+=4){if(G.feat.d2[i+2]<255)continue;const k=i/4,x=(k%FR+0.5)*FPX-SIZE/2,z=(Math.floor(k/FR)+0.5)*FPX-SIZE/2,d=Math.hypot(x-W.capital.pos.x,z-W.capital.pos.z);if(d>400)continue;const clearance=Math.min(G.feat.d2[i]/4,G.feat.d1[i]/4,G.feat.d1[i+2]/4),score=clearance-d*0.025;if(score>best){best=score;q=[x,z,38,G.feat.d2[i+3]/255*Math.PI+0.3,0.5];}}if(!q)throw Error('No visible capital garden');return q;})()";
-    const views={garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
+    const views={waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
@@ -144,7 +187,24 @@ async function check(which,w){
         const valid=ext&&!gl.getParameter(ext.GPU_DISJOINT_EXT),gpu=valid?queries.slice(3).filter(q=>gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE)).map(q=>gl.getQueryParameter(q,gl.QUERY_RESULT)/1e6):[];
         queries.forEach(q=>gl.deleteQuery(q));return{submitMs:a.reduce((a,b)=>a+b)/a.length,gpuMs:gpu.length?gpu.reduce((a,b)=>a+b)/gpu.length:null};})()`);
     }
+    await ev(c,'window.__renderLighting={visT:W.visT,frac:W.clock.frac,cycle:dayCycleOn}');
+    for(const [name,frac]of [['waterDusk',0.735],['waterNight',1.]]){
+      await ev(c,`(()=>{W.clock.frac=${frac};W.visT=${frac<.75?(frac-.25)*1.6:.8+(frac-.75)*.4};dayCycleOn=true;animateWorld(0,0);const q=${views.waterGlint};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);renderer.render(scene,camera);})()`);
+      const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+name+'.png'),Buffer.from(shot.data,'base64'));
+    }
+    await ev(c,'W.visT=window.__renderLighting.visT;W.clock.frac=window.__renderLighting.frac;dayCycleOn=window.__renderLighting.cycle;delete window.__renderLighting;animateWorld(0,0)');
     if(which==='candidate'){
+      result.reflectivity=await ev(c,`(${reflectivityCheck.toString()})()`);
+      result.metalModel=await ev(c,`(()=>{
+        const stage=new THREE.Scene();stage.background=new THREE.Color(0x29343e);
+        const sun=new THREE.DirectionalLight(0xfff2dc,0.98);sun.position.set(4,7,4);stage.add(sun,new THREE.HemisphereLight(0xbcd2e8,0x5b5140,0.5));
+        const meshes=[];for(const [source,tint]of [[G.soldiers,0x8d3e32],[G.soldierShields,0x8d3e32],[G.soldierKit,0xffffff]]){
+          const m=new THREE.InstancedMesh(source.geometry,source.material,1);m.setMatrixAt(0,new THREE.Matrix4());m.setColorAt(0,new THREE.Color(tint));stage.add(m);meshes.push(m);}
+        const view=new THREE.PerspectiveCamera(38,renderer.domElement.width/renderer.domElement.height,0.1,100);view.position.set(4,3.5,6);view.lookAt(0,1.5,0);renderer.render(stage,view);
+        window.__metalProbe=meshes;
+        const gl=renderer.getContext();return renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS));})()`);
+      const metalShot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-metal-model.png'),Buffer.from(metalShot.data,'base64'));
+      await ev(c,'window.__metalProbe.forEach(m=>m.dispose());delete window.__metalProbe;renderer.render(scene,camera)');
       result.gardenBearing=await ev(c,`(${gardenBearingCheck.toString()})()`);
       result.cameraCorrect=Object.values(result.views).every(v=>v.terrainEye&&v.terrainEye.every((x,i)=>Math.abs(x-v.camera[i])<0.001));
       result.liveRebuild=await ev(c,`(()=>{
@@ -182,7 +242,7 @@ for(const w of worlds)for(const which of Object.keys(sources)){console.log('Chec
 const checks=[];
 for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.seed+'-'+w.coast),baseline=results.find(r=>r.id==='baseline-'+w.seed+'-'+w.coast);
   const ok=r=>r&&!r.failed&&!r.errors.length&&r.simErrors===0&&Object.values(r.views).every(v=>v.linked&&v.errors===0);
-  const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
+  const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),reflectivity:!!candidate?.reflectivity?.valid,metalModel:!!candidate?.metalModel,gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row.sameGeometry=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].geometryTriangles===baseline.views[v].geometryTriangles);
     row.sameDrawCalls=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].render.calls===baseline.views[v].render.calls);
