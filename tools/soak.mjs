@@ -128,7 +128,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     const T={};for(const k in S.T){const d=S.T[k]-(T0[k]||0);if(d>0.5)T[k]=Math.round(d);}
     const out={y:Y,ad:AD(),auditDays:Math.min(aud,360),ms:Math.round(ms),msDay:+(ms/360).toFixed(2),tickMsDay:+(tickMs/360).toFixed(2),pop:Math.round(pop),folk,places:W.settlements.length,towns,walled,maxWallRatio:+maxWall.toFixed(2),badPop,
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
-      journal:typeof STORAGE_OUTCOMES==='undefined'?null:STORAGE_OUTCOMES.status(),inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
+            journal:typeof STORAGE_OUTCOMES==='undefined'?null:STORAGE_OUTCOMES.status(),inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots,commodityRows:S.inventory.commodityRows}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
       prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
       badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
     M0=M;F0=F;E0=errN;return out;};
@@ -140,7 +140,7 @@ async function runWorld(w){
   try{({c,kill}=await launch());
     const browser=await c.send('Browser.getVersion');fs.writeFileSync(path.join(OUT,id+'.browser.json'),JSON.stringify(browser,null,2));
     await c.send('Runtime.enable');await c.send('Page.enable');await c.send('Profiler.enable');
-    await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__soakRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});
+    await c.send('Page.addScriptToEvaluateOnNewDocument',{source:`${A.commodity!==undefined?'window.FURLONG_COMMODITY_BALANCES='+!!Number(A.commodity)+';':''}window.__soakRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;`});
     c.on('Page.javascriptDialogOpening',()=>c.send('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{}));
     c.on('Runtime.exceptionThrown',p=>{if(errs.length<30)errs.push('exception: '+((p.exceptionDetails.exception&&p.exceptionDetails.exception.description)||p.exceptionDetails.text).slice(0,600));});
     c.on('Runtime.consoleAPICalled',p=>{if(p.type==='error'&&errs.length<30)errs.push('console: '+p.args.map(a=>a.value!==undefined?String(a.value):(a.description||'')).join(' ').slice(0,600));});

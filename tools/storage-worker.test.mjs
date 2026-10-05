@@ -6,7 +6,8 @@ import {Worker} from 'node:worker_threads';
 import {webcrypto} from 'node:crypto';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const core=html.split('// STORAGE OUTCOME JOURNAL BEGIN')[1].split('// STORAGE OUTCOME JOURNAL END')[0];
-function fixture(){const c=vm.createContext({setTimeout,clearTimeout});vm.runInContext(core+';globalThis.Raw=RawOutcomeJournal;globalThis.Pipeline=OutcomeWorkerPipeline;globalThis.Client=OutcomeWorkerClient;globalThis.decode=outcomeRecords;globalThis.json=outcomeJSON;globalThis.source=outcomeWorkerSource;globalThis.capture=outcomeTransportCapture;globalThis.restore=outcomeTransportRestore;globalThis.binaryEncode=outcomeBinaryEncode;globalThis.binaryDecode=outcomeBinaryDecode;globalThis.binaryValidate=outcomeBinaryValidate',c);return c;}
+const runtimeHelpers=['commodityActive','commoditySettleAll'].map(name=>html.match(new RegExp('^function '+name+'\\b[^\\n]*','m'))?.[0]).join('\n');
+function fixture(){const c=vm.createContext({setTimeout,clearTimeout});vm.runInContext(core+'\n'+runtimeHelpers+';globalThis.Raw=RawOutcomeJournal;globalThis.Pipeline=OutcomeWorkerPipeline;globalThis.Client=OutcomeWorkerClient;globalThis.decode=outcomeRecords;globalThis.json=outcomeJSON;globalThis.source=outcomeWorkerSource;globalThis.capture=outcomeTransportCapture;globalThis.restore=outcomeTransportRestore;globalThis.binaryEncode=outcomeBinaryEncode;globalThis.binaryDecode=outcomeBinaryDecode;globalThis.binaryValidate=outcomeBinaryValidate',c);return c;}
 const workerAdapter=`
 const {parentPort}=require('node:worker_threads');const {webcrypto}=require('node:crypto');globalThis.crypto=webcrypto;globalThis.self=globalThis;
 const games=new Map(),chunks=new Map();let failChunk=null;

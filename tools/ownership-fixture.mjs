@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||new URL('../index.html',import.meta.url),'utf8');
-const names=['initHousePurse','buyBuildingMaterial','lordAcct','houseAcct','acct','flow','transfer','borrow','mkt','rsv','offer','lard','forSale','avail','purchase','clearMarket','heads_','means','craftWork','shareOutput','reconcile','topUpFood','eatHouseholds','tickPopulation','headsOf','folkIndex','repay','inherit','inheritanceCustom','estateChildren','estateKin','landHeirs','estateShares','offerLand','moveStock','herdOf','herdLoss','herdBirth','herdSync','herdInit','driveOffHerds','takeHorses','ladeOut','dropPerson','yearOfFolk','removeAt','provision'];
+const names=['initHousePurse','buyBuildingMaterial','lordAcct','houseAcct','acct','flow','transfer','borrow','mkt','rsv','offer','lard','forSale','avail','purchase','clearMarket','heads_','means','craftWork','shareOutput','reconcile','topUpFood','eatHouseholds','tickPopulation','headsOf','folkIndex','repay','inherit','inheritanceCustom','estateChildren','estateKin','landHeirs','estateShares','offerLand','moveStock','herdOf','herdLoss','herdBirth','herdSync','herdInit','driveOffHerds','takeHorses','ladeOut','dropPerson','yearOfFolk','removeAt','provision','departHousehold'];
 const ownership=source.slice(source.indexOf('function oldHouseholdHead('),source.indexOf('function houseFolk(s)'));
 const functions=names.map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
 const constants=['GOODS','GOODBASE','NEED','LU','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','SHARE'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
 
-export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,transformSource,bootstrap=''}={}){
+export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,commodity=false,transformSource,bootstrap=''}={}){
   const H=Array.from({length:households},(_,i)=>({id:i+1,gn:'household',w:cash,tr:'labourer',si:0}));
   const s={name:'fixture',owner:0,pop,kind:'town',stores:{grain,fish},_lard:{grain:grainLard,fish:fishLard},folk:H.slice(),buildings:[],pos:{x:0,z:0},prosperity:50,unrest:0,_room:1000,infected:0,px:{grain:1,fish:2,ore:1,timber:1},_made:{},res:{}};
   const W={treasury:crown,houses:[],settlements:[s],_pl:1};
@@ -18,6 +18,7 @@ export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,p
     tradeCounts:()=>Object.fromEntries(H.map(h=>[h.tr,1])),marketFor:()=>null,book:()=>{},lordTake:()=>{},folkIndex:()=>new Map(H.map(h=>[h.id,h])),carryingCap:()=>1000,
     emit:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
   if(bootstrap)vm.runInContext(bootstrap,C);
+  vm.runInContext(`globalThis.FURLONG_COMMODITY_BALANCES=${!!commodity};`,C);
   const program=constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions;
   vm.runInContext(transformSource?transformSource(program):program,C);
   vm.runInContext("offer(s,'grain','crown',s.stores.grain);offer(s,'fish','crown',s.stores.fish)",C);

@@ -4,12 +4,9 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const digest=s=>createHash('sha256').update(s).digest('hex');
-// Explicit managed mutation contract: raw same-size Map reordering or raw backing-table
-// writes require public storageTitleDirty. They are not reflectively detected.
-// Pin the existing ownership implementation and its outside owner/table references:
-// changing a writer requires renewing this contract and its baseline comparison tests.
-// This is a source-change tripwire, not a whole-program alias proof.
-test('managed claim writer architecture remains reviewed',()=>{
+// Pin the reviewed ownership/balance adapter region and the unchanged external
+// legacy owner-table writers. This is a source-change tripwire, not an alias proof.
+test('managed claim and commodity balance architecture remains reviewed',()=>{
  const a=source.indexOf('function oldHouseholdHead('),b=source.indexOf('function houseFolk(s)');
  // Combined review covers household membership, inherited arithmetic frontiers
  // hay loss debit, safe metadata, successful-pass title caching and explicit
@@ -29,10 +26,10 @@ test('managed claim writer architecture remains reviewed',()=>{
  // phase-local facility candidates preserve managed writer and event order.
  // Native admission retains full scans for observer callbacks and overrides.
  // Frozen 3067ee5 comparisons and journal-append replay validate this batch.
- // Exposure queries reuse the admitted external facility index; membership
- // maintenance preserves live order without full-array sorting. Canonical ledger
- // writers, claim arithmetic, and outcome records remain unchanged.
- assert.equal(digest(source.slice(a,b)),"53af077c3d68fda54215af8342daeb541c33b10c380d8fb803e85a5a1b08767f");
+ // The numeric-balance core/runtime now resides in this reviewed region. It
+ // defaults to numeric balances while explicit false opts into the legacy lot
+ // ledger. The outside legacy owner-table mutation corpus below remains pinned.
+ assert.equal(digest(source.slice(a,b)),"5c43cd79f1383a91f5dbd1715cec30c523918ac6361ccaa1d6c8e2d39cffb125");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"25e04d108fe4b912ecf335cc19eb26fb52c2219ef6e18bba3381bc755df62813");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
