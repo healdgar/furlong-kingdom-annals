@@ -24,9 +24,14 @@ for(const angle of[0,Math.PI/4,Math.PI/2])test(`river mill footprint is dry and 
     f.C.site=site;for(const p of vm.runInContext('obbCorners(site.x,site.z,site.w,site.d,site.rot)',f.C))assert.equal(f.wet(p.x,p.z),false);}
   assert.equal(JSON.stringify(sites),JSON.stringify(f.sites()));
 });
-test('pond mill keeps the building outside and wheel inside the pond',()=>{
-  const f=fixture(0,{pond:true}),sites=f.sites();assert.ok(sites.length);
-  for(const site of sites){assert.equal(site.millWater.kind,'pond');assert.ok(f.wet(site.millWater.x,site.millWater.z));assert.equal(f.wet(site.x,site.z),false);}
+test('a stagnant pond without a river outlet cannot drive a river mill',()=>{
+  assert.equal(fixture(0,{pond:true}).sites().length,0);
+});
+test('pond towns site the wheel in flowing water outside the pond, nearest the dam',()=>{
+  const f=fixture();f.s.lake={poly:[],y:6,dam:{x:-12,z:0}};
+  f.C.lakeAt=(s,x,z)=>x<0;const sites=f.sites();assert.ok(sites.length);
+  for(const site of sites){assert.equal(site.millWater.kind,'river');assert.ok(site.millWater.x>=0);}
+  assert.ok(sites[0].x<=sites.at(-1).x);
 });
 test('reject cliffs too high for the axle and water too shallow for buckets',()=>{
   assert.equal(fixture(0,{cliff:true}).sites().length,0);

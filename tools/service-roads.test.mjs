@@ -12,7 +12,7 @@ const distance=(x,z,a,b)=>Math.hypot(x-a,z-b);
 function context(extra={}){
   return vm.createContext({Math,dist2d:distance,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
     locW:(b,x,z)=>{const c=Math.cos(b.rot),s=Math.sin(b.rot);return[b.x+x*c+z*s,b.z-x*s+z*c];},
-    armyObstacle:()=>null,armyBridgeAt:()=>false,armyRaftAt:()=>false,fortGround:()=>0,
+    streetAccessAt:()=>true,armyObstacle:()=>null,armyBridgeAt:()=>false,armyRaftAt:()=>false,fortGround:()=>0,
     lerp:(a,b,t)=>a+(b-a)*t,...extra});
 }
 function planRuntime(extra={}){const C=context(extra);vm.runInContext(fn('armySegmentClear')+'\n'+fn('armyDetour')+'\n'+fn('armyLandPath')+'\n'+fn('serviceRoadPlan')+'\n'+fn('serviceDoor'),C);if(extra.armyLandPath)C.armyLandPath=extra.armyLandPath;return C;}

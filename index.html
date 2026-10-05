@@ -496,7 +496,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 17:59 UTC · after b95575e</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 18:32 UTC · after f7cfc59</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -1671,13 +1671,21 @@ function streetFootprintOverlap(f,g,pad=0.8){ // segment against the road-width-
     if(Math.abs(d)<1e-9){if(Math.abs(x)>half)return false;continue;}const p=(-half-x)/d,q=(half-x)/d;lo=Math.max(lo,Math.min(p,q));hi=Math.min(hi,Math.max(p,q));if(lo>hi)return false;
   }return true;
 }
+// Water crossings belong to built highways, never to inferred quay or service-lane graphics.
+function paidRoadAt(x,z){return onRoad(x,z,0,true);}
+function roadAccessClear(s,a,b){
+  const n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)));for(let k=0;k<=n;k++){
+    const x=lerp(a.x,b.x,k/n),z=lerp(a.z,b.z,k/n);
+    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z))return false;
+  }return true;
+}
 // A service lane is planned once when its building or quay is laid out.
 function serviceRoadPlan(s,p,placed,skip){
   const candidates=[];
   for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&st.kind!=='quay'&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
     const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L,0,1),x=a.x+dx*t,z=a.z+dz*t;
-    candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
-  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed};
+    if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
+  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
   if(armyObstacle(walker,p.x,p.z))return null;
   for(const q of candidates.slice(0,12)){const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};}
   return null;
@@ -1691,25 +1699,20 @@ function millBankSites(s,radius){
   const sites=[],C=s.pos,add=(q,nx,nz,y,kind)=>{
     for(const inset of[1.25,1.6]){
       const wx=q.x-nx*inset,wz=q.z-nz*inset;
-      if(!(kind==='pond'?lakeAt(s,wx,wz,0):riverAt(wx,wz,0))||hAt(wx,wz)>y-1.1)continue;
+      if(!riverAt(wx,wz,0)||lakeAt(s,wx,wz,0)||hAt(wx,wz)>y-1.1)continue;
       const f={x:wx+nx*6.8,z:wz+nz*6.8,w:9,d:9,rot:Math.atan2(nz,-nx)},P=obbCorners(f.x,f.z,9,9,f.rot);
       P.push({x:f.x,z:f.z});for(let i=0;i<4;i++)P.push({x:(P[i].x+P[(i+1)%4].x)/2,z:(P[i].z+P[(i+1)%4].z)/2});
       if(P.some(p=>hAt(p.x,p.z)<SEA+0.8||hAt(p.x,p.z)>y+5.5||riverAt(p.x,p.z,0)||lakeAt(s,p.x,p.z,0)))continue;
       f.millWater={x:wx,z:wz,y,side:0,offset:6.8,kind};sites.push(f);
     }
   };
-  if(s.lake){const L=s.lake,P=L.poly;
-    for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1;
-      for(let j=0,n=Math.ceil(l/6);j<n;j++){const q={x:a.x+dx*j/n,z:a.z+dz*j/n};let nx=-dz/l,nz=dx/l;
-        if(inPoly(P,q.x+nx,q.z+nz)){nx=-nx;nz=-nz;}add(q,nx,nz,L.y,'pond');}}
-  }
   const reaches=[];
   for(const r of G.rivStrips)if(!r.canal)for(let k=1;k<r.pts.length-1;k+=2){const q=r.pts[k],d=dist2d(q.x,q.z,C.x,C.z);if(d<radius*0.9&&r.ys[k]>SEA+2)reaches.push({r,k,d});}
   reaches.sort((a,b)=>a.d-b.d);
   for(const {r,k} of reaches.slice(0,160)){const a=r.pts[k-1],b=r.pts[k+1],l=dist2d(a.x,a.z,b.x,b.z)||1,px=-(b.z-a.z)/l,pz=(b.x-a.x)/l,q=r.pts[k];
     for(const side of[1,-1])add({x:q.x+px*r.hw[k]*side,z:q.z+pz*r.hw[k]*side},px*side,pz*side,r.ys[k],'river');}
   const focus=s.lake?s.lake.dam:C;
-  return sites.sort((a,b)=>(a.millWater.kind==='pond'?0:radius)+dist2d(a.x,a.z,focus.x,focus.z)-(b.millWater.kind==='pond'?0:radius)-dist2d(b.x,b.z,focus.x,focus.z));
+  return sites.sort((a,b)=>dist2d(a.x,a.z,focus.x,focus.z)-dist2d(b.x,b.z,focus.x,focus.z));
 }
 function frontFoot(c,arch,tier,rnd){ // a footprint set back from the street edge, facing it
   const a=ARCH[arch],k=0.85+tier*0.15;
@@ -2084,8 +2087,8 @@ function layoutSettlement(s){
     return null;
   };
   const churchAccess=b=>{if(b.removed||b.state==='gone')return false;const ch=chOf(b),door=ch.door==='W'?locW(b,0,(ch.W||1)*(b.d/2+1.2)):locW(b,ch.door*(b.w/2+1.2),0),p={x:door[0],z:door[1]},candidates=[];
-    for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge'&&!st.churchAccess&&(!st.castlePath||b.castle))for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L2,0,1),x=a.x+dx*t,z=a.z+dz*t; candidates.push({x,z,d:dist2d(p.x,p.z,x,z),hw:st.hw||2});}
-    candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed};
+    for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge'&&!st.churchAccess&&(!st.castlePath||b.castle))for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L2,0,1),x=a.x+dx*t,z=a.z+dz*t; if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),hw:st.hw||2});}
+    candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
     if(s.streets.some(st=>st.churchAccess&&!st.hidden&&!st.gone&&st.pts.length>2&&dist2d(st.pts[1].x,st.pts[1].z,p.x,p.z)<2&&st.pts.slice(2).every((q,k)=>armySegmentClear(walker,st.pts[k+1],q))&&candidates.some(q=>dist2d(q.x,q.z,st.pts[st.pts.length-1].x,st.pts[st.pts.length-1].z)<q.hw+1.5)))return true;
     for(const q of candidates.slice(0,24)){if(q.d<q.hw+1.5&&armySegmentClear(walker,p,q))return true;const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(!path)continue;
       const face=ch.door==='W'?locW(b,0,(ch.W||1)*b.d/2):locW(b,ch.door*b.w/2,0);path.unshift({x:face[0],z:face[1]});addStreet(path,1.3,'lane',{straight:true,churchAccess:true,castlePath:!!b.castle});return true;}
@@ -2394,7 +2397,7 @@ function layoutSettlement(s){
   let built=s.buildings.length;
   const fill=(target,maxD)=>{
     const all=[];
-    for(const st of s.streets)if(!st.hidden)for(const c of candsOf(st))if(!c.done&&c.d<maxD)all.push(c);
+    for(const st of s.streets)if(!st.hidden)for(const c of candsOf(st))if(!c.done&&c.d<maxD&&frontageAccess(s,c))all.push(c);
     all.sort((p,q)=>keyOf(p)-keyOf(q));
     for(const c of all){
       if(built>=target)break;
@@ -2402,6 +2405,7 @@ function layoutSettlement(s){
     }
   };
   const buildLot=(c,tier)=>{ // one house on one lot, as the builders of this year would put it there
+      if(!frontageAccess(s,c))return null;
       let arch=archFor(c);
       // in a town, houses and shops on the main streets are burgher houses: gable to the street on a narrow, deep plot
       const burg=!isVil&&!focus&&AD()>=1100&&(arch==='house'||arch==='shop')&&(c.d<Rmax*0.55||c.st.kind==='road'||c.st.market||c.st.neu);
@@ -2414,7 +2418,7 @@ function layoutSettlement(s){
         f=frontFoot(c,arch,tier,rr);
         if(isVil){const k=1.5+rr()*3;f.x+=(-c.uz*c.side)*k;f.z+=(c.ux*c.side)*k;} // farmsteads stand back in their yards
       }
-      if(!fits(f,gap))return null;
+      if(!fits(f,gap)||!roadAccessClear(s,f,{x:c.mx,z:c.mz}))return null;
       if(c._why&&!HOME.has(arch))extra.why=c._why;c._why=null;
       {const dx=c.mx-f.x,dz=c.mz-f.z,L=Math.hypot(dx,dz)||1;extra.fx=dx/L;extra.fz=dz/L;} // which face looks onto the street
       const b=place(arch,tier,f,c.d<Rmax*0.25?'market':c.d<Rmax*0.5?'artisan':'residential',hm,extra);c.done=true;built++;
@@ -2553,7 +2557,7 @@ function layoutSettlement(s){
   /* ---- later foundations: parish churches for new quarters, friaries by the wall, back-yard infill,
           and a lord's planted "new town" across the river (Göttingen's Neustadt, bought out by the council) ---- */
   const churches=()=>liveB().filter(b=>b.arch==='temple');
-  const openCands=(test)=>{const cs=[];for(const st of s.streets)if(!st.hidden&&st.kind!=='edge')for(const c of candsOf(st))if(!c.done&&test(c))cs.push(c);
+  const openCands=(test)=>{const cs=[];for(const st of s.streets)if(!st.hidden&&st.kind!=='edge')for(const c of candsOf(st))if(!c.done&&test(c)&&frontageAccess(s,c))cs.push(c);
     return cs.sort((p,q)=>keyOf(p)-keyOf(q));};
   const churchOn=(c,scale,extra)=>{const f=frontFoot(c,'temple',2,rr);f.w*=scale;f.d*=scale;if(!fits(f,1.5))return null;c.done=true;
     const b=place('temple',2,f,'temple',scale,{inst:true,...(extra||{})});if((b.castle||b.friary||b._graveyard)&&churchAccess(b))return b;unplace(b);c.done=false;return null;};
@@ -2662,7 +2666,7 @@ function layoutSettlement(s){
   const queue=again=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first; again: plots whose houses have since gone (burned, sacked, deserted, cleared) are open once more
     const q=[];
     for(const st of s.streets)if(!st.gone)candsOf(st).forEach((c,i)=>{
-      if(c.done&&!(again&&!((i>>1)&1)))return;
+      if(c.done&&!(again&&!((i>>1)&1))||!frontageAccess(s,c))return;
       if((i>>1)&1||!fits(frontFoot(c,'house',0,rr),gapFor(c))){c.done=true;return;}
       c.key=keyOf(c);q.push(c);});
     return q.sort((p,q2)=>p.key-q2.key);
@@ -2688,7 +2692,7 @@ function layoutSettlement(s){
       let k0=0,bd=1e9;path.forEach((p,k)=>{const d=dist2d(p.x,p.z,last.x,last.z);if(d<bd){bd=d;k0=k;}});
       const ext=[{x:last.x,z:last.z}];
       for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;if(liveB().some(o=>!o.removed&&o.state!=='gone'&&dist2d(o.x,o.z,p.x,p.z)<RHW+Math.max(o.w,o.d)*0.55))break;ext.push({x:p.x,z:p.z});} // stops short of a house standing in its way
-      if(ext.length>=3&&addStreet(ext,RHW,'road')){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
+      if(ext.length>=3&&addStreet(ext,RHW,'road',{ri})){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
     });
     {const n=isCap?8:isTown?5:2,t=fromTracks(n);if(n>t)branch(n-t,true,Rmax*0.8);}
     return true;
@@ -2852,7 +2856,7 @@ function layoutSettlement(s){
         if(dry)return dw;live=true;curE=E;b.x=x;b.z=z;b.w=w;b.d=d;groundBuilding(b);placed.add(b,Math.hypot(w,d)/2+1);live=false;return dw;}
       return 0;},
     storageSite(x,z,arch,dry){const a=ARCH[arch];if(!a)return null;const f={x,z,w:a[0],d:a[1],rot:0};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||trackAt(x,z,Math.hypot(a[0],a[1])/2+1.5)||!fits(f,1.2,true))return null;if(dry)return f;live=true;curE=E;const b=place(arch,0,f,arch==='grange'?'fields':'artisan',1);if(!serviceAccess(b)){unplace(b);live=false;return null;}live=false;return b;},
-    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||trackAt(x,z,Math.hypot(a[0],a[1])/2+1.5)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
+    hovel(x,z,rot,arch){arch=arch||'cot';const a=ARCH[arch],f={x,z,w:a[0],d:a[1],rot};if(!ruralRoadAccess(s,f))return null;if(onRoad(x,z,Math.hypot(a[0],a[1])/2)||trackAt(x,z,Math.hypot(a[0],a[1])/2+1.5)||!fits(f,1.2,true))return null;live=true;curE=E;const b=place(arch,0,f,'fields',1);live=false;return b;},
     citadel(){if(s.citadel||!s.bastions)return false;live=true;curE=E;citadel(E);live=false;return !!s.citadel;}
   };
   /* the town's own streets as a network: the way a cart goes from the market to any street end */
@@ -2866,9 +2870,9 @@ function layoutSettlement(s){
     const N=[],h=makeHash(Math.max(8,J));
     for(const t of s.streets){if(t.hidden||t.gone||t.kind==='edge'||t.pts.length<2)continue;
       const q=resample(t.pts,7),o=N.length;q.forEach(p=>{const n={x:p.x,z:p.z,i:N.length,nb:[]};N.push(n);h.add(n,0);});
-      for(let k=o+1;k<N.length;k++){N[k-1].nb.push(k);N[k].nb.push(k-1);}}
+      for(let k=o+1;k<N.length;k++)if(roadAccessClear(s,N[k-1],N[k])){N[k-1].nb.push(k);N[k].nb.push(k-1);}}
     if(N.length<2)return null;
-    for(const n of N)for(const m of h.near(n.x,n.z,J))if(m!==n&&dist2d(n.x,n.z,m.x,m.z)<J)n.nb.push(m.i); // streets meet where they touch
+    for(const n of N)for(const m of h.near(n.x,n.z,J))if(m!==n&&dist2d(n.x,n.z,m.x,m.z)<J&&roadAccessClear(s,n,m))n.nb.push(m.i); // streets meet where they touch
     const at=p=>{let bi=0,bd=1e18;for(const n of N){const d=dist2d(p.x,p.z,n.x,n.z);if(d<bd){bd=d;bi=n.i;}}return bi;};
     // search out from the far end over every street it reaches, then start from the reached point nearest the market (the street nearest
     // the market may be a lane on its own, a castle path, that joins nothing)
@@ -2927,7 +2931,7 @@ function stitchRoads(){ // a road now runs centre → its spoke street → the o
     const ctr=(S,sp)=>!sp||!sp.length||dist2d(sp[0].x,sp[0].z,S.pos.x,S.pos.z)<30?[{x:S.pos.x,z:S.pos.z}]:[]; // the centre, unless it stands off the streets (the town grew elsewhere)
     const head=[...ctr(A,sa),...(sa||[])],tail=[...(sb?[...sb].reverse():[]),...ctr(B,sb)];
     const kp=keepToBank(pts); // carts go where the road is drawn
-    r.path=[...head,...kp,...tail];r.len=polyLen(r.path);
+    r.path=[...head,...kp,...tail];r._bb=null;r.len=polyLen(r.path);
     // the stretch drawn as a king's road (spoke ends included so it joins the street)
     r.drawn=[...(sa?[sa[sa.length-1]]:[]),...kp,...(sb?[sb[sb.length-1]]:[])];
   });
@@ -4293,17 +4297,30 @@ function renderTravellers(){
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
 /* ---------------- the town's streets as a walking graph, and the walkers who use it ---------------- */
 function streetGraph(s){ // nodes at the street points; streets that meet (or nearly) are joined
-  const key=(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0)*4+(st.hidden?1:0)+(st.gone?2:0),0);
+  const key=(W.roads||[]).length+':'+(s.lake?1:0)+':'+(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0)*4+(st.hidden?1:0)+(st.gone?2:0),0);
   if(s._sg&&s._sg.key===key)return s._sg;
   const N=[],adj=[],H=new Map(),cell=6,hk=(x,z)=>Math.floor(x/cell)+','+Math.floor(z/cell);
-  const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4)return i;}
+  const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4&&roadAccessClear(s,N[i],{x,z}))return i;}
     const i=N.length;N.push({x,z,st});adj.push([]);const h=hk(x,z);(H.get(h)||H.set(h,[]).get(h)).push(i);return i;};
-  const link=(a,b)=>{if(a===b)return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
+  const link=(a,b)=>{if(a===b||!roadAccessClear(s,N[a],N[b]))return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
   const ends=[];
-  for(const st of s.streets||[]){if(st.hidden||st.gone||!st.pts||st.pts.length<2)continue;const P=resample(st.pts,7);let prev=-1;
+  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;const P=resample(st.pts,7);let prev=-1;
     for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}
-  for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
-  return s._sg={key,N,adj};}
+  for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd&&roadAccessClear(s,N[e],N[i])){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
+  let root=-1,bd=90;for(let i=0;i<N.length;i++)if(!N[i].st.castlePath){const d=dist2d(N[i].x,N[i].z,s.pos.x,s.pos.z);if(d<bd&&roadAccessClear(s,s.pos,N[i])){root=i;bd=d;}}
+  const todo=root<0?[]:[root];if(root>=0)N[root].access=true;for(let k=0;k<todo.length;k++)for(const [j]of adj[todo[k]])if(!N[j].access){N[j].access=true;todo.push(j);}
+  return s._sg={key,N,adj,H};}
+function streetAccessAt(s,p,g=streetGraph(s)){
+  const x=Math.floor(p.x/6),z=Math.floor(p.z/6);for(let a=-2;a<=2;a++)for(let b=-2;b<=2;b++)for(const i of g.H.get((x+a)+','+(z+b))||[]){const q=g.N[i];if(q.access&&dist2d(p.x,p.z,q.x,q.z)<12&&roadAccessClear(s,p,q))return true;}
+  return false;
+}
+function frontageAccess(s,c){
+  const p={x:c.mx,z:c.mz};if(streetAccessAt(s,p))return true;
+  if(!c.st.hidden||c.st.gone||c.st.planQ)return false;
+  // A prospective lane can open with its first house, but must already meet the live network on dry land.
+  const P=c.st.pts;if(!P.every((q,k)=>!k||roadAccessClear(s,P[k-1],q)))return false;
+  return [P[0],P.at(-1)].some(q=>streetAccessAt(s,q));
+}
 function nearestNode(g,x,z){let b=-1,bd=1e18;for(let i=0;i<g.N.length;i++){const d=dist2d(g.N[i].x,g.N[i].z,x,z);if(d<bd){bd=d;b=i;}}return b;}
 function streetPath(g,a,b){ // shortest way along the streets (A*)
   if(a<0||b<0)return null;if(a===b)return [a];const n=g.N.length,gs=new Float64Array(n).fill(Infinity),from=new Int32Array(n).fill(-1),open=[[0,a]],T=g.N[b];gs[a]=0;
@@ -5100,10 +5117,10 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   const acc=newAcc(true),spans=[];
   const FR=[-1,-0.78,-0.45,0,0.45,0.78,1];
   const roadCol=(pal)=>(k,j)=>j===0||j===6?pal.verge:j===2||j===4?pal.rut:j===3?pal.crown:pal.dirt;
-  // lay a road or street, splitting it into dry runs; every wet run becomes a bridge bank to bank
+  // Only highways and paid road works create bridges; local paving stops at water.
   const dupSpan=(a,b,hw)=>spans.some(o=>{const m={x:(a.x+b.x)/2,z:(a.z+b.z)/2}; // a second road on the same crossing uses the bridge already there
     return segDist(m.x,m.z,o.a,o.b)<o.hw+hw+2&&segDist(a.x,a.z,o.a,o.b)<o.hw+hw+8&&segDist(b.x,b.z,o.a,o.b)<o.hw+hw+8;});
-  const lay=(pts,hw,lift,col,surface=null)=>{
+  const lay=(pts,hw,lift,col,surface=null,bridge=false)=>{
     let surfaceS=0;for(let i=0;i<pts.length;i++){if(i)surfaceS+=dist2d(pts[i-1].x,pts[i-1].z,pts[i].x,pts[i].z);pts[i]._surfaceS=surfaceS;}
     const W8=pts.map(q=>riverAt(q.x,q.z,hw*0.5+1));
     for(let k=1;k<pts.length-1;k++)if(!W8[k]){let j=k;while(j<pts.length-1&&!W8[j])j++; // a dry blip mid-stream (a bar, a bend) does not split the bridge
@@ -5112,15 +5129,15 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     const flush=()=>{if(run.length>1)strip(run,acc,{fr:FR,hw:()=>hw,lift,col,surface});run=[];};
     for(let k=0;k<pts.length;k++){
       const w=W8[k];
-      if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y};flush();}wet.y=Math.max(wet.y,w.y);}
-      else{if(wet){if(!dupSpan(wet.from,pts[k],hw))spans.push({a:wet.from,b:pts[k],y:wet.y,hw});run=[pts[Math.max(0,k-1)]];wet=null;}run.push(pts[k]);}
+      if(w){if(!wet){wet={from:pts[Math.max(0,k-1)],y:w.y,crosses:false};flush();}wet.y=Math.max(wet.y,w.y);wet.crosses=wet.crosses||!!riverAt(pts[k].x,pts[k].z,0);}
+      else{if(wet){if(bridge&&wet.crosses&&!dupSpan(wet.from,pts[k],hw))spans.push({a:wet.from,b:pts[k],y:wet.y,hw});run=bridge&&wet.crosses?[pts[Math.max(0,k-1)]]:[];wet=null;}run.push(pts[k]);}
     }
     flush();
   };
   for(const r of W.roads){const P=resample(smoothPath(resample(r.drawn||r.path,6),2),5);
-    if(r.paveF>0&&r.paveF<1){const k=Math.max(2,Math.round(P.length*r.paveF));lay(P.slice(0,k),4.8,0.3,roadCol(PAVECOL));lay(P.slice(k-1),4.2,0.3,roadCol(ROADCOL));}
-    else lay(P,r.grade?4.8:4.2,0.3,roadCol(r.grade?PAVECOL:ROADCOL));}
-  for(const q of W.projects||[])if(q.type==='road'&&q.done>0.02){const P=resample(smoothPath(resample(q.P.path,6),2),5),k=Math.max(2,Math.round(P.length*q.done));lay(P.slice(0,k),3.6,0.3,roadCol(ROADCOL));} // the stretch laid so far
+    if(r.paveF>0&&r.paveF<1){const k=Math.max(2,Math.round(P.length*r.paveF));lay(P.slice(0,k),4.8,0.3,roadCol(PAVECOL),null,true);lay(P.slice(k-1),4.2,0.3,roadCol(ROADCOL),null,true);}
+    else lay(P,r.grade?4.8:4.2,0.3,roadCol(r.grade?PAVECOL:ROADCOL),null,true);}
+  for(const q of W.projects||[])if(q.type==='road'&&q.done>0.02){const P=resample(smoothPath(resample(q.P.path,6),2),5),k=Math.max(2,Math.round(P.length*q.done));lay(P.slice(0,k),3.6,0.3,roadCol(ROADCOL),null,true);} // the stretch laid so far
   for(const s of W.settlements){
     const pr=s.paveR||0;
     for(const st of s.streets||[]){
@@ -5132,7 +5149,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       }
       const pv=st.kind==='wallst'||st.kind==='quay'&&pr>0;
       const earth=st.castlePath&&typeof fortSurface==='function'?(x,z)=>fortSurface(s,st.earthwork==='bailey'?s.bailey:s.motte,x,z):null;
-      lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth);
+      lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
     }
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
@@ -11078,7 +11095,7 @@ function buildArmyRaft(a,x,z){ // an explicit order: actual timber purchases, on
 function armyBridgeAt(x,z){for(const b of G.bridgeSpans||[]){if(x<b.x0||x>b.x1||z<b.z0||z>b.z1)continue;if(segDist(x,z,b.a,b.b)<b.hw)return true;}return false;}
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE)return 'water';
-  const water=G.rivHash&&riverAt(x,z,0.4);if(water&&!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25))return 'river';
+  const water=G.rivHash&&riverAt(x,z,0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river';
   const i=toCell(x),j=toCell(z),seen=new Set(),scope=a.settlement?[a.settlement]:[];
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!inB(i+dx,j+dz))continue;const si=W.dom&&W.dom[cIdx(i+dx,j+dz)];if(si==null||si<0||seen.has(si))continue;seen.add(si);const s=W.settlements[si];if(s&&!scope.includes(s))scope.push(s);}
   for(const s of scope){
@@ -12318,14 +12335,28 @@ function ruralSite(s,h){ // where this household's work lies out of the place: i
     return best?{x:best.x,z:best.z,ha:0,own:1,kind:'wood'}:null;}
   if(h.tr==='fisher'&&h.bh){const w=waterNear(s,h.bh);return w?{x:w.x,z:w.z,ha:0,own:1,kind:'water'}:null;}
   return null;}
-function onRoad(x,z,pad){ // on (or within pad of) a king's road
-  for(const r of W.roads||[]){const P=r.drawn||r.path;if(!P||P.length<2)continue;const bb=r._bb||(r._bb=P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
-    const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5)return true;}return false;}
+function onRoad(x,z,pad,waterOnly=false){ // on a built highway; crossings require its centreline to enter water
+  for(const r of W.roads||[]){const P=r.open||r.path;if(!P||P.length<2)continue;const bb=r._bb||(r._bb=P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
+    const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5){if(!waterOnly)return true;const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L,0,1);if(riverAt(a.x+dx*t,a.z+dz*t,0))return true;}}return false;}
+// Reuse built tracks and the town's highways at construction time; traversal scratch is discarded.
+function ruralRoadAccess(s,p){
+  const roadJoin=q=>{if(streetAccessAt(s,q))return true;
+    const si=W.settlements.indexOf(s);for(const r of W.roads||[])if(r.a===si||r.b===si){const P=r.open||r.path;
+      for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((q.x-a.x)*dx+(q.z-a.z)*dz)/L,0,1),n={x:a.x+dx*t,z:a.z+dz*t};
+        if(dist2d(q.x,q.z,n.x,n.z)<60&&roadAccessClear(s,q,n))return true;}
+    }return false;};
+  if(roadJoin(p))return true;const T=G.tg;if(!T||!G.trackSet)return false;
+  const seen=new Uint8Array(T.pts.length),todo=[];
+  for(const key of G.trackSet){const e=T.E.get(key);if(!e)continue;for(const i of[e.a,e.b])if(!seen[i]&&dist2d(p.x,p.z,T.pts[i].x,T.pts[i].z)<60&&roadAccessClear(s,p,T.pts[i])){seen[i]=1;todo.push(i);}}
+  for(let k=0;k<todo.length;k++){const i=todo[k],q=T.pts[i];if(roadJoin(q))return true;
+    for(const e of T.adj[i]){const j=e.a===i?e.b:e.a;if(seen[j]||!G.trackSet.has(e.k)||dist2d(p.x,p.z,T.pts[j].x,T.pts[j].z)>6000||!roadAccessClear(s,q,T.pts[j]))continue;seen[j]=1;todo.push(j);}
+  }return false;
+}
 function placeRural(s,x,z,arch,owner){ // a farmstead or a hut out on the land
   for(let k=0;k<10;k++){const a=k*2.4,r=k*6,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r,c=cIdx(toCell(px),toCell(pz));
     if(W.water[c]||slopeAt(toCell(px),toCell(pz))>0.35||riverAt(px,pz,8)||onRoad(px,pz,arch==='cot'?6:9)||trackAt(px,pz,arch==='cot'?6:9))continue; // not in the river, not on the highway
     if(W.settlements.some(o=>dist2d(px,pz,o.pos.x,o.pos.z)<(o.extentR||o.radius||90)+30))continue;
-    if(W.settlements.some(o=>o.buildings.some(b=>!b.removed&&Math.abs(b.x-px)<30&&Math.abs(b.z-pz)<30)))continue;
+    if(W.settlements.some(o=>o.buildings.some(b=>!b.removed&&Math.abs(b.x-px)<30&&Math.abs(b.z-pz)<30))||!ruralRoadAccess(s,{x:px,z:pz}))continue;
     if(!bldRoom(1))return null;const A=ARCH[arch],w=arch==='cot'?5:8,d=arch==='cot'?4:12,rot=hash01(px*0.37+pz)*Math.PI;
     const b={arch,tier:0,x:px,z:pz,rot,w,d,h:A[2]*0.8,roof:A[3],district:'farm',state:'sound',s,burnT:0,rebuildT:0,hue:hash01(px+pz*1.3),epoch:0,rural:true,ownerId:owner};
     groundBuilding(b);s.buildings.push(b);VACANT_RESIDENTIALS.delete(s);b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);if(G.feat)featBuilding(b);G.detDirty=true;return b;}
@@ -18547,6 +18578,22 @@ Fourteen focused tests cover an exhausted larder after growth, fish/grain substi
 A separate animated smoke run exercised realm and street views at maximum speed on the Metal GPU, advancing both from AD 850 to AD 855 without recorded errors. [Drawing measurements](../tools/soak-results/provision-render-smoke/s688673834-sea.render.json) are retained; this was not a matched before/after performance comparison. Its zero-year annual summary does not measure famine or money.
 
 The 200-year soak was interrupted when work was redirected to this fix; neither cohort establishes long-term calibration. The change is isolated on `codex/provisioning`, based on `36648d5`, in `/Users/alexwall/.codex/worktrees/provisioning/furlong-kingdom-annals`. Integration status and final ownership validation are recorded separately in the local worker handoff.
+
+<<<FILE docs/ROAD-ACCESS.md>>>
+# River crossings and settlement access
+
+- [x] Quays, service alleys, church paths and ordinary streets cannot generate free bridge spans.
+- [x] Existing highways, their identified town spokes and funded road works retain their crossings. A road beside the bank is not a crossing.
+- [x] Street graph links and near-end joins cannot cross water without a built highway. The existing graph's node hash also serves construction access queries; no second spatial index is introduced.
+- [x] Urban frontage and prospective lanes require a connection to the town. Houses cannot reach their street across unbridged water.
+- [x] Rural homes and field hovels require a dry connection through built tracks or the town's existing highways. Unused parcel edges do not grant access.
+- [x] Mill wheels face flowing river water outside the pond, preferring the river bank nearest the dam. A stagnant pond alone is not a river-mill site.
+
+Access is checked during layout and construction. No daily walking budgets, new journal receipts, commodity records or maintained spatial indexes are added. Household pantry, hunger and debt tracking are unchanged.
+
+Checks: focused crossing, frontage, rural track, service-door and mill fixtures; the full Node suite; native WebGL coastal/inland rendering, existing funded crossings, injected unpriced quay/lane crossings, mill wheel positions and service-road connectivity. Renderer artifacts remain local under `/tmp/furlong-paid-crossings-*`.
+
+The UI worktree's unfinished river rendering remains excluded. These fixes apply when generating a realm or placing new buildings; existing saved homes are not demolished or households displaced.
 
 <<<FILE docs/RURAL-RENT.md>>>
 # Rural rent follows the owner’s current household
