@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 03:09 UTC · indexed inventories and trade</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 04:28 UTC · economic lookup phase</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -1764,10 +1764,10 @@ function layoutSettlement(s){
     const a=ARCH[arch];
     const b={arch,tier,x:f.x,z:f.z,rot:f.rot,w:f.w,d:f.d,h:a[2]*(0.8+tier*0.25)*(hm||1),
       roof:a[3],district,state:'sound',s,burnT:0,rebuildT:0,hue:rr(),epoch:curE,...(extra||{})};
-    groundBuilding(b);s.buildings.push(b);placed.add(b,Math.hypot(b.w,b.d)/2+1);
+    groundBuilding(b);s.buildings.push(b);VACANT_RESIDENTIALS.delete(s);placed.add(b,Math.hypot(b.w,b.d)/2+1);
     return b;
   }
-  const unplace=b=>{b.removed=true;const i=s.buildings.indexOf(b);if(i>=0)s.buildings.splice(i,1);};
+  const unplace=b=>{b.removed=true;const i=s.buildings.indexOf(b);if(i>=0)s.buildings.splice(i,1);VACANT_RESIDENTIALS.delete(s);};
   const liveB=()=>s.buildings;
   const extent=q=>{const d=liveB().map(b=>dist2d(b.x,b.z,C.x,C.z)).sort((x,y)=>x-y);return d.length?d[Math.min(d.length-1,Math.floor(d.length*q))]:30;};
 
@@ -2106,10 +2106,10 @@ function layoutSettlement(s){
       if(HOME.has(b.arch)){
         if(b.arch==='longhouse'&&!isVil)continue; // a farmstead in town keeps to its yard
         const best=opts.filter(o=>o.sc>=1.3&&['shop','bakery','tavern','inn','smithy'].includes(o.t)||o.sc>=1.6&&['guildhall','bath','hospital'].includes(o.t)&&b.arch!=='longhouse').sort((x,y)=>y.sc-x.sc)[0]; // shops open in houses; a guild, a bath or a hospital may buy a good house on the right street; works, stores and mills are built for the purpose
-        if(best){b.home0=b.home0||b.arch;b.arch=best.t;b.why={hh:e.hh,pass:e.pass,gate:e.gate,mk:e.mk,riv:best.riv,wet:e.wet,since:AD()};changed.push(b);}
+        if(best){b.home0=b.home0||b.arch;b.arch=best.t;vacantResidentialChanged(s,b);b.why={hh:e.hh,pass:e.pass,gate:e.gate,mk:e.mk,riv:best.riv,wet:e.wet,since:AD()};changed.push(b);}
       }else{
         const mine=opts.find(o=>o.t===b.arch);
-        if(!mine||mine.sc<0.55){b.arch=b.home0||'house';b.why=null;changed.push(b);}
+        if(!mine||mine.sc<0.55){b.arch=b.home0||'house';vacantResidentialChanged(s,b);b.why=null;changed.push(b);}
       }
     }
     return changed;
@@ -3360,6 +3360,7 @@ function houseFolk(s){
     if(!b&&homes.length)b=homes[(rr++)%homes.length]; // no room left: they lodge with another household
     if(b){cap.set(b,(cap.get(b)||0)-1);b.hh.push(h);}h.bh=b;}
   for(const b of homes)if(b.hh.length)b._vac=0; // lived in: its empty years count afresh
+  if(typeof resetVacantResidentials==='function')resetVacantResidentials(s,homes.filter(b=>!(b.hh&&b.hh.length)));
   s._hhY=year();}
 function householdOf(s,h){return (s.folk||[]).filter(p=>householdHead(p)===h);}
 function folkStat(s){ // what the town card shows, a year at a time
@@ -5123,7 +5124,7 @@ function tickPlan(q){ // one day of a commissioned plan: the householders bought
     const b=q.hit.find(b=>!b.removed&&b.state!=='gone');
     if(b){const c=planComp(b);if(!pay(c)){stall('the householders will not go without their money');return;}q.stalled=false;
       acct(ownerAcct(b,s),c*0.85);for(const h of b.hh||[])acct(h,c*0.15/Math.max(1,(b.hh||[]).length)); /* (paid above) */ /* the owner bought out; the tenants given something for the flitting */s.unrest=clamp(s.unrest+0.5,0,100);if(q.payer===campHouse())achStat('razed');
-      b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;s._hhY=-1;return;}
+      b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);VACANT_RESIDENTIALS.delete(s);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;s._hhY=-1;return;}
     q.stage='build';G.ordersDirty=true;if(q.kind==='wall'){const up=q.stone&&s.walls===1&&!!s.wallRad;s._lay.live.planWall(q.rad,q.stone);wallWorks(s,up,q.days);syncLive(s);}return;}
   const share=q.works/q.days;if(q.kind==='wall'&&q.stone){const need=q.need/q.days;if((s.stores.stone||0)>=need)s.stores.stone-=need;}
   if(!pay(share)){stall('the purse is empty');return;}wages(s,share,'works');q.stalled=false;
@@ -8960,12 +8961,29 @@ function tickEconomy(){
 }
 
 /* ============================ POPULATION ================================= */
+/* SETTLEMENT_DISTANCE_WEIGHTS_BEGIN */
+/* Settlement distances are derived from W and kept outside simulation state.
+   Identity and coordinate checks catch additions, reordering, and direct moves. */
+const SETTLEMENT_DISTANCE_CACHES=new WeakMap();
+function settlementDistanceWeights(){
+  const settlements=W.settlements,n=settlements.length,scale=1200*MAPK;
+  let cache=SETTLEMENT_DISTANCE_CACHES.get(W),valid=!!cache&&cache.settlements===settlements&&cache.n===n&&cache.scale===scale;
+  if(valid)for(let i=0;i<n;i++){const s=settlements[i],p=s.pos;if(cache.items[i]!==s||!Object.is(cache.x[i],p.x)||!Object.is(cache.z[i],p.z)){valid=false;break;}}
+  if(!valid){const items=new Array(n),x=new Array(n),z=new Array(n),weights=new Float64Array(n*(n-1)/2);
+    for(let i=0;i<n;i++){const s=settlements[i];items[i]=s;x[i]=s.pos.x;z[i]=s.pos.z;}
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)weights[i*(2*n-i-1)/2+j-i-1]=Math.exp(-dist2d(x[i],z[i],x[j],z[j])/scale);
+    cache={settlements,n,scale,items,x,z,weights};SETTLEMENT_DISTANCE_CACHES.set(W,cache);
+  }
+  return cache.weights;
+}
+function settlementDistanceWeight(weights,n,i,j){if(i===j)return 1;if(i>j){const t=i;i=j;j=t;}return weights[i*(2*n-i-1)/2+j-i-1];}
+/* SETTLEMENT_DISTANCE_WEIGHTS_END */
 function marketHeads(s){ // souls a place keeps by its market: the margin on trade passing through it, its workshops and offices, its share of the country's surplus, and (for a seat) the rents that come to it
   if(s._mkY===day()-day()%30)return s._mkH;s._mkY=day()-day()%30;
   const foodDay=NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish; // what a soul eats in a day, in coin
   const trade=(s.tradeV||0)/120*0.12/foodDay; // the market's margin on the goods that came and went these four months
   let craft=0;for(const q of lvJobs(s))craft+=q[2];craft*=4; // hands in its workshops, halls, wharves and at its market cross
-  let hinter=0;for(const o of W.settlements){if(o===s)continue;const dd=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);hinter+=o.pop*0.15*Math.exp(-dd/(1200*MAPK))*(o.kind==='village'?1:0.4);} // the country brings its surplus to the nearest markets
+  let hinter=0;const si=W.settlements.indexOf(s),n=W.settlements.length,distanceWeights=si>=0?settlementDistanceWeights():null;for(let oi=0;oi<n;oi++){const o=W.settlements[oi];if(o===s)continue;if(si<0){const dd=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);hinter+=o.pop*0.15*Math.exp(-dd/(1200*MAPK))*(o.kind==='village'?1:0.4);}else hinter+=o.pop*0.15*settlementDistanceWeight(distanceWeights,n,si,oi)*(o.kind==='village'?1:0.4);} // the country brings its surplus to the nearest markets
   let rents=0;if(s===W.capital)for(const o of W.settlements){if(o!==s)rents+=o.pop*0.06;}else for(const h of W.houses)if(h&&W.settlements[h.seat]===s)for(const o of W.settlements)if(o!==s&&o.owner===W.houses.indexOf(h))rents+=o.pop*0.04; // a seat lives off the dues of its lands
   s._mkH=trade+craft+hinter*clamp(s.prosperity/50,0.5,1.5)+rents;return s._mkH;}
 function carryingCap(s){ // souls the place can keep: the land it actually ploughs, its fisheries, and (for towns) its market
@@ -9338,6 +9356,26 @@ function succession(){
 
 /* ============================ MILITARY =================================== */
 let armyN=0;
+/* ARMY_SETTLEMENT_INDEX_HELPERS_BEGIN */
+const ARMY_SETTLEMENT_INDEXES=new WeakMap();
+function armySettlementIndex(){
+  let index=ARMY_SETTLEMENT_INDEXES.get(W);
+  if(!index||index.armies!==W.armies||index.length!==W.armies.length){
+    const bySettlement=new Map();
+    for(const a of W.armies){let bucket=bySettlement.get(a.at);if(!bucket)bySettlement.set(a.at,bucket=[]);bucket.push(a);}
+    index={armies:W.armies,length:W.armies.length,bySettlement};ARMY_SETTLEMENT_INDEXES.set(W,index);
+  }
+  return index;
+}
+function armySettlementChanged(a,oldAt){
+  const ix=ARMY_SETTLEMENT_INDEXES.get(W);if(!ix||ix.armies!==W.armies||ix.length!==W.armies.length)return;
+  const old=ix.bySettlement.get(oldAt);if(old){const i=old.indexOf(a);if(i>=0)old.splice(i,1);if(!old.length)ix.bySettlement.delete(oldAt);}
+  let next=ix.bySettlement.get(a.at);if(!next)ix.bySettlement.set(a.at,next=[]);
+  const rank=W.armies.indexOf(a);let i=next.findIndex(x=>W.armies.indexOf(x)>rank);if(i<0)i=next.length;next.splice(i,0,a);
+}
+function armySetSettlement(a,si){const oldAt=a.at;a.at=si;if(oldAt!==si)armySettlementChanged(a,oldAt);}
+function armiesAtSettlement(si){return armySettlementIndex().bySettlement.get(si)||[];}
+/* ARMY_SETTLEMENT_INDEX_HELPERS_END */
 function raiseArmy(hi,fromS,strength,side){
   const s=W.settlements[fromS];
   const commanders=W.notables.filter(n=>n.alive&&n.house===hi&&ageOf(n)>=16&&(n.role==='head'||n.role==='scion'||n.role==='monarch'||n.role==='cousin'));
@@ -9361,7 +9399,7 @@ function makeArmyFlag(a){
   scene.add(bn);a.flag=bn;
 }
 function marchArmy(a,toS){
-  if(a.field&&landComp()[cIdx(toCell(a.field.x),toCell(a.field.z))]!==compOf(W.settlements[toS])){a.at=nearestSettlementIdx(a.field.x,a.field.z);a.field=null;} // over the water: back to the nearest town and the ships
+  if(a.field&&landComp()[cIdx(toCell(a.field.x),toCell(a.field.z))]!==compOf(W.settlements[toS])){armySetSettlement(a,nearestSettlementIdx(a.field.x,a.field.z));a.field=null;} // over the water: back to the nearest town and the ships
   if(a.field){ // encamped in the open: across country to the road's end
     const t=W.settlements[toS],from=a.field,L=dist2d(from.x,from.z,t.pos.x,t.pos.z);
     a.field=null;a.target=toS;a.fieldTo=null;a.poly=[{x:from.x,z:from.z},{x:t.pos.x,z:t.pos.z}];a.tf=null;a.departDay=day();a.arriveDay=day()+L/FIELD_MPD;a.state='march';return;}
@@ -9439,7 +9477,7 @@ function tickMilitary(){
     if(!b||b.gone||!atWar(a.house,b.house)||a.state==='rout'){a.chase=null;continue;}if(a.state==='battle'||b.state==='battle')continue;
     chaseStep(a,b);}
   if(now%10===3)for(const a of W.armies){if(a.gone||a.state!=='idle'||a.field||a.house===plyH())continue; // a lord's hosts lying at one town join under one banner
-    const b=W.armies.find(x=>x!==a&&!x.gone&&x.house===a.house&&x.state==='idle'&&!x.field&&x.at===a.at&&x.side===a.side);if(b)mergeArmies(a.standing||!b.standing?a:b,a.standing||!b.standing?b:a);}
+    const b=armiesAtSettlement(a.at).find(x=>x!==a&&!x.gone&&x.house===a.house&&x.state==='idle'&&!x.field&&x.side===a.side);if(b)mergeArmies(a.standing||!b.standing?a:b,a.standing||!b.standing?b:a);}
   for(const a of W.armies){a._ppos=a._spos||armySimPos(a);a._spos=armySimPos(a);if(!(a.strength>=0))a.strength=0;} // (a host never musters fewer than none)
   for(const a of W.armies){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
@@ -9453,7 +9491,7 @@ function tickMilitary(){
       else if(!a.hold){routHome(a,'too few to take the town');if(a.gone)continue;} // too few to try it: back to its own
       else if(!a._weakNote){a._weakNote=1;emit('war',4,a._spos,`${a.name} is too weak to invest ${W.settlements[a.at].name}, and awaits your word.`);}
     }
-    if(a.state==='idle'&&!a.hold&&!a.field){const m=W.armies.find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.at===a.at&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
+    if(a.state==='idle'&&!a.hold&&!a.field){const m=armiesAtSettlement(a.at).find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
       if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);if(a.men){(m.men||(m.men=[])).push(...a.men);a.men=[];}a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
     if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
@@ -9472,9 +9510,9 @@ function tickMilitary(){
       }
       if(tgt>=0)marchArmy(a,tgt);
     }
-    if(a.state==='march'&&now>=a.arriveDay&&a.fieldTo){a.field=a.fieldTo;a.fieldTo=null;a.at=nearestSettlementIdx(a.field.x,a.field.z);a.state='idle';a.hold=true;continue;} // camps where it was sent, and waits
+    if(a.state==='march'&&now>=a.arriveDay&&a.fieldTo){a.field=a.fieldTo;a.fieldTo=null;armySetSettlement(a,nearestSettlementIdx(a.field.x,a.field.z));a.state='idle';a.hold=true;continue;} // camps where it was sent, and waits
     if(a.state==='march'&&now>=a.arriveDay){
-      a.at=a.target;a.state='arrived';
+      armySetSettlement(a,a.target);a.state='arrived';
       const s=W.settlements[a.at];
       if(hostileTo(a,s)){
         const defend=defenceOf(s);
@@ -9526,8 +9564,8 @@ function tickMilitary(){
         }
       }
     }
-    if(a.state==='rout'&&now>=a.arriveDay){a.state='idle';a.at=a.target;a.morale=55;}
-    else if(a.state==='rout'&&a.hold&&now>=a.departDay+4){const p=armySimPos(a);a.state='idle';a.field={x:p.x,z:p.z};a.at=nearestSettlementIdx(p.x,p.z);a.morale=Math.max(a.morale,40);a.why=null; // your captains rally the men after a few days' flight
+    if(a.state==='rout'&&now>=a.arriveDay){a.state='idle';armySetSettlement(a,a.target);a.morale=55;}
+    else if(a.state==='rout'&&a.hold&&now>=a.departDay+4){const p=armySimPos(a);a.state='idle';a.field={x:p.x,z:p.z};armySetSettlement(a,nearestSettlementIdx(p.x,p.z));a.morale=Math.max(a.morale,40);a.why=null; // your captains rally the men after a few days' flight
       emit('war',4,p,`${a.name} rallies near ${W.settlements[a.at].name}${a.nextOrder!=null?' and turns as you commanded':' and awaits your word'}.`);if(a.nextOrder!=null){const n=a.nextOrder;a.nextOrder=null;marchArmy(a,n);}}
   }
   // a battle draws in any host near enough to hear it: it comes up on the side of its friends
@@ -9619,7 +9657,7 @@ function warScore(d){if(W.war)W.war.score=clamp(W.war.score+d,-120,120);}
 function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
-function sheltered(s){const si=W.settlements.indexOf(s);return W.armies.filter(b=>!b.gone&&!b.field&&b.house===s.owner&&b.at===si&&(b.state==='idle'||b.state==='arrived')).reduce((t,b)=>t+b.strength,0);}
+function sheltered(s){const si=W.settlements.indexOf(s),bucket=armySettlementIndex().bySettlement.get(si)||[];let total=0;for(const b of bucket)if(!b.gone&&!b.field&&b.house===s.owner&&(b.state==='idle'||b.state==='arrived'))total+=b.strength;return total;}
 function prominence(s){ // height of the town above the country within ~300 m: high ground tires an assault
   if(s._prom==null){let t=0;for(let k=0;k<12;k++){const an=k/12*Math.PI*2;t+=hAt(s.pos.x+Math.cos(an)*300,s.pos.z+Math.sin(an)*300);}s._prom=hAt(s.pos.x,s.pos.z)-t/12;}
   return s._prom;}
@@ -9661,7 +9699,7 @@ function routHome(a,why){ // back to its own: beaten, starved, or the war over (
   }
   const r=route(a.at,a.home,true);
   if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.tf=r.tf||null;a.departDay=day();a.arriveDay=day()+(r.tlen||r.len)/900;}
-  else{a.state='idle';a.at=a.home;}
+  else{a.state='idle';armySetSettlement(a,a.home);}
 }
 function resumeAfterBattle(a){
   const r=a._resume;a._resume=null;
@@ -9669,7 +9707,7 @@ function resumeAfterBattle(a){
     const span=a.arriveDay-a.departDay;
     a.state='march';a.departDay=day()-r.f*span;a.arriveDay=a.departDay+span;
   }else{a.state='idle';const bp=a.battlePos,t=W.settlements[a.at]; // holds the field it won, unless that was at its own gates
-    if(bp&&(!t||dist2d(bp.x,bp.z,t.pos.x,t.pos.z)>220)){a.field={x:bp.x,z:bp.z};a.at=nearestSettlementIdx(bp.x,bp.z);}}
+    if(bp&&(!t||dist2d(bp.x,bp.z,t.pos.x,t.pos.z)>220)){a.field={x:bp.x,z:bp.z};armySetSettlement(a,nearestSettlementIdx(bp.x,bp.z));}}
 }
 function routFromField(a){
   const r=a._resume;a._resume=null;a.why='broken in battle, it falls back';
@@ -9819,7 +9857,7 @@ function igniteFire(s,n,cause){
   let lit=0;
   for(let i=0;i<n&&cands.length;i++){
     const b=pick('sim',cands);
-    if(b.state==='sound'){b.state='burning';b.burnT=0;s.fires.push(b);updateBuildingInstance(b);lit++;}
+    if(b.state==='sound'){b.state='burning';vacantResidentialChanged(s,b);b.burnT=0;s.fires.push(b);updateBuildingInstance(b);lit++;}
   }
   return lit;
 }
@@ -9842,7 +9880,7 @@ function tickThreats(){
     for(const b of s.fires){
       b.burnT++;
       if(b.burnT>=3){
-        b.state='ruin';b.rebuildT=day()+180+randi('sim',300);s.ruinCount++;
+        b.state='ruin';vacantResidentialChanged(s,b);b.rebuildT=day()+180+randi('sim',300);s.ruinCount++;
         (s._burned||(s._burned=[])).push({x:b.x,z:b.z});
         updateBuildingInstance(b);continue;
       }
@@ -9852,7 +9890,7 @@ function tickThreats(){
         const d=dist2d(b.x,b.z,o.x,o.z);
         if(d<24&&chance('sim',(wet?0.05:0.3)*dry)){
           const windDot=((o.x-b.x)*Math.cos(W.weather.wind)+(o.z-b.z)*Math.sin(W.weather.wind))/(d||1);
-          if(chance('sim',0.5+windDot*0.4)){o.state='burning';o.burnT=0;newFires.push(o);updateBuildingInstance(o);}
+          if(chance('sim',0.5+windDot*0.4)){o.state='burning';vacantResidentialChanged(s,o);o.burnT=0;newFires.push(o);updateBuildingInstance(o);}
         }
       }
       newFires.push(b);
@@ -9899,7 +9937,7 @@ function tickThreats(){
     for(const s of W.settlements)if(s.river){
       s.prosperity=clamp(s.prosperity-8,1,100);
       const riverside=s.buildings.filter(b=>b.state==='sound').slice(0,3);
-      for(const b of riverside)if(chance('sim',0.4)){b.state='ruin';b.rebuildT=day()+150;s.ruinCount++;updateBuildingInstance(b);}
+      for(const b of riverside)if(chance('sim',0.4)){b.state='ruin';vacantResidentialChanged(s,b);b.rebuildT=day()+150;s.ruinCount++;updateBuildingInstance(b);}
       (W._flooded||(W._flooded=[])).push(s);
     }
     {const F=W._flooded||[],nm=F.map(t=>t.name),list=nm.length>1?nm.slice(0,-1).join(', ')+' and '+nm[nm.length-1]:nm[0]||'';
@@ -9914,7 +9952,7 @@ function tickThreats(){
     let wrecked=0;
     for(const s of W.settlements){
       if(dist2d(ex,ez,s.pos.x,s.pos.z)>1100)continue;
-      for(const b of s.buildings)if(b.state==='sound'&&chance('sim',0.06)){b.state='ruin';b.rebuildT=day()+240;s.ruinCount++;updateBuildingInstance(b);wrecked++;}
+      for(const b of s.buildings)if(b.state==='sound'&&chance('sim',0.06)){b.state='ruin';vacantResidentialChanged(s,b);b.rebuildT=day()+240;s.ruinCount++;updateBuildingInstance(b);wrecked++;}
       if(chance('sim',0.4))igniteFire(s,1,'quake');
     }
     emit('fates',9,{x:ex,z:ez},`The earth shakes! Walls crack and bells toll of themselves${wrecked?'; '+wrecked+' buildings are thrown down':''}. The pious speak of judgment.`);
@@ -10118,9 +10156,19 @@ function tickOmens(myth,dis){
    (hovel-built → timber-framed → stone-built). */
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
 const RESID=new Set(['court','cot','house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
+const VACANT_RESIDENTIALS=new WeakMap();
+function vacantResidentials(s){
+  const buildings=s.buildings||[],cached=VACANT_RESIDENTIALS.get(s);
+  if(cached&&cached.buildings===buildings&&cached.length===buildings.length)return cached.set;
+  const set=new Set(),order=new Map();for(let i=0;i<buildings.length;i++){const b=buildings[i];order.set(b,i);if(RESID.has(b.arch)&&b.state==='sound'&&!b.removed&&!(b.hh&&b.hh.length))set.add(b);}
+  VACANT_RESIDENTIALS.set(s,{buildings,length:buildings.length,set,order});return set;}
+function resetVacantResidentials(s,homes=null){if(!s)return;const buildings=s.buildings||[],order=new Map(buildings.map((b,i)=>[b,i])),set=new Set(homes||buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed&&!(b.hh&&b.hh.length)));VACANT_RESIDENTIALS.set(s,{buildings,length:buildings.length,set,order});}
+function vacantResidentialChanged(s,b){if(!s)return;const c=VACANT_RESIDENTIALS.get(s),buildings=s.buildings||[];if(!c||c.buildings!==buildings||c.length!==buildings.length||!c.order.has(b))return;
+  const vacant=b&&RESID.has(b.arch)&&b.state==='sound'&&!b.removed&&!(b.hh&&b.hh.length);if(!vacant){c.set.delete(b);return;}
+  if(c.set.has(b))return;c.set=new Set([...c.set,b].sort((a,d)=>(c.order.get(a)??Infinity)-(c.order.get(d)??Infinity)));}
 function housing(s){let n=20;for(const b of s.buildings)if(b.state==='sound')n+=RESID.has(b.arch)?HOUSEHOLD*(1+0.45*b.tier):2;return n;}
 function syncLive(s){ // after a structural change: buildings in and out of the instance buffers, walls, streets, fields, distance fields
-  for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';updateBuildingInstance(b);}
+  for(const b of G.bldList)if(b.removed&&b.state!=='gone'){b.state='gone';vacantResidentialChanged(b.s,b);updateBuildingInstance(b);}
   for(const b of s.buildings)if(b.idx===undefined&&bldRoom(1)){b.idx=G.bldList.length;G.bldList.push(b);updateBuildingInstance(b);if(G.land)clearLandUnder(b);}
   G.bodies.count=G.roofs.count=G.bldList.length;G.bodies.instanceMatrix.needsUpdate=G.roofs.instanceMatrix.needsUpdate=true;
   if(s.wallRad)s.wallR=Math.max(...s.wallRad);
@@ -10501,7 +10549,7 @@ function placeRural(s,x,z,arch,owner){ // a farmstead or a hut out on the land
     if(W.settlements.some(o=>o.buildings.some(b=>!b.removed&&Math.abs(b.x-px)<30&&Math.abs(b.z-pz)<30)))continue;
     if(!bldRoom(1))return null;const A=ARCH[arch],w=arch==='cot'?5:8,d=arch==='cot'?4:12,rot=hash01(px*0.37+pz)*Math.PI;
     const b={arch,tier:0,x:px,z:pz,rot,w,d,h:A[2]*0.8,roof:A[3],district:'farm',state:'sound',s,burnT:0,rebuildT:0,hue:hash01(px+pz*1.3),epoch:0,rural:true,ownerId:owner};
-    groundBuilding(b);s.buildings.push(b);b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);if(G.feat)featBuilding(b);G.detDirty=true;return b;}
+    groundBuilding(b);s.buildings.push(b);VACANT_RESIDENTIALS.delete(s);b.idx=G.bldList.length;G.bldList.push(b);G.bodies.count=G.roofs.count=G.bldList.length;updateBuildingInstance(b);if(G.feat)featBuilding(b);G.detDirty=true;return b;}
   return null;}
 function tickHouseholds(){
   if(!W.fams)return;const due=W.settlements.map((s,si)=>dueOn(si,360,29));if(!due.some(Boolean))return;W._pm=folkIndex();{const K=new Map();for(const p of W._pm.values())if(!p.dead)for(const par of[p.ma,p.pa])if(par){const L=K.get(par.id);if(L)L.push(p);else K.set(par.id,[p]);}W._kids=K;} /* who is whose child, for the pull of kin */const Ss=W.settlements;
@@ -10611,19 +10659,20 @@ function tickWays(){
   if(dirty){W.routes={};G.roadsDirty=true;}}
 function unhousedOf(s){return headsOf(s).filter(h=>!h.bh||h.bh.removed||h.bh.s!==s||h.bh.state!=='sound').sort((a,b)=>(b.w||0)-(a.w||0));}
 function rehouse(s,b){ // a house rebuilt or brought back into use: its own household comes home if it has found no other roof, else the best-off household without one (or lodging over another's) moves in
-  b._vac=0;b.hh=(b.hh||[]).filter(h=>h.bh===b&&!h.dead);if(b.hh.length)return;
+  b._vac=0;b.hh=(b.hh||[]).filter(h=>h.bh===b&&!h.dead);if(b.hh.length){vacantResidentialChanged(s,b);return;}
   const h=unhousedOf(s)[0]||heads_(s,x=>x.bh&&!x.bh.removed&&x.bh.s===s&&x.bh.state==='sound'&&(x.bh.hh||[]).indexOf(x)>=capOf(x.bh))[0];
-  if(!h)return;if(h.bh&&h.bh.hh)h.bh.hh=h.bh.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;}
+  const old=h&&h.bh;if(!h){vacantResidentialChanged(s,b);return;}if(old&&old.hh)old.hh=old.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;vacantResidentialChanged(s,b);if(old&&old!==b)vacantResidentialChanged(old.s||s,old);}
 function moveIn(s){ // households with no roof, or lodging over another's, take the empty houses the place has before anyone builds; each the one that suits it best
-  let empty=null;
+  let empty=null;const vacated=new Set();
   for(const h of heads_(s,x=>!x.bh||x.bh.removed||x.bh.s!==s||x.bh.state!=='sound'||(x.bh.hh||[]).indexOf(x)>=capOf(x.bh)).sort((a,b)=>(b.w||0)-(a.w||0))){
-    if(!empty)empty=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed&&!(b.hh&&b.hh.length));if(!empty.length)return;
+    if(!empty)empty=[...vacantResidentials(s)];if(!empty.length)break;
     const wk=workOf(h,s);let bi=0,bs=-1e9;empty.forEach((x,i)=>{const v=homeScore(h,s,x.x,x.z,x.st,wk);if(v>bs){bs=v;bi=i;}});
-    const b=empty.splice(bi,1)[0];if(h.bh&&h.bh.hh)h.bh.hh=h.bh.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;b._vac=0;}}
+    const b=empty.splice(bi,1)[0],old=h.bh;vacantResidentials(s).delete(b);if(old&&old.hh){old.hh=old.hh.filter(x=>x!==h);vacated.add(old);}b.hh=[h];h.bh=b;b._vac=0;}
+  for(const b of vacated)vacantResidentialChanged(b.s||s,b);}
 function tickFalling(s){ // the houses let go at the yearly reckoning fall in one by one through the year, unless a household has taken one meanwhile
   if(!s._falling||!s._falling.length)return;
   s._falling=s._falling.filter(b=>{if(day()<b._fallAt)return true;b._fallAt=0;
-    if(!b.removed&&b.state==='sound'&&!(b.hh&&b.hh.length)){b.state='ruin';b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}return false;});}
+    if(!b.removed&&b.state==='sound'&&!(b.hh&&b.hh.length)){b.state='ruin';vacantResidentialChanged(s,b);b.deserted=true;b.rebuildT=Infinity;s.ruinCount++;updateBuildingInstance(b);}return false;});}
 /* the streets: where the townsfolk's daily walks go far about, a street is cut straight through, and the houses in its line come down */
 function tickStreets(){
   if(day()%360!==230||W.prehistory)return;
@@ -10682,7 +10731,7 @@ function tickGrowth(){ // houses are built for households that have none, as fas
         { // first, another use for it: a craftsman who works from a room not made for his trade takes it and fits it out (a forge in a house, a shop in a hall)
           const C=heads_(s,h=>TRADE_ARCH[h.tr]&&TRADE_ARCH[h.tr]!==b.arch&&(!h.bh||h.bh.arch!==TRADE_ARCH[h.tr])&&b.arch!=='court'&&b.arch!=='hospital'&&b.arch!=='toll').sort((a,c)=>(c.w||0)-(a.w||0))[0],fit=b.w*b.d*0.12*(W._pl||1);
           if(C&&means(C)>=fit){const was=ARCH[b.arch][4],want=TRADE_ARCH[C.tr];buildWorks(s,fit,C,'refitting');const old=C.bh;if(old&&old.hh)old.hh=old.hh.filter(x=>x!==C);
-            b.arch=want;b.h=ARCH[want][2]*(0.8+0.25*(b.tier||0));b.hh=[C];C.bh=b;b._vac=0;updateBuildingInstance(b);G.detDirty=true;life(C,`Took the empty ${was} in the ${b.district||'town'} quarter and fitted it out as a ${ARCH[want][4]}`);continue;}}
+            b.arch=want;b.h=ARCH[want][2]*(0.8+0.25*(b.tier||0));b.hh=[C];C.bh=b;b._vac=0;vacantResidentialChanged(s,b);if(old&&old!==b)vacantResidentialChanged(s,old);updateBuildingInstance(b);G.detDirty=true;life(C,`Took the empty ${was} in the ${b.district||'town'} quarter and fitted it out as a ${ARCH[want][4]}`);continue;}}
         b._vac=(b._vac||0)+1;const rent=propValue(b)*0.12*(W._pl||1),hope=rent*Math.pow(0.7,b._vac);if(means(own)>=up&&hope>up)buildWorks(s,up,own,'repairs'); // worth keeping while a tenant may yet be found
         else fall.push([b,hope-up]);}
       /* houses are let go in proportion to the vacancy: a town with a few empty houses loses few in a year, a dying one many; those least worth keeping
@@ -10732,7 +10781,7 @@ function doAct(act,p,opt){
       emit('fates',7,W.capital.pos,`The sky turns to brass: drought settles on the realm.`);break;}
     case 'quake':{cam.shake=26;let n=0;
       for(const s of W.settlements){if(dist2d(p.x,p.z,s.pos.x,s.pos.z)>1100)continue;
-        for(const b of s.buildings)if(b.state==='sound'&&chance('sim',0.07)){b.state='ruin';b.rebuildT=day()+240;s.ruinCount++;updateBuildingInstance(b);n++;}
+        for(const b of s.buildings)if(b.state==='sound'&&chance('sim',0.07)){b.state='ruin';vacantResidentialChanged(s,b);b.rebuildT=day()+240;s.ruinCount++;updateBuildingInstance(b);n++;}
         if(chance('sim',0.5))igniteFire(s,1,'quake');}
       emit('fates',9,p,`The earth heaves${n?' and '+n+' buildings fall':''}; a long groan runs through the hills.`);break;}
     case 'dragon':{const d=W.dragon; // (used to also set the treasury to 9,000 — free gold for the crown)
@@ -10825,7 +10874,7 @@ function doAct(act,p,opt){
       emit('crown',3,W.capital.pos,`A forgotten vault beneath the keep yields 5,000 in old coin. The Master of Coin is beside himself.`);break;}
     case 'raze':{let bb=null,bd=1e18;
       for(const s of W.settlements)for(const b of s.buildings){const d=dist2d(p.x,p.z,b.x,b.z);if(d<bd&&b.state==='sound'){bd=d;bb=b;}}
-      if(bb&&bd<80){bb.state='ruin';bb.rebuildT=day()+300;bb.s.ruinCount++;updateBuildingInstance(bb);
+      if(bb&&bd<80){bb.state='ruin';vacantResidentialChanged(bb.s,bb);bb.rebuildT=day()+300;bb.s.ruinCount++;updateBuildingInstance(bb);
         emit('fates',2,p,`A ${ARCH[bb.arch][4]} in ${bb.s.name} is pulled down by order of the crown.`);}break;}
   }
   return true;
@@ -11372,7 +11421,7 @@ function tickProjects(){ // daily: the works go forward as far as they are paid 
       const payH=q.payer>0?W.houses[q.payer]:null,fund=()=>payH?(payH.gold||0):W.treasury;
       if(left.length){const b=left[0],pay=30+40*b.tier;if(fund()<pay){if(!q.stalled){q.stalled=true;emit('crown',3,s.pos,`The clearing in ${s.name} halts: the householders will not go without their compensation.`);}continue;}
         q.stalled=false;if(payH)payH.gold-=pay;else W.treasury-=pay;acct(ownerAcct(b,s),pay*0.85);for(const h of b.hh||[])acct(h,pay*0.15/Math.max(1,(b.hh||[]).length));q.gone++; /* the owner compensated, the tenants given something to go */s.unrest=clamp(s.unrest+0.8,0,100);
-        b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;continue;}
+        b.removed=true;b.state='gone';const k=s.buildings.indexOf(b);if(k>=0)s.buildings.splice(k,1);VACANT_RESIDENTIALS.delete(s);if(b.idx!==undefined)updateBuildingInstance(b);G.detDirty=true;continue;}
       L.splice(i,1);s._lay.live.clear({x:q.x,z:q.z,r:q.r});syncLive(s); // all gone: the ground is laid out anew, and the town's own growth builds it up
       emit('crown',5,s.pos,`The condemned quarter of ${s.name} is down (${q.gone} houses); surveyors peg out a new street across the ground.`);
     }
@@ -11528,7 +11577,7 @@ function settlementCmd(cmd,si){
     emit('war',4,s.pos,watch?`The watch of ${s.name} is called out: ${Math.round(a.strength)} men march out of the gate under ${me>0?'their lord’s':'the king’s'} banner.`:`${Math.round(a.strength)} men of ${s.name} and its fields are levied and mustered at the market cross.`);}
   else if(cmd==='walls'){if(s.walls>=2||s.wallBuild||!pay(1500*(s.walls+1)))return;wages(s,1500*(s.walls+1),'walls');const up=s.walls>=1&&!!s.wallRad;s.walls++;s.wallDmg=null;s.breachUntil=0;
     if(!s.wallRad){riverStrips();traceWall(s,14);if(G.feat)featWalls(s);(s.history||(s.history=[])).push({ago:0,t:'Walled by order of the crown.'});
-      for(const b of clearWallLine(s)){b.state='ruin';b.rebuildT=1e9;s.ruinCount++;updateBuildingInstance(b);}} // pulled down for the wall
+      for(const b of clearWallLine(s)){b.state='ruin';vacantResidentialChanged(s,b);b.rebuildT=1e9;s.ruinCount++;updateBuildingInstance(b);}} // pulled down for the wall
     wallWorks(s,up);rebuildWalls(); // raised round the circuit over a season (timber) or years (stone), the old palisade standing until the masons reach it
     emit('war',4,s.pos,`Masons are set to work at ${s.name}: ${s.walls===1?'a palisade and ditch rise about the town':'the walls are raised again in good stone'}.`);}
   else if(cmd==='seal'){if(cdLeft('s_seal'+si))return;setCd('s_seal'+si,20);sealGates(s,!(s.quarantineUntil>day()));}
