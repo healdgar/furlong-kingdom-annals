@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 20:58 UTC · after c2e7037</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 21:05 UTC · after 9ba3ba6</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -9935,10 +9935,11 @@ function eventViewCandidate(recent,now,project,bounds,held=null){
     if(p&&p.d>0&&p.x>=12&&p.x<=bounds.width-12&&p.y>=bounds.top+12&&p.y<=bounds.height-12&&(!held||item.ev===held))return{ev:item.ev,point:p};}return null;
 }
 function postEventDialog(ev){
-  if(!contextUI.ready||!ev.pos)return;const now=performance.now();eventUI.recent=eventUI.recent.filter(e=>e.until>now||e.ev===eventUI.hold);eventUI.recent.push({ev,until:now+12000});if(eventUI.recent.length>40)eventUI.recent.splice(eventUI.recent[0].ev===eventUI.hold?1:0,1);
+  if(speedIdx===5||!contextUI.ready||!ev.pos)return;const now=performance.now();eventUI.recent=eventUI.recent.filter(e=>e.until>now||e.ev===eventUI.hold);eventUI.recent.push({ev,until:now+12000});if(eventUI.recent.length>40)eventUI.recent.splice(eventUI.recent[0].ev===eventUI.hold?1:0,1);
 }
 function eventBubbleUpdate(){
   const bubble=document.getElementById('eventbubble');if(!bubble||!contextUI.ready)return;
+  if(speedIdx===5){bubble.hidden=true;eventUI.hold=null;return;}
   const bounds={width:innerWidth,height:innerHeight,top:document.getElementById('hud').getBoundingClientRect().bottom};
   const q=eventViewCandidate(eventUI.recent.filter(e=>!eventUI.closed.has(e.ev)),performance.now(),p=>p?{...pickScr(p.x,hAt(p.x,p.z)+4,p.z)}:null,bounds,eventUI.hold);
   bubble.hidden=!q||!!activeUIDialog||!!placeMode;if(!q)eventUI.hold=null;if(bubble.hidden)return;
@@ -9958,6 +9959,14 @@ function showEventDialog(ev){
 }
 function inspectEventPlace(){const ev=eventUI.current;if(!ev?.pos)return;const p=ev.pos,si=nearestSettlementIdx(p.x,p.z),s=W.settlements[si];
   markManual();flyTo(p.x,p.z,300);const pk=s&&dist2d(p.x,p.z,s.pos.x,s.pos.z)<Math.max(120,(s.radius||60)*2)?{type:'settlement',s}:groundPick(p.x,p.z);if(pk)showInspect(pk);}
+function reelNotificationTransition(wasReeling){
+  if(speedIdx===5&&!wasReeling){
+    eventUI.recent.length=0;eventUI.hold=null;eventUI.bubble=null;eventUI.position='';
+    const bubble=document.getElementById('eventbubble');if(bubble)bubble.hidden=true;
+    if(contextUI.ready&&['event','petition'].includes(contextUI.kind))contextDismiss();
+  }
+  if((speedIdx===5||wasReeling)&&W?.player)renderPetition();
+}
 const infoUI={kind:'about',town:null,reference:null};
 function accountBalances(town=null){
   const places=town?[town]:W.settlements,by={crown:town?0:(W.treasury||0),houses:0,households:0,church:0,townFunds:0,craftFunds:0,hoard:town?0:(W.dragon?.hoard||0),escrow:0},seen=new Set(),churches=new Set();let debt=0;
@@ -13418,10 +13427,11 @@ function afterPetition(){
   if(!W.petitions.length&&sovPausedFrom){const sp=sovPausedFrom;sovPausedFrom=0;if(speedIdx===0)setSpeed(sp);}
   refreshCrownPanel();updateHUD();
 }
-function renderPetition(){
+function renderPetition(open=false){
   const el=document.getElementById('petition'),p=W.petitions[0];
   if(!p||!sovOn()){el.style.display='none';el._h='';document.getElementById('petitionbtn').hidden=true;if(contextUI.ready&&contextUI.kind==='petition')contextDismiss();return;}
   const more=W.petitions.length-1;document.getElementById('petitionbtn').hidden=false;document.getElementById('petitionbtn').textContent='Petitions ('+W.petitions.length+')';
+  if(speedIdx===5&&!open&&contextUI.kind!=='petition'){el.style.display='none';el._key=null;return;} // keep the badge and council deadlines; build the sheet only on request or after slowing
   setHTML(el,`<h4><button id="petitionfold" aria-expanded="${!el.classList.contains('min')}">${esc(p.title)}</button>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${linkNames(esc(p.text))}</div>`+petitionContext(p)+
     p.opts.map((o,i)=>`<button class="cbtn" data-pi="${i}" ${o.cost&&purse(p.to|0)<o.cost?'disabled':''}><span>${esc(o.label)}</span>`+
       `<span class="cost">${o.cost?o.cost.toLocaleString()+' gold':''}</span></button>`).join('')+
@@ -14324,7 +14334,7 @@ function setSpeed(i){
   i=Math.round(+i);if(!(i>=0&&i<SPEEDS.length))return;
   if(i>0)sovPausedFrom=0; // the player chose a speed: don't override it when petitions clear
   if(speedIdx!==0)lastSpeed=speedIdx;
-  const wasReeling=VISUAL.fast();speedIdx=i;
+  const wasReeling=VISUAL.fast(),wasReelSpeed=speedIdx===5;speedIdx=i;
   if(VISUAL.fast()){VISUAL.catching=false;VISUAL.fields=false;}
   if(wasReeling&&!VISUAL.fast()){
     VISUAL.catching=true;VISUAL.fields=!!G.feat?.tiles?.size;
@@ -14334,6 +14344,7 @@ function setSpeed(i){
   }VISUAL.settle();
   const pause=document.getElementById('pausebtn');pause.textContent=i===0?'Resume':'Pause';pause.setAttribute('aria-label',i===0?'Resume the simulation':'Pause the simulation');pause.setAttribute('aria-pressed',String(i===0));
   document.getElementById('speedselect').value=String(i||lastSpeed||1);
+  reelNotificationTransition(wasReelSpeed);
 }
 const RATES=[
   ['harvest','Harvest yield',0.25,4,1],['birth','Birth rate',0.25,4,1],['mort','Mortality',0.25,4,1],
@@ -14478,7 +14489,7 @@ function initAccessibleUI(){
   document.getElementById('menubtn').onclick=()=>{const b=document.getElementById('menubtn'),open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));document.getElementById('toolmenu').hidden=!open;};
   document.getElementById('toolmenu').addEventListener('click',e=>{if(e.target.closest('button'))closeToolMenu();});
   document.addEventListener('pointerdown',e=>{if(!e.target.closest('#toolmenu,#menubtn'))closeToolMenu();const panel=e.target.closest('#drawer,#insp,#chron,#planbar,#terrlegend,#petition');if(panel)primaryPanel=({planbar:'plan',terrlegend:'legend'})[panel.id]||panel.id;});
-  document.getElementById('petitionbtn').onclick=()=>{renderPetition();const p=document.getElementById('petition');p.classList.remove('min');sheet('petition');p.querySelector('#petitionfold')?.setAttribute('aria-expanded','true');};
+  document.getElementById('petitionbtn').onclick=()=>{renderPetition(true);const p=document.getElementById('petition');p.classList.remove('min');sheet('petition');p.querySelector('#petitionfold')?.setAttribute('aria-expanded','true');};
   document.getElementById('brand').onclick=()=>openInfo('about');document.getElementById('datechip').onclick=()=>openInfo('timeline');document.getElementById('goldchip').onclick=()=>openInfo('accounts');document.getElementById('menuaccounts').onclick=()=>openInfo('accounts');
   document.getElementById('helpbtn').onclick=helpUI;document.getElementById('menuexport').onclick=()=>document.getElementById('btnexport').click();document.getElementById('menushare').onclick=()=>document.getElementById('btnshare').click();
   document.getElementById('guideclose').onclick=()=>document.body.classList.add('guideclosed');
@@ -19073,6 +19084,17 @@ Fourteen focused tests cover an exhausted larder after growth, fish/grain substi
 A separate animated smoke run exercised realm and street views at maximum speed on the Metal GPU, advancing both from AD 850 to AD 855 without recorded errors. [Drawing measurements](../tools/soak-results/provision-render-smoke/s688673834-sea.render.json) are retained; this was not a matched before/after performance comparison. Its zero-year annual summary does not measure famine or money.
 
 The 200-year soak was interrupted when work was redirected to this fix; neither cohort establishes long-term calibration. The change is isolated on `codex/provisioning`, based on `36648d5`, in `/Users/alexwall/.codex/worktrees/provisioning/furlong-kingdom-annals`. Integration status and final ownership validation are recorded separately in the local worker handoff.
+
+<<<FILE docs/REEL-NOTIFICATIONS.md>>>
+# Notifications while reeling
+
+Reel years suppresses transient event bubbles automatically. Starting reel clears the old popup queue; events generated during reel never enter that queue. Slowing or pausing admits new bubbles normally, without replaying a backlog. Chronicle events remain recorded normally.
+
+Petitions retain their queue, council deadlines and the ruler's pause preference. With petition pausing disabled, reel shows the petition badge rather than opening new sheets. The player can explicitly open a petition while reeling. Slowing reveals a pending petition normally. Entering reel dismisses an old event or petition card; manually opened inspectors and court controls remain available.
+
+This is UI state only. No journal entries, simulation records or indexes are added. Hidden reel bubbles skip candidate projection and queue maintenance; unopened petition sheets skip content construction.
+
+Check: `node --test tools/reel-notifications.test.mjs`.
 
 <<<FILE docs/ROAD-ACCESS.md>>>
 # River crossings and settlement access
