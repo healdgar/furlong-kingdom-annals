@@ -1610,6 +1610,31 @@ function groundBuilding(b){ // floor on the highest corner, foundations down to 
   const yc=hAt(b.x,b.z);lo=Math.min(lo,yc);hi=Math.max(hi,yc);
   b.y=hi;b.y0=lo-0.8;
 }
+// Hydraulic siting is deterministic and shared with the wheel renderer. Local +X faces the water.
+function millBankSites(s,radius){
+  const sites=[],C=s.pos,add=(q,nx,nz,y,kind)=>{
+    for(const inset of[1.25,1.6]){
+      const wx=q.x-nx*inset,wz=q.z-nz*inset;
+      if(!(kind==='pond'?lakeAt(s,wx,wz,0):riverAt(wx,wz,0))||hAt(wx,wz)>y-1.1)continue;
+      const f={x:wx+nx*6.8,z:wz+nz*6.8,w:9,d:9,rot:Math.atan2(nz,-nx)},P=obbCorners(f.x,f.z,9,9,f.rot);
+      P.push({x:f.x,z:f.z});for(let i=0;i<4;i++)P.push({x:(P[i].x+P[(i+1)%4].x)/2,z:(P[i].z+P[(i+1)%4].z)/2});
+      if(P.some(p=>hAt(p.x,p.z)<SEA+0.8||hAt(p.x,p.z)>y+5.5||riverAt(p.x,p.z,0)||lakeAt(s,p.x,p.z,0)))continue;
+      f.millWater={x:wx,z:wz,y,side:0,offset:6.8,kind};sites.push(f);
+    }
+  };
+  if(s.lake){const L=s.lake,P=L.poly;
+    for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length],dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1;
+      for(let j=0,n=Math.ceil(l/6);j<n;j++){const q={x:a.x+dx*j/n,z:a.z+dz*j/n};let nx=-dz/l,nz=dx/l;
+        if(inPoly(P,q.x+nx,q.z+nz)){nx=-nx;nz=-nz;}add(q,nx,nz,L.y,'pond');}}
+  }
+  const reaches=[];
+  for(const r of G.rivStrips)if(!r.canal)for(let k=1;k<r.pts.length-1;k+=2){const q=r.pts[k],d=dist2d(q.x,q.z,C.x,C.z);if(d<radius*0.9&&r.ys[k]>SEA+2)reaches.push({r,k,d});}
+  reaches.sort((a,b)=>a.d-b.d);
+  for(const {r,k} of reaches.slice(0,160)){const a=r.pts[k-1],b=r.pts[k+1],l=dist2d(a.x,a.z,b.x,b.z)||1,px=-(b.z-a.z)/l,pz=(b.x-a.x)/l,q=r.pts[k];
+    for(const side of[1,-1])add({x:q.x+px*r.hw[k]*side,z:q.z+pz*r.hw[k]*side},px*side,pz*side,r.ys[k],'river');}
+  const focus=s.lake?s.lake.dam:C;
+  return sites.sort((a,b)=>(a.millWater.kind==='pond'?0:radius)+dist2d(a.x,a.z,focus.x,focus.z)-(b.millWater.kind==='pond'?0:radius)-dist2d(b.x,b.z,focus.x,focus.z));
+}
 function frontFoot(c,arch,tier,rnd){ // a footprint set back from the street edge, facing it
   const a=ARCH[arch],k=0.85+tier*0.15;
   const w=a[0]*k*(0.92+rnd()*0.16),d=a[1]*k*(0.92+rnd()*0.16);
@@ -1802,7 +1827,7 @@ function layoutSettlement(s){
   const fits=(f,gap,soft)=>{
     let inside=0,outside=0;
     for(const c of probe(f)){
-      if(!(soft?cellOK(c.x,c.z):buildable(c.x,c.z)))return false;
+      if(!(soft==='mill'?hAt(c.x,c.z)>SEA+0.8&&!riverAt(c.x,c.z,0)&&!lakeAt(s,c.x,c.z,0):soft?cellOK(c.x,c.z):buildable(c.x,c.z)))return false;
       if(inPlace(c.x,c.z,1.2))return false;
       if(nearStreet(c.x,c.z,0.8))return false;
       if(s.wallRad){const wd=wallSide(c.x,c.z);if(Math.abs(wd)<7)return false;if(s.bastions&&wd>0&&wd<70)return false;if(wd<0)inside++;else outside++;}
@@ -2071,19 +2096,10 @@ function layoutSettlement(s){
     if(!isVil){aroundPlace('tavern',1,1,1,'market');if(era>=1150)aroundPlace('hall',2,1,1,'market');} // no guildhall before there are guilds
   };
   if(!oldVil)foundTown();
-  if(s.lake){ // the mill at the dam
-    const dm=s.lake.dam,px=-Math.sin(dm.a),pz=Math.cos(dm.a);
-    for(const sd of[1,-1])for(let t=dm.w/2+5;t<dm.w/2+30&&!s.mill;t+=4){const f={x:dm.x+px*t*sd,z:dm.z+pz*t*sd,w:9,d:9,rot:-dm.a};if(fits(f,1,true))s.mill=place('mill',1,f,'artisan',1,{inst:true});}
-  }
-  if(s.river&&!s.mill){ // a mill on the watercourse
-    let best=null,bd=1e9;
-    for(let dz=-6;dz<=6;dz++)for(let dx=-6;dx<=6;dx++){
-      const ci=s.cx+dx,cj=s.cz+dz;if(!inB(ci,cj)||W.water[cIdx(ci,cj)]!==2)continue;
-      const d=dx*dx+dz*dz;if(d<bd){bd=d;best={x:cellX(ci),z:cellZ(cj)};}
+  if(s.river||s.lake){ // the wheel, not a coarse map cell, determines the mill's waterfront site
+    for(const site of millBankSites(s,Rmax))if(fits(site,1,'mill')){
+      s.mill=place('mill',1,site,'artisan',1,{inst:true,millWater:site.millWater});break;
     }
-    if(best){const a=Math.atan2(C.z-best.z,C.x-best.x);
-      for(let t=14;t<70;t+=4){const f={x:best.x+Math.cos(a)*t,z:best.z+Math.sin(a)*t,w:9,d:9,rot:-Math.atan2(Math.cos(a),-Math.sin(a))};
-        if(fits(f,1,true)){s.mill=place('mill',1,f,'artisan',1,{inst:true});break;}}}
   }
 
   /* ---- frontage: the lots along each street, and who builds there ---- */
@@ -4915,17 +4931,42 @@ function buildBuildings(){
   }
   rebuildDetails();
   rebuildWalls();
-  // mill wheels turn on the building's side, aligned with it
-  G.wheels=[];
-  if(!G.rivHash)riverStrips();const wetAt=(x,z)=>!!(riverAt(x,z,1)||W.water[cIdx(toCell(x),toCell(z))]);
-  for(const s of W.settlements)if(s.mill){
-    const b=s.mill,grp=new THREE.Group();let bestK=0,bd=1e9; // the wheel goes on the side that faces the water: the river, the millpond or the lake
-    for(let k=0;k<4;k++){const th=b.rot+k*Math.PI/2,dx=Math.cos(th),dz=-Math.sin(th),half=(k%2?b.d:b.w)/2;let d=60;
-      for(let r=0;r<60;r+=2)if(wetAt(b.x+dx*(half+r),b.z+dz*(half+r))){d=r;break;}if(d<bd){bd=d;bestK=k;}}
-    const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1.2,12),miniatureMaterial(6,[2,3],{color:0x6e5636}));
-    wh.rotation.z=Math.PI/2;wh.position.set((bestK%2?b.d:b.w)/2+0.9,3.2,0);wh.castShadow=true;grp.add(wh);
-    grp.position.set(b.x,b.y0,b.z);grp.rotation.y=b.rot+bestK*Math.PI/2;
-    scene.add(grp);G.wheels.push(wh);
+  rebuildMillWheels();
+}
+function millWheelGeometry(){ // open spokes, two timber rims and sixteen buckets; one merged draw
+  const parts=[],uv=(g,axis)=>{const p=g.attributes.position,n=g.attributes.normal,a=[];
+    for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),nx=Math.abs(n.getX(i)),ny=Math.abs(n.getY(i));
+      a.push(axis==='x'?(ny>0.5?z:y):(nx>0.5?z:x),axis==='x'?x:y);}
+    g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(a,2));return g;};
+  const put=(g,x,y,z,rx=0,ry=0,rz=0)=>{const m=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(rx,ry,rz)),new THREE.Vector3(1,1,1));parts.push([g,m]);};
+  for(const x of[-0.52,0.52]){
+    const rim=new THREE.RingGeometry(3.45,4,24),p=rim.attributes.position,a=[];
+    for(let i=0;i<p.count;i++){const u=p.getX(i),v=p.getY(i);a.push(Math.hypot(u,v)-3.45,(Math.atan2(v,u)+Math.PI)*4);}
+    rim.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(a,2));put(rim,x,0,0,0,Math.PI/2);
+    for(let k=0;k<8;k++){const angle=k*Math.PI/4;put(uv(new THREE.BoxGeometry(0.22,3.4,0.28),'y'),x,Math.cos(angle)*1.65,Math.sin(angle)*1.65,angle);}
+  }
+  for(let k=0;k<16;k++){const a=k*Math.PI/8;put(uv(new THREE.BoxGeometry(1.35,0.2,0.8),'x'),0,Math.cos(a)*3.87,Math.sin(a)*3.87,a);}
+  const hub=new THREE.CylinderGeometry(0.52,0.52,1.65,12);hub.rotateZ(Math.PI/2);put(uv(hub,'x'),0,0,0);
+  const axle=new THREE.CylinderGeometry(0.18,0.18,3.2,8);axle.rotateZ(Math.PI/2);put(uv(axle,'x'),-0.95,0,0);
+  const g=mergeGeoms(parts);for(const [part] of parts)part.dispose();return g;
+}
+function rebuildMillWheels(){
+  for(const wh of G.wheels||[])scene.remove(wh.userData.pivot);
+  G.wheels=[];if(!G.millWheelGeo)G.millWheelGeo=millWheelGeometry();
+  if(!G.millWheelMat){G.millWheelMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millWheelMat.defines={...G.millWheelMat.defines,MINI_STRUCTURE_UV:1};}
+  for(const s of W.settlements){const b=s.mill;if(!b||b.removed||b.state==='gone')continue;
+    let water=b.millWater;
+    if(!water){ // retained chronicles: pick the water-facing side, without moving their saved buildings
+      let best=null;
+      for(let k=0;k<4;k++){const th=b.rot+k*Math.PI/2,dx=Math.cos(th),dz=-Math.sin(th),half=(k%2?b.d:b.w)/2;
+        for(let d=0;d<60;d+=1){const x=b.x+dx*(half+d),z=b.z+dz*(half+d),r=riverAt(x,z,0),lake=lakeAt(s,x,z,0);
+          if(r||lake){if(!best||d<best.d)best={d,side:k,y:lake?s.lake.y:r.y};break;}}}
+      if(!best)continue;water={...best,kind:'legacy'};
+    }
+    const k=water.side,th=b.rot+k*Math.PI/2,off=water.offset||((k%2?b.d:b.w)/2+1.6);
+    const wh=new THREE.Mesh(G.millWheelGeo,G.millWheelMat),pivot=new THREE.Group();pivot.rotation.y=th;
+    pivot.position.set(b.x+Math.cos(th)*off,water.y+3.05,b.z-Math.sin(th)*off);
+    wh.castShadow=wh.receiveShadow=true;wh.userData.building=b;pivot.add(wh);scene.add(pivot);G.wheels.push(wh);wh.userData.pivot=pivot;
   }
 }
 function hash01(n){const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
@@ -13036,7 +13077,7 @@ function animateWorld(dt,now){
   G.waterU.uWaterTime.value=now;
   if(G.rivers){G.rivers.position.y=(W.flooding>0?2.6:0)+Math.sin(now*1.7)*0.15;}
   if(G.sea)G.sea.position.y=SEA+0.5+Math.sin(now*0.9)*0.3;
-  for(const wh of G.wheels)wh.rotation.x+=dt*1.4;
+  for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.visible)wh.rotation.x+=dt*1.4;} // UVs rotate with the actual wheel geometry
   if(G.sails&&G.sails.length){const w=W.weather.state,gust=0.75+0.25*Math.sin(now*0.23)+0.15*Math.sin(now*0.71);
     const sp=(w==='storm'?1.1:w==='rain'?0.7:w==='overcast'?0.5:w==='snow'?0.35:0.28*clamp(Math.sin(now*0.05+1)*1.5,0,1))*gust; // a fair still day may leave them standing
     for(const g of G.sails){const c=g.userData.cross;c.rotation.z-=dt*sp;if(g.userData.b)g.userData.b.sailA=c.rotation.z;}}

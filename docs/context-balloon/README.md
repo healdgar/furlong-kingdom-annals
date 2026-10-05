@@ -13,3 +13,7 @@ Runtime comprises `index.html` and the two images under `assets/materials/`; ser
 Current evidence: root `design-qa.md` and `texture-correction/`. Earlier UI evidence remains under this folder; older texture screenshots and renderer numbers describe `2fd9998`, not the corrected source. Image generation prompts and sources: `material-atlas.md`, `water-ripples.md`.
 
 Local testing only. No push, merge or deployment.
+
+## Waterwheel follow-up
+
+Open timber spokes, rims and buckets replace the cylinder; local wood grain rotates with the wheel. Newly generated mills use actual river/pond edges, placing their wheel in water and body on dry ground. Saved chronicles retain their earlier mill locations. Checks, two rotation phases and pond evidence: [mill-correction](mill-correction/README.md). Generated settlement layouts intentionally differ from the texture-only commit. Local preview remains on port 8766; nothing deployed.
