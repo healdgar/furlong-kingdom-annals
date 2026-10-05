@@ -35,7 +35,7 @@ test('household details use the enduring owner, include property in other places
   vm.runInContext(fn('landName')+'\n'+fn('detailNumber')+'\n'+fn('detailHousehold'),C);vm.runInContext('detailHousehold(s,p)',C);
   assert.equal(tables.find(t=>t.id==='detail-pantry').rows.length,3);const rights=tables.find(t=>t.id==='detail-property').rows;
   assert.equal(rights.length,2);assert.equal(rights[0][2],'Owned and worked');assert.equal(rights[1][2],'Owned');assert.equal(rights[0][0],'Away');
-  assert.match(rights[0][1],/^woodland · /);
+  assert.match(rights[0][1],/^<a class="nm" data-nm="land:1:0">woodland<\/a> · /);
   assert.equal(s._owners.size,1);assert.equal(remote._owners,undefined);
 });
 test('expanded court detail retains every memo, full explanations, both ledgers and fractional entries',()=>{
