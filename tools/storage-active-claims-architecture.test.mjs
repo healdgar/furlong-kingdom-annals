@@ -32,8 +32,10 @@ test('managed claim writer architecture remains reviewed',()=>{
  // Exposure queries reuse the admitted external facility index; membership
  // maintenance preserves live order without full-array sorting. Canonical ledger
  // writers, claim arithmetic, and outcome records remain unchanged.
+ // The expanded inspector adds one read of s._owners for its household register.
+ // The outside-reference diff contains no new ownership mutation.
  assert.equal(digest(source.slice(a,b)),"53af077c3d68fda54215af8342daeb541c33b10c380d8fb803e85a5a1b08767f");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
- assert.equal(digest(outside),"25e04d108fe4b912ecf335cc19eb26fb52c2219ef6e18bba3381bc755df62813");
+ assert.equal(digest(outside),"3e47927aacdd0447aceabf03c905b6fb20038bbf5437e69e9aacf2b92e3887f0");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });
