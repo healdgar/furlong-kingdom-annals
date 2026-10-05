@@ -9,7 +9,8 @@ import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {fileURLToPath,pathToFileURL} from 'node:url';
+import {createServer} from 'node:http';
+import {fileURLToPath} from 'node:url';
 const CHROME=process.env.CHROME||['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium'].find(p=>fs.existsSync(p)),RENDER=true;
 class CDP{ // the least of the DevTools protocol: send a command, await its answer, listen for events
   constructor(url){this.ws=new WebSocket(url);this.n=0;this.wait=new Map();this.subs=new Map();
@@ -54,6 +55,17 @@ const run={sourceSHA256:Object.fromEntries(Object.entries(sources).map(([k,s])=>
 fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));
 for(const[k,s]of Object.entries(sources))fs.writeFileSync(path.join(OUT,k+'.html'),args.webgl1?s.replace('renderer=new THREE.WebGLRenderer(', 'renderer=new THREE.WebGL1Renderer('):s);
 
+// Serve snapshots and their actual material assets; file:// canvases cannot read pixels reliably.
+fs.cpSync(path.join(ROOT,'assets'),path.join(OUT,'assets'),{recursive:true});
+const server=createServer((req,res)=>{
+  const file=path.resolve(OUT,'.'+new URL(req.url,'http://localhost').pathname);
+  if(!file.startsWith(OUT+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end();return;}
+  const type={'.html':'text/html','.png':'image/png','.webp':'image/webp','.js':'text/javascript'}[path.extname(file)];
+  res.setHeader('Content-Type',type||'application/octet-stream');fs.createReadStream(file).pipe(res);
+});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const previewURL='http://127.0.0.1:'+server.address().port+'/';
+
 const INSPECT=`(()=>{
   const gl=renderer.getContext(),count=m=>m?(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1):0;
   const parts=[G.terrain,G.apron,G.roads,G.roadJoins,G.bridges,G.rivers,G.lakes,G.sea,G.bodies,G.roofs,...G.treeChunks,G.regrow,...Object.values(G.det)];
@@ -78,20 +90,28 @@ async function check(which,w){
     await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__renderRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});
     await c.send('Emulation.setDeviceMetricsOverride',{width:Number(args.width||1440),height:Number(args.height||900),deviceScaleFactor:1,mobile:!!args.touch});
     if(args.touch)await c.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-    await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,which+'.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}`});
+    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${w.seed}&c=${w.coast}`});
     const deadline=Date.now()+120000;let ready=false;
     while(Date.now()<deadline){if(errors.length)throw new Error(errors.join('\n'));ready=await ev(c,"document.getElementById('loading')===null&&typeof renderer!=='undefined'");if(ready)break;await sleep(200);}
     if(!ready)throw new Error('boot timeout');
+    await ev(c,"(async()=>{if(!await G.miniatureReady||!await G.waterRippleReady)throw Error('material images failed to load')})()");
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
     const views={capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
-      bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",realm:"[0,0,4200,0.8]"};
+      bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
     const result={id,views:{},errors};
     for(const[v,expr]of Object.entries(views)){
       await ev(c,`(()=>{const q=${expr};flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);scene.updateMatrixWorld(true);renderer.render(scene,camera);})()`);
       result.views[v]=await ev(c,INSPECT);
       const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'.png'),Buffer.from(shot.data,'base64'));
+      // Matched quarter-pixel pans expose texture shimmer without advancing world time.
+      if(['town','district','farmland'].includes(v))for(let step=1;step<=3;step++){
+        await ev(c,`(()=>{const q=${expr};flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);
+          const right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),metres=2*cam.cur.dist*Math.tan(camera.fov*Math.PI/360)/renderer.domElement.height;
+          cam.cur.focus.addScaledVector(right,metres*${step}*0.25);updateCamera(0,0);animateWorld(0,0);renderer.render(scene,camera);})()`);
+        const pan=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'-pan'+step+'.png'),Buffer.from(pan.data,'base64'));
+      }
       // Submission time and actual GPU timer queries are separate; neither is device FPS.
       result.views[v].timing=await ev(c,`(async()=>{const gl=renderer.getContext(),ext=renderer.capabilities.isWebGL2?gl.getExtension('EXT_disjoint_timer_query_webgl2'):null,a=[],queries=[];
         for(let i=0;i<12;i++){const q=ext?gl.createQuery():null;if(q)gl.beginQuery(ext.TIME_ELAPSED_EXT,q);
@@ -147,4 +167,5 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   checks.push(row);}
 fs.writeFileSync(path.join(OUT,'checks.json'),JSON.stringify(checks,null,2));
 console.log(JSON.stringify({out:OUT,days,checks},null,2));
+server.close();
 process.exit(checks.every(c=>Object.entries(c).filter(([k])=>!['seed','coast'].includes(k)).every(([,v])=>v))?0:1);

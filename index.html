@@ -4498,7 +4498,23 @@ function initGraphics(){
 
 /* ---------------- terrain, water, roads ---------------------------------- */
 // One 512px raster atlas, sixteen 128px material cells. Simulation RNG is never read.
+// Box-filter each power-of-two level: cells remain independent down to their mean.
+// The shader fades before a pixel spans a cell, so the final mixed levels are unused.
+function miniatureMipmaps(canvas){
+  const levels=[canvas];let size=canvas.width,data=canvas.getContext('2d').getImageData(0,0,size,size).data;
+  while(size>1){
+    const next=size/2,c=document.createElement('canvas');c.width=c.height=next;
+    const g=c.getContext('2d'),out=g.createImageData(next,next);
+    for(let y=0;y<next;y++)for(let x=0;x<next;x++)for(let k=0;k<4;k++){
+      const a=((y*2)*size+x*2)*4+k;
+      out.data[(y*next+x)*4+k]=Math.round((data[a]+data[a+4]+data[a+size*4]+data[a+size*4+4])/4);
+    }
+    g.putImageData(out,0,0);levels.push(c);data=out.data;size=next;
+  }
+  return levels;
+}
 function initMiniatureMaterials(){
+  G.surfaceTextureGrad=G.surfaceDerivatives&&(renderer.capabilities.isWebGL2||renderer.extensions.has('EXT_shader_texture_lod'));
   const mean=Array.from({length:16},()=>new THREE.Vector3(1,1,1));
   G.miniatureU={uMiniatureAtlas:{value:null},uMiniatureReady:{value:0},uMiniatureMean:{value:mean}};
   G.waterRippleU={uWaterRippleMap:{value:null},uWaterRippleReady:{value:0}};
@@ -4507,9 +4523,10 @@ function initMiniatureMaterials(){
     const t=new THREE.TextureLoader().load(new URL('assets/materials/miniature-atlas.png',document.baseURI).href,tex=>{
       const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');g.drawImage(tex.image,0,0,512,512);
       for(let i=0;i<16;i++){const d=g.getImageData((i%4)*128+2,Math.floor(i/4)*128+2,124,124).data,a=[0,0,0];for(let k=0;k<d.length;k+=4)for(let j=0;j<3;j++)a[j]+=d[k+j];mean[i].set(...a.map(x=>Math.max(0.03,x/(124*124*255))));}
+      tex.mipmaps=miniatureMipmaps(c);tex.needsUpdate=true;
       G.miniatureU.uMiniatureReady.value=1;resolve(true);
     },undefined,()=>{console.warn('Miniature material atlas unavailable; using base materials.');resolve(false);});
-    t.minFilter=THREE.LinearFilter;t.generateMipmaps=false; // manual detail fade avoids mipmaps bleeding between atlas cells
+    t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=false; // explicit, cell-safe box filtering
     t.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());G.miniatureU.uMiniatureAtlas.value=t;
   });
 }
@@ -4526,6 +4543,9 @@ float surfaceFootprint(vec2 p){
   return 0.35;
 #endif
 }
+float surfaceFilteredNoise(vec2 p){
+  return mix(0.5,surfaceNoise(p),1.-smoothstep(0.25,0.75,surfaceFootprint(p)));
+}
 float surfaceLine(float p,float width){
 #ifdef SURFACE_DERIVATIVES
   float aa=max(fwidth(p),0.001);
@@ -4537,12 +4557,22 @@ float surfaceLine(float p,float width){
 }
 vec3 miniatureDetail(float cell,vec2 uv){
   vec2 tile=vec2(mod(cell,4.),3.-floor(cell/4.));
-  // Two-pixel gutters prevent adjacent materials from entering bilinear samples.
-  vec2 q=(tile+(vec2(2.)+fract(uv)*124.)/128.)/4.;
+  float footprint=surfaceFootprint(uv);
+  // Clamp within this cell at BOTH trilinear levels. Different materials never bleed.
+  float lod=max(0.,log2(max(1.,footprint*124.)));
+  float inset=min(0.5,exp2(lod+1.)/256.);
+  vec2 local=clamp((vec2(2.)+fract(uv)*124.)/128.,vec2(inset),vec2(1.-inset));
+  vec2 q=(tile+local)/4.;
   vec3 mean=vec3(1.);
   for(int i=0;i<16;i++)if(abs(cell-float(i))<0.5)mean=uMiniatureMean[i]; // WebGL1 permits constant loop indices
+  #ifdef SURFACE_TEXTURE_GRAD
+  // Differentiate the unwrapped UV, preventing false coarse LODs at every tile seam.
+  vec3 detail=texture2DGradEXT(uMiniatureAtlas,q,dFdx(uv)*(124./512.),dFdy(uv)*(124./512.)).rgb/mean;
+  float fade=uMiniatureReady*(1.-smoothstep(0.06,0.125,footprint));
+  #else
   vec3 detail=texture2D(uMiniatureAtlas,q).rgb/mean;
-  float fade=uMiniatureReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(uv)));
+  float fade=uMiniatureReady*(1.-smoothstep(0.004,0.012,footprint));
+  #endif
   if(cell<0.5)detail=mix(vec3(1.),detail,0.85);
   if(abs(cell-4.)<0.5)detail=mix(vec3(1.),detail,0.35);
   if(abs(cell-8.)<0.5)detail=mix(vec3(1.),detail,0.4); // keep straw fibres subordinate to the roof form
@@ -4550,6 +4580,7 @@ vec3 miniatureDetail(float cell,vec2 uv){
 }
 `;
 function surfaceDetail(mat){
+  if(G.surfaceTextureGrad){mat.extensions={...mat.extensions,shaderTextureLOD:true};mat.defines={...mat.defines,SURFACE_TEXTURE_GRAD:1};}
   if(G.surfaceDerivatives){mat.extensions={...mat.extensions,derivatives:true};mat.defines={...mat.defines,SURFACE_DERIVATIVES:1};}
   return mat;
 }
@@ -4642,10 +4673,10 @@ function waterMaterial(options,channel=false,sea=false){
       float h11=texture2D(uWaterHeight,(cell+1.5)/uWaterGrid).r*32.-16.;
       float shoreHeight=f.x+f.y<=1.?h00+(h10-h00)*f.x+(h01-h00)*f.y:h11+(h01-h11)*(1.-f.x)+(h10-h11)*(1.-f.y);
       float depth=0.5-shoreHeight;
-      if(all(greaterThanEqual(lattice,vec2(0.)))&&all(lessThan(lattice,vec2(uWaterGrid-1.))))diffuseColor.a*=smoothstep(0.,0.45,depth+(surfaceNoise(waterWP*0.7)-0.5)*0.3);
+      if(all(greaterThanEqual(lattice,vec2(0.)))&&all(lessThan(lattice,vec2(uWaterGrid-1.))))diffuseColor.a*=smoothstep(0.,0.45,depth+(surfaceFilteredNoise(waterWP*0.7)-0.5)*0.3);
       #endif
       #ifdef MINI_CHANNEL
-      float shoreNoise=surfaceNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
+      float shoreNoise=surfaceFilteredNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
       float shore=1.-smoothstep(0.2,shoreWidth,vWaterBank);
       vec3 wetGravel=vec3(0.37,0.36,0.29)*miniatureDetail(3.,waterWP/2.5);
       diffuseColor.rgb=mix(diffuseColor.rgb,wetGravel,shore*0.92);
@@ -7055,7 +7086,7 @@ function hookTerrainShader(mat){ // strips, headlands and hedges, drawn per pixe
 uniform sampler2D uSeed,uData,uMask,uFeat1,uFeat2,uLord;uniform vec3 uHouse[12];uniform float uTerr;uniform float uFG,uFN,uSize,uGrid,uYear,uSea,uFeaturePixel;uniform vec3 uCol[11];uniform vec3 uSurfaceEye;varying vec3 vWN;
 ${SURFACE_GLSL}
 float lh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float lnoise(vec2 p){return surfaceNoise(p);}
+float lnoise(vec2 p){return surfaceFilteredNoise(p);}
 vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
 {
@@ -7079,24 +7110,24 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       vec4 S1=texture2D(uSeed,(c1+0.5)/uFN);
       float th=S1.b*3.14159265,w=S1.a*255.;vec2 ax=vec2(cos(th),sin(th)),acr=vec2(-ax.y,ax.x);
       float s=w>0.5?dot(wp,acr)/w:0.,si=floor(s),fr=fract(s),em=min(fr,1.-fr)*w;
-      float hv=lh(vec2(si,c1.x*37.+c1.y*101.));
+      float hv=lh(vec2(si,c1.x*37.+c1.y*101.)),stripVisible=1.-smoothstep(0.25,0.75,surfaceFootprint(vec2(s,0.)));
       vec3 col;
       if(isCommon)col=uCol[3]*(0.9+0.2*nz);
       else if(st>4.5)col=uCol[5];else if(st>3.5)col=uCol[4];else if(st>2.5)col=uCol[3];
-      else if(abs(kind-2.)<0.5)col=crop(mod(si+uYear,3.));                         // each Hufe its own rotation
+      else if(abs(kind-2.)<0.5)col=mix((uCol[0]+uCol[1]+uCol[2])/3.,crop(mod(si+uYear,3.)),stripVisible);                         // each Hufe its own rotation
       else if(abs(kind-7.)<0.5)col=crop(mod(floor(lh(c1)*3.)+uYear,3.));          // a close likewise
       else if(abs(kind-3.)<0.5)col=uCol[6];else if(abs(kind-4.)<0.5)col=uCol[7];
-      else if(abs(kind-5.)<0.5)col=fr<0.45?uCol[8]:uCol[10];                       // vine rows on bare soil
+      else if(abs(kind-5.)<0.5)col=mix(mix(uCol[10],uCol[8],0.45),fr<0.45?uCol[8]:uCol[10],stripVisible);                       // vine rows on bare soil
       else col=crop(mod(floor(D1.a*255.+0.5)+uYear,3.));                           // the great field's course
       float groundCell=col.g>col.r*1.03?0.:col.r>col.g*1.22?1.:15.;
       col*=miniatureDetail(groundCell,vec2(dot(wp,acr)/4.,dot(wp,ax)/6.));
       if(groundCell<0.5)col*=vec3(0.88,0.9,0.72);
       if(w>0.5&&abs(kind-5.)>0.5&&!isCommon){
-        if(abs(kind-3.)<0.5)col*=0.94+0.1*step(0.5,fract(si*0.5));                  // meadow doles, mown in turn
-        else col*=0.91+0.18*hv;                                                     // each tenant's strip a shade apart
-        if(kind<2.5&&abs(kind-3.)>0.5||abs(kind-6.)<0.5)col*=0.93+0.09*sin(fr*3.14159); // ridge and furrow, still there under grass
-        if(abs(kind-2.)<0.5)col=mix(uCol[9]*(0.85+0.3*nz),col,smoothstep(0.9,2.2,em)); // hedged holdings
-        else if(abs(kind-4.)<0.5)col=mix(uCol[9]*(0.9+0.3*nz),col,0.45+0.55*smoothstep(0.3,1.1,em)); // croft fences
+        if(abs(kind-3.)<0.5)col*=mix(0.99,0.94+0.1*step(0.5,fract(si*0.5)),stripVisible);                  // meadow doles, mown in turn
+        else col*=mix(1.,0.91+0.18*hv,stripVisible);                                                     // each tenant's strip a shade apart
+        if(kind<2.5&&abs(kind-3.)>0.5||abs(kind-6.)<0.5)col*=0.93+0.09*mix(0.63662,sin(fr*3.14159),stripVisible); // ridge and furrow, still there under grass
+        if(abs(kind-2.)<0.5)col=mix(uCol[9]*(0.85+0.3*nz),col,mix(1.,smoothstep(0.9,2.2,em),stripVisible)); // hedged holdings
+        else if(abs(kind-4.)<0.5)col=mix(uCol[9]*(0.9+0.3*nz),col,mix(1.,0.45+0.55*smoothstep(0.3,1.1,em),stripVisible)); // croft fences
         else if(abs(kind-3.)>0.5)col*=1.-0.13*surfaceLine(s,0.035);         // the furrow between strips
       }
       vec4 D2=texture2D(uData,(c2+0.5)/uFN),S2=texture2D(uSeed,(c2+0.5)/uFN);
@@ -7151,7 +7182,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       if(slope>0.1)c*=1.-0.3*smoothstep(0.1,0.2,slope)*(1.-smoothstep(1.,5.,dRd)); // a hollow way, worn deep
     }
     if(dRd<14.&&dW<14.){float t=1.-smoothstep(3.,14.,max(dRd,dW));c=mix(c,vec3(0.34,0.29,0.21)*miniatureDetail(3.,wp/3.)*(0.9+0.2*n3),t*0.6);} // mud at the landing and the ford
-    if(dWall<10.&&dW>2.){float t=1.-smoothstep(2.,10.,dWall);c=mix(c,vec3(0.5,0.45,0.37)*miniatureDetail(3.,wp/3.)*(0.8+0.3*n3)+0.05*step(0.85,lh(floor(wp*0.6))),t*0.7);} // trampled earth and rubble at the wall's foot
+    if(dWall<10.&&dW>2.){float t=1.-smoothstep(2.,10.,dWall);c=mix(c,vec3(0.5,0.45,0.37)*miniatureDetail(3.,wp/3.)*(0.8+0.3*n3)+0.05*step(0.85,lh(floor(wp*0.6)))*(1.-smoothstep(0.25,0.75,pixelM*0.6)),t*0.7);} // trampled earth and rubble at the wall's foot
     if(dB<15.&&dRd>0.8&&fieldA<0.5){ // yards about the houses, and kitchen gardens behind
       c=mix(c,vec3(0.5,0.44,0.34)*miniatureDetail(7.,wp/3.)*(0.85+0.3*n3),(1.-smoothstep(1.5,5.,dB))*0.6);
       float ga=lh(c1)*6.28;vec2 gu=vec2(cos(ga),sin(ga)),gq=vec2(dot(wp,gu)/5.5,dot(wp,vec2(-gu.y,gu.x))/13.); // a plot's rows have one heading
