@@ -37,7 +37,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // comparisons plus sparse seller/routing fixtures renew this review.
  // UI integration adds a read-only animal-sale tally and a herd-birth visual
  // callback; the exact native balance writer body and other claim sites match main.
- assert.equal(digest(source.slice(a,b)),"e101820869215359971e4630c3186aba7ce6e5e690908e9af7bdeadc2ab5c717");
+ // Fortified endpoint attachments now reject closed castle curtains; the route
+ // cache follows the clipped street graph. Quantity, title and journal writers
+ // are unchanged; fort-streets and frozen routing fixtures cover this change.
+ assert.equal(digest(source.slice(a,b)),"843a1d2fe9f8e8c900590fea452fe66742e9c15109555317f4ede4e01e6f45dd");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
  assert.equal(digest(outside),"b6af785544b4c3d96473709f28e75549117d2802975f12f47a3e5e2f45579e54");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);

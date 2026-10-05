@@ -1676,7 +1676,7 @@ function paidRoadAt(x,z){return onRoad(x,z,0,true);}
 function roadAccessClear(s,a,b){
   const n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)));for(let k=0;k<=n;k++){
     const x=lerp(a.x,b.x,k/n),z=lerp(a.z,b.z,k/n);
-    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z))return false;
+    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z)||fortRoadBlocked(s,x,z))return false;
   }return true;
 }
 // A service lane is planned once when its building or quay is laid out.
@@ -1854,7 +1854,19 @@ function wallKindAt(s,a){if(!s.wallKind)return 0;const n=s.wallKind.length,f=((a
 function fortCenter(c){return c.pos||c;}
 function fortPoint(s,c,a){const C=fortCenter(c),r=wallRadAt(c,a);return{x:C.x+Math.cos(a)*r,z:C.z+Math.sin(a)*r,a,r};}
 function fortCircuits(s){const out=[];if(s.wallRad)out.push(s);if(s.cas&&s.cas.outerWall&&!s.cas.outerWall.razed)out.push(s.cas.outerWall);const R=casRing(s);if(R&&!R.razed)out.push(R);if(s.motte&&!s.motte.razed)out.push(s.motte);return out;}
-function fortGateAngles(s,c){if(c!==s)return c.gates||[c.gateA??Math.atan2(s.pos.z-c.z,s.pos.x-c.x)];const key=(s.streets||[]).length+':'+(s.wallR|0);if(!s._gates||s._gatesK!==key){s._gates=wallGates(s);s._gatesK=key;}return s._gates;}
+function fortGateAngles(s,c){if(c!==s)return c.gates||[c.gateA??Math.atan2(s.pos.z-c.z,s.pos.x-c.x)];const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);if(!s._gates||s._gatesK!==key){s._gates=wallGates(s);s._gatesK=key;}return s._gates;}
+function fortRoadBlocked(s,x,z,pad=0){ // roads and walkers share the actual curtain and its authorised apertures
+  for(const c of fortCircuits(s)){if(c.razed||!c.wallRad)continue;const C=fortCenter(c),d=dist2d(x,z,C.x,C.z);if(d>(c.wallR||Math.max(...c.wallRad))+1.3+pad)continue;
+    const a=Math.atan2(z-C.z,x-C.x),r=wallRadAt(c,a);if(Math.abs(d-r)>1.3+pad||wallKindAt(c,a)===1||!wallBuilt(c,a)||wallDmgAt(c,a)>=0.98)continue;
+    const half=c===s?7.5:c===s.motte?1.2:2.1;
+    if(fortGateAngles(s,c).some(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))*r<half))continue;return true;}
+  return false;
+}
+function fortStreetRuns(s,st){ // clipped centre lines: a grid lane ends before a closed wall instead of implying a gate
+  if(!fortCircuits(s).length)return [st.pts];const runs=[],P=resample(st.pts,1.5);let run=[];
+  for(const p of P){if(fortRoadBlocked(s,p.x,p.z,(st.hw||2)+0.75)){if(run.length>1)runs.push(run);run=[];}else run.push(p);}
+  if(run.length>1)runs.push(run);return runs;
+}
 function fortBaileyShape(m,b){ // one continuous enceinte around courtyard, neck and mound; temporary survey points only
   const P=[],a=Math.atan2(m.z-b.z,m.x-b.x),u={x:Math.cos(a),z:Math.sin(a)},v={x:-u.z,z:u.x},r=b.courtR||30;
   for(let k=0;k<32;k++){const t=k/32*Math.PI*2;P.push({x:b.x+u.x*Math.cos(t)*r+v.x*Math.sin(t)*r,z:b.z+u.z*Math.cos(t)*r+v.z*Math.sin(t)*r});P.push({x:m.x+Math.cos(t)*(m.r+10),z:m.z+Math.sin(t)*(m.r+10)});}
@@ -1864,6 +1876,8 @@ function fortBaileyShape(m,b){ // one continuous enceinte around courtyard, neck
   lo.pop();hi.pop();const hull=lo.concat(hi),rad=new Float32Array(64);for(let k=0;k<rad.length;k++)rad[k]=rayPolyR(hull,b.x,b.z,k/rad.length*Math.PI*2)+0.8;return rad;}
 
 function fortPrepare(s){ // foundation or structural change only; no daily recount or duplicate castle damage total
+  s._sg=null; // a new curtain changes which street arms can meet
+  s._storageRouteSignature=null;
   const R=casRing(s),cs=s.cas,old=cs&&cs.dmg;
   const prep=(c,r,stone,h)=>{if(!c)return;c.wallR=c.wallRad?Math.max(...c.wallRad):r;c.walls=c.razed?0:stone?2:1;c.wallHeight=h;
     if(!c.wallRad&&!c.razed)c.wallRad=new Float32Array(32).fill(r);
@@ -2432,7 +2446,7 @@ function layoutSettlement(s){
       let best=null,bc=1e9;
       for(const d of[-0.3,-0.15,0,0.15,0.3]){
         const h2=hd+d,nx=x+Math.cos(h2)*8,nz=z+Math.sin(h2)*8;
-        if(!buildable(nx,nz)||inPlace(nx,nz,3))continue;
+        if(!buildable(nx,nz)||inPlace(nx,nz,3)||fortRoadBlocked(s,nx,nz,HW+2)||!roadAccessClear(s,{x,z},{x:nx,z:nz}))continue;
         if(s.wallRad&&(Math.sign(wallSide(nx,nz))!==Math.sign(wallSide(x,z))||Math.abs(wallSide(nx,nz))<8))continue;
         if(dist2d(nx,nz,C.x,C.z)>Rmax)continue;
         const cost=Math.abs(d)*0.6+Math.abs(hAt(nx,nz)-hAt(x,z))*0.5+rr()*0.15;
@@ -2793,7 +2807,7 @@ function layoutSettlement(s){
       return 0;},
     cut(a,b,dry){ // a new street cut straight through: what stands in its line comes down (never a church, castle, hall or the walls)
       const pts=resample([{x:a.x,z:a.z},{x:b.x,z:b.z}],5);
-      for(const q of pts){if(!cellOK(q.x,q.z))return null;if(s.wallRad&&Math.abs(wallSide(q.x,q.z))<8)return null;}
+      for(const q of pts){if(!cellOK(q.x,q.z)||fortRoadBlocked(s,q.x,q.z,HW+2))return null;if(s.wallRad&&Math.abs(wallSide(q.x,q.z))<8)return null;}
       const hit=[];for(const o of liveB())if(!o.removed){for(let k=1;k<pts.length;k++)if(segDist(o.x,o.z,pts[k-1],pts[k])<HW+Math.max(o.w,o.d)*0.45){hit.push(o);break;}}
       if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse','court'].includes(o.arch)))return null;
       if(dry)return {pts,hit};
@@ -3981,13 +3995,14 @@ function storageSource(s,g){const K=s.storage;if(g!=='grain'&&g!=='hay')return '
 function storageFacilities(s){if(commodityActive(s)||!s.storage&&globalThis.FURLONG_COMMODITY_BALANCES!==false){storageInit(s);return commodityFacilities(s);}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageInit(s),seen=new Set();for(const b of s.buildings||[]){const t=STORAGE_TYPES[b.arch];if(!t)continue;if(!b.storageId){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();b.storageId='building:'+K.next++;}const id=b.storageId;seen.add(id);const owner=b.title?.owner??b.ownerId;storageRegisterOwner(owner);let n=K.locations.get(id);if(!n)n=K.location(id,{building:b,x:b.x,z:b.z,...t,owner,public:b.storagePublic!==false});if(b.removed||b.state!=='sound'){K.destroy(id);continue;}const capacity=t.capacity*(1+0.5*(b.tier||0));if(!n.active||n.capacity!==capacity||n.x!==b.x||n.z!==b.z||n.owner!==owner||n.public!==(b.storagePublic!==false)||n.protection!==t.protection){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=K.locationState(n);Object.assign(n,{active:true,capacity,x:b.x,z:b.z,owner,public:b.storagePublic!==false,protection:t.protection});K.revision++;K.event('facility-state',null,0,{location:id,before,locationAfter:K.locationState(n)});}}
   for(const n of storageFacilityLocations(K))if(n.building&&!seen.has(n.id))K.destroy(n.id);return K;}
 
-function storageAccess(s,a,b){const d=dist2d(a.x,a.z,b.x,b.z),steps=Math.max(1,Math.ceil(d/5));if(typeof wallRadAt==='function'&&s.wallRad){const side=p=>dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x));if(side(a)*side(b)<0)return false;}for(let i=0;i<=steps;i++){const f=i/steps,x=a.x+(b.x-a.x)*f,z=a.z+(b.z-a.z)*f;if(typeof toCell==='function'&&W.water){const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj)||W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.35)return false;}if(typeof riverAt==='function'&&riverAt(x,z,0.5)||typeof lakeAt==='function'&&lakeAt(s,x,z,0.5))return false;}return true;}
+function storageAccess(s,a,b){const d=dist2d(a.x,a.z,b.x,b.z),fortified=typeof fortCircuits==='function'&&fortCircuits(s).length,steps=Math.max(1,Math.ceil(d/(fortified?1:5)));if(typeof wallRadAt==='function'&&s.wallRad){const side=p=>dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x));if(side(a)*side(b)<0)return false;}for(let i=0;i<=steps;i++){const f=i/steps,x=a.x+(b.x-a.x)*f,z=a.z+(b.z-a.z)*f;if(typeof toCell==='function'&&W.water){const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj)||W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.35)return false;}if(typeof riverAt==='function'&&riverAt(x,z,0.5)||typeof lakeAt==='function'&&lakeAt(s,x,z,0.5)||fortified&&fortRoadBlocked(s,x,z))return false;}return true;}
 // Reuse only within one synchronous, read-only site evaluation; never retain across world changes.
 const STORAGE_ROUTE_BATCHES=new WeakMap();
 function storageRouteBatch(s,fn){if(typeof fn!=='function')return {s,g:null,points:new Map(),paths:new Map()};if(STORAGE_ROUTE_BATCHES.has(s))return fn();STORAGE_ROUTE_BATCHES.set(s,storageRouteBatch(s));try{return fn();}finally{STORAGE_ROUTE_BATCHES.delete(s);}}
 function storageRoute(s,a,b,batch){
   if(s.siegeBy||s.quarantineUntil>day())return Infinity;
-  const signature=(s.streets||[]).map(st=>`${!!st.gone}:${!!st.hidden}:${st.pts?.length||0}`).join('|');
+  const fortified=typeof fortCircuits==='function'&&fortCircuits(s).length;
+  const signature=(s.streets||[]).map(st=>`${!!st.gone}:${!!st.hidden}:${st.pts?.length||0}`).join('|')+(fortified?':'+streetGraph(s).key:'');
   if(s._storageRouteSignature!==signature){s._storageRouteSignature=signature;s._storageGraph=streetGraph({...s,_sg:null,streets:(s.streets||[]).filter(st=>!st.gone&&!st.hidden)});}
   const g=s._storageGraph,C=batch?.s===s?batch:STORAGE_ROUTE_BATCHES.get(s);if(!g.N.length)return Infinity;
   if(C&&C.g!==g){C.g=g;C.points.clear();C.paths.clear();}
@@ -4297,15 +4312,16 @@ function renderTravellers(){
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
 /* ---------------- the town's streets as a walking graph, and the walkers who use it ---------------- */
 function streetGraph(s){ // nodes at the street points; streets that meet (or nearly) are joined
-  const key=(W.roads||[]).length+':'+(s.lake?1:0)+':'+(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0)*4+(st.hidden?1:0)+(st.gone?2:0),0);
+  const fortKey=fortCircuits(s).map(c=>[c.wallR,c.razed?1:0,Math.floor(wallProg(c)*100),c.wallDmg?wallDamage(c):0].join(',')).join(';');
+  const key=(W.roads||[]).length+':'+(s.lake?1:0)+':'+(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0)*4+(st.hidden?1:0)+(st.gone?2:0),0)+':'+fortKey+':'+(s._gateTrafficVersion||0);
   if(s._sg&&s._sg.key===key)return s._sg;
   const N=[],adj=[],H=new Map(),cell=6,hk=(x,z)=>Math.floor(x/cell)+','+Math.floor(z/cell);
   const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4&&roadAccessClear(s,N[i],{x,z}))return i;}
     const i=N.length;N.push({x,z,st});adj.push([]);const h=hk(x,z);(H.get(h)||H.set(h,[]).get(h)).push(i);return i;};
   const link=(a,b)=>{if(a===b||!roadAccessClear(s,N[a],N[b]))return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
   const ends=[];
-  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;const P=resample(st.pts,7);let prev=-1;
-    for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}
+  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;for(const run of fortStreetRuns(s,st)){const P=resample(run,7);let prev=-1;
+    for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}}
   for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd&&roadAccessClear(s,N[e],N[i])){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
   let root=-1,bd=90;for(let i=0;i<N.length;i++)if(!N[i].st.castlePath){const d=dist2d(N[i].x,N[i].z,s.pos.x,s.pos.z);if(d<bd&&roadAccessClear(s,s.pos,N[i])){root=i;bd=d;}}
   const todo=root<0?[]:[root];if(root>=0)N[root].access=true;for(let k=0;k<todo.length;k++)for(const [j]of adj[todo[k]])if(!N[j].access){N[j].access=true;todo.push(j);}
@@ -5276,7 +5292,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       }
       const pv=st.kind==='wallst'||st.kind==='quay'&&pr>0;
       const earth=st.castlePath&&typeof fortSurface==='function'?(x,z)=>fortSurface(s,st.earthwork==='bailey'?s.bailey:s.motte,x,z):null;
-      lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
+      for(const run of fortStreetRuns(s,st))lay(resample(run,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
     }
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
@@ -5287,7 +5303,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     if(G.roadJoins){scene.remove(G.roadJoins);G.roadJoins.geometry.dispose();G.roadJoins=null;}
     const lines=[];
     for(const r of W.roads)lines.push({P:resample(r.drawn||r.path,5),hw:(r.grade?4.8:4.2)*(0.45+0.55*(r.cond??1)),pv:!!r.grade&&(r.cond??1)>0.6}); // a neglected road narrows to a track
-    for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge'){const P=resample(st.pts,5);
+    for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')for(const run of fortStreetRuns(s,st)){const P=resample(run,5);
       lines.push({P,hw:st.hw,pv:st.kind==='wallst'||P.some(q=>dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr)});}}
     const H=makeHash(24);
     lines.forEach((l,li)=>{for(let k=0;k<l.P.length-1;k++){const a=l.P[k],b=l.P[k+1];H.add({x:(a.x+b.x)/2,z:(a.z+b.z)/2,a,b,li,k},dist2d(a.x,a.z,b.x,b.z)/2+l.hw);}});
@@ -6935,14 +6951,21 @@ function rebuildDetails(){
    at intervals, a gatehouse spans each gate, merlons crown stone walls. */
 function wallGates(s){
   const g=[],roads=[],c=s.pos,off=q=>dist2d(q.x,q.z,c.x,c.z)-wallRadAt(s,Math.atan2(q.z-c.z,q.x-c.x));
+  const frontage=new Map();for(const b of s.buildings||[])if(!b.removed&&b.st)frontage.set(b.st,(frontage.get(b.st)||0)+Math.max(1,b.hh?.length||0));
   let isRoad=false;
   const scan=p=>{for(let i=1;i<p.length;i++){
     const d0=off(p[i-1]),d1=off(p[i]);
     if(d0*d1<=0&&d0!==d1){const f=d0/(d0-d1);const x=lerp(p[i-1].x,p[i].x,f),z=lerp(p[i-1].z,p[i].z,f);
       const a=Math.atan2(z-c.z,x-c.x);const j=g.findIndex(o=>Math.abs(Math.atan2(Math.sin(a-o),Math.cos(a-o)))<=0.04);
       if(j<0){g.push(a);roads.push(isRoad);}else if(isRoad)roads[j]=true;}}};
-  for(const st of s.streets||[])if(!st.hidden&&st.kind!=='edge'){isRoad=st.kind==='road'||st.kind==='mstreet';scan(st.pts);}
+  // Through traffic warrants an entrance. A residential grid does not: its frontage must sustain heavy demand.
+  for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge'){
+    const homes=frontage.get(st)||0;
+    isRoad=st.kind==='road';if(isRoad||(st.traffic||0)>=Math.max(60,(s.pop||0)*0.08)||homes>=30)scan(st.pts);}
   isRoad=true;for(const r of W.roads)if(r.a===W.settlements.indexOf(s)||r.b===W.settlements.indexOf(s))scan(r.drawn||r.path); // where the road is drawn, so the gate stands on it
+  if(!g.length){ // one indispensable entrance, even for an isolated fort-town
+    const main=(s.streets||[]).filter(st=>!st.hidden&&!st.gone&&st.kind!=='edge').sort((a,b)=>(b.traffic||0)-(a.traffic||0)||(b.hw||0)-(a.hw||0));
+    for(const st of main){scan(st.pts);if(g.length){g.splice(1);roads.splice(1);break;}}}
   g.roads=roads;
   return g;
 }
@@ -6956,6 +6979,7 @@ function segOutside(p,q,C){ // the parts of segment p→q that lie outside circl
   if(t1>0)out.push([p,at(Math.min(1,t1))]);if(t2<1)out.push([at(Math.max(0,t2)),q]);return out;}
 function rebuildWalls(){
   if(VISUAL.defer('walls',()=>rebuildWalls()))return;
+  G.roadsDirty=true; // growth, repairs and gate decisions also change the visible street ends
   if(G.wallGrp){scene.remove(G.wallGrp);disposeTree(G.wallGrp);}
   const grp=new THREE.Group(),acc=newAcc(),acc2=newAcc(),ditch=newAcc(),inst={merlon:[],tower:[],cap:[],gate:[],stake:[],gtower:[],sqt:[],cgb:[]};
   const face=(V,n,col)=>{ // a planar polygon, wound to face along n
@@ -7135,7 +7159,7 @@ function rebuildWalls(){
     if(!(s.walls>0)||!s.wallRad)continue;
     const stone=s.walls>=2,wr=s.wallR||((s.coreR||70)+14),c=s.pos,bast=!!s.bastions;
     const H=bast?6.5:stone?7.5:5,T=bast?7:stone?2.6:1.3,col=bast?0x9c9282:stone?0xa59c8d:0x6e5334;
-    const gates=wallGates(s);
+    const gates=fortGateAngles(s,s);
     const N=Math.max(24,Math.round(wr*2*Math.PI/4));
     const at=a=>{const r=wallRadAt(s,a);return{x:c.x+Math.cos(a)*r,z:c.z+Math.sin(a)*r,r};};
     const ok=[];
@@ -7968,7 +7992,7 @@ function featWalls(s){
 }
 function featRoads(){
   for(const r of W.roads)featStroke(2,r.drawn||r.path,r.grade?4.8:4.2);
-  for(const s of W.settlements)for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')featStroke(2,st.pts,st.hw);
+  for(const s of W.settlements)for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')for(const run of fortStreetRuns(s,st))featStroke(2,run,st.hw);
 }
 function featTree(t,add){ // canopy-centred discs overlap into woodland without square cells around lone trees
   const r=Math.max(FPX*0.75,(t.k==='small'?1.8:3.2)*(t.s||1));
@@ -12723,12 +12747,16 @@ function tickStreets(){
   for(const s of W.settlements){if(s.kind==='village'||s.pop<250||!s._lay||day()<(s._cutT||0)||s.siegeBy)continue;
     const g=streetGraph(s);if(g.N.length<20)continue;const H=headsOf(s).filter(h=>h.bh&&!h.bh.removed);if(H.length<20)continue;
     const acc=new Map();const mk=(s.places||[]).find(p=>p.kind==='market');
+    const traffic=new Map(),sample=Math.min(70,H.length),weight=H.length/sample;
     for(let k=0;k<Math.min(70,H.length);k++){const h=H[Math.floor(frand()*H.length)],from=h.bh;
       for(const[to,per]of[[workOf(h,s),2],[mk||s.pos,0.5]]){const a=nearestNode(g,from.x,from.z),b=nearestNode(g,to.x,to.z);if(a<0||b<0||a===b)continue;
-        const P=streetPath(g,a,b);if(!P||P.length<3)continue;let len=0;for(let i=1;i<P.length;i++)len+=dist2d(g.N[P[i-1]].x,g.N[P[i-1]].z,g.N[P[i]].x,g.N[P[i]].z);
+        const P=streetPath(g,a,b);if(!P||P.length<3)continue;for(const st of new Set(P.map(i=>g.N[i].st)))if(st)traffic.set(st,(traffic.get(st)||0)+per*weight);
+        let len=0;for(let i=1;i<P.length;i++)len+=dist2d(g.N[P[i-1]].x,g.N[P[i-1]].z,g.N[P[i]].x,g.N[P[i]].z);
         const st=dist2d(g.N[a].x,g.N[a].z,g.N[b].x,g.N[b].z);if(st<50||len<st*1.6)continue;
         const key=Math.round(g.N[a].x/40)+','+Math.round(g.N[a].z/40)+'|'+Math.round(g.N[b].x/40)+','+Math.round(g.N[b].z/40);
         const o=acc.get(key)||{a,b,w:0};o.w=(o.w||0)+(len-st)*per;acc.set(key,o);}}
+    let changed=false;for(const st of s.streets||[]){const before=(st.traffic||0)>=Math.max(60,s.pop*0.08);st.traffic=traffic.get(st)||0;if(before!==(st.traffic>=Math.max(60,s.pop*0.08)))changed=true;}
+    if(changed){s._gateTrafficVersion=(s._gateTrafficVersion||0)+1;s._sg=null;G.wallsDirty=G.roadsDirty=true;}
     let worst=null;for(const o of acc.values())if(!worst||o.w>worst.w)worst=o;
     if(!worst||worst.w<200)continue; // (too small a detour to reckon)
     const A=g.N[worst.a],B=g.N[worst.b],plan=s._lay.live.cut(A,B,true);if(!plan){s._cutT=day()+360*3;continue;}
@@ -15052,7 +15080,7 @@ function animateWorld(dt,now){
   for(const m of[G.soldiers,G.soldierShields,G.soldierKit]){m.count=si2;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const m of[G.pennonPole,G.pennonFlag]){m.count=pn;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   for(const[st,g]of G.rams||[])if(!G._ramsSeen.has(st)){scene.remove(g);G.rams.delete(st);} // the siege is over: the ram is drawn off
-  {let dirty=false;for(const t of W.settlements){const k=(t.siegeBy&&t.wallRad?1:0)+(t.breachUntil>simDay?2:0)+4*Math.round(wallDamage(t)*12)+64*Math.round(castleDamage(t)*8)+1024*(t.wallBuild?1+Math.floor(wallProg(t)*16):0);let ck=k;for(const c of fortCircuits(t))if(c!==t)ck=ck*31+((c.breachUntil>simDay?1:0)+Math.round(wallDamage(c)*12)*2+(c.wallBuild?32+Math.floor(wallProg(c)*16):0));if(ck!==(t._gateK||0)){t._gateK=ck;dirty=true;}}if(dirty)rebuildWalls();} // gates shut when the enemy comes, and stand broken after a storm
+  {let dirty=false;for(const t of W.settlements){const k=(t.siegeBy&&t.wallRad?1:0)+(t.breachUntil>simDay?2:0)+4*Math.round(wallDamage(t)*12)+64*Math.round(castleDamage(t)*8)+1024*(t.wallBuild?1+Math.floor(wallProg(t)*16):0);let ck=k;for(const c of fortCircuits(t))if(c!==t)ck=ck*31+((c.breachUntil>simDay?1:0)+Math.round(wallDamage(c)*12)*2+(c.wallBuild?32+Math.floor(wallProg(c)*16):0));ck=ck*31+(t._gateTrafficVersion||0);if(ck!==(t._gateK||0)){t._gateK=ck;dirty=true;}}if(dirty)rebuildWalls();} // gates shut when the enemy comes, and stand broken after a storm
   for(const [camp,g] of G.campMeshes)placeMarker(camp,markerTex('camp',g2=>{badge(g2,'#3a2e28','#c0392b');g2.fillStyle='#e8dcc2';g2.font='bold 30px serif';g2.textAlign='center';g2.fillText('⚔',32,43);}),camp.x,hAt(camp.x,camp.z),camp.z,22);
   if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
     placeMarker(W.dragon,markerTex('dragon',g2=>{badge(g2,'#7a1f1f','#e8c247');g2.font='32px serif';g2.textAlign='center';g2.fillText('🐉',32,44);}),vis?dm.position.x:W.dragon.lair.x,(vis?dm.position.y:W.dragon.lair.y)-20,vis?dm.position.z:W.dragon.lair.z,vis?30:20);}

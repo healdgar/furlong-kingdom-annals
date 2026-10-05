@@ -7,6 +7,7 @@
    --touch --width 390 --height 844 emulates a phone viewport on this host.
    --seasons checks seasonal production shaders and saves matched seasonal views.
    --world-visuals checks winter silhouettes, animal models and river contact.
+   --candidate-ref checks an existing commit, useful for reproducing a suspected baseline failure.
    --river-banks checks flat water and budgets the carved ground and recessed channel bed. */
 import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
@@ -52,7 +53,7 @@ if(fs.existsSync(path.join(OUT,'results.json')))throw new Error('choose a fresh 
 fs.mkdirSync(OUT,{recursive:true});
 const days=Number(args.days??720),worlds=String(args.seeds||'1001:sea,2002:land').split(',').map(s=>{const[seed,coast]=s.split(':');return{seed:Number(seed),coast};});
 if(!Number.isInteger(days)||days<0||worlds.some(w=>!Number.isInteger(w.seed)||!['sea','land'].includes(w.coast)))throw new Error('invalid days or seed:coast');
-const sources={candidate:fs.readFileSync(path.join(ROOT,'index.html'),'utf8')};
+const sources={candidate:args['candidate-ref']?execFileSync('git',['show',String(args['candidate-ref'])+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:10e6}):fs.readFileSync(path.join(ROOT,'index.html'),'utf8')};
 if(args.baseline)sources.baseline=execFileSync('git',['show',String(args.baseline)+':index.html'],{cwd:ROOT,encoding:'utf8',maxBuffer:10e6});
 const run={sourceSHA256:Object.fromEntries(Object.entries(sources).map(([k,s])=>[k,createHash('sha256').update(s).digest('hex')])),args,startedUTC:new Date().toISOString(),node:process.version};
 fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(run,null,2));
