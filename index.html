@@ -4555,9 +4555,9 @@ float surfaceLine(float p,float width){
   float d=abs(fract(p-0.5)-0.5);
   return (1.-smoothstep(width-aa,width+aa,d))*(1.-smoothstep(0.25,0.7,aa));
 }
-vec3 miniatureDetail(float cell,vec2 uv){
+vec3 miniatureSample(float cell,vec2 uv,vec2 dx,vec2 dy){
   vec2 tile=vec2(mod(cell,4.),3.-floor(cell/4.));
-  float footprint=surfaceFootprint(uv);
+  float footprint=max(length(dx),length(dy));
   // Clamp within this cell at BOTH trilinear levels. Different materials never bleed.
   float lod=max(0.,log2(max(1.,footprint*124.)));
   float inset=min(0.5,exp2(lod+1.)/256.);
@@ -4567,7 +4567,7 @@ vec3 miniatureDetail(float cell,vec2 uv){
   for(int i=0;i<16;i++)if(abs(cell-float(i))<0.5)mean=uMiniatureMean[i]; // WebGL1 permits constant loop indices
   #ifdef SURFACE_TEXTURE_GRAD
   // Differentiate the unwrapped UV, preventing false coarse LODs at every tile seam.
-  vec3 detail=texture2DGradEXT(uMiniatureAtlas,q,dFdx(uv)*(124./512.),dFdy(uv)*(124./512.)).rgb/mean;
+  vec3 detail=texture2DGradEXT(uMiniatureAtlas,q,dx*(124./512.),dy*(124./512.)).rgb/mean;
   float fade=uMiniatureReady*(1.-smoothstep(0.06,0.125,footprint));
   #else
   vec3 detail=texture2D(uMiniatureAtlas,q).rgb/mean;
@@ -4577,6 +4577,13 @@ vec3 miniatureDetail(float cell,vec2 uv){
   if(abs(cell-4.)<0.5)detail=mix(vec3(1.),detail,0.35);
   if(abs(cell-8.)<0.5)detail=mix(vec3(1.),detail,0.4); // keep straw fibres subordinate to the roof form
   return mix(vec3(1.),clamp(detail,vec3(0.32),vec3(2.2)),fade);
+}
+vec3 miniatureDetail(float cell,vec2 uv){
+#ifdef SURFACE_DERIVATIVES
+  return miniatureSample(cell,uv,dFdx(uv),dFdy(uv));
+#else
+  return miniatureSample(cell,uv,vec2(0.35,0.),vec2(0.,0.35));
+#endif
 }
 `;
 function surfaceDetail(mat){
@@ -7088,9 +7095,26 @@ ${SURFACE_GLSL}
 float lh(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float lnoise(vec2 p){return surfaceFilteredNoise(p);}
 vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
+float gardenHeading(vec2 fu){
+  // Bearings are categorical. Select the nearest contributing garden texel;
+  // interpolate coverage separately, never an angle or the empty neighbours' zero.
+  float px=uFeaturePixel/uSize;vec2 p=fu/px-0.5,base=floor(p),f=fract(p);
+  vec4 a=texture2D(uFeat2,(base+0.5)*px),b=texture2D(uFeat2,(base+vec2(1.5,0.5))*px);
+  vec4 c=texture2D(uFeat2,(base+vec2(0.5,1.5))*px),d=texture2D(uFeat2,(base+1.5)*px);
+  float weight=a.b*(1.-f.x)*(1.-f.y),angle=a.a,w=b.b*f.x*(1.-f.y);
+  if(w>weight){weight=w;angle=b.a;}w=c.b*(1.-f.x)*f.y;
+  if(w>weight){weight=w;angle=c.a;}w=d.b*f.x*f.y;if(w>weight)angle=d.a;
+  return angle*3.14159265;
+}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
 {
   vec2 wp=vWP.xz;float fieldA=0.,pixelM=surfaceFootprint(wp);
+  // Compute derivatives before conditional terrain/garden branches.
+  #ifdef SURFACE_DERIVATIVES
+  vec2 groundDX=dFdx(wp),groundDY=dFdy(wp);
+  #else
+  vec2 groundDX=vec2(0.35,0.),groundDY=vec2(0.,0.35);
+  #endif
   float nz=lnoise(wp*0.09);
   vec2 fp=(wp+uSize*0.5)/uFG; // the field edges drawn exactly where the fences, tracks and the survey put them (a wander here parted the hedge from its fence)
   vec2 fc=floor(fp);float d1=1e9,d2=1e9;vec2 s1=vec2(0.),s2=vec2(0.),c1=vec2(0.),c2=vec2(0.);
@@ -7187,16 +7211,19 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       c=mix(c,vec3(0.5,0.44,0.34)*miniatureDetail(7.,wp/3.)*(0.85+0.3*n3),(1.-smoothstep(1.5,5.,dB))*0.6);
       float ga=lh(c1)*6.28;vec2 gu=vec2(cos(ga),sin(ga)),gq=vec2(dot(wp,gu)/5.5,dot(wp,vec2(-gu.y,gu.x))/13.); // a plot's rows have one heading
       vec2 gc=floor(gq),gf=fract(gq);float hh=lh(gc);
-      if(dB>4.&&hh>0.45){ // oblong beds, dug in rows
+      if(dB>4.&&hh>0.45&&T2.b<0.15){ // spare yards only: parcel gardens have their own rows
         float edge=smoothstep(0.02,0.08,min(min(gf.x,1.-gf.x),min(gf.y,1.-gf.y)));
         float rowMix=0.5+0.5*cos(gq.y*13./1.3*6.283185)*(1.-smoothstep(0.25,0.8,pixelM));
         vec3 bed=mix(vec3(0.3,0.44,0.2),vec3(0.44,0.35,0.24),rowMix)*(0.92+0.16*hh);
         c=mix(c,bed*miniatureDetail(1.,vec2(dot(wp,gu),dot(wp,vec2(-gu.y,gu.x)))/4.),edge*0.24*(1.-smoothstep(10.,14.,dB))*(1.-smoothstep(0.15,0.5,pixelM)));}
     }
     if(T2.b>0.15&&dB>4.&&dRd>3.&&dW>8.){ // kitchen plots follow the long edge of their actual property parcel
-      float angle=T2.a*3.14159265;vec2 axis=vec2(cos(angle),sin(angle)),cross=vec2(-axis.y,axis.x);
+      float angle=gardenHeading(fu);vec2 axis=vec2(cos(angle),sin(angle)),cross=vec2(-axis.y,axis.x);
       vec2 gardenUV=vec2(dot(wp,cross)/4.,dot(wp,axis)/6.);
-      vec3 earth=vec3(0.38,0.31,0.21)*miniatureDetail(1.,gardenUV);
+      // The selected bearing must not enter UV derivatives at parcel boundaries.
+      vec2 gardenDX=vec2(dot(groundDX,cross)/4.,dot(groundDX,axis)/6.);
+      vec2 gardenDY=vec2(dot(groundDY,cross)/4.,dot(groundDY,axis)/6.);
+      vec3 earth=vec3(0.38,0.31,0.21)*miniatureSample(1.,gardenUV,gardenDX,gardenDY);
       float garden=smoothstep(0.15,0.8,T2.b)*smoothstep(4.,9.,dB)*smoothstep(3.,6.,dRd)*smoothstep(8.,13.,dW);
       c=mix(c,earth,garden*0.9);
     }

@@ -81,6 +81,28 @@ const HISTORY=`(()=>({day:W.clock.day,treasury:W.treasury,monarch:W.monarch.id,h
     buildings:s.buildings.map(b=>({arch:b.arch,tier:b.tier,state:b.state,x:b.x,z:b.z,w:b.w,d:b.d,h:b.h,removed:b.removed,ch:b.ch})),
     folk:s.folk.map(p=>({id:p.id,age:p.age,w:p.w,alive:p.alive,home:p.home?.idx}))})),errors:errN}))()`;
 
+
+// Run the production bearing selector on a tiny atlas containing unlike adjoining plots.
+function gardenBearingCheck(){
+  const gl=renderer.getContext(),program=renderer.properties.get(G.terrain.material).currentProgram;
+  const source=gl.getShaderSource(program.fragmentShader),start=source.indexOf('float gardenHeading(');
+  if(start<0)throw Error('Missing garden bearing shader');
+  const helper=source.slice(start,source.indexOf('\n}',start)+2);
+  const tex=new THREE.DataTexture(new Uint8Array([0,0,255,51,0,0,255,204,0,0,0,0,0,0,0,0]),2,2,THREE.RGBAFormat);
+  tex.magFilter=tex.minFilter=THREE.LinearFilter;tex.needsUpdate=true;
+  const material=new THREE.ShaderMaterial({uniforms:{uFeat2:{value:tex},uFeaturePixel:{value:1},uSize:{value:2}},
+    vertexShader:'varying vec2 vUV;void main(){vUV=uv;gl_Position=vec4(position.xy,0.,1.);}',
+    fragmentShader:'uniform sampler2D uFeat2;uniform float uFeaturePixel,uSize;varying vec2 vUV;'+helper+'\nvoid main(){gl_FragColor=vec4(gardenHeading(vUV)/3.14159265,0.,0.,1.);}'});
+  const geometry=new THREE.PlaneGeometry(2,2),testScene=new THREE.Scene();testScene.add(new THREE.Mesh(geometry,material));
+  const target=new THREE.WebGLRenderTarget(64,64),old=renderer.getRenderTarget(),pixels=new Uint8Array(64*64*4);
+  try{
+    renderer.setRenderTarget(target);renderer.render(testScene,new THREE.Camera());renderer.readRenderTargetPixels(target,0,0,64,64,pixels);
+    const counts={empty:0,first:0,second:0,interpolated:0};
+    for(let i=0;i<pixels.length;i+=4){const r=pixels[i];if(r<=1)counts.empty++;else if(Math.abs(r-51)<=1)counts.first++;else if(Math.abs(r-204)<=1)counts.second++;else counts.interpolated++;}
+    return{...counts,valid:counts.first>0&&counts.second>0&&counts.interpolated===0};
+  }finally{renderer.setRenderTarget(old);geometry.dispose();material.dispose();tex.dispose();target.dispose();}
+}
+
 async function check(which,w){
   const {c,kill}=await launch(),id=which+'-'+w.seed+'-'+w.coast,errors=[];
   try{
@@ -96,18 +118,19 @@ async function check(which,w){
     if(!ready)throw new Error('boot timeout');
     await ev(c,"(async()=>{if(!await G.miniatureReady||!await G.waterRippleReady)throw Error('material images failed to load')})()");
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
-    const views={capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
+    const gardenView="(()=>{let best=-Infinity,q;for(let i=0;i<G.feat.d2.length;i+=4){if(G.feat.d2[i+2]<255)continue;const k=i/4,x=(k%FR+0.5)*FPX-SIZE/2,z=(Math.floor(k/FR)+0.5)*FPX-SIZE/2,d=Math.hypot(x-W.capital.pos.x,z-W.capital.pos.z);if(d>400)continue;const clearance=Math.min(G.feat.d2[i]/4,G.feat.d1[i]/4,G.feat.d1[i+2]/4),score=clearance-d*0.025;if(score>best){best=score;q=[x,z,38,G.feat.d2[i+3]/255*Math.PI+0.3,0.5];}}if(!q)throw Error('No visible capital garden');return q;})()";
+    const views={garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
     const result={id,views:{},errors};
     for(const[v,expr]of Object.entries(views)){
-      await ev(c,`(()=>{const q=${expr};flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);scene.updateMatrixWorld(true);renderer.render(scene,camera);})()`);
+      await ev(c,`(()=>{const q=${expr};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);scene.updateMatrixWorld(true);renderer.render(scene,camera);})()`);
       result.views[v]=await ev(c,INSPECT);
       const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'.png'),Buffer.from(shot.data,'base64'));
       // Matched quarter-pixel pans expose texture shimmer without advancing world time.
-      if(['town','district','farmland'].includes(v))for(let step=1;step<=3;step++){
-        await ev(c,`(()=>{const q=${expr};flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);
+      if(['garden','gardenMiddle','gardenFar','town','district','farmland'].includes(v))for(let step=1;step<=3;step++){
+        await ev(c,`(()=>{const q=${expr};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);
           const right=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),metres=2*cam.cur.dist*Math.tan(camera.fov*Math.PI/360)/renderer.domElement.height;
           cam.cur.focus.addScaledVector(right,metres*${step}*0.25);updateCamera(0,0);animateWorld(0,0);renderer.render(scene,camera);})()`);
         const pan=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'-pan'+step+'.png'),Buffer.from(pan.data,'base64'));
@@ -122,6 +145,7 @@ async function check(which,w){
         queries.forEach(q=>gl.deleteQuery(q));return{submitMs:a.reduce((a,b)=>a+b)/a.length,gpuMs:gpu.length?gpu.reduce((a,b)=>a+b)/gpu.length:null};})()`);
     }
     if(which==='candidate'){
+      result.gardenBearing=await ev(c,`(${gardenBearingCheck.toString()})()`);
       result.cameraCorrect=Object.values(result.views).every(v=>v.terrainEye&&v.terrainEye.every((x,i)=>Math.abs(x-v.camera[i])<0.001));
       result.liveRebuild=await ev(c,`(()=>{
         const b=W.capital.buildings.find(b=>b.arch==='house'),state=b.state,meshCount=G.roofs.count,colour=G.roofs.geometry.attributes.aGableColor.array.slice(0,meshCount*3);
@@ -158,7 +182,7 @@ for(const w of worlds)for(const which of Object.keys(sources)){console.log('Chec
 const checks=[];
 for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.seed+'-'+w.coast),baseline=results.find(r=>r.id==='baseline-'+w.seed+'-'+w.coast);
   const ok=r=>r&&!r.failed&&!r.errors.length&&r.simErrors===0&&Object.values(r.views).every(v=>v.linked&&v.errors===0);
-  const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
+  const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
     row.sameGeometry=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].geometryTriangles===baseline.views[v].geometryTriangles);
     row.sameDrawCalls=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].render.calls===baseline.views[v].render.calls);
