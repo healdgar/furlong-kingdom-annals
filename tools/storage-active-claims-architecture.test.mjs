@@ -35,8 +35,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Lazy allocation preflight and phase-local warehouse/spoilage reuse add no
  // commodity membership index or journal event. Exact b264e07 core and settlement
  // comparisons plus sparse seller/routing fixtures renew this review.
+ // UI integration adds a read-only animal-sale tally and a herd-birth visual
+ // callback; the exact native balance writer body and other claim sites match main.
  assert.equal(digest(source.slice(a,b)),"e101820869215359971e4630c3186aba7ce6e5e690908e9af7bdeadc2ab5c717");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
- assert.equal(digest(outside),"3e47927aacdd0447aceabf03c905b6fb20038bbf5437e69e9aacf2b92e3887f0");
+ assert.equal(digest(outside),"b6af785544b4c3d96473709f28e75549117d2802975f12f47a3e5e2f45579e54");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

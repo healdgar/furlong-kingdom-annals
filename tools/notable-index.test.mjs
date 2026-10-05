@@ -34,6 +34,8 @@ function key(n){return n?.type==='MemberExpression'?(n.computed?n.property.type=
 function visit(n){if(!n?.type)return;if(['AssignmentExpression','UpdateExpression'].includes(n.type)&&key(n.left||n.argument)==='id')ids.push(program.slice(n.start,n.end));if((n.type==='AssignmentExpression'||n.type==='UpdateExpression'||n.type==='UnaryExpression'&&n.operator==='delete')&&['alive','_just','notables'].includes(key(n.left||n.argument)))writes.push(program.slice(n.start,n.end));if(n.type==='CallExpression'&&key(n.callee?.object)==='notables'&&['push','pop','shift','unshift','splice','sort','reverse','fill','copyWithin'].includes(key(n.callee)))writes.push(program.slice(n.start,n.end));for(const v of Object.values(n))if(Array.isArray(v))v.forEach(visit);else if(v?.type)visit(v);}
 visit(ast);assert.deepEqual(writes,['n.alive=alive','delete n._just','delete n._just','W.notables.push(n)','a._just=b._just=true','b._just=true']);
 assert.match(source.slice(source.indexOf('async function generateWorld('),source.indexOf("await progress('Raising")),/notableIndexRebuild\(\)/);assert.match(fn(source,'killNotable'),/notableSetAlive\(n,false\)/);
-assert.deepEqual(ids,["state.id=q.storageProjectId","el.id='terrlegend'","el.id='terrlegend'","el.id='terrlegend'","h.id=next.id+'-title'","el.id='mapview'","this.id=id","o.id=auto?'auto:'+o.hash:'s'+Date.now()","el.id='advchat'"]);
+// These two assignments set IDs on newly-created event DOM nodes; retain them
+// as exact allowlisted sites alongside the existing non-notable ID writers.
+assert.deepEqual(ids,["state.id=q.storageProjectId","el.id='terrlegend'","el.id='terrlegend'","el.id='terrlegend'","events.id='eventpanel'","bubble.id='eventbubble'","h.id=next.id+'-title'","el.id='mapview'","this.id=id","o.id=auto?'auto:'+o.hash:'s'+Date.now()","el.id='advchat'"]);
 assert.equal((source.match(/W\.notables\s*=/g)||[]).length,0);
 });
