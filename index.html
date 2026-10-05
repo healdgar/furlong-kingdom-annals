@@ -401,7 +401,7 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 02:14 UTC · indexed tracks and exposed storage</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-05 03:09 UTC · indexed inventories and trade</div></div>
 
 <div id="hud">
   <span class="chip" id="datechip">—</span>
@@ -2852,7 +2852,7 @@ function seedHousehold(s,si,young){ // a family arriving, or already there when 
   const c=s.cult||W.crownCult,TL=tradesOf(s),fa=18+frand()*(young?12:28);
   let tr=TL[Math.floor(frand()*TL.length)],bi=tradeIncome(s,tr)*(0.8+0.4*frand());
   for(let k=0;k<3;k++){const t=TL[Math.floor(frand()*TL.length)],v=tradeIncome(s,t)*(0.8+0.4*frand());if(v>bi){bi=v;tr=t;}} /* the family weighs the openings it hears of and takes the one that keeps a household best: a fourth smith where three want for work is not one */
-  if(s._tc&&s._tcY===year())s._tc[tr]=(s._tc[tr]||0)+1;
+  if(s._tc&&s._tcY===year()){s._tc[tr]=(s._tc[tr]||0)+1;marketTradeIndexRecord(W,s,s._tc);}
   const hu=mkPerson(s,si,{sx:'m',b:day()-fa*360,tr});hu.fam=newFamily(s,si,hu);hu.w=(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360*(2+frand()*2); // what a family brings with it: savings counted at the world's prices
   const wi=mkPerson(s,si,{sx:'f',b:day()-(fa-2+(frand()-0.5)*8)*360,tr});
   {const o=s.folk.length>6&&frand()<0.5?s.folk[Math.floor(frand()*(s.folk.length-2))]:null;wi.fam=o&&o.fam>=0?o.fam:newFamily(s,si,wi);} // a wife from a family already in the place, or new to it
@@ -2997,7 +2997,7 @@ function householdAccount(p){if(!p||p.merc)return null;if(p.household)return p;i
   const q=oldHouseholdHead(p),h=q._hh||newHousehold(q);bindHousehold(q,h);if(p!==q)bindHousehold(p,h);return h;}
 function householdHead(p){const h=householdAccount(p);return h&&h.head&&!h.head.dead?h.head:p;}
 function accountOwner(x){return x&&x.gn!==undefined&&!x.merc?householdAccount(x):x;}
-function householdHeadsChanged(s){s._householdsD=-1;s._hdC=null;s._tcY=-1;s._hbC=null;}
+function householdHeadsChanged(s){if(typeof marketTradeIndexInvalidate==='function')marketTradeIndexInvalidate();s._householdsD=-1;s._hdC=null;s._tcY=-1;s._hbC=null;}
 function householdsOf(s){if(s._householdsD===day()&&s._householdsN===(s.folk||[]).length)return s.households||[];
   if(s._householdsD>=0&&s._householdsV===(W._folkRevision||0)&&s._householdsN===(s.folk||[]).length){s._householdsD=day();return s.households||[];}
   const H=new Set();for(const p of s.folk||[])if(!p.dead){const h=householdAccount(p);if(h)H.add(h);}
@@ -3122,15 +3122,24 @@ function storageArithmeticImport(A,B,g){if(A===B||!A.roundoff.has(g))return {};c
 function storageArithmeticEmpty(A,B,g){const data=storageArithmeticImport(A,B,g);if(data.arithmeticProvenance)B.event('arithmetic-provenance',null,0,{good:g,origin:A.realmId??null,...data});}
 // Indexed selections preserve canonical lot insertion order after membership reinsertion.
 const STORAGE_LOT_ORDER=new WeakMap();
+// Composite membership is rebuildable scratch state; owner Sets retain custody order.
+const STORAGE_OWNER_GOODS=new WeakMap(),STORAGE_LOT_MAP_GET=Map.prototype.get,STORAGE_LOT_SET_ITERATOR=Set.prototype[Symbol.iterator];
+function storageOwnerGoodsInit(K){STORAGE_OWNER_GOODS.set(K,{lots:K.lots,owners:K.byOwner,goods:K.byGood,groups:new Map(),members:new Map(),valid:true});}
+function storageOwnerGoodsIndex(K){const C=STORAGE_OWNER_GOODS.get(K),A=K.lots,B=K.byOwner,D=K.byGood;return C?.valid&&C.lots===A&&C.owners===B&&C.goods===D&&Object.getPrototypeOf(A)===Map.prototype&&A.get===STORAGE_LOT_MAP_GET&&Object.getPrototypeOf(B)===Map.prototype&&B.get===STORAGE_LOT_MAP_GET&&Object.getPrototypeOf(D)===Map.prototype&&D.get===STORAGE_LOT_MAP_GET&&Set.prototype[Symbol.iterator]===STORAGE_LOT_SET_ITERATOR?C:null;}
+function storageOwnerGoodsAdd(K,l){const C=STORAGE_OWNER_GOODS.get(K);if(!C?.valid)return;let M=C.groups.get(l.owner);if(!M)C.groups.set(l.owner,M=new Map());let ids=M.get(l.good);if(!ids)M.set(l.good,ids=new Set());if(!ids.size){let owners=C.members.get(l.good);if(!owners)C.members.set(l.good,owners=new Map());owners.set(l.owner,ids);}ids.add(l.id);}
+function storageOwnerGoodsDelete(K,l){const C=STORAGE_OWNER_GOODS.get(K),ids=C?.groups.get(l.owner)?.get(l.good);if(!ids)return;ids.delete(l.id);if(!ids.size)C.members.get(l.good)?.delete(l.owner);}
+function storageOwnerGoodIds(K,owner,g){const C=storageOwnerGoodsIndex(K);return C?C.groups.get(owner)?.get(g)||[]:K.byOwner.get(owner)||[];}
+function storageOwnerGoodsInvalidate(K){const C=STORAGE_OWNER_GOODS.get(K);if(C)C.valid=false;}
+function storageOwnerGoodsAdopt(K){storageOwnerGoodsInit(K);const C=storageOwnerGoodsIndex(K);if(!C)return false;for(const[owner,ids]of K.byOwner){if(Object.getPrototypeOf(ids)!==Set.prototype||ids[Symbol.iterator]!==STORAGE_LOT_SET_ITERATOR){storageOwnerGoodsInvalidate(K);return false;}for(const id of ids){const l=K.lots.get(id);if(l&&l.owner===owner)storageOwnerGoodsAdd(K,l);}}return true;}
 // A household's inventoried lot can prove a small consumption request is backed.
 // A single non-transit lot suffices without regrouping floating-point additions.
 // Full reads and exceptional requests retain the original town-total calculation.
 // Restore its cache if consumption makes no physical mutation; dirty cancels it.
 const STORAGE_BOUND_READERS=new WeakMap(),STORAGE_BOUND_TOTALS=new WeakMap();
-function storageInventoryStock(s,who,g,claim,minimum){const K=s.storage,C=STORAGE_BOUND_READERS.get(s.stores)?.get(g);if(!(minimum>0)||!Number.isFinite(minimum)||!C||C.K!==K||C.total!==STORAGE_INVENTORY_TOTAL||C.total!==K.total||Object.getOwnPropertyDescriptor(s.stores,g)?.get!==C.get||K.totals.has(g))return s.stores[g]||0;const owner=accountOwner(who);for(const id of K.byOwner.get(owner)||[]){const l=K.lots.get(id);if(l&&l.owner===owner&&l.good===g&&(l.claimGood||g)===claim&&l.availability==='held'&&!l.pendingPurchase&&!K.locations.get(l.location)?.transit&&l.qty>=minimum){let pending=STORAGE_BOUND_TOTALS.get(K);if(!pending)STORAGE_BOUND_TOTALS.set(K,pending=new Set());pending.add(g);return minimum;}}return s.stores[g]||0;}
+function storageInventoryStock(s,who,g,claim,minimum){const K=s.storage,C=STORAGE_BOUND_READERS.get(s.stores)?.get(g);if(!(minimum>0)||!Number.isFinite(minimum)||!C||C.K!==K||C.total!==STORAGE_INVENTORY_TOTAL||C.total!==K.total||Object.getOwnPropertyDescriptor(s.stores,g)?.get!==C.get||K.totals.has(g))return s.stores[g]||0;const owner=accountOwner(who);for(const id of storageOwnerGoodIds(K,owner,g)){const l=K.lots.get(id);if(l&&l.owner===owner&&l.good===g&&(l.claimGood||g)===claim&&l.availability==='held'&&!l.pendingPurchase&&!K.locations.get(l.location)?.transit&&l.qty>=minimum){let pending=STORAGE_BOUND_TOTALS.get(K);if(!pending)STORAGE_BOUND_TOTALS.set(K,pending=new Set());pending.add(g);return minimum;}}return s.stores[g]||0;}
 function storageFinishBound(K,g){if(STORAGE_BOUND_TOTALS.get(K)?.has(g)){STORAGE_BOUND_TOTALS.get(K).delete(g);K.total(g);}}
 class StorageLedger {
-  constructor(){this.version=2;this.next=1;this.revision=0;this.locations=new Map();this.lots=new Map();this.events=[];this.day=0;this.totals=new Map();this.occupancy=new Map();this.byGood=new Map();this.byLocation=new Map();this.byOwner=new Map();this.byAvailability=new Map();this.roundoff=new Map();storageFacilityIndexInit(this);}
+  constructor(){this.version=2;this.next=1;this.revision=0;this.locations=new Map();this.lots=new Map();this.events=[];this.day=0;this.totals=new Map();this.occupancy=new Map();this.byGood=new Map();this.byLocation=new Map();this.byOwner=new Map();this.byAvailability=new Map();this.roundoff=new Map();storageFacilityIndexInit(this);storageOwnerGoodsInit(this);}
   rounding(g,operation,...inputs){const old=storageArithmeticState(this,g),origin=storageArithmeticOrigin(this);const magnitude=inputs.reduce((n,v)=>n+(Number.isFinite(v)?Math.abs(v):0),0),contribution=Number.EPSILON*magnitude*2;old.budget+=contribution;old.origins[origin]=(old.origins[origin]||0)+contribution;old.operations++;old.last={operation,inputs};this.roundoff.set(g,old);}
   lotState(l){return storageLotCapture(l);}
   captureLot(l){return storageLotHandle(l);}
@@ -3139,15 +3148,15 @@ class StorageLedger {
 
   event(cause,lot,qty,extra={}){const e={seq:(this.sequence=(this.sequence||0)+1),settlement:this.realmId??null,day:this.day,kind:'storage',cause,lot:lot?.id??null,owner:storageOwnerId(lot?.owner),location:lot?.location??null,good:lot?.good??null,availability:lot?.availability??null,qty,qtyAfter:lot?.qty??null,lotAfter:this.captureLot(lot),...extra};Object.freeze(e);STORAGE_CAPTURE_DATA.add(e);storageTitleEvent(this,e);if(typeof storageOutcome==='function')storageOutcome(e);else this.events.push(e);}
   location(id,data){storageRecordState(data,{building:b=>b?.storageId??null,owner:storageOwnerId});if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();let n=this.locations.get(id);if(!n){n={id,capacity:0,goods:null,protection:1,active:true,...data};storageFacilityLocationSet(this,id,n);this.revision++;this.event('location-created',null,0,{location:id,capacity:Number.isFinite(n.capacity)?n.capacity:null,exposed:!!n.exposed,x:Number.isFinite(n.x)?n.x:null,z:Number.isFinite(n.z)?n.z:null,goods:n.goods,locationAfter:this.locationState(n)});}return n;}
-  index(l){const order=STORAGE_LOT_ORDER.get(this);if(order&&!order.ids.has(l.id))order.ids.set(l.id,order.next++);for(const[M,k]of [[this.byGood,l.good],[this.byLocation,l.location],[this.byOwner,l.owner],[this.byAvailability,l.availability]]){let ids=M.get(k);if(!ids)M.set(k,ids=new Set());ids.add(l.id);}this.dirty(l);}
+  index(l){const order=STORAGE_LOT_ORDER.get(this);if(order&&!order.ids.has(l.id))order.ids.set(l.id,order.next++);for(const[M,k]of [[this.byGood,l.good],[this.byLocation,l.location],[this.byOwner,l.owner],[this.byAvailability,l.availability]]){let ids=M.get(k);if(!ids)M.set(k,ids=new Set());ids.add(l.id);}storageOwnerGoodsAdd(this,l);this.dirty(l);}
   dirty(l){STORAGE_BOUND_TOTALS.get(this)?.delete(l.good);this.totals.delete(l.good);this.occupancy.delete(l.location);}
-  unindex(l){STORAGE_LOT_ORDER.get(this)?.ids.delete(l.id);this.byGood.get(l.good)?.delete(l.id);this.byLocation.get(l.location)?.delete(l.id);this.byOwner.get(l.owner)?.delete(l.id);this.byAvailability.get(l.availability)?.delete(l.id);this.dirty(l);}
+  unindex(l){STORAGE_LOT_ORDER.get(this)?.ids.delete(l.id);this.byGood.get(l.good)?.delete(l.id);this.byLocation.get(l.location)?.delete(l.id);this.byOwner.get(l.owner)?.delete(l.id);this.byAvailability.get(l.availability)?.delete(l.id);storageOwnerGoodsDelete(this,l);this.dirty(l);}
   orderedLots(ids){if(!ids.length)return [];let order=STORAGE_LOT_ORDER.get(this);if(!order){order={ids:new Map(),next:0};for(const id of this.lots.keys())order.ids.set(id,order.next++);STORAGE_LOT_ORDER.set(this,order);}return ids.map(id=>this.lots.get(id)).filter(Boolean).sort((a,b)=>order.ids.get(a.id)-order.ids.get(b.id));}
-  matching(fields){const entries=Object.entries(fields);let ids;for(const[k,v]of entries){const bucket=this[{good:'byGood',location:'byLocation',owner:'byOwner',availability:'byAvailability'}[k]]?.get(v);if(!bucket?.size)return [];if(!ids||bucket.size<ids.size)ids=bucket;}if(!ids)throw new Error('Storage query requires an indexed field');const matches=[];for(const id of ids){const l=this.lots.get(id);if(l&&entries.every(([k,v])=>l[k]===v))matches.push(id);}return this.orderedLots(matches);}
+  matching(fields){const entries=Object.entries(fields),owner=Object.getOwnPropertyDescriptor(fields,'owner'),good=Object.getOwnPropertyDescriptor(fields,'good');let ids;if(owner&&'value'in owner&&good&&'value'in good&&storageOwnerGoodsIndex(this))ids=storageOwnerGoodIds(this,owner.value,good.value);for(const[k,v]of entries){const bucket=this[{good:'byGood',location:'byLocation',owner:'byOwner',availability:'byAvailability'}[k]]?.get(v);if(!bucket?.size)return [];if(!ids||bucket.size<ids.size)ids=bucket;}if(!ids)throw new Error('Storage query requires an indexed field');const matches=[];for(const id of ids){const l=this.lots.get(id);if(l&&entries.every(([k,v])=>l[k]===v))matches.push(id);}return this.orderedLots(matches);}
   exposedLots(){const ids=[];for(const[id,n]of storageExposedLocations(this))if(n.exposed)for(const lotId of this.byLocation.get(id)||[])ids.push(lotId);return this.orderedLots(ids);}
   relocate(l,id,availability=l.availability,cause='custody-move'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),from=l.location;this.byLocation.get(from)?.delete(l.id);this.occupancy.delete(from);l.location=id;if(l.availability!==availability){this.byAvailability.get(l.availability)?.delete(l.id);let A=this.byAvailability.get(availability);if(!A)this.byAvailability.set(availability,A=new Set());A.add(l.id);l.availability=availability;}let ids=this.byLocation.get(id);if(!ids)this.byLocation.set(id,ids=new Set());ids.add(l.id);this.dirty(l);this.revision++;this.event(cause,l,l.qty,{from,before});}
   compatible(a,b){const keys=l=>Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty');const A=keys(a),B=keys(b);return A.length===B.length&&A.every(k=>Object.prototype.hasOwnProperty.call(b,k)&&Object.is(a[k],b[k]));}
-  coalesce(g,eligible){const groups=new Map();for(const id of [...this.byGood.get(g)||[]]){const l=this.lots.get(id);if(!l||eligible&&!eligible(l))continue;let M=groups.get(l.owner);if(!M)groups.set(l.owner,M=new Map());const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(keys.some(k=>{if(typeof k!=='string')return true;const v=l[k],t=typeof v;return v!==null&&t!=='string'&&t!=='boolean'&&t!=='undefined'&&(t!=='number'||!Number.isFinite(v)||Object.is(v,-0));}))continue;const key=JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));const keep=M.get(key);if(!keep||!this.compatible(keep,l)){M.set(key,l);continue;}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),qty=l.qty;this.unindex(l);this.lots.delete(l.id);this.rounding(g,'merge',keep.qty,qty);keep.qty+=qty;this.dirty(keep);this.revision++;this.event('lot-merged',l,qty,{before,lotAfter:null,sourceLotAfter:this.captureLot(keep),into:keep.id});}}
+  coalesce(g,eligible,selected){const groups=new Map();for(const id of selected||[...this.byGood.get(g)||[]]){const l=this.lots.get(id);if(!l||eligible&&!eligible(l))continue;let M=groups.get(l.owner);if(!M)groups.set(l.owner,M=new Map());const keys=Reflect.ownKeys(l).filter(k=>k!=='id'&&k!=='qty'&&k!=='owner');if(keys.some(k=>{if(typeof k!=='string')return true;const v=l[k],t=typeof v;return v!==null&&t!=='string'&&t!=='boolean'&&t!=='undefined'&&(t!=='number'||!Number.isFinite(v)||Object.is(v,-0));}))continue;const key=JSON.stringify(keys.sort().map(k=>[k,typeof l[k],l[k]]));const keep=M.get(key);if(!keep||!this.compatible(keep,l)){M.set(key,l);continue;}if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const before=this.captureLot(l),qty=l.qty;this.unindex(l);this.lots.delete(l.id);this.rounding(g,'merge',keep.qty,qty);keep.qty+=qty;this.dirty(keep);this.revision++;this.event('lot-merged',l,qty,{before,lotAfter:null,sourceLotAfter:this.captureLot(keep),into:keep.id});}}
   volume(g){return STORAGE_GOODS[g]?.volume??1;}
   total(g){const c=this.totals.get(g);if(c!==undefined)return c;let q=0;for(const id of this.byGood.get(g)||[]){const l=this.lots.get(id);if(l&&!this.locations.get(l.location)?.transit)q+=l.qty;}this.totals.set(g,q);return q;}
   used(id){const c=this.occupancy.get(id);if(c!==undefined)return c;let q=0;for(const lotId of this.byLocation.get(id)||[]){const l=this.lots.get(lotId);if(l)q+=l.qty*this.volume(l.good);}this.occupancy.set(id,q);return q;}
@@ -3156,10 +3165,14 @@ class StorageLedger {
   split(l,qty){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(qty===l.qty)return l;if(!(qty>0&&qty<l.qty))storageInvariantFault('Invalid lot split');this.rounding(l.good,'split',l.qty,qty);l.qty-=qty;const n={...l,id:'lot:'+(this.realmId??'local')+':'+this.next++,qty};this.lots.set(n.id,n);this.dirty(l);this.index(n);this.revision++;this.event('lot-split',n,qty,{fromLot:l.id,sourceQtyAfter:l.qty,sourceLotAfter:this.captureLot(l)});return n;}
   move(l,id,qty=l.qty,cause='deposit'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const n=this.locations.get(id);if(!n)storageInvariantFault('Unknown custody destination');const q=Math.min(qty,l.qty,this.free(id,l.good));if(q>0){const part=this.split(l,q);this.relocate(part,id,part.availability,cause);}if(q<qty)this.event('intake-rejected',l,qty-q,{destination:id,reason:!n.active?'inactive':'capacity-or-good'});return q;}
   remove(l,qty,cause,extra){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();let detail;if(extra!==undefined){detail={before:this.captureLot(l)};for(const key of ['claimGood','titleBefore','titleAfter','legalQty'])if(Object.prototype.hasOwnProperty.call(extra,key))detail[key]=extra[key];}const q=Math.min(Math.max(0,qty),l.qty);if(q>0){this.rounding(l.good,'remove',l.qty,q);l.qty-=q;this.dirty(l);this.revision++;this.event(cause,l,q,detail);if(l.qty===0){this.unindex(l);this.lots.delete(l.id);}}return q;}
-  transfer(l,owner,qty=l.qty,availability=l.availability){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(owner===l.owner&&availability===l.availability&&qty===l.qty)return l;storageRegisterOwner(owner);const p=this.split(l,qty),before=this.captureLot(p),from=p.owner;this.byOwner.get(p.owner)?.delete(p.id);this.byAvailability.get(p.availability)?.delete(p.id);p.owner=owner;p.availability=availability;for(const[M,k]of [[this.byOwner,owner],[this.byAvailability,availability]]){let I=M.get(k);if(!I)M.set(k,I=new Set());I.add(p.id);}this.revision++;this.event('title-transfer',p,qty,{from:storageOwnerId(from),before});return p;}
+  transfer(l,owner,qty=l.qty,availability=l.availability){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(owner===l.owner&&availability===l.availability&&qty===l.qty)return l;storageRegisterOwner(owner);const p=this.split(l,qty),before=this.captureLot(p),from=p.owner;storageOwnerGoodsDelete(this,p);this.byOwner.get(p.owner)?.delete(p.id);this.byAvailability.get(p.availability)?.delete(p.id);p.owner=owner;p.availability=availability;for(const[M,k]of [[this.byOwner,owner],[this.byAvailability,availability]]){let I=M.get(k);if(!I)M.set(k,I=new Set());I.add(p.id);}storageOwnerGoodsAdd(this,p);this.revision++;this.event('title-transfer',p,qty,{from:storageOwnerId(from),before});return p;}
   destroy(id){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const n=this.locations.get(id);if(!n||!n.active)return;const before=this.locationState(n);n.active=false;this.event('location-destroyed',null,0,{location:id,before,locationAfter:this.locationState(n)});const yard=this.location('exposed:'+id,{x:n.x,z:n.z,capacity:Infinity,exposed:true,protection:4});for(const l of this.matching({location:id})){this.relocate(l,yard.id,l.availability,'facility-destroyed');}this.revision++;}
 }
 const STORAGE_INVENTORY_TOTAL=StorageLedger.prototype.total;
+const STORAGE_TITLE_NATIVE=['annotate','split','transfer','coalesce','index','unindex','dirty','event','remove','captureLot'].map(k=>[k,StorageLedger.prototype[k]]),STORAGE_TITLE_OUTCOME=typeof storageOutcome==='function'?storageOutcome:null,STORAGE_TITLE_ASSERT=typeof storageOutcomeAssert==='function'?storageOutcomeAssert:null;
+function storageTitleIncremental(K){if(!storageOwnerGoodsIndex(K)||(typeof storageOutcome==='function'?storageOutcome:null)!==STORAGE_TITLE_OUTCOME||(typeof storageOutcomeAssert==='function'?storageOutcomeAssert:null)!==STORAGE_TITLE_ASSERT||typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function')return false;for(const[k,v]of STORAGE_TITLE_NATIVE)if(K[k]!==v)return false;return true;}
+function storageTitleLotIds(K,g,skip){const C=storageOwnerGoodsIndex(K);if(!C||!skip.size)return [...K.byGood.get(g)||[]];const ids=[],limit=(K.byGood.get(g)?.size||0)/2;for(const[o,I]of C.members.get(g)||[])if(!skip.has(o)){if(ids.length+I.size>limit)return [...K.byGood.get(g)||[]];for(const id of I)ids.push(id);}return K.orderedLots(ids).map(l=>l.id);}
+
 function storageOwnerId(o){if(o==null)return 'unassigned';if(typeof o!=='object')return typeof o+':'+String(o);if(o.household)return 'household:'+o.id;const hi=W.houses?.indexOf(o);if(hi>=0)return 'house:'+hi;const si=W.settlements?.indexOf(o);if(si>=0)return 'settlement:'+si;if(o.gn!==undefined&&o.id!=null)return 'person:'+o.id;return o.storageOwnerId||'unregistered-account';}
 function storageRegisterOwner(o){if(o&&typeof o==='object'&&storageOwnerId(o)==='unregistered-account'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();o.storageOwnerId='account:'+(W._storageOwnerNext=(W._storageOwnerNext||0)+1);if(typeof storageOutcome==='function')storageOutcome({day:day(),kind:'storage',cause:'owner-registered',owner:o.storageOwnerId});}return storageOwnerId(o);}
 
@@ -3224,8 +3237,8 @@ function storageBindClaims(s,x){if(!s.storage||STORAGE_CLAIM_BINDINGS.has(x))ret
 function storageTitleDirty(s,g,token){if(!s.storage)return;const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C&&token!==STORAGE_CLAIM_DIRTY_TOKEN)C.fallback=true;const K=s.storage;if(!K.titleRevision)K.titleRevision=new Map();const physical=g==='char'?'timber':g;K.titleRevision.set(physical,(K.titleRevision.get(physical)||0)+1);}
 const STORAGE_CLAIM_DIRTY_DEFAULT=storageTitleDirty;
 function storageTitles(s,onlyGood){const K=s.storage;if(!K)return;for(const g of onlyGood?[onlyGood]:Object.keys(s.stores)){if(typeof BEASTS!=='undefined'&&BEASTS.includes(g))continue;const titleRevision=K.titleRevision?.get(g)||0;if(K.titleMatched?.get(g)===titleRevision)continue;const claims=[],lookup=new Map();for(const[o,x]of storageClaimOwners(s,g))for(const kind of ['held','sale'])for(const claimGood of g==='timber'&&kind==='held'?['timber','char']:[g]){const q=x[kind][claimGood]||0;if(q>0){const i=claims.length;claims.push({o,kind,claimGood,q});let m=lookup.get(o);if(!m)lookup.set(o,m=new Map());m.set(kind+':'+claimGood,i);}}
-  const remaining=claims.map(c=>c.q),pool=[],context=storageTitleGroups(K,g,claims),claimedTotal=claims.reduce((n,c)=>n+c.q,0);for(const o of context.skip)for(const e of context.groups.get(o).entries)remaining[e.i]=0;for(const id of [...K.byGood.get(g)||[]]){const l=K.lots.get(id);if(!l||K.locations.get(l.location)?.transit||context.skip.has(l.owner))continue;const group=context.groups.get(l.owner);if(group&&Object.prototype.hasOwnProperty.call(l,'pendingPurchase'))group.eligible=false;let i=lookup.get(l.owner)?.get(l.availability+':'+(l.claimGood||g));if(l.pendingPurchase)continue; /* Paid custody is completed only by an explicit credit, gift, consumption or cargo operation. */const keep=i!==undefined?Math.min(l.qty,remaining[i]):0;if(i!==undefined){remaining[i]-=keep;if(keep===l.qty)K.annotate(l,{},['pendingPurchase']);}if(keep<l.qty){if(group)group.eligible=false;const p=keep>0?K.split(l,l.qty-keep):l;K.transfer(p,null,p.qty,'unassigned');K.annotate(p,{},['claimGood','pendingPurchase']);pool.push(p);}}
-  let pi=0,acceptedRoundoff=0;claims.forEach((c,i)=>{let need=remaining[i];while(need>0&&pi<pool.length){const l=pool[pi],q=Math.min(need,l.qty),p=K.transfer(l,c.o,q,c.kind);K.annotate(p,{claimGood:c.claimGood});need-=q;if(p===l)pi++;}if(!(need>0)&&!(acceptedRoundoff>0))return;const tolerance=(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.max(Math.abs(K.total(g)),Math.abs(claimedTotal))*((K.byGood.get(g)?.size||0)+claims.length+1)*8;if(acceptedRoundoff+need>tolerance){K.event('unbacked-title',null,need,{owner:storageOwnerId(c.o),good:g,claimGood:c.claimGood,availability:c.kind});storageInvariantFault('Unbacked '+g+' title at '+s.name+' for '+storageOwnerId(c.o)+': '+need+' on day '+day()+'; physical '+K.total(g)+'; claims '+claims.reduce((n,c)=>n+c.q,0)+'; pending '+[...K.byGood.get(g)||[]].reduce((n,id)=>n+(K.lots.get(id)?.pendingPurchase?K.lots.get(id).qty:0),0));}if(need>0){acceptedRoundoff+=need;K.event('accounting-roundoff',null,need,{good:g,owner:storageOwnerId(c.o),claimGood:c.claimGood,tolerance,provenance:storagePlainData(K.roundoff.get(g)||null)});}});K.coalesce(g);storageTitleCertify(context,remaining);if(!K.titleMatched)K.titleMatched=new Map();K.titleMatched.set(g,titleRevision);}}
+  const remaining=claims.map(c=>c.q),pool=[],context=storageTitleGroups(K,g,claims),claimedTotal=claims.reduce((n,c)=>n+c.q,0),incremental=storageTitleIncremental(K);for(const o of context.skip)for(const e of context.groups.get(o).entries)remaining[e.i]=0;for(const id of incremental?storageTitleLotIds(K,g,context.skip):[...K.byGood.get(g)||[]]){const l=K.lots.get(id);if(!l||K.locations.get(l.location)?.transit||context.skip.has(l.owner))continue;const group=context.groups.get(l.owner);if(group&&Object.prototype.hasOwnProperty.call(l,'pendingPurchase'))group.eligible=false;let i=lookup.get(l.owner)?.get(l.availability+':'+(l.claimGood||g));if(l.pendingPurchase)continue; /* Paid custody is completed only by an explicit credit, gift, consumption or cargo operation. */const keep=i!==undefined?Math.min(l.qty,remaining[i]):0;if(i!==undefined){remaining[i]-=keep;if(keep===l.qty)K.annotate(l,{},['pendingPurchase']);}if(keep<l.qty){if(group)group.eligible=false;const p=keep>0?K.split(l,l.qty-keep):l;K.transfer(p,null,p.qty,'unassigned');K.annotate(p,{},['claimGood','pendingPurchase']);pool.push(p);}}
+  let pi=0,acceptedRoundoff=0;claims.forEach((c,i)=>{let need=remaining[i];while(need>0&&pi<pool.length){const l=pool[pi],q=Math.min(need,l.qty),p=K.transfer(l,c.o,q,c.kind);K.annotate(p,{claimGood:c.claimGood});need-=q;if(p===l)pi++;}if(!(need>0)&&!(acceptedRoundoff>0))return;const tolerance=(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.max(Math.abs(K.total(g)),Math.abs(claimedTotal))*((K.byGood.get(g)?.size||0)+claims.length+1)*8;if(acceptedRoundoff+need>tolerance){K.event('unbacked-title',null,need,{owner:storageOwnerId(c.o),good:g,claimGood:c.claimGood,availability:c.kind});storageInvariantFault('Unbacked '+g+' title at '+s.name+' for '+storageOwnerId(c.o)+': '+need+' on day '+day()+'; physical '+K.total(g)+'; claims '+claims.reduce((n,c)=>n+c.q,0)+'; pending '+[...K.byGood.get(g)||[]].reduce((n,id)=>n+(K.lots.get(id)?.pendingPurchase?K.lots.get(id).qty:0),0));}if(need>0){acceptedRoundoff+=need;K.event('accounting-roundoff',null,need,{good:g,owner:storageOwnerId(c.o),claimGood:c.claimGood,tolerance,provenance:storagePlainData(K.roundoff.get(g)||null)});}});K.coalesce(g,null,incremental?storageTitleLotIds(K,g,context.skip):undefined);storageTitleCertify(context,remaining);if(!K.titleMatched)K.titleMatched=new Map();K.titleMatched.set(g,titleRevision);}}
 
 // One collection-boundary loss, after compatible parts combine, never per inflow mutation.
 function storageHayRemnants(s,K){
@@ -3240,7 +3253,19 @@ function storageHayRemnants(s,K){
     const qty=l.qty,claim=l.claimGood||'hay',x=(s._owners||new Map()).get(l.owner),table=x?.[l.availability];let title;if(l.owner!=null&&table){const before=table[claim]||0;table[claim]=Math.max(0,before-qty);storageTitleKnownDirty(s,claim);title={claimGood:claim,titleBefore:before,titleAfter:table[claim],legalQty:before-table[claim]};}K.remove(l,qty,'vermin-remnant-loss',title||{});
   }
 }
-function storageTick(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageTick(s));if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageFacilities(s);K.day=day();storageTitles(s);storageHayRemnants(s,K);let work=800*Math.max(1,Math.floor((s.pop||0)/100));let moved=0,cost=0;const routeCache=new Map();for(const l of K.exposedLots()){const a=K.locations.get(l.location);if(!a?.exposed||!(l.qty>0)||l.good==='hay'&&l.qty<=0.001)continue;const candidates=[];for(const n of storageFacilityLocations(K)){if(!n.building||!n.active||!n.public&&n.owner!==l.owner||!(K.free(n.id,l.good)>0))continue;const key=a.id+'>'+n.id;let d=routeCache.get(key);if(d===undefined){d=storageRoute(s,a,n);routeCache.set(key,d);}if(Number.isFinite(d))candidates.push({n,d});}candidates.sort((a,b)=>a.d-b.d);for(const{n,d}of candidates){if(!(work>0))break;const payer=l.owner||lordAcct(s),unitCost=d*0.00002;const q=Math.min(l.qty,K.free(n.id,l.good),work/(20+d)/K.volume(l.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}const movedHere=K.move(l,n.id,q,'local-carriage');work-=movedHere*K.volume(l.good)*(20+d);moved+=movedHere;cost+=movedHere*d*0.00002;if(l.location!==a.id||!K.lots.has(l.id)||!l.qty)break;}}
+// Phase-local admission and exact distance ordering. Finite routes have no arbitrary cutoff.
+function storageCarriagePlan(K,routes=new Map()){return {revision:K.revision,index:storageFacilityIndex(K),routes,groups:new Map(),pools:new Map()};}
+function storageCarriagePlanCurrent(K,P){const C=storageFacilityIndex(K);if(!P||!C||!C.valid||P.index!==C){if(P){P.groups.clear();P.pools.clear();}return false;}if(P.revision!==K.revision){P.groups.clear();P.pools.clear();P.revision=K.revision;}return true;}
+function storageCarriageNested(M,a,b){let A=M.get(a);if(!A)M.set(a,A=new Map());let B=A.get(b);if(!B)A.set(b,B=new Map());return B;}
+function storageCarriageCandidates(s,K,a,l,P){
+  if(!storageCarriagePlanCurrent(K,P))return null;let pool=P.pools.get(l.good);if(!pool){pool={public:[],private:new Map()};let order=0;for(const n of storageFacilityLocations(K)){const position=order++;if(!n.building||!n.active||n.goods&&!n.goods.includes(l.good))continue;const e={n,order:position};if(n.public)pool.public.push(e);else{let list=pool.private.get(n.owner);if(!list)pool.private.set(n.owner,list=[]);list.push(e);}}P.pools.set(l.good,pool);}
+  const group=storageCarriageNested(P.groups,a.id,l.good),rank=list=>{const out=[];for(const e of list){if(!(K.free(e.n.id,l.good)>0))continue;const key=a.id+'>'+e.n.id;let d=P.routes.get(key);if(d===undefined){d=storageRoute(s,a,e.n);P.routes.set(key,d);}if(Number.isFinite(d))out.push({...e,d});}out.sort((x,y)=>x.d-y.d||x.order-y.order);return out;};
+  let owners=group.get('owners');if(!owners)group.set('owners',owners=new Map());if(owners.has(l.owner))return owners.get(l.owner);const privateList=l.owner===l.owner?pool.private.get(l.owner):undefined;if(!group.has('public')){const initial=rank([...pool.public,...(privateList||[])].sort((x,y)=>x.order-y.order));group.set('public',initial.filter(e=>e.n.public));if(privateList?.length){owners.set(l.owner,initial);return initial;}}if(!privateList?.length)return group.get('public');const out=[...group.get('public'),...rank(privateList)];out.sort((x,y)=>x.d-y.d||x.order-y.order);owners.set(l.owner,out);return out;
+}
+function storageCarriagePlanAfterMove(K,P,before,sourceQty,moved){if(!P)return;const ownChanges=moved>0?1+(moved<sourceQty?1:0):0;if(K.revision!==before+ownChanges){P.groups.clear();P.pools.clear();}P.revision=K.revision;}
+const STORAGE_CARRIAGE_NATIVE_ROUTE=storageRoute,STORAGE_CARRIAGE_NATIVE_ACCT=typeof acct==='function'?acct:null,STORAGE_CARRIAGE_NATIVE_WAGES=typeof wages==='function'?wages:null,STORAGE_CARRIAGE_NATIVE_MEANS=typeof means==='function'?means:null;
+function storageCarriageNative(K){return storageTitleIncremental(K)&&K.free===StorageLedger.prototype.free&&K.move===StorageLedger.prototype.move&&storageRoute===STORAGE_CARRIAGE_NATIVE_ROUTE&&(typeof acct==='function'?acct:null)===STORAGE_CARRIAGE_NATIVE_ACCT&&(typeof wages==='function'?wages:null)===STORAGE_CARRIAGE_NATIVE_WAGES&&(typeof means==='function'?means:null)===STORAGE_CARRIAGE_NATIVE_MEANS;}
+function storageTick(s){if(!STORAGE_ROUTE_BATCHES.has(s))return storageRouteBatch(s,()=>storageTick(s));if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const K=storageFacilities(s);K.day=day();storageTitles(s);storageHayRemnants(s,K);let work=800*Math.max(1,Math.floor((s.pop||0)/100));let moved=0,cost=0;const routeCache=new Map(),carriagePlan=storageCarriageNative(K)?storageCarriagePlan(K,routeCache):null;for(const l of K.exposedLots()){const a=K.locations.get(l.location);if(!a?.exposed||!(l.qty>0)||l.good==='hay'&&l.qty<=0.001)continue;let candidates=storageCarriageCandidates(s,K,a,l,carriagePlan);if(candidates===null){candidates=[];for(const n of storageFacilityLocations(K)){if(!n.building||!n.active||!n.public&&n.owner!==l.owner||!(K.free(n.id,l.good)>0))continue;const key=a.id+'>'+n.id;let d=routeCache.get(key);if(d===undefined){d=storageRoute(s,a,n);routeCache.set(key,d);}if(Number.isFinite(d))candidates.push({n,d});}candidates.sort((x,y)=>x.d-y.d);}for(const{n,d}of candidates){if(!(work>0))break;const payer=l.owner||lordAcct(s),unitCost=d*0.00002,q=Math.min(l.qty,K.free(n.id,l.good),work/(20+d)/K.volume(l.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}storageCarriagePlanCurrent(K,carriagePlan);const sourceQty=l.qty,before=K.revision,movedHere=K.move(l,n.id,q,'local-carriage');storageCarriagePlanAfterMove(K,carriagePlan,before,sourceQty,movedHere);work-=movedHere*K.volume(l.good)*(20+d);moved+=movedHere;cost+=movedHere*d*0.00002;if(l.location!==a.id||!K.lots.has(l.id)||!l.qty)break;}}
   s.storageReport={day:day(),moved,handlingCost:cost,exposed:K.exposedLots().reduce((q,l)=>q+l.qty*K.volume(l.good),0)};
 }
 function storageSpoil(s,g,rate){const K=storageFacilities(s);K.day=day();storageTitles(s,g);const losses=new Map();let unassigned=0;for(const l of K.matching({good:g})){const n=K.locations.get(l.location),q=l.qty*Math.min(1,rate*(n?.protection??4));K.remove(l,q,n?.exposed?'exposure-loss':'stored-spoilage');if(l.owner==null)unassigned+=q;else{const x=(s._owners||new Map()).get(l.owner);if(x&&x[l.availability])x[l.availability][l.claimGood||g]=Math.max(0,(x[l.availability][l.claimGood||g]||0)-q);losses.set(l.owner,(losses.get(l.owner)||0)+q);}}
@@ -3265,8 +3290,8 @@ function storageConsumeSale(s,who,g,qty){if(!s.storage)return qty;storageTitles(
 function storageMoveLots(a,b,g,qty,owner=null,availability=null,cause='settlement-transfer'){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const A=storageInit(a),B=storageInit(b);storageBindGood(b,g);storageTitles(a,g);let left=qty,moved=false;for(const id of [...A.byGood.get(g)||[]]){const l=A.lots.get(id);if(!l||A.locations.get(l.location)?.transit||owner!==null&&l.owner!==owner||availability!==null&&l.availability!==availability)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;moved=true;const p=A.split(l,q),from=p.location;A.event('custody-departure',p,p.qty,{lotAfter:null,destination:B.realmId});A.unindex(p);A.lots.delete(p.id);A.revision++;p.location='yard';B.lots.set(p.id,p);B.index(p);B.revision++;B.event(cause,p,q,{from,origin:W.settlements.indexOf(a),...storageArithmeticImport(A,B,g)});left-=q;if(!(left>0))break;}if(!moved&&qty>0)storageArithmeticEmpty(A,B,g);return qty-left;}
 function storageCargoRaid(c,fence){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const cargo=c.storageCargo;if(!cargo)return 0;const A=cargo.origin.storage,B=fence?storageInit(fence):null;let salvaged=0;for(const id of [...A.byLocation.get(cargo.id)||[]]){const l=A.lots.get(id);if(!l||l.location!==cargo.id)continue;const q=l.qty,keep=B?q*0.6:0;A.remove(l,q-keep,'cargo-robbery-loss');if(keep>0){A.event('custody-departure',l,l.qty,{lotAfter:null,destination:B.realmId});A.unindex(l);A.lots.delete(l.id);A.revision++;l.location='yard';l.owner='out';l.availability='sale';B.lots.set(l.id,l);B.index(l);B.revision++;B.event('cargo-stolen-arrival',l,keep,{from:cargo.id,origin:c.origin,...storageArithmeticImport(A,B,c.good)});salvaged+=keep;}}return salvaged;}
 
-function storageCompleteHeld(s,who,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(who),physical=g==='char'?'timber':g;let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==physical||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q);K.annotate(p,{claimGood:g},['pendingPurchase']);left-=q;if(!(left>0))break;}}
-function storagePurchased(s,who,g,qty,operation){const K=s.storage,owner=accountOwner(who);let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;operation(K,l,q);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-purchase-completion',null,left,{good:g,owner:storageOwnerId(owner)});storageInvariantFault('Unbacked purchase completion '+g+': '+left);}return qty-left;}
+function storageCompleteHeld(s,who,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(who),physical=g==='char'?'timber':g;let left=qty;for(const id of [...storageOwnerGoodIds(K,owner,physical)]){const l=K.lots.get(id);if(!l||l.good!==physical||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.split(l,q);K.annotate(p,{claimGood:g},['pendingPurchase']);left-=q;if(!(left>0))break;}}
+function storagePurchased(s,who,g,qty,operation){const K=s.storage,owner=accountOwner(who);let left=qty;for(const id of [...storageOwnerGoodIds(K,owner,g)]){const l=K.lots.get(id);if(!l||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;operation(K,l,q);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-purchase-completion',null,left,{good:g,owner:storageOwnerId(owner)});storageInvariantFault('Unbacked purchase completion '+g+': '+left);}return qty-left;}
 function storageConsumePurchased(s,who,g,qty,cause){return storagePurchased(s,who,g,qty,(K,l,q)=>K.remove(l,q,cause));}
 function buyBuildingMaterial(s,g,who,qty){purchase(s,g,who,qty);const got=purchase.got;if(got>0){if(s.storage)storageConsumePurchased(s,who,g,got,'construction-material');else s.stores[g]-=got;}return got;} // legacy works may finish with partial local supply; only the buyer's actual purchase is installed
 
@@ -3274,7 +3299,7 @@ function storageMovePurchased(s,d,who,g,qty){const B=storageInit(d);storageBindG
 function stockOf(s,who){who=accountOwner(who);let M=s._owners;if(!M){M=s._owners=new Map();storageClaimMap(s,M);if(s.storage)storageClaimInitialize(s);}let x=M.get(who);if(!x){x={held:{},sale:{},reserve:{},animals:{}};M.set(who,x);storageClaimRegister(s,who,x);}storageBindClaims(s,x);return x;}
 function pantry(s,who){return stockOf(s,who).held;}
 function addHeld(s,who,g,q,completed=false){if(q>0){const L=pantry(s,who);L[g]=(L[g]||0)+q;if(!completed)storageCompleteHeld(s,who,g,q);storageTitleKnownDirty(s,g);}}
-function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g,held=L[g]||0,stock=typeof q==='number'&&typeof held==='number'?storageInventoryStock(s,who,physical,g,Math.min(q,held)):s.stores[physical]||0;let v=Math.max(0,Math.min(q,held,stock));try{if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;if(v===0){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();}else{const owner=accountOwner(who);for(const id of [...s.storage.byOwner.get(owner)||[]]){const l=s.storage.lots.get(id);if(l&&l.owner===owner&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}finally{if(s.storage)storageFinishBound(s.storage,physical);}}
+function consumeOwned(s,who,g,q){const L=pantry(s,who),physical=g==='char'?'timber':g,held=L[g]||0,stock=typeof q==='number'&&typeof held==='number'?storageInventoryStock(s,who,physical,g,Math.min(q,held)):s.stores[physical]||0;let v=Math.max(0,Math.min(q,held,stock));try{if(s.storage&&!BEASTS.includes(g)){storageTitles(s,physical);let left=v;if(v===0){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();}else{const owner=accountOwner(who);for(const id of [...storageOwnerGoodIds(s.storage,owner,physical)]){const l=s.storage.lots.get(id);if(l&&l.owner===owner&&l.good===physical&&(l.claimGood||l.good)===g&&l.availability==='held'){left-=s.storage.remove(l,left,'consumption');if(!(left>0))break;}}}v-=left;L[g]=Math.max(0,(L[g]||0)-v);s.storage.titleMatched?.set(physical,s.storage.titleRevision?.get(physical)||0);}else{L[g]=Math.max(0,(L[g]||0)-v);s.stores[physical]=Math.max(0,(s.stores[physical]||0)-v);}return v;}finally{if(s.storage)storageFinishBound(s.storage,physical);}}
 function consumeOwnStock(s,who,g,q){let got=consumeOwned(s,who,g,q);const L=mkt(s,g);let v=Math.max(0,Math.min(q-got,L.get(who)||0,s.stores[g]||0));if(v>0){if(s.storage&&!BEASTS.includes(g))v=storageConsumeSale(s,who,g,v);const left=(L.get(who)||0)-v;if(left>0)L.set(who,left);else{L.delete(who);rsv(s,g).delete(who);}if(!s.storage||BEASTS.includes(g))s.stores[g]-=v;got+=v;}return got;}
 function herdProduce(s){const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),owned={};for(const g of BEASTS)owned[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
   const lord=lordAcct(s),remainder=Object.fromEntries(BEASTS.map(g=>[g,Math.max(0,(s.stores[g]||0)-(owned[g]||0))]));
@@ -3290,7 +3315,7 @@ function spoilOwned(s,g,rate){if(!(rate>0))return;if(s.storage){storageSpoil(s,g
   for(const x of (s._owners||new Map()).values()){if(x.held[g])x.held[g]*=f;if(x.sale[g])x.sale[g]*=f;if(g==='timber'&&x.held.char)x.held.char*=f;}
   if(s._made&&s._made[g])s._made[g]*=f;}
 function heldTotal(s,g){let n=0;for(const x of (s._owners||new Map()).values())n+=x.held[g]||0;return n;}
-function storageGiftTitle(s,from,to,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(from);let left=qty;for(const id of [...K.byOwner.get(owner)||[]]){const l=K.lots.get(id);if(!l||l.owner!==owner||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.transfer(l,accountOwner(to),q,'held');K.annotate(p,{},['pendingPurchase']);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-gift',null,left,{good:g,owner:storageOwnerId(owner),destinationOwner:storageOwnerId(accountOwner(to))});storageInvariantFault('Unbacked purchased gift '+g+': '+left);}}
+function storageGiftTitle(s,from,to,g,qty){if(!s.storage||BEASTS.includes(g))return;const K=s.storage,owner=accountOwner(from);let left=qty;for(const id of [...storageOwnerGoodIds(K,owner,g)]){const l=K.lots.get(id);if(!l||l.owner!==owner||l.good!==g||l.availability!=='held'||!l.pendingPurchase)continue;const q=Math.min(left,l.qty);if(!(q>0))continue;const p=K.transfer(l,accountOwner(to),q,'held');K.annotate(p,{},['pendingPurchase']);left-=q;if(!(left>0))break;}if(left>(K.roundoff.get(g)?.budget||0)+Number.EPSILON*Math.abs(qty)*8){K.event('unbacked-gift',null,left,{good:g,owner:storageOwnerId(owner),destinationOwner:storageOwnerId(accountOwner(to))});storageInvariantFault('Unbacked purchased gift '+g+': '+left);}}
 function giveFood(s,g,q,source){if(!(q>0))return;const H=householdsOf(s),weights=H.map(h=>Math.max(0,h.population.get(s)||0)*(0.1+h.hunger)),total=weights.reduce((a,b)=>a+b,0);if(!H.length){if(source!==undefined)addHeld(s,source,g,q);return;}let left=q;H.forEach((h,i)=>{const v=i===H.length-1?left:Math.min(left,q*(total>0?weights[i]/total:1/H.length));if(v>0){if(source!==undefined)storageGiftTitle(s,source,h,g,v);addHeld(s,h,g,v,source!==undefined);left-=v;}});}
 function initOwnership(s){if(s._ownershipReady)return;s._ownershipReady=true;const old=s._lard;householdsOf(s);
   for(const g of ['grain','fish'])giveFood(s,g,old?old[g]||0:Math.min(s.stores[g]||0,s.pop*NEED[g]*30));
@@ -8566,9 +8591,47 @@ const BOUGHT=['timber','cloth','tools','wine','spice','silk'];
 const SHARE={timber:0.15,cloth:0.12,tools:0.06,spice:0.05,silk:0.05}; // the most of what is left after bread that a household will lay out on each
 const MARGIN={grain:['miller','baker'],fish:['salter'],timber:['carter'],cloth:['tailor'],tools:[],wine:['brewer'],spice:['spicer'],silk:['tailor']}; // whose work stands between the market and the table
 const SUNDRY={butcher:1,cook:0.8,cooper:0.6,potter:0.6,shoemaker:0.8,tanner:0.6,glover:0.4,chandler:0.6,roper:0.5,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,thatcher:0.4,carpenter:0.5},SUNDRY_W=Object.values(SUNDRY).reduce((a,b)=>a+b,0);
+// Source fragment for the external, year-scoped market trade index.
+// Inline this into index.html; the WeakMap is deliberately not save state.
+const MARKET_TRADE_INDEXES = new WeakMap();
+function marketTradeIndexInvalidate(world=W){
+  const C=MARKET_TRADE_INDEXES.get(world);if(C)C.valid=false;
+}
+function marketTradeIndexRecord(world,s,counts){
+  const C=MARKET_TRADE_INDEXES.get(world);if(!C?.valid||C.assembling||C.year!==year())return;
+  if(!counts||Object.getPrototypeOf(counts)!==Object.prototype){C.valid=false;return;}
+  const pos=C.positions.get(s);if(pos===undefined||C.settlements[pos]!==s){C.valid=false;return;}
+  const old=C.byTown.get(s);if(old)for(const tr of old.trades){const A=C.byTrade.get(tr);if(A){const i=A.indexOf(s);if(i>=0)A.splice(i,1);if(!A.length)C.byTrade.delete(tr);}}
+  const trades=[];for(const tr of Object.keys(counts||{}))if(counts[tr]>0){trades.push(tr);let A=C.byTrade.get(tr);if(!A)C.byTrade.set(tr,A=[]);let i=0;while(i<A.length&&C.positions.get(A[i])<pos)i++;A.splice(i,0,s);}
+  C.byTown.set(s,{counts,tc: s._tc,tcY:s._tcY,trades});C.positions.set(s,pos);
+}
+function marketTradeIndex(world=W){
+  if(!world||typeof world!=='object')return null;
+  const Ss=world.settlements,y=year();if(!Array.isArray(Ss)||Object.getPrototypeOf(Ss)!==Array.prototype)return null;
+  let C=MARKET_TRADE_INDEXES.get(world);
+  if(C?.valid&&C.year===y&&C.settlements===Ss&&C.length===Ss.length)return C;
+  C={valid:true,assembling:true,year:y,settlements:Ss,length:Ss.length,byTrade:new Map(),byTown:new Map(),positions:new Map()};MARKET_TRADE_INDEXES.set(world,C);
+  try{for(let i=0;i<Ss.length;i++){const s=Ss[i];if(!s||typeof s!=='object'||!s.pos||!Number.isFinite(s.pos.x)||!Number.isFinite(s.pos.z)||C.positions.has(s)){C.valid=false;return null;}const counts=tradeCounts(s);if(!counts||Object.getPrototypeOf(counts)!==Object.prototype){C.valid=false;return null;}C.positions.set(s,i);const trades=[];for(const tr of Object.keys(counts))if(counts[tr]>0){trades.push(tr);let A=C.byTrade.get(tr);if(!A)C.byTrade.set(tr,A=[]);A.push(s);}C.byTown.set(s,{counts,tc:s._tc,tcY:s._tcY,trades});}}
+  catch{C.valid=false;return null;}C.assembling=false;return C.valid?C:null;
+}
+function marketTradeCandidates(s,tr){
+  if(typeof tr!=='string')return null;
+  // marketFor historically skips tradeCounts(origin); keep cold-origin calls on that path.
+  if(!s||s._tcY!==year()||!s._tc)return null;
+  // Count membership is maintained by tradeCounts/seedHousehold and head-change hooks.
+  // Raw writes bypassing those mutation paths cannot be observed without a full scan.
+  const C=marketTradeIndex();if(!C)return null;
+  // Cached count objects are mutable. These identity/year checks catch stale or foreign cache state.
+  for(const o of C.byTrade.get(tr)||[]){const E=C.byTown.get(o);if(W.settlements[C.positions.get(o)]!==o||o._tc!==E.tc||o._tcY!==E.tcY||o._tcY!==year()||!(o._tc?.[tr]>0)){C.valid=false;return null;}}
+  return C.byTrade.get(tr)||[];
+}
+function marketTradePosition(s){const C=MARKET_TRADE_INDEXES.get(W);return C?.valid?C.positions.get(s):-1;}
+
 function marketFor(s,tr){ // the nearest place with this trade, and how much of a family's want of it is carried there (a day at market, worth it the nearer it is)
   const y=year();if(!s._mkFor||s._mkFor.y!==y)s._mkFor={y,m:{}};const M=s._mkFor.m;if(tr in M)return M[tr];
-  let bi=-1,bd=1e18;W.settlements.forEach((o,oi)=>{if(o===s||!(tradeCounts(o)[tr]>0))return;const d=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;bi=oi;}});
+  let bi=-1,bd=1e18;const candidates=marketTradeCandidates(s,tr);
+  if(candidates===null)W.settlements.forEach((o,oi)=>{if(o===s||!(tradeCounts(o)[tr]>0))return;const d=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;bi=oi;}});
+  else for(const o of candidates){if(o===s)continue;const oi=marketTradePosition(o),d=dist2d(o.pos.x,o.pos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;bi=oi;}}
   return M[tr]=bi>=0?[bi,Math.exp(-bd/(1200*MAPK))]:null;}
 function craftWork(s,h,trs,v){ // a household pays for work done by a trade of the place; where the place has no one in it, the family does it themselves, and the want is noted
   if(h&&h.gn!==undefined)v=Math.min(v,Math.max(0,h.w||0));if(!(v>0)||!Number.isFinite(v)||!trs||!trs.length)return 0;let spent=0;const tc=tradeCounts(s),P=s._poolBy||(s._poolBy={}),U=s._unmet||(s._unmet={});
@@ -8682,6 +8745,81 @@ function tickMarket(){
       F[mode]=Math.max(0.05,(F[mode]??1)*Math.exp(0.2*Math.tanh(Math.log((w+0.2)/(idle*0.5+0.2)))));}s._wait={};} // loads waiting for a driver raise the going rate; idle drivers lower it
   });pl=0;pp=0;for(const s of W.settlements){if(!(s.pop>0))continue;pl+=(0.75*Math.log(Math.max(1e-9,price(s,'grain')/GOODBASE.grain))+0.25*Math.log(Math.max(1e-9,price(s,'fish')/GOODBASE.fish)))*s.pop;pp+=s.pop;}if(pp>0)W._pl=Math.exp(pl/pp);} // (a geometric mean: one famine town does not set the realm's wages) // the price level: rents, taxes, fees and wages are reckoned in it
 function made(s,g,q){if(s.storage&&!BEASTS.includes(g))storageBindGood(s,g);if(q>0){const M=s._made||(s._made={});M[g]=(M[g]||0)+q;}}
+/* CARAVAN_PRICE_INDEX_HELPERS_BEGIN */
+/* Conservative quote index for tickEconomy's cart destination scan.
+   The caller supplies cached destination quotes, in settlement-index order.
+   It must use the old loop whenever a quote is uncached or an input is not a
+   finite canonical number; this helper never calls price() or mutates state. */
+function buildCaravanDestinationPriceIndex(quoteRows, goods, quoteFeeRate) {
+  if (!Array.isArray(quoteRows) || !Array.isArray(goods) ||
+      !Number.isFinite(quoteFeeRate)) return null;
+  const byGood = new Map();
+  for (let gi = 0; gi < goods.length; gi++) {
+    const ranked = [];
+    let maxQuoteMagnitude = 0;
+    for (let di = 0; di < quoteRows.length; di++) {
+      const row = quoteRows[di];
+      if (!Array.isArray(row) || !Number.isFinite(row[gi]) || row[gi] < 0) return null;
+      ranked.push({ di, net: row[gi] * (1 - quoteFeeRate) });
+      maxQuoteMagnitude = Math.max(maxQuoteMagnitude, row[gi]);
+    }
+    if (ranked.some(x => !Number.isFinite(x.net))) return null;
+    ranked.sort((a, b) => b.net - a.net || a.di - b.di);
+    byGood.set(goods[gi], { ranked, maxQuoteMagnitude });
+  }
+  return { destinationCount: quoteRows.length, goods: goods.slice(), quoteFeeRate, byGood };
+}
+
+/* Return destinations that can still pass margin > freight + quote fees.
+   minimumFreight must be a proven nonnegative lower bound for this origin's
+   cart freight at every distance. Candidates retain settlement and sell-good
+   order. A null result means the caller must run its original loop. */
+function caravanDestinationCandidates(index, originPrices, sellGoods, minimumFreight) {
+  if (!index || !originPrices || typeof originPrices !== 'object' || Array.isArray(originPrices) || !Array.isArray(sellGoods) ||
+      !Number.isFinite(minimumFreight) || minimumFreight < 0) return null;
+  const byDestination = new Map();
+  for (const good of sellGoods) {
+    const entry = index.byGood.get(good);
+    let descriptor;
+    try { descriptor = Object.getOwnPropertyDescriptor(originPrices, good); } catch { return null; }
+    const originPrice = descriptor && Object.prototype.hasOwnProperty.call(descriptor, 'value') ? descriptor.value : NaN;
+    if (!entry || !Number.isFinite(originPrice) || originPrice < 0) return null;
+    const { ranked, maxQuoteMagnitude } = entry;
+    const threshold = originPrice + minimumFreight;
+    const roundMagnitude = maxQuoteMagnitude * (1 + Math.abs(index.quoteFeeRate));
+    if (!Number.isFinite(threshold) || !Number.isFinite(roundMagnitude)) return null;
+    const slack = 16 * Number.EPSILON * Math.max(1, roundMagnitude, Math.abs(originPrice), minimumFreight, Math.abs(threshold));
+    const guardedThreshold = threshold - slack;
+    if (!Number.isFinite(slack) || !Number.isFinite(guardedThreshold)) return null;
+    // Retain near-bound ties: subtraction/addition in the original predicate
+    // can round differently from q*(1-fee) versus p+minimumFreight.
+    let lo = 0, hi = ranked.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (ranked[mid].net > guardedThreshold) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let i = 0; i < lo; i++) {
+      const di = ranked[i].di;
+      let goodsAtDestination = byDestination.get(di);
+      if (!goodsAtDestination) byDestination.set(di, goodsAtDestination = new Set());
+      goodsAtDestination.add(good);
+    }
+  }
+  return [...byDestination]
+    .sort((a, b) => a[0] - b[0])
+    .map(([di, goodsAtDestination]) => ({ di, goods: sellGoods.filter(g => goodsAtDestination.has(g)) }));
+}
+
+/* CARAVAN_PRICE_INDEX_HELPERS_END */
+
+const CARAVAN_NATIVE_PRICE=price,CARAVAN_NATIVE_FREIGHT=freight,CARAVAN_NATIVE_LEVEL=PL,CARAVAN_NATIVE_LADE=ladeOut,CARAVAN_NATIVE_ROUTE=route,CARAVAN_NATIVE_CLOSED=closedToTrade;
+function caravanPriceIndex(Ss){
+  if(price!==CARAVAN_NATIVE_PRICE||freight!==CARAVAN_NATIVE_FREIGHT||PL!==CARAVAN_NATIVE_LEVEL||ladeOut!==CARAVAN_NATIVE_LADE||route!==CARAVAN_NATIVE_ROUTE||closedToTrade!==CARAVAN_NATIVE_CLOSED||typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function'||(typeof storageOutcome==='function'?storageOutcome:null)!==STORAGE_TITLE_OUTCOME)return null;const rows=[];
+  for(const d of Ss){const P=Object.getOwnPropertyDescriptor(d,'px')?.value;if(!P||Object.getPrototypeOf(P)!==Object.prototype)return null;const row=[];for(const g of GOODS){const v=Object.getOwnPropertyDescriptor(P,g)?.value;if(!Number.isFinite(v)||v<0)return null;row.push(v);}rows.push(row);}return buildCaravanDestinationPriceIndex(rows,GOODS,0.05+MOD.tax/100*0.14);
+}
+function caravanPriceCandidates(C,o,po,sell){if(!C)return null;const F=Object.getOwnPropertyDescriptor(o,'frt')?.value;if(!F||Object.getPrototypeOf(F)!==Object.prototype)return null;const rate=Object.getOwnPropertyDescriptor(F,'cart')?.value??1,level=PL();if(!Number.isFinite(rate)||rate<0||!Number.isFinite(level)||level<0)return null;return caravanDestinationCandidates(C,po,sell,0.12*0.7*rate*level);}
+
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
@@ -8714,16 +8852,19 @@ function tickEconomy(){
   }
   // caravans
   if(W.caravans.length<TRAFFIC_CAP/2&&day()%2===0){ // a load goes when a merchant finds the margin and a carter is free (the cap is only what can be drawn)
+    const destinationPrices=caravanPriceIndex(W.settlements);
     for(let oi=(day()>>1)&1;oi<W.settlements.length;oi+=2){ // every place, every fourth day (half of them each second day): its dealers look over what it has to spare
       const o=W.settlements[oi];
       if(closedToTrade(o))continue;if(W.caravans.length>=TRAFFIC_CAP/2)break;
       const cands=[];const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?2:6):o.stores[g]>o.pop*(NEED[g]||0)*30+5)/* what it has beyond a month's own needs */,po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
       if(!sell.length)continue;
-      for(let di=0;di<W.settlements.length;di++){
+      const destinations=caravanPriceCandidates(destinationPrices,o,po,sell);
+      for(let ci=0;ci<(destinations?destinations.length:W.settlements.length);ci++){
+        const di=destinations?destinations[ci].di:ci,destinationGoods=destinations?destinations[ci].goods:sell;
         if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
         if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
         const distance=dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z),carriage=freight(o,1,distance*1.2,'cart');
-        for(const g of sell){
+        for(const g of destinationGoods){
           const quote=price(d,g),margin=quote-po[g],carry=carriage+quote*(0.05+MOD.tax/100*0.14); // the freight at the going rate, the tolls, a little lost on the way
           if(margin>carry){
             const r=route(oi,di);if(!r)continue;
@@ -10296,7 +10437,7 @@ const TRADE_W={baker:1.2,butcher:1,brewer:1.2,cook:0.8,miller:1,smith:1,carpente
   chandler:0.6,merchant:1.6,spicer:0.7,carter:1,boatman:0.8,roper:0.5,salter:0.4,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,woodcutter:0.9,forester:0.4,fisher:1,miner:0.8,quarryman:0.7,reeve:0.3}; // the share of what families spend that comes to each trade
 const PRODUCE={fisher:'fish',boatman:'fish',woodcutter:'timber',forester:'timber',miner:'ore',smith:'tools',weaver:'cloth',dyer:'cloth'}; // trades that live by selling what they make, not by a share of the town's spending
 const foodYr=()=>(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360*((typeof W!=='undefined'&&W&&W._pl)||1); // a year's bread and fish at the realm's going prices
-function tradeCounts(s){if(s._tcY===year())return s._tc;const c={};for(const h of headsOf(s))if(h.tr)c[h.tr]=(c[h.tr]||0)+1;s._tc=c;s._tcY=year();return c;}
+function tradeCounts(s){if(s._tcY===year())return s._tc;const c={};for(const h of headsOf(s))if(h.tr)c[h.tr]=(c[h.tr]||0)+1;s._tc=c;s._tcY=year();marketTradeIndexRecord(W,s,c);return c;}
 function jobYear(s){ // the year's reckoning of the trades: what those in each earned (net of their stuff), and what work went undone or to strangers for want of hands
   const J={},H=heads_(s,()=>true);for(const h of H){const tr=h.tr||'labourer',e=J[tr]||(J[tr]={sum:0,n:0,fill:0});e.sum+=h._inc||0;e.fill+=h._fill??1;e.n++;h._inc=0;}for(const tr in J)J[tr].fill/=Math.max(1,J[tr].n);
   const U=s._unmet||{};for(const tr in U){const e=J[tr]||(J[tr]={sum:0,n:0});e.want=U[tr];}s._unmet={};s._missQ={};s._job=J;s._jobY=year();} /* a load that lay unsold all year was one chance missed, not one every market day */
@@ -10375,7 +10516,7 @@ function tickHouseholds(){
           const g2=val(o)-here-foodYr()*(0.3+d/1000*0.15);if(g2>bg){bg=g2;best=j;}}
         if(best>=0&&frand()<clamp(bg/Math.max(1,here)*0.8,0,0.7)){const o=Ss[best],i=s.folk.indexOf(p);if(i>=0){removeAt(s,i);journey(p,si,best,'migrant');life(p,`Left ${s.name} for ${o.name}, to make a living as a ${p.tr||'labourer'}`);s.pop=Math.max(5,s.pop-1);o.pop+=1;s.migOut=(s.migOut||0)+1;o.migIn=(o.migIn||0)+1;
           if(!W.prehistory&&frand()<0.02)emit('trade',1,s.pos,`${folkName(p)} leaves ${s.name} for ${o.name}, to seek work and a ${p.sx==='f'?'husband':'wife'}.`);}}}}
-    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=[...(s._owners||new Map()).values()].reduce((t2,o)=>t2+(o.animals[k]||0),0); // the families' beasts, counted once
+    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;marketTradeIndexInvalidate();herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=[...(s._owners||new Map()).values()].reduce((t2,o)=>t2+(o.animals[k]||0),0); // the families' beasts, counted once
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=0;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)

@@ -23,11 +23,17 @@ test('managed claim writer architecture remains reviewed',()=>{
  // Sale iteration uses derived offer membership; its native Map cursor preserves
  // live fallback. No legal/physical writer or journal event changes. Sparse and
  // opaque mutation fixtures plus exact 34846e4 native replay renew this review.
+ // The annual household trade-cache hook shares a line with existing _owners reads;
+ // those outside claim references retain identical ownership operations.
+ // Composite owner/good membership, incremental certified-group selection and
+ // phase-local facility candidates preserve managed writer and event order.
+ // Native admission retains full scans for observer callbacks and overrides.
+ // Frozen 3067ee5 comparisons and journal-append replay validate this batch.
  // Exposure queries reuse the admitted external facility index; membership
  // maintenance preserves live order without full-array sorting. Canonical ledger
  // writers, claim arithmetic, and outcome records remain unchanged.
- assert.equal(digest(source.slice(a,b)),"558b59bb561a9cbb8f83b6d972557be5ca4c0e9f0904fb0fe67dabbc91c38478");
+ assert.equal(digest(source.slice(a,b)),"53af077c3d68fda54215af8342daeb541c33b10c380d8fb803e85a5a1b08767f");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n').filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)).join('\n');
- assert.equal(digest(outside),"a510157c2b2b911c4961d159f4638a79b534dce478df4548a68d900225f5fd3a");
+ assert.equal(digest(outside),"25e04d108fe4b912ecf335cc19eb26fb52c2219ef6e18bba3381bc755df62813");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });
