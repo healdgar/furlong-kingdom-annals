@@ -111,7 +111,7 @@ function gardenBearingCheck(){
 // Matte controls catch accidental sheen on timber, unglazed windows, thatch or gables.
 function reflectivityCheck(){
   const target=new THREE.WebGLRenderTarget(96,96),old=renderer.getRenderTarget(),top=G.skyU.top.value.clone(),bot=G.skyU.bot.value.clone();
-  const clear=renderer.getClearColor(new THREE.Color()),alpha=renderer.getClearAlpha(),geometries=[],materials=[];
+  const clear=renderer.getClearColor(new THREE.Color()),alpha=renderer.getClearAlpha(),geometries=[],materials=[],savedSnow=G.seasonU.uGroundSnow.value;G.seasonU.uGroundSnow.value=0;
   const stage=new THREE.Scene(),light=new THREE.DirectionalLight(0xffffff,0.7);light.position.set(2,8,4);stage.add(light,new THREE.AmbientLight(0xffffff,0.3));
   const view=new THREE.PerspectiveCamera(40,1,0.1,100),a=new Uint8Array(96*96*4),b=new Uint8Array(a.length),results={};
   function measured(name,mesh,eye,focus=[0,0,0]){
@@ -139,14 +139,15 @@ function reflectivityCheck(){
     measured('iron',kit(1),[1,0,4]);measured('timberControl',kit(0),[1,0,4]);
     measured('slate',roof(2),[4,5,5],[0,1,0]);measured('thatchControl',roof(0),[4,5,5],[0,1,0]);
     measured('glass',wall(1),[0,1.4,7],[0,1.4,0]);measured('unglazedControl',wall(2),[0,1.4,7],[0,1.4,0]);
+    G.seasonU.uGroundSnow.value=.85;measured('frostedThatch',roof(0),[4,5,5],[0,1,0]);G.seasonU.uGroundSnow.value=0;
     const kitFinish=G.soldierKit.geometry.attributes.aFinish,kitColour=G.soldierKit.geometry.attributes.color;
     let iron=0,wrongFinish=0;for(let i=0;i<kitFinish.count;i++){const metal=kitColour.getZ(i)>kitColour.getX(i);if(kitFinish.getX(i)>0.5)iron++;if(metal!==(kitFinish.getX(i)>0.5))wrongFinish++;}
     results.ironMask={ironVertices:iron,otherVertices:kitFinish.count-iron,wrongFinish};
-    results.valid=['waterAbove','waterGrazing','iron','slate','glass'].every(k=>results[k].changedPixels>0)&&
+    results.valid=['waterAbove','waterGrazing','iron','slate','glass'].every(k=>results[k].changedPixels>0)&&results.frostedThatch.meanDifference>0.05&&
       ['timberControl','thatchControl','unglazedControl'].every(k=>results[k].changedPixels===0)&&
       results.waterGrazing.meanDifference>results.waterAbove.meanDifference&&iron>0&&wrongFinish===0;
     return results;
-  }finally{G.skyU.top.value.copy(top);G.skyU.bot.value.copy(bot);renderer.setRenderTarget(old);renderer.setClearColor(clear,alpha);
+  }finally{G.seasonU.uGroundSnow.value=savedSnow;G.skyU.top.value.copy(top);G.skyU.bot.value.copy(bot);renderer.setRenderTarget(old);renderer.setClearColor(clear,alpha);
     for(const g of geometries)g.dispose();for(const m of materials)m.dispose();target.dispose();}
 }
 
@@ -225,9 +226,11 @@ function worldVisualCheck(){
   const slopedBanks=(G.riverEmbankments||[]).every(F=>Math.hypot(F[3].x-F[0].x,F[3].z-F[0].z)>.1&&Math.abs(F[3].y-hAt(F[3].x,F[3].z))<.001);
   const seaLevel=!G.sea||Math.abs(G.sea.position.y-SEA_SURFACE)<.001,transparentDepth=!G.rivers.material.depthWrite&&(!G.sea||!G.sea.material.depthWrite);
   const attributes=G.terrain.geometry.attributes,attributeCapacity=Object.values(attributes).every(a=>a.count>=attributes.position.count);
+  const fortSurfaces=[];G.wallGrp?.traverse(o=>{if(o.userData?.earthwork){const m=o.material;fortSurfaces.push({derivatives:Object.hasOwn(m.defines||{},'SURFACE_DERIVATIVES'),textureGrad:Object.hasOwn(m.defines||{},'SURFACE_TEXTURE_GRAD'),ready:renderer.properties.get(m).uniforms?.uMiniatureReady?.value});}});
+  const fortTextures=fortSurfaces.length>0&&fortSurfaces.some(m=>m.ready===1)&&fortSurfaces.every(m=>(!G.surfaceDerivatives||m.derivatives)&&(!G.surfaceTextureGrad||m.textureGrad));
 
   const gl=renderer.getContext(),linked=renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS));
-  return{crowns,models,river:{joins,crossSlope,exposed,exposedGround,recessedBed,checked,attributeCapacity,overlayVertices,overlayFailures,slopedBanks,seaLevel,transparentDepth},valid:linked&&crowns.every(c=>c.winter.total<c.summer.total*0.8&&c.winter.total>c.summer.total*0.02&&c.winter.spine>10)&&Object.values(models).every(m=>m.triangles<=216)&&models.horses.height>models.cattle.height&&models.cattle.parts.includes(6)&&!models.horses.parts.includes(6)&&overlayVertices>0&&overlayFailures===0&&slopedBanks&&seaLevel&&transparentDepth&&crossSlope<0.001&&exposedGround===0&&recessedBed===checked&&attributeCapacity&&joins.every(q=>q.water!==undefined&&(q.ground===undefined||q.ground<q.water)&&(q.bed!==undefined&&q.bed<q.water-0.5))};
+  return{crowns,models,fortSurfaces,river:{joins,crossSlope,exposed,exposedGround,recessedBed,checked,attributeCapacity,overlayVertices,overlayFailures,slopedBanks,seaLevel,transparentDepth},valid:linked&&fortTextures&&crowns.every(c=>c.winter.total<c.summer.total*0.8&&c.winter.total>c.summer.total*0.02&&c.winter.spine>10)&&Object.values(models).every(m=>m.triangles<=216)&&models.horses.height>models.cattle.height&&models.cattle.parts.includes(6)&&!models.horses.parts.includes(6)&&overlayVertices>0&&overlayFailures===0&&slopedBanks&&seaLevel&&transparentDepth&&crossSlope<0.001&&exposedGround===0&&recessedBed===checked&&attributeCapacity&&joins.every(q=>q.water!==undefined&&(q.ground===undefined||q.ground<q.water)&&(q.bed!==undefined&&q.bed<q.water-0.5))};
 }
 
 function uiIntegrationCheck(){
@@ -298,10 +301,11 @@ async function check(which,w){
     const joinView="[-3168.1078406073434,-3248.1033372513384,64.11971192656942,3.6702058129495168]"; // reported seed-1001 street view
         const views={mill:"(()=>{const s=W.settlements.find(s=>s.lake&&s.mill)||W.settlements.find(s=>s.mill),b=s.mill;return[b.x,b.z,95,b.rot+1.1];})()",streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
+      fortCourt:"(()=>{const s=W.settlements.find(s=>s.motte&&s.bailey),b=s.bailey;return[b.x,b.z,65,1.1,.2];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       riverMouth:"(()=>{const r=G.rivStrips.find(r=>hAt(r.pts[r.pts.length-1].x,r.pts[r.pts.length-1].z)<SEA+.2)||G.rivStrips[0],p=r.pts.findLast(p=>hAt(p.x,p.z)>SEA+.7)||r.pts[r.pts.length-2];return[p.x,p.z,200,.8,-.35];})()",
       riverJoin:"(()=>{const r=G.rivStrips.find(r=>!r.canal&&r.pts.length>40&&hAt(r.pts[r.pts.length-1].x,r.pts[r.pts.length-1].z)>SEA+2),p=r.pts[r.pts.length-1];return[p.x,p.z,180,.8];})()",
-      riverReportedJoin:"(()=>{const r=G.drawRivRuns.filter(r=>r.join).sort((a,b)=>Math.hypot(a.pts.at(-1).x+2835,a.pts.at(-1).z+2990)-Math.hypot(b.pts.at(-1).x+2835,b.pts.at(-1).z+2990))[0],p=r.pts.at(-1);return[p.x,p.z,130,1.2,-.25];})()",
+      riverReportedJoin:"(()=>{const r=G.rivStrips.filter(r=>!r.canal).sort((a,b)=>Math.hypot(a.pts.at(-1).x+2835,a.pts.at(-1).z+2990)-Math.hypot(b.pts.at(-1).x+2835,b.pts.at(-1).z+2990))[0],p=r.pts.at(-1);return[p.x,p.z,130,1.2,-.25];})()",
       riverInnerJoin:"(()=>{const r=G.rivStrips.find(r=>!r.canal&&r.pts.length>40&&Math.abs(r.pts.at(-1).x)<SIZE/2-200&&Math.abs(r.pts.at(-1).z)<SIZE/2-200&&hAt(r.pts.at(-1).x,r.pts.at(-1).z)>SEA+2)||G.rivStrips[0],p=r.pts.at(-1);return[p.x,p.z,180,.8];})()",
       millDrop:"(()=>{const b=W.settlements.flatMap(s=>s.buildings).filter(b=>b.arch==='mill')[5]||W.settlements.flatMap(s=>s.buildings).find(b=>b.arch==='mill');return[b.x,b.z,65,b.rot+1.3,-0.1];})()",bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
     const result={id,views:{},errors};
@@ -403,8 +407,10 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
     row[args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
       const a=candidate.views[v],b=baseline.views[v];return args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});
     row[args['world-visuals']?'waterworksDrawBudget':'sameDrawCalls']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>args['world-visuals']?candidate.views[v].render.calls<=baseline.views[v].render.calls+candidate.views[v].millRaceDraws*1.5+(candidate.views[v].bedTriangles?1:0):candidate.views[v].render.calls===baseline.views[v].render.calls);
-    row.sameTextureCounts=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].textureCount===baseline.views[v].textureCount);
-    row.sameTextureSizes=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>JSON.stringify(candidate.views[v].textureSizes)===JSON.stringify(baseline.views[v].textureSizes));}
+    row.textureCountBudget=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].textureCount<=baseline.views[v].textureCount);
+    // Inland water reuses the ripple sampler instead of uploading an unused coastal height map.
+    // Permit removals; every retained texture size must fit the baseline multiset.
+    row.textureSizeBudget=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{const remaining=baseline.views[v].textureSizes.map(s=>s.join('x'));return candidate.views[v].textureSizes.every(s=>{const i=remaining.indexOf(s.join('x'));if(i<0)return false;remaining.splice(i,1);return true;});});}
   checks.push(row);}
 fs.writeFileSync(path.join(OUT,'checks.json'),JSON.stringify(checks,null,2));
 console.log(JSON.stringify({out:OUT,days,checks},null,2));

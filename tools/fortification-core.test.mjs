@@ -189,6 +189,13 @@ test('terrain bounds align to the terrain lattice and the transient mask removes
   assert.deepEqual(geometry.userData.baseIndex,src);
 });
 
+test('fortification redraw keeps carved terrain triangles mapped to their original cells',()=>{
+  const {c,run}=fixture(),{town}=castle(),src=Array.from({length:4*4*6},(_,i)=>i),geometry={userData:{baseIndex:src},setIndex(v){this.index=Array.from(v);}};
+  c.G.terrain={geometry};c.W.settlements=[town];run('maskFortTerrain()');const kept=new Set(geometry.index),dry=Math.floor(geometry.index[0]/6),wet=Math.floor(src.find(i=>!kept.has(i))/6);
+  geometry.userData={baseIndex:[100,101,102,200,201,202],baseCells:[wet,dry]};run('maskFortTerrain()');assert.deepEqual(geometry.index,[200,201,202]);
+  delete geometry.userData.fortMaskKey;run('maskFortTerrain()');assert.deepEqual(geometry.index,[200,201,202]);assert.deepEqual(geometry.userData.baseIndex,[100,101,102,200,201,202]);
+});
+
 test('fortGround resolves a ditch across a neighbouring domain boundary',()=>{
   const {c,run}=fixture(),{town}=castle(),plain={pos:{x:45,z:40},buildings:[]};
   c.s=town;c.W.settlements=[plain,town];c.W.dom=new Int16Array(25).fill(-1);c.W.dom[17]=0;c.W.dom[12]=1;

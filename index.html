@@ -1908,7 +1908,7 @@ function fortTerrainBounds(s){if(!s.motte)return null;const m=s.motte,b=casRing(
 function maskFortTerrain(){ // transient render mask, rebuilt with geometry; never persisted or maintained as an entity index
   if(!G.terrain)return;const g=G.terrain.geometry,src=g.userData.baseIndex;if(!src)return;let key='';for(const s of W.settlements){const b=fortTerrainBounds(s);if(b)key+=`${b.x0},${b.x1},${b.z0},${b.z1};`;}if(g.userData.fortMaskKey===key)return;g.userData.fortMaskKey=key;const covered=new Uint8Array((GRID-1)*(GRID-1));
   for(const s of W.settlements){const b=fortTerrainBounds(s);if(!b)continue;const i0=toCell(b.x0),i1=toCell(b.x1),j0=toCell(b.z0),j1=toCell(b.z1);for(let j=j0;j<j1;j++)for(let i=i0;i<i1;i++)covered[j*(GRID-1)+i]=1;}
-  const out=[];for(let k=0;k<src.length;k+=6)if(!covered[k/6])for(let j=0;j<6;j++)out.push(src[k+j]);g.setIndex(out);
+  const out=[];for(let k=0;k<src.length;k+=3)if(!covered[g.userData.baseCells?.[k/3]??Math.floor(k/6)])for(let j=0;j<3;j++)out.push(src[k+j]);g.setIndex(out);
 }
 
 /* places (greens, market places) are irregular blobs: a radius per angle about a centre */
@@ -4787,7 +4787,7 @@ vec3 miniatureSample(float cell,vec2 uv,vec2 dx,vec2 dy){
   vec3 detail=texture2D(uMiniatureAtlas,q).rgb/mean;
   float fade=uMiniatureReady*(1.-smoothstep(0.004,0.012,footprint));
   #endif
-  if(cell<0.5)detail=mix(vec3(1.),detail,0.85);
+  if(cell<0.5)detail=mix(vec3(1.),detail,0.28); // pasture grain stays subordinate to crops and bank shapes
   if(abs(cell-4.)<0.5)detail=mix(vec3(1.),detail,0.35);
   if(abs(cell-8.)<0.5)detail=mix(vec3(1.),detail,0.4); // keep straw fibres subordinate to the roof form
   return mix(vec3(1.),clamp(detail,vec3(0.32),vec3(2.2)),fade);
@@ -4879,22 +4879,22 @@ function reflectiveShader(sh,finish,f0,strength=1){
 }
 function waterMaterial(options,channel=false,sea=false){
   const mat=surfaceDetail(new THREE.MeshPhongMaterial({...options,shininess:70,specular:0x08090a}));
-  if(channel){mat.defines={...mat.defines,MINI_CHANNEL:1};mat.defaultAttributeValues={...mat.defaultAttributeValues,aJoinFlow:[0,0,0,0],aJoinOrigins:[0,0,0,0],aJoinWidths:[0,0]};}
+  if(channel){mat.defines={...mat.defines,MINI_CHANNEL:1};mat.defaultAttributeValues={...mat.defaultAttributeValues,aJoinFlow:[0,0,0,0],aJoinOrigins:[0,0,0,0],aJoinWidths:[0,0],aWaterGrade:[0]};}
   if(sea)mat.defines={...mat.defines,MINI_SEA:1};
   mat.onBeforeCompile=sh=>{
     Object.assign(sh.uniforms,G.waterU,G.waterRippleU);miniatureShader(sh);
     sh.vertexShader=`varying vec3 vWaterWP;
       #ifdef MINI_CHANNEL
-      attribute vec2 aSurfaceUV,aSurfaceTangent;attribute float aBankDistance;attribute vec4 aJoinFlow,aJoinOrigins;attribute vec2 aJoinWidths;varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
+      attribute vec2 aSurfaceUV,aSurfaceTangent;attribute float aBankDistance,aWaterGrade;attribute vec4 aJoinFlow,aJoinOrigins;attribute vec2 aJoinWidths;varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank,vWaterGrade;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
       #endif
       `+sh.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
       vWaterWP=(modelMatrix*vec4(transformed,1.)).xyz;
       #ifdef MINI_CHANNEL
-      vWaterUV=aSurfaceUV;vWaterTangent=aSurfaceTangent;vWaterBank=aBankDistance;vJoinFlow=aJoinFlow;vJoinOrigins=aJoinOrigins;vJoinWidths=aJoinWidths;
+      vWaterUV=aSurfaceUV;vWaterTangent=aSurfaceTangent;vWaterBank=aBankDistance;vWaterGrade=aWaterGrade;vJoinFlow=aJoinFlow;vJoinOrigins=aJoinOrigins;vJoinWidths=aJoinWidths;
       #endif`);
     sh.fragmentShader=`varying vec3 vWaterWP;uniform float uWaterTime,uWaterFeaturesReady,uWaterSize,uWaterRippleReady;uniform sampler2D uWaterFeat,uWaterRippleMap,uWaterHeight;uniform float uWaterGrid,uWaterSea,uWaterCoastal;uniform vec3 uSurfaceEye;
       #ifdef MINI_CHANNEL
-      varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
+      varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank,vWaterGrade;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
       #endif
       ` +SURFACE_GLSL+`
 float coastalWaterCover(vec2 wp){
@@ -4916,7 +4916,7 @@ vec3 channelRipple(vec2 p,vec2 flow,vec2 drift){
       vec2 waterAcross=length(waterGrad)>0.0001?normalize(waterGrad):normalize(vec2(0.7,0.3));
       vec2 waterAlong=vec2(-waterAcross.y,waterAcross.x);
       vec2 waterUV=vec2(dot(waterWP,waterAlong),dot(waterWP,waterAcross));
-      vec2 waterDrift=vec2(0.,-uWaterTime*0.04);
+      vec2 waterDrift=vec2(0.,-uWaterTime*0.04);float joinedBank=-1.;
       #ifdef MINI_CHANNEL
       waterAlong=normalize(vWaterTangent);waterAcross=vec2(-waterAlong.y,waterAlong.x);
       waterUV=vWaterUV.yx;waterDrift=vec2(-uWaterTime*0.055,0.);
@@ -4928,7 +4928,7 @@ vec3 channelRipple(vec2 p,vec2 flow,vec2 drift){
         float mainDistance=abs(dot(waterWP-vJoinOrigins.xy,vec2(-mainFlow.y,mainFlow.x)))/vJoinWidths.x;
         float incomingDistance=abs(dot(waterWP-vJoinOrigins.zw,vec2(-incomingFlow.y,incomingFlow.x)))/vJoinWidths.y;
         float mainWeight=pow(max(0.,1.-mainDistance),3.),incomingWeight=pow(max(0.,1.-incomingDistance),3.);
-        float blend=incomingWeight/(mainWeight+incomingWeight+.0001);
+        float blend=incomingWeight/(mainWeight+incomingWeight+.0001);joinedBank=max(.7,max(vJoinWidths.x*(1.-mainDistance),vJoinWidths.y*(1.-incomingDistance)));
         rippleTex=mix(channelRipple(waterWP,mainFlow,waterDrift),channelRipple(waterWP,incomingFlow,waterDrift),blend);
         waterAlong=normalize(mix(mainFlow,incomingFlow,blend));waterAcross=vec2(-waterAlong.y,waterAlong.x);
       }
@@ -4941,11 +4941,15 @@ vec3 channelRipple(vec2 p,vec2 flow,vec2 drift){
       diffuseColor.a*=coastalWaterCover(waterWP);
       #endif
       #ifdef MINI_CHANNEL
+      float rapids=smoothstep(.025,.12,vWaterGrade);
+      float foam=rapids*smoothstep(1.04,1.4,detail)*(.45+.55*surfaceFilteredNoise(vec2(dot(waterWP,waterAcross)*.9,dot(waterWP,waterAlong)*.09-uWaterTime*.25)));
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.88,.93,.94),foam*.8);waterFinish*=1.-foam*.75;
       float shoreNoise=surfaceFilteredNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
-      float shore=1.-smoothstep(0.2,shoreWidth,vWaterBank);waterFinish=1.-shore;
+      float bankDistance=joinedBank>=0.?joinedBank:vWaterBank;
+      float shore=1.-smoothstep(0.2,shoreWidth,bankDistance);waterFinish*=1.-shore;
       vec3 wetGravel=vec3(0.37,0.36,0.29)*miniatureDetail(3.,waterWP/2.5);
       diffuseColor.rgb=mix(diffuseColor.rgb,wetGravel,shore*0.92);
-      diffuseColor.a*=smoothstep(0.,0.45+shoreNoise*0.65,vWaterBank);
+      diffuseColor.a*=smoothstep(0.,0.45+shoreNoise*0.65,bankDistance);
       if(uWaterCoastal>.5)diffuseColor.a*=1.-(1.-smoothstep(uWaterSea+.52,uWaterSea+.7,vWaterWP.y))*coastalWaterCover(waterWP); // the same coverage on both sides of the river-sea join
       #endif
       `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
@@ -5191,6 +5195,8 @@ function cutRiverTerrain(g,footprints,water,banks=footprints){ // cut the render
       for(let j=1;j<Q.length-1;j++)indices.push(verts[0],verts[j],verts[j+1]);}}
   const uv=Array.from(g.attributes.uv.array),normals=Array.from(g.attributes.normal.array);for(const q of bankColors){for(let c=0;c<2;c++)uv.push(q.ids.reduce((n,id,j)=>n+g.attributes.uv.array[id*2+c]*q.w[j],0));for(let c=0;c<3;c++)normals.push(q.ids.reduce((n,id,j)=>n+g.attributes.normal.array[id*3+c]*q.w[j],0));}
   g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.setIndex(indices);g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));g.computeBoundingSphere();g.userData.bankColors=bankColors;
+  g.userData.baseIndex=g.index.array.slice();g.userData.baseCells=new Uint32Array(indices.length/3);delete g.userData.fortMaskKey;
+  for(let k=0;k<indices.length;k+=3){const ids=indices.slice(k,k+3),x=ids.reduce((n,i)=>n+pos[i*3],0)/3,z=ids.reduce((n,i)=>n+pos[i*3+2],0)/3;g.userData.baseCells[k/3]=clamp(Math.floor((z+SIZE/2)/CELL),0,GRID-2)*(GRID-1)+clamp(Math.floor((x+SIZE/2)/CELL),0,GRID-2);}
   const bed=newAcc();for(const F of footprints){const base=bed.p.length/3;for(const q of F){bed.p.push(q.x,q.y-1.5,q.z);bed.n.push(0,1,0);bed.c.push(0.3,0.27,0.2);}const sign=Math.sign(F.reduce((n,p,i)=>{const q=F[(i+1)%F.length];return n+p.x*q.z-q.x*p.z;},0));for(let j=1;j<F.length-1;j++)sign<0?bed.i.push(base,base+j,base+j+1):bed.i.push(base,base+j+1,base+j);}
   const joins=G.drawRivRuns.filter(r=>r.join).map(r=>r.join);
   for(const F of joins)appendRiverJoin(bed,F,-1.5);
@@ -5427,11 +5433,11 @@ function buildApron(){
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);
   {const nn=new Float32Array(pos.length);for(let i=1;i<nn.length;i+=3)nn[i]=1;g.setAttribute('normal',new THREE.BufferAttribute(nn,3));} // lit flat: per-vertex normals streaked along the long quads
   g.setAttribute('color',new THREE.Float32BufferAttribute(new Float32Array(pos.length),3));
-  const am=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide});
+  const am=new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide,specular:0x121619,shininess:24});
   am.onBeforeCompile=sh=>{ // woods and open country mottle the land beyond the map by world position (vertex colours would streak along the long quads)
     Object.assign(sh.uniforms,G.seasonU);
     sh.vertexShader='varying vec3 vAP;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vAP=(modelMatrix*vec4(transformed,1.0)).xyz;');
-    sh.fragmentShader=`varying vec3 vAP;uniform vec3 uSeasonGrass,uSeasonWood;
+    sh.fragmentShader=`varying vec3 vAP;uniform vec3 uSeasonGrass,uSeasonWood;uniform float uGroundSnow;
 float ah(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i),ah(i+vec2(1.,0.)),f.x),mix(ah(i+vec2(0.,1.)),ah(i+vec2(1.,1.)),f.x),f.y);}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
@@ -5446,6 +5452,7 @@ float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i)
     gl_FragColor.rgb=mix(gl_FragColor.rgb,fogColor,smoothstep(-200.,2600.,out2)*0.92+0.08*smoothstep(1200.,3400.,out2));
     #endif
   }`);
+    reflectiveShader(sh,'uGroundSnow*0.4*step(SEA_SURFACE,vAP.y)'.replace('SEA_SURFACE',String(SEA_SURFACE)),'0.03',0.18);
   };
   G.apron=new THREE.Mesh(g,am);G.apron.renderOrder=1;G.apron.userData.src=src;G.apron.userData.sides=sides;
   G.apron.receiveShadow=false;scene.add(G.apron);recolorApron(); // beyond the shadow camera: receiving smeared its edge texels into streaks
@@ -5471,7 +5478,7 @@ function buildTerrain(){
   g.computeVertexNormals();g.userData.baseIndex=g.index.array.slice();
   const col=new Float32Array(p.count*3);
   g.setAttribute('color',new THREE.BufferAttribute(col,3));
-  G.terrain=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));G.terrain.renderOrder=1; // drawn after what stands on it, so hidden ground skips its costly shader
+  G.terrain=new THREE.Mesh(g,new THREE.MeshPhongMaterial({vertexColors:true,specular:0x181c20,shininess:24}));G.terrain.renderOrder=1; // drawn after what stands on it, so hidden ground skips its costly shader
   G.terrain.receiveShadow=true;
   scene.add(G.terrain);
   updateTerrainColors(0,0);buildApron();
@@ -5479,7 +5486,7 @@ function buildTerrain(){
   const shoreData=new Uint8Array(GRID*GRID*4);
   for(let i=0;i<W.h.length;i++){shoreData[i*4]=Math.round(clamp((W.h[i]-SEA+16.)/32.,0,1)*255);shoreData[i*4+3]=255;}
   const shoreTex=new THREE.DataTexture(shoreData,GRID,GRID,THREE.RGBAFormat);shoreTex.needsUpdate=true;
-  G.waterU.uWaterHeight.value=shoreTex;G.waterU.uWaterCoastal.value=W.coastal?1:0;
+  G.waterU.uWaterHeight.value=W.coastal?shoreTex:G.waterRippleU.uWaterRippleMap.value;G.waterU.uWaterCoastal.value=W.coastal?1:0;
   // sea
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
@@ -5518,7 +5525,7 @@ function buildTerrain(){
     }
     return out;
   };
-  for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;G.drawRivRuns.push(st);const base=riv.p.length/3;
+  for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;G.drawRivRuns.push(st);const base=riv.p.length/3;st.renderBase=base;
     strip(st.pts,riv,{indexStep:2,fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k];
         for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))y=Math.min(y,s.lake.y-0.8);return y;},
       col:()=>0x245b72});
@@ -5540,6 +5547,8 @@ function buildTerrain(){
     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3},true));
   const joinFlow=new Float32Array(riv.p.length/3*4),joinOrigins=new Float32Array(joinFlow.length),joinWidths=new Float32Array(riv.p.length/3*2);
   for(const st of G.drawRivRuns)if(st.join){const F=st.join;for(let i=F.overlayBase;i<F.overlayBase+F.overlayCount;i++){joinFlow.set([...F.flow,...F.inFlow],i*4);joinOrigins.set(F.origins,i*4);joinWidths.set(F.widths,i*2);}}
+  const waterGrade=new Float32Array(riv.p.length/3);for(const st of G.drawRivRuns)for(let k=0;k<st.pts.length;k++){const a=Math.max(0,k-1),b=Math.min(st.pts.length-1,k+1),grade=Math.abs(riv.p[(st.renderBase+a*5)*3+1]-riv.p[(st.renderBase+b*5)*3+1])/(dist2d(st.pts[a].x,st.pts[a].z,st.pts[b].x,st.pts[b].z)||1);waterGrade.fill(grade,st.renderBase+k*5,st.renderBase+k*5+5);}
+  G.rivers.geometry.setAttribute('aWaterGrade',new THREE.BufferAttribute(waterGrade,1));
   G.rivers.geometry.setAttribute('aJoinFlow',new THREE.BufferAttribute(joinFlow,4));G.rivers.geometry.setAttribute('aJoinOrigins',new THREE.BufferAttribute(joinOrigins,4));G.rivers.geometry.setAttribute('aJoinWidths',new THREE.BufferAttribute(joinWidths,2));
   scene.add(G.rivers);
   rebuildRoadMesh();
@@ -5626,11 +5635,11 @@ varying float vBranchCrown;varying vec3 vBranchP,vBranchEye;uniform float uLeafl
 float branchDistance(vec2 p,vec2 a,vec2 b){vec2 d=b-a;return length(p-a-d*clamp(dot(p-a,d)/dot(d,d),0.,1.));}
 float leaflessPatch(vec3 p){return step(fract(sin(dot(floor(p*6.),vec3(17.3,53.7,91.1)))*43758.5453),uLeafless);}
 float winterBranches(vec3 p){
-  vec3 eye=normalize(vBranchEye),right=normalize(vec3(eye.z,0.,-eye.x));
-  vec2 q=vec2(dot(p,right)*0.45,p.y*0.5+0.5);
-  // The bole stays central; near and far twigs shift slightly as the eye moves.
-  q.y+=(1.-dot(p,eye))*0.035*sin(q.x*8.);
-  float bend=0.025*sin(q.y*4.);
+  vec3 eye=normalize(vBranchEye),right=normalize(vec3(eye.z,0.,-eye.x)),up=normalize(cross(eye,right));
+  vec2 q=vec2(dot(p,right)*0.45,dot(p,up)*0.5+0.5);
+  float aa=BRANCH_AA; // derivatives must precede the hemisphere cut
+  if(dot(p,eye)<.2)return 0.; // one facing hemisphere prevents doubled limbs and winter loops
+  float bend=0.;
   float d=branchDistance(q,vec2(0.,0.),vec2(bend,0.86));
   for(int i=0;i<3;i++){
     float y=0.24+float(i)*0.21,x=bend*y;
@@ -5638,7 +5647,7 @@ float winterBranches(vec3 p){
     d=min(d,branchDistance(q,vec2(x,y+0.08),vec2(0.4-float(i)*0.04,y+0.31)));
   }
   float width=mix(0.025,0.006,clamp(q.y,0.,1.));
-  return 1.-smoothstep(width,width+BRANCH_AA,d);
+  return 1.-smoothstep(width,width+aa,d);
 }
 `;
 function treeBranchShader(sh,shape){ // alpha cutouts wrap the crown; the same cutout also casts the shadow
@@ -5648,7 +5657,7 @@ function treeBranchShader(sh,shape){ // alpha cutouts wrap the crown; the same c
     mat4 treeFrame=modelMatrix*instanceMatrix;
     vec3 eyeDelta=uSurfaceEye-(treeFrame*vec4(0.,uCrownShape.y,0.,1.)).xyz;
     vBranchEye=vec3(dot(eyeDelta,treeFrame[0].xyz)/dot(treeFrame[0].xyz,treeFrame[0].xyz),dot(eyeDelta,treeFrame[1].xyz)/dot(treeFrame[1].xyz,treeFrame[1].xyz),dot(eyeDelta,treeFrame[2].xyz)/dot(treeFrame[2].xyz,treeFrame[2].xyz));`);
-  sh.fragmentShader=TREE_BRANCH_GLSL.replace('BRANCH_AA',G.surfaceDerivatives?'max(fwidth(q.x),fwidth(q.y))*0.75+0.002':'0.008')+sh.fragmentShader.replace('#include <clipping_planes_fragment>',`#include <clipping_planes_fragment>
+  sh.fragmentShader=TREE_BRANCH_GLSL.replace('BRANCH_AA',G.surfaceDerivatives?'min(0.025,max(fwidth(q.x),fwidth(q.y))*0.75+0.002)':'0.008')+sh.fragmentShader.replace('#include <clipping_planes_fragment>',`#include <clipping_planes_fragment>
     if(vBranchCrown>0.5&&uLeafless>0.001&&leaflessPatch(vBranchP)>0.5&&winterBranches(vBranchP)<0.5)discard;`);
 }
 function crownMat(hex,leafCell=13,shape=[3.2,6.6,3.36]){ // the material colour tints the crown only: bark stays bark
@@ -5858,6 +5867,7 @@ function roofMaterial(){ // metre-sized courses; the triangular ends are walls, 
     sh.fragmentShader='uniform sampler2D uGableAtlas;varying vec2 vRoofUV;varying vec2 vGableUV;varying vec3 vGableColor;varying float vGable;varying float vGableKind;varying float vRoofKind;\n'+SURFACE_GLSL+sh.fragmentShader
       .replace('#include <map_fragment>','')
       .replace('#include <color_fragment>',`#include <color_fragment>
+        float roofSnow=uGroundSnow*(1.-vGable)*0.6;
         if(vGable>0.5){
           vec2 bay=fract(vGableUV/vec2(3.1,2.8));
           vec4 wall=texture2D(uGableAtlas,vec2((vGableKind+clamp(bay.x,0.03,0.97))/4.,1.-(2.-clamp(bay.y,0.03,0.97))/3.));
@@ -5867,8 +5877,9 @@ function roofMaterial(){ // metre-sized courses; the triangular ends are walls, 
         }else{
           float cell=vRoofKind<0.5?8.:vRoofKind>1.5?10.:9.;
           diffuseColor.rgb*=miniatureDetail(cell,vRoofUV/vec2(2.4,2.4));
+          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.83,.85,.87),roofSnow);
         }`);
-    reflectiveShader(sh,'step(1.5,vRoofKind)*(1.-vGable)','0.04',0.35);
+    reflectiveShader(sh,'max(step(1.5,vRoofKind)*(1.-vGable),roofSnow*0.5)','0.04',0.35);
   };
   return mat;
 }
@@ -6988,12 +6999,23 @@ function rebuildWalls(){
     const norm=geo.attributes.normal;
     for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++)if(i===0||j===0||i===nx||j===nz){const k=j*(nx+1)+i,p=k*3,x=verts[p],z=verts[p+2],bn=sample(baseNorm,x,z),l=Math.hypot(bn[0],bn[1],bn[2])||1;norm.setXYZ(k,bn[0]/l,bn[1]/l,bn[2]/l);}
     norm.needsUpdate=true;
-    const baseMat=G.terrain.material,mat=baseMat.clone(),terrainHook=baseMat.onBeforeCompile;
+    const baseMat=G.terrain.material,mat=surfaceDetail(baseMat.clone()),terrainHook=baseMat.onBeforeCompile;
     mat.onBeforeCompile=sh=>{terrainHook?.(sh);sh.vertexShader='attribute float fortDitch;attribute float fortCleared;varying float vFortDitch,vFortCleared;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n vFortDitch=fortDitch;vFortCleared=fortCleared;');
       sh.fragmentShader='varying float vFortDitch,vFortCleared;\n'+sh.fragmentShader.replace('#include <alphamap_fragment>',`#include <alphamap_fragment>
-        vec3 fortMeadow=vColor*vec3(0.7,0.78,0.52)*miniatureDetail(0.,vWP.xz/8.);
-        diffuseColor.rgb=mix(diffuseColor.rgb,fortMeadow,vFortCleared);
-        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.36,0.29,0.19)*miniatureDetail(15.,vWP.xz/3.6),smoothstep(0.05,0.9,vFortDitch));`);};
+        vec2 fortUV=(vWP.xz+uSize*0.5)/uSize;
+        vec4 fortLines=texture2D(uFeat1,fortUV),fortLots=texture2D(uFeat2,fortUV);
+        float fortWear=1.-smoothstep(4.,20.,min(fortLines.b,fortLots.r)*63.75);
+        float fortPatch=surfaceFilteredNoise(vWP.xz*0.3);
+        vec3 fortGrass=vColor*vec3(0.7,0.78,0.52)*miniatureDetail(0.,vWP.xz/8.);
+        vec3 fortEarth=vec3(0.46,0.39,0.28)*miniatureDetail(7.,vWP.xz/3.)*(0.9+0.2*fortPatch);
+        vec3 fortYard=mix(fortGrass,fortEarth,0.35+0.5*fortWear);
+        diffuseColor.rgb=mix(diffuseColor.rgb,fortYard,vFortCleared);
+        vec3 fortN=abs(normalize(vWN));
+        vec2 fortSoilUV=(fortN.y>max(fortN.x,fortN.z)?vWP.xz:fortN.x>fortN.z?vWP.zy:vWP.xy)/3.6;
+        vec3 fortSoil=vec3(0.36,0.29,0.19)*miniatureDetail(3.,fortSoilUV)*(0.84+0.32*fortPatch);
+        diffuseColor.rgb=mix(diffuseColor.rgb,fortSoil,smoothstep(0.05,0.9,vFortDitch));
+        float fortSnow=uGroundSnow*0.55*smoothstep(0.4,0.8,vWN.y);
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.83,0.85,0.87),fortSnow);snowFinish=max(snowFinish,fortSnow);`);};
     mat.customProgramCacheKey=()=>`fort-earthwork-soil-${baseMat.customProgramCacheKey?baseMat.customProgramCacheKey():''}`;
     const mesh=new THREE.Mesh(geo,mat);mesh.castShadow=mesh.receiveShadow=true;mesh.userData={earthwork:true,s,recolorTerrain(){const a=G.terrain?.geometry?.attributes?.color;if(!a)return;const c=geo.attributes.color;for(let j=0;j<=nz;j++)for(let i=0;i<=nx;i++){const k=j*(nx+1)+i,p=k*3,x=verts[p],z=verts[p+2],bc=sample(a,x,z);c.setXYZ(k,bc[0],bc[1],bc[2]);}c.needsUpdate=true;}};grp.add(mesh);
     return (x,z)=>fortSurface(s,m,x,z);
@@ -7694,8 +7716,9 @@ float gardenHeading(vec2 fu){
   return angle*3.14159265;
 }
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+float snowFinish=uGroundSnow*0.35*smoothstep(uSea+0.5,uSea+2.,vWP.y)*smoothstep(0.4,0.8,vWN.y);
 {
-  vec2 wp=vWP.xz;float fieldA=0.,pixelM=surfaceFootprint(wp);
+  vec2 wp=vWP.xz;float fieldA=0.,ploughEdge=0.,pixelM=surfaceFootprint(wp);
   // Compute derivatives before conditional terrain/garden branches.
   #ifdef SURFACE_DERIVATIVES
   vec2 groundDX=dFdx(wp),groundDY=dFdy(wp);
@@ -7716,7 +7739,8 @@ float gardenHeading(vec2 fu){
   if(kind>0.5&&(st>1.5||isCommon)){
     vec4 mk=texture2D(uMask,(wp+uSize*0.5)/uSize+0.5/uGrid);
     float okA=abs(kind-5.)<0.5?mk.g:mk.r;
-    float ok=smoothstep(0.47,0.53,okA+(nz-0.5)*0.3)*(1.-smoothstep(0.42,0.5,mk.b+(nz-0.5)*0.3)); // crisp, wandering edges where the ground turns too steep or wet
+    float ok=smoothstep(0.35,0.65,okA)*(1.-smoothstep(0.35,0.65,mk.b)); // distinct surveyed margins, without invented noise islands
+    if(st>1.5&&st<2.5&&abs(kind-3.)>0.5&&abs(kind-5.)>0.5)ploughEdge=max(smoothstep(0.05,0.25,okA)*(1.-smoothstep(0.75,0.95,okA)),smoothstep(0.05,0.25,mk.b)*(1.-smoothstep(0.75,0.95,mk.b))*okA);
     if(ok>0.003){
       vec4 S1=texture2D(uSeed,(c1+0.5)/uFN);
       float th=S1.b*3.14159265,w=S1.a*255.;vec2 ax=vec2(cos(th),sin(th)),acr=vec2(-ax.y,ax.x);
@@ -7750,10 +7774,14 @@ float gardenHeading(vec2 fu){
         bool hedged1=abs(kind-2.)<0.5||abs(kind-4.)<0.5||abs(kind-7.)<0.5,hedged2=abs(k2-2.)<0.5||abs(k2-4.)<0.5||abs(k2-7.)<0.5;
         bool hedge=abs(D2.r-D1.r)>0.002||hedged1||hedged2||(abs(k2-kind)>0.5&&k2>0.5&&!(kind<1.5&&abs(k2-6.)<0.5||k2<1.5&&abs(kind-6.)<0.5)); // open field, meadow and demesne lie open
         if(hedge)col=mix(uCol[9]*(0.75+0.5*nz),col,smoothstep(1.3,2.8,eb));   // hedgerow, or a parish bank
-        else col=mix(uCol[3]*0.95,col,smoothstep(2.,4.,eb));                  // an unploughed headland
+        else{col=mix(uCol[3]*0.95,col,smoothstep(2.,4.,eb));if(st>1.5&&st<2.5&&abs(kind-3.)>0.5)ploughEdge=max(ploughEdge,1.-smoothstep(2.,5.,eb));} // turning headland
       }
       vec4 fb=texture2D(uFeat2,(wp+uSize*0.5)/uSize);
       ok*=smoothstep(10.,17.,fb.r*63.75)*smoothstep(0.6,2.6,fb.g*63.75); // houses built on a furlong take their lots out of it: the strips stop at the yard fence
+      vec4 lines=texture2D(uFeat1,(wp+uSize*0.5)/uSize);
+      float roadMargin=smoothstep(6.,10.,lines.b*63.75),waterMargin=smoothstep(3.,7.,lines.r*63.75);
+      ok*=roadMargin*waterMargin; // the plough stops outside verges and ditches, rather than painting stripes through them
+      if(st>1.5&&st<2.5&&abs(kind-3.)>0.5&&abs(kind-5.)>0.5)ploughEdge=max(ploughEdge,okA*(1.-min(roadMargin,waterMargin)));
       diffuseColor.rgb=mix(diffuseColor.rgb,col,ok*(isCommon?0.4:0.94));fieldA=isCommon?0.:ok;
     }
   }
@@ -7771,6 +7799,25 @@ float gardenHeading(vec2 fu){
     float wood=1.-smoothstep(0.,max(8.,uFeaturePixel*2.),dWd);
     float wild=(1.-smoothstep(0.,0.1,fieldA))*(1.-wood);
     c*=mix(1.,0.93+0.12*lnoise(wp*0.06)+0.06*(n3-0.5)+0.03*step(0.93,lh(floor(wp*0.8)))*(0.6+0.4*n2)*(1.-smoothstep(0.25,0.8,pixelM)),wild);
+    // Excluded ploughland has a reason: settlement yards stay worn; open waste is rough scrub.
+    float built=texture2D(uMask,fu+0.5/uGrid).b;
+    float scrub=wild*(1.-smoothstep(0.1,0.8,built))*smoothstep(5.,12.,dB)*smoothstep(3.,8.,dRd)*(1.-smoothstep(0.08,0.22,slope));
+    float clumps=lnoise(wp*0.13),earth=1.-smoothstep(0.24,0.55,clumps);
+    vec3 scrubCol=mix(uSeasonGrass*0.72,mix(vec3(0.38,0.32,0.23),vec3(0.43,0.41,0.36),uDormancy),earth*0.6);
+    // Randomly turned, asymmetric stem fans; individual strokes fade before they alias.
+    vec2 tuftCell=floor(wp/3.4),tuftP=fract(wp/3.4)-0.5;
+    float tuftAngle=lh(tuftCell)*6.2831853;vec2 tuftAxis=vec2(cos(tuftAngle),sin(tuftAngle));
+    vec2 tuft=vec2(dot(tuftP,tuftAxis),dot(tuftP,vec2(-tuftAxis.y,tuftAxis.x)));
+    tuft-=vec2(lh(tuftCell+17.),lh(tuftCell+43.))*0.28-0.14;
+    float stemD=min(abs(tuft.x),min(abs(tuft.x-tuft.y*0.65),abs(tuft.x+tuft.y*0.48)));
+    float stemAA=max(0.014,pixelM/3.4*0.7),stems=(1.-smoothstep(0.012,0.012+stemAA,stemD))*smoothstep(-0.3,-0.2,tuft.y)*(1.-smoothstep(0.1,0.31,tuft.y));
+    stems*=smoothstep(0.28,0.65,clumps)*(1.-smoothstep(0.35,1.2,pixelM));
+    scrubCol=mix(scrubCol,mix(vec3(0.58,0.49,0.3),vec3(0.51,0.46,0.36),uDormancy),stems*0.65);
+    c=mix(c,scrubCol,scrub*0.72);
+    float yard=wild*smoothstep(0.15,0.8,built)*(1.-smoothstep(12.,32.,min(dB,dRd)));
+    c=mix(c,vec3(0.43,0.37,0.27)*miniatureDetail(7.,wp/3.)*(0.96+0.08*n2),yard*0.65);
+    vec3 headland=mix(vec3(0.44,0.37,0.25)*miniatureDetail(7.,wp/3.),uSeasonGrass*0.7,smoothstep(0.35,0.72,clumps));
+    c=mix(c,headland,ploughEdge*0.7*smoothstep(1.,4.,dW)); // trampled turns interspersed with weeds, following the actual plough limit
     c=mix(c,mix(uSeasonWood*0.72,vec3(0.38,0.3,0.22),uDormancy)*miniatureDetail(15.,wp/4.)*(0.88+0.24*n2),0.28*wood)*mix(1.,0.94+0.12*lnoise(wp*0.08),wood); // leaf litter fades through the canopy margin
     if(slope>0.3){ // steep: bare earth and scree streaked down the fall line (valley sides below this stay grass)
       float t=smoothstep(0.32,0.52,slope+(n2-0.5)*0.12)*0.8;
@@ -7779,12 +7826,9 @@ float gardenHeading(vec2 fu){
     }else if(fieldA>0.3&&slope>0.07){ // ploughing along a slope builds lynchets: grassy risers between terraces
       float r=fract(h/3.2+n2*0.15);c=mix(c,uSeasonGrass*0.72,(1.-smoothstep(0.0,0.12,r))*0.55*smoothstep(0.07,0.12,slope));
     }
-    if(dWd<18.&&dW>3.){ // bracken and a soft bank; narrow lines respect the feature-field precision
-      float t=smoothstep(0.,3.,dWd)*(1.-smoothstep(6.,18.,dWd));
-      c=mix(c,mix(uSeasonGrass*0.8,uCol[4]*1.08,n3)*(0.85+0.2*n2),t*0.5);
-      float bw=max(1.5,max(pixelM,uFeaturePixel*0.4));
-      c*=1.+0.05*(1.-smoothstep(0.,bw,abs(dWd-4.6)))-0.08*(1.-smoothstep(0.,bw,abs(dWd-8.)));
-      if(fieldA>0.3)c=mix(c,vec3(0.34,0.26,0.17),(1.-smoothstep(0.,bw,abs(dWd-8.)))*0.2*surfaceLine(dot(wp,cont)/2.4,0.3));
+    if(dWd<18.&&dW>3.){ // litter and bracken taper from the canopy; no invented boundary ditch around isolated trees
+      float t=1.-smoothstep(0.,18.,dWd);
+      c=mix(c,mix(uSeasonGrass*0.8,uCol[4]*1.08,n3)*(0.85+0.2*n2),t*0.22);
     }
     if(dRd<6.&&dW>1.5){ // road verges worn to earth; a ditch beside the country roads; banks where it climbs
       float t=1.-smoothstep(0.6,3.4,dRd);
@@ -7833,7 +7877,7 @@ float gardenHeading(vec2 fu){
     // Context detail is painted after the base snow; restore cover on exposed land,
     // leaving water, wet banks and steep cut faces visible.
     float snowCover=uGroundSnow*(h>380.?1.:h>120.?0.75:0.55)*(1.-smoothstep(0.2,0.6,slope))*smoothstep(uSea+0.5,uSea+2.,h)*smoothstep(0.6,3.,dW);
-    c=mix(c,vec3(0.83,0.85,0.87)*(0.95+0.05*n2),snowCover);
+    c=mix(c,vec3(0.83,0.85,0.87)*(0.95+0.05*n2),snowCover);snowFinish=snowCover;
     diffuseColor.rgb=mix(c,diffuseColor.rgb,smoothstep(2400.,3200.,dcam));
   }
   { float e=max(abs(wp.x),abs(wp.y))-uSize*0.5+(lnoise(wp*0.0033)-0.5)*260.+(lnoise(wp*0.011)-0.5)*120.; // the known world frays at its edge into the country beyond, not a ruled line
@@ -7860,6 +7904,7 @@ float gardenHeading(vec2 fu){
     }
   }
 }`);
+    reflectiveShader(sh,'snowFinish','0.03',0.18);
   };
   mat.needsUpdate=true;
 }
@@ -7922,9 +7967,9 @@ function featRoads(){
   for(const r of W.roads)featStroke(2,r.drawn||r.path,r.grade?4.8:4.2);
   for(const s of W.settlements)for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge')featStroke(2,st.pts,st.hw);
 }
-function featTree(t,add){ // a wood, not clumps: each standing tree claims its whole ground cell
-  const a=G.feat.src[3],cx=cellX(toCell(t.x)),cz=cellZ(toCell(t.z)),r=CELL/2+3;
-  featRect(cx-r,cz-r,cx+r,cz+r,i=>{a[i]=Math.max(0,a[i]+add);});featDirty(cx-r,cz-r,cx+r,cz+r);}
+function featTree(t,add){ // canopy-centred discs overlap into woodland without square cells around lone trees
+  const r=Math.max(FPX*0.75,(t.k==='small'?1.8:3.2)*(t.s||1));
+  featDisc(3,t.x,t.z,r,add);}
 function featLots(){ // the yards as a field of their own: redrawn only where a lot has changed
   const F=G.feat;if(!F||!F.src[5])return;const S=F.src[5];let x0=1e9,z0=1e9,x1=-1e9,z1=-1e9,any=false;
   const grow=B=>{x0=Math.min(x0,B[0]);z0=Math.min(z0,B[1]);x1=Math.max(x1,B[2]);z1=Math.max(z1,B[3]);any=true;};
