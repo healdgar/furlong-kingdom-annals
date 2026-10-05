@@ -3850,7 +3850,7 @@ window.FURLONG_VISUAL=VISUAL;
 // VISUAL DEFERRAL END
 
 function mergeGeoms(list){ // list of [geometry, matrix] → one non-indexed BufferGeometry
-  let pos=[],norm=[];
+  let pos=[],norm=[],surface=[];let hasSurface=false;
   const nm=new THREE.Matrix3();
   for(const[g0,m]of list){
     const g=g0.index?g0.toNonIndexed():g0;
@@ -3858,6 +3858,7 @@ function mergeGeoms(list){ // list of [geometry, matrix] → one non-indexed Buf
     const p=g.attributes.position,n=g.attributes.normal,v=new THREE.Vector3();
     for(let i=0;i<p.count;i++){
       v.set(p.getX(i),p.getY(i),p.getZ(i)).applyMatrix4(m);pos.push(v.x,v.y,v.z);
+      const uv=g.attributes.aSurfaceUV;if(uv){hasSurface=true;surface.push(uv.getX(i),uv.getY(i));}else surface.push(0,0);
       v.set(n.getX(i),n.getY(i),n.getZ(i)).applyNormalMatrix(nm);norm.push(v.x,v.y,v.z);
     }
     if(g!==g0)g.dispose();
@@ -3865,6 +3866,7 @@ function mergeGeoms(list){ // list of [geometry, matrix] → one non-indexed Buf
   const out=new THREE.BufferGeometry();
   out.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   out.setAttribute('normal',new THREE.Float32BufferAttribute(norm,3));
+  if(hasSurface)out.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(surface,2));
   return out;
 }
 const M4=new THREE.Matrix4(),Q1=new THREE.Quaternion(),V1=new THREE.Vector3(),V2=new THREE.Vector3(),C1=new THREE.Color();
@@ -3912,7 +3914,8 @@ function initGraphics(){
   // r128 does not upload cameraPosition for Lambert materials without an envMap.
   G.surfaceU={uSurfaceEye:{value:camera.position}};
   G.surfaceDerivatives=renderer.capabilities.isWebGL2||renderer.extensions.has('OES_standard_derivatives');
-  G.waterU={uWaterTime:{value:0},...G.surfaceU};
+  initMiniatureMaterials();
+  G.waterU={uWaterTime:{value:0},uWaterFeat:{value:null},uWaterFeaturesReady:{value:0},uWaterSize:{value:SIZE},uWaterHeight:{value:null},uWaterGrid:{value:GRID},uWaterSea:{value:SEA},uWaterCoastal:{value:0},...G.surfaceU};
   scene.fog=new THREE.Fog(0xbfd0dd,2600,14000);
   // lights
   G.sun=new THREE.DirectionalLight(0xfff2dc,1.15);
@@ -3952,8 +3955,26 @@ function initGraphics(){
 }
 
 /* ---------------- terrain, water, roads ---------------------------------- */
-// Shared metre-scale grain and filtered procedural lines; no additional textures.
+// One 512px raster atlas, sixteen 128px material cells. Simulation RNG is never read.
+function initMiniatureMaterials(){
+  const mean=Array.from({length:16},()=>new THREE.Vector3(1,1,1));
+  G.miniatureU={uMiniatureAtlas:{value:null},uMiniatureReady:{value:0},uMiniatureMean:{value:mean}};
+  G.waterRippleU={uWaterRippleMap:{value:null},uWaterRippleReady:{value:0}};
+  G.waterRippleReady=new Promise(resolve=>{const t=new THREE.TextureLoader().load(new URL('assets/materials/water-ripples.png',document.baseURI).href,()=>{G.waterRippleU.uWaterRippleReady.value=1;resolve(true);},undefined,()=>resolve(false));t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());G.waterRippleU.uWaterRippleMap.value=t;});
+  G.miniatureReady=new Promise(resolve=>{
+    const t=new THREE.TextureLoader().load(new URL('assets/materials/miniature-atlas.png',document.baseURI).href,tex=>{
+      const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');g.drawImage(tex.image,0,0,512,512);
+      for(let i=0;i<16;i++){const d=g.getImageData((i%4)*128+2,Math.floor(i/4)*128+2,124,124).data,a=[0,0,0];for(let k=0;k<d.length;k+=4)for(let j=0;j<3;j++)a[j]+=d[k+j];mean[i].set(...a.map(x=>Math.max(0.03,x/(124*124*255))));}
+      G.miniatureU.uMiniatureReady.value=1;resolve(true);
+    },undefined,()=>{console.warn('Miniature material atlas unavailable; using base materials.');resolve(false);});
+    t.minFilter=THREE.LinearFilter;t.generateMipmaps=false; // manual detail fade avoids mipmaps bleeding between atlas cells
+    t.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());G.miniatureU.uMiniatureAtlas.value=t;
+  });
+}
+function miniatureShader(sh){Object.assign(sh.uniforms,G.miniatureU);}
+// Shared metre-scale filtering and sampling of the miniature material atlas.
 const SURFACE_GLSL=`
+uniform sampler2D uMiniatureAtlas;uniform float uMiniatureReady;uniform vec3 uMiniatureMean[16];
 float surfaceHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float surfaceNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(surfaceHash(i),surfaceHash(i+vec2(1.,0.)),f.x),mix(surfaceHash(i+vec2(0.,1.)),surfaceHash(i+vec2(1.,1.)),f.x),f.y);}
 float surfaceFootprint(vec2 p){
@@ -3972,72 +3993,159 @@ float surfaceLine(float p,float width){
   float d=abs(fract(p-0.5)-0.5);
   return (1.-smoothstep(width-aa,width+aa,d))*(1.-smoothstep(0.25,0.7,aa));
 }
-float surfaceGrain(vec2 p){float px=surfaceFootprint(p);
-  float fine=(surfaceNoise(p*2.4)-0.5)*(1.-smoothstep(0.15,0.65,px*2.4));
-  return 0.85+0.08*surfaceNoise(p*0.08)+0.22*surfaceNoise(p*0.35)+0.16*fine;
+vec3 miniatureDetail(float cell,vec2 uv){
+  vec2 tile=vec2(mod(cell,4.),3.-floor(cell/4.));
+  // Two-pixel gutters prevent adjacent materials from entering bilinear samples.
+  vec2 q=(tile+(vec2(2.)+fract(uv)*124.)/128.)/4.;
+  vec3 mean=vec3(1.);
+  for(int i=0;i<16;i++)if(abs(cell-float(i))<0.5)mean=uMiniatureMean[i]; // WebGL1 permits constant loop indices
+  vec3 detail=texture2D(uMiniatureAtlas,q).rgb/mean;
+  float fade=uMiniatureReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(uv)));
+  if(cell<0.5)detail=mix(vec3(1.),detail,0.85);
+  if(abs(cell-4.)<0.5)detail=mix(vec3(1.),detail,0.35);
+  if(abs(cell-8.)<0.5)detail=mix(vec3(1.),detail,0.4); // keep straw fibres subordinate to the roof form
+  return mix(vec3(1.),clamp(detail,vec3(0.32),vec3(2.2)),fade);
 }
 `;
 function surfaceDetail(mat){
   if(G.surfaceDerivatives){mat.extensions={...mat.extensions,derivatives:true};mat.defines={...mat.defines,SURFACE_DERIVATIVES:1};}
   return mat;
 }
+function miniatureMaterial(cell,metres,options={},grainAlong=false){ // world coordinates keep joined fence/bridge sections continuous
+  const mat=surfaceDetail(new THREE.MeshLambertMaterial(options));
+  mat.onBeforeCompile=sh=>{
+    miniatureShader(sh);sh.uniforms.uMiniCell={value:cell};sh.uniforms.uMiniScale={value:new THREE.Vector2(...metres)};sh.uniforms.uGrainAlong={value:grainAlong?1:0};
+    sh.vertexShader='varying vec3 vMiniWP,vMiniN,vMiniAlong,vMiniUp;\n#ifdef MINI_STRUCTURE_UV\nattribute vec2 aSurfaceUV;varying vec2 vMiniUV;\n#endif\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      #ifdef MINI_STRUCTURE_UV
+      vMiniUV=aSurfaceUV;
+      #endif
+      vec4 miniPos=vec4(transformed,1.);vec3 miniN=normal;vMiniAlong=normalize(vec3(-normal.z,0.,normal.x)+vec3(0.0001,0.,0.));vMiniUp=vec3(0.,1.,0.);
+      #ifdef USE_INSTANCING
+      miniPos=instanceMatrix*miniPos;miniN=mat3(instanceMatrix)*miniN;
+      vMiniAlong=normalize(length(instanceMatrix[0].xyz)>length(instanceMatrix[2].xyz)?instanceMatrix[0].xyz:instanceMatrix[2].xyz);vMiniUp=normalize(instanceMatrix[1].xyz);
+      #endif
+      vMiniWP=(modelMatrix*miniPos).xyz;vMiniN=normalize(mat3(modelMatrix)*miniN);`);
+    sh.fragmentShader='varying vec3 vMiniWP,vMiniN,vMiniAlong,vMiniUp;uniform float uMiniCell,uGrainAlong;uniform vec2 uMiniScale;\n#ifdef MINI_STRUCTURE_UV\nvarying vec2 vMiniUV;\n#endif\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      vec3 an=abs(vMiniN);vec2 coord=an.y>max(an.x,an.z)?vMiniWP.xz:an.x>an.z?vMiniWP.zy:vMiniWP.xy;
+      float cell=uMiniCell;
+      if(cell< -1.5)cell=diffuseColor.b>diffuseColor.r?10.:diffuseColor.r>0.65?5.:diffuseColor.r>0.5?8.:6.; // slate, stone spires, thatch and shingle
+      else if(cell<0.)cell=diffuseColor.r-diffuseColor.b>0.15?6.:5.; // shared wall batches contain both stone and palisade
+      #ifdef USE_INSTANCING
+      vec3 a=normalize(vMiniAlong),up=normalize(vMiniUp),crossAxis=normalize(cross(up,a));
+      coord=an.y>max(an.x,an.z)?vec2(dot(vMiniWP,crossAxis),dot(vMiniWP,a)):vec2(dot(vMiniWP,a),dot(vMiniWP,up));
+      if(cell>5.5&&cell<6.5&&uGrainAlong>0.5&&an.y<0.8)coord=coord.yx;
+      #endif
+      #ifdef MINI_STRUCTURE_UV
+      coord=vMiniUV;if(cell>4.5&&cell<5.5&&an.y>max(an.x,an.z))cell=2.;
+      #endif
+      diffuseColor.rgb*=miniatureDetail(cell,coord/uMiniScale);`);
+  };return mat;
+}
 function roadMaterial(joins){
   const mat=surfaceDetail(new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide,transparent:true,depthWrite:false,
     polygonOffset:true,polygonOffsetFactor:joins?-2:-1,polygonOffsetUnits:joins?-8:-4}));
   mat.onBeforeCompile=sh=>{
-    sh.vertexShader='attribute float aEdge;varying float vEdge;varying vec3 vRoadWP;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
-      vEdge=aEdge;vRoadWP=(modelMatrix*vec4(transformed,1.)).xyz;`);
-    sh.fragmentShader='varying float vEdge;varying vec3 vRoadWP;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+    miniatureShader(sh);
+    sh.vertexShader='attribute float aEdge;attribute vec2 aSurfaceUV;varying vec2 vRoadUV;varying float vEdge;varying vec3 vRoadWP;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vRoadUV=aSurfaceUV;vEdge=aEdge;vRoadWP=(modelMatrix*vec4(transformed,1.)).xyz;`);
+    sh.fragmentShader='varying vec2 vRoadUV;varying float vEdge;varying vec3 vRoadWP;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       vec2 wp=vRoadWP.xz;float px=surfaceFootprint(wp);
       float pave=(1.-smoothstep(0.12,0.18,diffuseColor.r-diffuseColor.b))*(1.-smoothstep(-0.01,0.01,diffuseColor.g-diffuseColor.r)); // greens have no paving
-      float joint=max(surfaceLine(wp.x/0.7,0.025),surfaceLine(wp.y/0.55+floor(wp.x/0.7)*0.5,0.025));
-      diffuseColor.rgb*=surfaceGrain(wp)*(1.-0.12*pave*joint);
+      diffuseColor.rgb*=mix(miniatureDetail(7.,vRoadUV/3.),miniatureDetail(2.,vRoadUV/3.),pave);
+      // Broken gravel/mud at the road edge joins the ground's matching verge band.
+      diffuseColor.rgb=mix(vec3(0.49,0.43,0.32)*miniatureDetail(3.,wp/3.),diffuseColor.rgb,smoothstep(0.05,0.8,vEdge));
       diffuseColor.a*=smoothstep(0.03,0.82,vEdge+(surfaceNoise(wp*0.6)-0.5)*0.12*(1.-smoothstep(0.5,2.,px)));`);
   };
   return mat;
 }
-function waterMaterial(options){
+function waterMaterial(options,channel=false,sea=false){
   const mat=surfaceDetail(new THREE.MeshPhongMaterial(options));
+  if(channel)mat.defines={...mat.defines,MINI_CHANNEL:1};
+  if(sea)mat.defines={...mat.defines,MINI_SEA:1};
   mat.onBeforeCompile=sh=>{
-    Object.assign(sh.uniforms,G.waterU);
-    sh.vertexShader='varying vec3 vWaterWP;\n'+sh.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
-      vWaterWP=(modelMatrix*vec4(transformed,1.)).xyz;`);
-    sh.fragmentShader='varying vec3 vWaterWP;uniform float uWaterTime;uniform vec3 uSurfaceEye;\n'+SURFACE_GLSL+sh.fragmentShader
-      .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
-        vec2 wp=vWaterWP.xz;float ripple=(1.-smoothstep(600.,1500.,distance(vWaterWP,uSurfaceEye)))*(1.-smoothstep(0.8,3.,surfaceFootprint(wp)));
-        vec3 wave=vec3(sin(dot(wp,vec2(0.7,0.23))+uWaterTime*0.65),0.,cos(dot(wp,vec2(-0.19,0.63))-uWaterTime*0.48))*0.045*ripple;
-        normal=normalize(normal+mat3(viewMatrix)*wave);`)
-      .replace('#include <color_fragment>',`#include <color_fragment>
-        diffuseColor.rgb*=0.99+0.02*surfaceNoise(vWaterWP.xz*0.025);`);
-  };
-  return mat;
+    Object.assign(sh.uniforms,G.waterU,G.waterRippleU);miniatureShader(sh);
+    sh.vertexShader=`varying vec3 vWaterWP;
+      #ifdef MINI_CHANNEL
+      attribute vec2 aSurfaceUV,aSurfaceTangent;attribute float aBankDistance;varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;
+      #endif
+      `+sh.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
+      vWaterWP=(modelMatrix*vec4(transformed,1.)).xyz;
+      #ifdef MINI_CHANNEL
+      vWaterUV=aSurfaceUV;vWaterTangent=aSurfaceTangent;vWaterBank=aBankDistance;
+      #endif`);
+    sh.fragmentShader=`varying vec3 vWaterWP;uniform float uWaterTime,uWaterFeaturesReady,uWaterSize,uWaterRippleReady;uniform sampler2D uWaterFeat,uWaterRippleMap,uWaterHeight;uniform float uWaterGrid,uWaterSea,uWaterCoastal;uniform vec3 uSurfaceEye;
+      #ifdef MINI_CHANNEL
+      varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;
+      #endif
+      ` +SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      vec2 waterWP=vWaterWP.xz,waterFU=(waterWP+uWaterSize*0.5)/uWaterSize,waterOff=vec2(3./uWaterSize,0.);
+      vec2 waterGrad=vec2(texture2D(uWaterFeat,waterFU+waterOff).r-texture2D(uWaterFeat,waterFU-waterOff).r,texture2D(uWaterFeat,waterFU+waterOff.yx).r-texture2D(uWaterFeat,waterFU-waterOff.yx).r);
+      vec2 waterAcross=length(waterGrad)>0.0001?normalize(waterGrad):normalize(vec2(0.7,0.3));
+      vec2 waterAlong=vec2(-waterAcross.y,waterAcross.x);
+      vec2 waterUV=vec2(dot(waterWP,waterAlong),dot(waterWP,waterAcross));
+      vec2 waterDrift=vec2(0.,-uWaterTime*0.04);float waterPhase=waterUV.y*0.7-uWaterTime*0.65;
+      #ifdef MINI_CHANNEL
+      waterAlong=normalize(vWaterTangent);waterAcross=vec2(-waterAlong.y,waterAlong.x);
+      waterUV=vWaterUV.yx;waterDrift=vec2(-uWaterTime*0.055,0.);waterPhase=vWaterUV.y*0.75-uWaterTime*0.9;
+      #endif
+      vec3 rippleTex=texture2D(uWaterRippleMap,waterUV/vec2(16.,24.)+waterDrift).rgb;
+      float detail=dot(rippleTex,vec3(0.2126,0.7152,0.0722))/0.3721;
+      float visible=uWaterRippleReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(waterUV/vec2(16.,24.))));
+      diffuseColor.rgb*=mix(1.,clamp(detail,0.75,1.5),visible*0.95); // sparse ripples, no bitmap foam overlay
+      #ifdef MINI_SEA
+      vec2 lattice=(waterWP+uWaterSize*0.5)/(uWaterSize/uWaterGrid),cell=floor(lattice),f=fract(lattice);
+      float h00=texture2D(uWaterHeight,(cell+0.5)/uWaterGrid).r*32.-16.;
+      float h10=texture2D(uWaterHeight,(cell+vec2(1.5,0.5))/uWaterGrid).r*32.-16.;
+      float h01=texture2D(uWaterHeight,(cell+vec2(0.5,1.5))/uWaterGrid).r*32.-16.;
+      float h11=texture2D(uWaterHeight,(cell+1.5)/uWaterGrid).r*32.-16.;
+      float shoreHeight=f.x+f.y<=1.?h00+(h10-h00)*f.x+(h01-h00)*f.y:h11+(h01-h11)*(1.-f.x)+(h10-h11)*(1.-f.y);
+      float depth=0.5-shoreHeight;
+      if(all(greaterThanEqual(lattice,vec2(0.)))&&all(lessThan(lattice,vec2(uWaterGrid-1.))))diffuseColor.a*=smoothstep(0.,0.45,depth+(surfaceNoise(waterWP*0.7)-0.5)*0.3);
+      #endif
+      #ifdef MINI_CHANNEL
+      float shoreNoise=surfaceNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
+      float shore=1.-smoothstep(0.2,shoreWidth,vWaterBank);
+      vec3 wetGravel=vec3(0.37,0.36,0.29)*miniatureDetail(3.,waterWP/2.5);
+      diffuseColor.rgb=mix(diffuseColor.rgb,wetGravel,shore*0.92);
+      diffuseColor.a*=smoothstep(0.,0.45+shoreNoise*0.65,vWaterBank);
+      if(uWaterCoastal>0.5)diffuseColor.a*=smoothstep(uWaterSea+0.35,uWaterSea+1.2,vWaterWP.y); // gravel and a broken wet margin follow the actual channel, including bends
+      #endif
+      `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+      float ripple=(1.-smoothstep(600.,1500.,distance(vWaterWP,uSurfaceEye)))*(1.-smoothstep(0.8,3.,surfaceFootprint(waterWP)));
+      vec2 tilt=(waterAlong*sin(waterPhase)+waterAcross*cos(waterPhase*0.43))*0.022*ripple;
+      normal=normalize(normal+mat3(viewMatrix)*vec3(tilt.x,0.,tilt.y));`);
+  };return mat;
 }
 function bridgeMaterial(){ // the deck joins the paved road; piers share the existing ashlar tile
   const mat=surfaceDetail(new THREE.MeshLambertMaterial({map:G.wallTex||(G.wallTex=wallAtlas())}));
   mat.onBeforeCompile=sh=>{
-    sh.vertexShader='varying vec3 vBridgeWP;varying vec3 vBridgeN;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
-      vBridgeWP=(modelMatrix*vec4(transformed,1.)).xyz;vBridgeN=normalize(mat3(modelMatrix)*normal);`);
-    sh.fragmentShader='varying vec3 vBridgeWP;varying vec3 vBridgeN;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
+    miniatureShader(sh);
+    sh.vertexShader='attribute vec2 aSurfaceUV;varying vec2 vBridgeUV;varying vec3 vBridgeWP;varying vec3 vBridgeN;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vBridgeUV=aSurfaceUV;vBridgeWP=(modelMatrix*vec4(transformed,1.)).xyz;vBridgeN=normalize(mat3(modelMatrix)*normal);`);
+    sh.fragmentShader='varying vec2 vBridgeUV;varying vec3 vBridgeWP;varying vec3 vBridgeN;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
       vec2 wp=vBridgeWP.xz;vec3 n=normalize(vBridgeN);
       vec2 along=length(n.xz)>0.01?normalize(vec2(-n.z,n.x)):vec2(1.,0.);
       vec2 uv=fract(vec2(dot(wp,along)/2.,vBridgeWP.y));
       vec4 stone=texture2D(map,vec2((3.+clamp(uv.x,0.03,0.97))/4.,1.-(2.-clamp(uv.y,0.03,0.97))/3.));
-      vec3 wall=vec3(0.616,0.576,0.514)*mapTexelToLinear(stone).rgb;
-      float joint=max(surfaceLine(wp.x/0.7,0.025),surfaceLine(wp.y/0.55+floor(wp.x/0.7)*0.5,0.025));
-      vec3 paving=vec3(0.553,0.522,0.463)*surfaceGrain(wp)*(1.-0.12*joint);
+      vec3 wall=vec3(0.616,0.576,0.514)*miniatureDetail(5.,vec2(dot(wp,along),vBridgeWP.y)/3.);
+      vec3 paving=vec3(0.553,0.522,0.463)*miniatureDetail(2.,vBridgeUV/3.);
       diffuseColor.rgb=mix(wall,paving,smoothstep(0.55,0.8,n.y));
       #endif`);
   };
   return mat;
 }
 function terrNormal(x,z){const e=5,dx=hAt(x+e,z)-hAt(x-e,z),dz=hAt(x,z+e)-hAt(x,z-e),l=Math.hypot(dx,2*e,dz);return[-dx/l,2*e/l,-dz/l];}
-function newAcc(edges=false){return{p:[],n:[],c:[],i:[],e:edges?[]:null};}
+function newAcc(edges=false){return{p:[],n:[],c:[],i:[],uv:[],tangent:[],bank:[],e:edges?[]:null};}
 function accMesh(acc,mat){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(acc.p,3));
   g.setAttribute('normal',new THREE.Float32BufferAttribute(acc.n,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(acc.c,3));
   if(acc.e&&acc.e.length===acc.p.length/3)g.setAttribute('aEdge',new THREE.Float32BufferAttribute(acc.e,1));
+  for(let i=0;i<acc.p.length/3;i++)if(acc.uv[i*2]===undefined){acc.uv[i*2]=acc.p[i*3];acc.uv[i*2+1]=acc.p[i*3+2];acc.tangent[i*2]=0;acc.tangent[i*2+1]=1;}
+  g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(acc.uv,2));
+  g.setAttribute('aSurfaceTangent',new THREE.Float32BufferAttribute(acc.tangent,2));
+  if(acc.bank.length===acc.p.length/3)g.setAttribute('aBankDistance',new THREE.Float32BufferAttribute(acc.bank,1));
   g.setIndex(acc.i);
   return new THREE.Mesh(g,mat);
 }
@@ -4046,12 +4154,15 @@ function accMesh(acc,mat){
 function strip(pts,acc,o){
   const n=pts.length;if(n<2)return;
   const fr=o.fr,m=fr.length,base=acc.p.length/3;
+  let along=pts[0]._surfaceS||0;
   for(let k=0;k<n;k++){
+    if(k)along+=dist2d(pts[k-1].x,pts[k-1].z,pts[k].x,pts[k].z);
     const a=pts[Math.max(0,k-1)],b=pts[Math.min(n-1,k+1)];
     let tx=b.x-a.x,tz=b.z-a.z;const L=Math.hypot(tx,tz)||1;tx/=L;tz/=L;
     const hw=o.hw(k),yc=o.flatY?o.flatY(k):0;
     for(let j=0;j<m;j++){
       const x=pts[k].x-tz*hw*fr[j],z=pts[k].z+tx*hw*fr[j];
+      const vi=acc.p.length/3;acc.uv[vi*2]=hw*fr[j];acc.uv[vi*2+1]=along;acc.tangent[vi*2]=tx;acc.tangent[vi*2+1]=tz;acc.bank[vi]=hw*(1.-Math.abs(fr[j]));
       acc.p.push(x,o.flatY?yc:hAt(x,z)+o.lift,z);
       const nn=o.flatY?[0,1,0]:terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
       C1.setHex(o.col(k,j,x,z));acc.c.push(C1.r,C1.g,C1.b);
@@ -4166,6 +4277,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   const dupSpan=(a,b,hw)=>spans.some(o=>{const m={x:(a.x+b.x)/2,z:(a.z+b.z)/2}; // a second road on the same crossing uses the bridge already there
     return segDist(m.x,m.z,o.a,o.b)<o.hw+hw+2&&segDist(a.x,a.z,o.a,o.b)<o.hw+hw+8&&segDist(b.x,b.z,o.a,o.b)<o.hw+hw+8;});
   const lay=(pts,hw,lift,col)=>{
+    let surfaceS=0;for(let i=0;i<pts.length;i++){if(i)surfaceS+=dist2d(pts[i-1].x,pts[i-1].z,pts[i].x,pts[i].z);pts[i]._surfaceS=surfaceS;}
     const W8=pts.map(q=>riverAt(q.x,q.z,hw*0.5+1));
     for(let k=1;k<pts.length-1;k++)if(!W8[k]){let j=k;while(j<pts.length-1&&!W8[j])j++; // a dry blip mid-stream (a bar, a bend) does not split the bridge
       if(W8[k-1]&&W8[j]&&j-k<=3&&dist2d(pts[k-1].x,pts[k-1].z,pts[j].x,pts[j].z)<18)for(let m=k;m<j;m++)W8[m]=W8[k-1];k=j;}
@@ -4246,8 +4358,9 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       pts.sort((p,q)=>Math.atan2(p.z-j.z,p.x-j.x)-Math.atan2(q.z-j.z,q.x-j.x));
       const hull=[];for(const q of pts){while(hull.length>=2){const a=hull[hull.length-2],b=hull[hull.length-1];if((b.x-a.x)*(q.z-a.z)-(b.z-a.z)*(q.x-a.x)<=0)hull.pop();else break;}hull.push(q);} // convex, wound about the centre
       while(hull.length>3){const a=hull[hull.length-2],b=hull[hull.length-1],q=hull[0];if((b.x-a.x)*(q.z-a.z)-(b.z-a.z)*(q.x-a.x)<=0)hull.pop();else break;}
-      const pal=j.pv?PAVECOL:ROADCOL,base=jacc.p.length/3,R=[0,0.55,1],n=hull.length;
+      const pal=j.pv?PAVECOL:ROADCOL,base=jacc.p.length/3,R=[0,0.55,1],n=hull.length,main=j.arms.reduce((a,b)=>b.hw>a.hw?b:a);
       for(const f of R)for(let k=0;k<(f?n:1);k++){const q=f?{x:j.x+(hull[k].x-j.x)*f,z:j.z+(hull[k].z-j.z)*f}:j;
+        jacc.uv.push(-q.x*main.dz+q.z*main.dx,q.x*main.dx+q.z*main.dz);jacc.tangent.push(main.dx,main.dz);
         jacc.p.push(q.x,hAt(q.x,q.z)+0.36,q.z);const nn=terrNormal(q.x,q.z);jacc.n.push(nn[0],nn[1],nn[2]);C1.setHex(pal.dirt);jacc.c.push(C1.r,C1.g,C1.b);jacc.e.push(f===1?0:1);}
       for(let k=0;k<n;k++){const k1=(k+1)%n,r1=base+1,r2=base+1+n;jacc.i.push(base,r1+k1,r1+k,r1+k,r1+k1,r2+k1,r1+k,r2+k1,r2+k);}
     }
@@ -4277,9 +4390,10 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       sh.lineTo(x1,yb);sh.lineTo(x1,spring);for(let j=1;j<=10;j++){const f=j/10;sh.lineTo(x1-(x1-x0)*f,spring+rk*Math.sin(Math.PI*f));}sh.lineTo(x0,yb);}
     sh.lineTo(s0*0.5,yb);sh.lineTo(0,hA-2.5);
     const M=new THREE.Matrix4().makeBasis(new THREE.Vector3(ux,0,uz),new THREE.Vector3(0,1,0),new THREE.Vector3(px,0,pz)).setPosition(A.x,0,A.z);
-    const body=new THREE.ExtrudeGeometry(sh,{depth:bw,bevelEnabled:false,curveSegments:1});body.translate(0,0,-bw/2);parts.push([body,M]);
+    const bridgeUV=g=>{const P=g.attributes.position,U=[];for(let i=0;i<P.count;i++)U.push(P.getZ(i),P.getX(i)+(sp.a._surfaceS||0)-E);g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(U,2));return g;};
+    const body=new THREE.ExtrudeGeometry(sh,{depth:bw,bevelEnabled:false,curveSegments:1});body.translate(0,0,-bw/2);bridgeUV(body);parts.push([body,M]);
     const par=new THREE.Shape();par.moveTo(0,deck(0)-0.1);for(let k=1;k<=K;k++)par.lineTo(Ls*k/K,deck(k/K)-0.1);for(let k=K;k>=0;k--)par.lineTo(Ls*k/K,deck(k/K)+1.05);
-    for(const sd of[-1,1]){const g=new THREE.ExtrudeGeometry(par,{depth:0.55,bevelEnabled:false,curveSegments:1});g.translate(0,0,sd*(bw/2-0.28)-0.275);parts.push([g,M]);}
+    for(const sd of[-1,1]){const g=new THREE.ExtrudeGeometry(par,{depth:0.55,bevelEnabled:false,curveSegments:1});g.translate(0,0,sd*(bw/2-0.28)-0.275);bridgeUV(g);parts.push([g,M]);}
   }
   G.bridges=new THREE.Mesh(parts.length?mergeGeoms(parts):new THREE.BufferGeometry(),G.bridgeMat||(G.bridgeMat=bridgeMaterial()));
   G.bridges.castShadow=true;G.bridges.receiveShadow=true;
@@ -4397,19 +4511,24 @@ function buildTerrain(){
   G.terrain.receiveShadow=true;
   scene.add(G.terrain);
   updateTerrainColors(0,0);buildApron();
+  // Shallow-water fade uses the same triangular terrain interpolation as hAt.
+  const shoreData=new Uint8Array(GRID*GRID*4);
+  for(let i=0;i<W.h.length;i++){shoreData[i*4]=Math.round(clamp((W.h[i]-SEA+16.)/32.,0,1)*255);shoreData[i*4+3]=255;}
+  const shoreTex=new THREE.DataTexture(shoreData,GRID,GRID,THREE.RGBAFormat);shoreTex.needsUpdate=true;
+  G.waterU.uWaterHeight.value=shoreTex;G.waterU.uWaterCoastal.value=W.coastal?1:0;
   // sea
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
-    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10})); // a faint sheen: any stronger and the sun blows the open sea out to white
+    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92,shininess:30,specular:0x080d10},false,true)); // a faint sheen: any stronger and the sun blows the open sea out to white
     G.sea.position.y=SEA+0.5;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
   const riv=newAcc();
   const drawnPart=st=>{ // for drawing only (layouts still see the whole channel): no overlapping tongues
     const me=G.rivStrips.indexOf(st),inOther=(q,w)=>G.rivStrips.some((o,oi)=>o!==st&&!o.canal&&o.pts.some((p2,k)=>k<o.pts.length-1&&segDist(q.x,q.z,p2,o.pts[k+1])<o.hw[k]*0.6&&(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me)));
-    const sea=q=>W.water[cIdx(toCell(q.x),toCell(q.z))]===1||hAt(q.x,q.z)<SEA+1; // under the sea plane anyway
+    const sea=q=>hAt(q.x,q.z)<SEA+0.2; // trim against the rendered coast, not the coarse water-cell mask
     let a=0,b=st.pts.length;
-    if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;}
+    if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;a=Math.max(0,a-1);b=Math.min(st.pts.length,b+1);}
     else{let k=b-1;while(k>1&&(sea(st.pts[k-1])||inOther(st.pts[k-1],st.hw[k-1])))k--;b=Math.min(b,k+1);} // keep one point in, to meet the water
     if(b-a<2)return null;
     const out={pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:st.ys.slice(a,b),mouth:0};
@@ -4421,12 +4540,17 @@ function buildTerrain(){
         out.hw[n-1]=Math.min(o.hw[k]*0.9,out.hw[n-1]*1.7);
         if(n>2)out.hw[n-2]*=1.25;for(let j=0;j<n-1;j++)out.ys[j]=Math.max(out.ys[j],o.ys[k]);out.mouth=1;}
     }
+    if(!out.mouth){ // the channel dives beneath the sea rather than ending as a square blue tongue
+      const n=out.pts.length;
+      if(sea(out.pts[n-1])){out.ys[n-1]=SEA+0.35;out.hw[n-1]*=1.12;}
+      if(st.canal&&sea(out.pts[0]))out.ys[0]=SEA+0.35;
+    }
     return out;
   };
   for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;
     strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k]; // drowned under a mill-pond, the old channel stays below its surface
         for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))y=Math.min(y,s.lake.y-0.8);return y;},
-      col:(k,j)=>j===2||st.mouth&&k===st.pts.length-1?0x2b5a7e:(j===1||j===3)?0x356a8f:0x5b8ea8});}
+      col:(k,j)=>j===2||st.mouth&&k===st.pts.length-1?0x245b72:(j===1||j===3)?0x306d82:0x568da0});}
   const lk=newAcc(); // mill-ponds: a flat, opaque sheet at the dam's level (the shore is where the ground rises through it; the drowned channel stays hidden)
   for(const s of W.settlements)if(s.lake){
     const P=s.lake.poly,base=lk.p.length/3,y=s.lake.y;
@@ -4434,8 +4558,8 @@ function buildTerrain(){
     for(let i=1;i<P.length-1;i++)lk.i.push(base,base+i+1,base+i);
   }
   if(lk.i.length){G.lakes=accMesh(lk,waterMaterial({vertexColors:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide}));scene.add(G.lakes);}
-  G.rivers=accMesh(riv,waterMaterial({vertexColors:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide,
-    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));
+  G.rivers=accMesh(riv,waterMaterial({vertexColors:true,transparent:true,shininess:30,specular:0x06090b,side:THREE.DoubleSide,
+    polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3},true));
   scene.add(G.rivers);
   rebuildRoadMesh();
 }
@@ -4504,11 +4628,16 @@ function treeGeom(parts){ // [geometry, bark or leaf colour, 1 if crown]: the cr
   out.setAttribute('color',new THREE.Float32BufferAttribute(col,3));out.setAttribute('aCrown',new THREE.Float32BufferAttribute(cr,1));
   return out;
 }
-function crownMat(hex){ // the material colour is the leaf of the season, and it tints the crown only: bark stays bark
-  const m=new THREE.MeshLambertMaterial({color:hex,vertexColors:true});
+function crownMat(hex,leafCell=13){ // the material colour is the leaf of the season, and it tints the crown only: bark stays bark
+  const m=surfaceDetail(new THREE.MeshLambertMaterial({color:hex,vertexColors:true}));
   m.onBeforeCompile=sh=>{
-    sh.vertexShader='attribute float aCrown;\nvarying float vCrown;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n  vCrown=aCrown;');
-    sh.fragmentShader='varying float vCrown;\n'+sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n  diffuseColor.rgb=mix(vColor.rgb,diffuseColor.rgb,vCrown);');
+    miniatureShader(sh);sh.uniforms.uLeafCell={value:leafCell};
+    sh.vertexShader='attribute float aCrown;varying float vCrown;varying vec3 vTreeP,vTreeN;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vCrown=aCrown;vTreeP=position*vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));vTreeN=normal;`);
+    sh.fragmentShader='varying float vCrown;varying vec3 vTreeP,vTreeN;uniform float uLeafCell;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      diffuseColor.rgb=mix(vColor.rgb,diffuseColor.rgb,vCrown);
+      vec3 an=abs(vTreeN);vec2 tp=an.y>max(an.x,an.z)?vTreeP.xz:an.x>an.z?vTreeP.zy:vTreeP.xy;
+      diffuseColor.rgb*=miniatureDetail(vCrown>0.5?uLeafCell:12.,tp/vec2(2.,3.));`);
   };
   return m;
 }
@@ -4557,7 +4686,7 @@ function buildTrees(){
   for(const k of['dec','pine','small']){const a=spots[k],cap=Math.round((k==='small'?3000:9000)*MAPK*MAPK);if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
   /* each species is cut into a 5×5 grid of chunks, each its own instanced mesh with its own bounds, so the renderer
      draws (and shadows) only the woods in view rather than every tree in the realm */
-  G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138),small:crownMat(0x6f9444)};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
+  G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138,14),small:crownMat(0x6f9444)};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
   const TG={dec:decidG,pine:pineG,small:smallG},NC=5,CS=SIZE*1.4/NC,cix=v=>clamp(Math.floor((v+SIZE*0.7)/CS),0,NC-1);G.treeChunks=[];
   for(const k in TG){const by=new Map();for(const t of spots[k]){const c=cix(t.z)*NC+cix(t.x);if(!by.has(c))by.set(c,[]);by.get(c).push(t);}
     for(const[c,list]of by){const g=TG[k].clone(),cx=(c%NC+0.5)*CS-SIZE*0.7,cz=(Math.floor(c/NC)+0.5)*CS-SIZE*0.7;
@@ -4581,7 +4710,7 @@ function wallAtlas(){ /* one bay of one storey per tile, tiled across each face 
   const T=64,c=document.createElement('canvas');c.width=T*4;c.height=T*3;const g=c.getContext('2d');
   const rnd=(()=>{let a=7;return()=>(a=(a*16807)%2147483647)/2147483647;})();
   const tile=(col,row,fn)=>{g.save();g.translate(col*T,row*T);g.beginPath();g.rect(0,0,T,T);g.clip();fn();g.restore();};
-  // Matte plaster and limestone grain reuse the 64px atlas bays; no runtime assets.
+  // Architectural bays retain doors/windows; the raster atlas supplies their surface materials.
   const grain=(amount)=>{for(let i=0;i<300;i++){g.fillStyle=`rgba(70,57,42,${rnd()*amount})`;g.fillRect(rnd()*T,rnd()*T,1,1);}};
   const plaster=()=>{g.fillStyle='#faf7ed';g.fillRect(0,0,T,T);for(let i=0;i<14;i++){g.fillStyle=`rgba(75,60,40,${rnd()*0.045})`;g.fillRect(rnd()*T,rnd()*T,5+rnd()*9,3+rnd()*5);}grain(0.055);};
   const stone=(dark)=>{g.fillStyle=dark?'#d8d2c6':'#f0eadb';g.fillRect(0,0,T,T);grain(0.09);g.strokeStyle='rgba(70,60,50,0.2)';g.lineWidth=1;
@@ -4617,6 +4746,7 @@ function wallAtlas(){ /* one bay of one storey per tile, tiled across each face 
 function wallMaterial(){ // walls laid out in whole storeys and bays for every face, whatever the house's size
   const m=surfaceDetail(new THREE.MeshLambertMaterial({map:G.wallTex||(G.wallTex=wallAtlas())}));
   m.onBeforeCompile=sh=>{
+    miniatureShader(sh);
     sh.vertexShader='attribute float aKind;attribute vec2 aFront;attribute float aBase;\nvarying vec2 vFace;varying vec2 vDim;varying float vKind;varying float vFrontDot;varying float vBase;\n'+
       sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
   vec3 isc=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));
@@ -4640,7 +4770,9 @@ function wallMaterial(){ // walls laid out in whole storeys and bays for every f
     vec4 texelColor=texture2D(map,vec2((col+clamp(fu,0.03,0.97))/4.0,1.0-(row+1.0-clamp(fv,0.03,0.97))/3.0));
     if(yv<0.0)texelColor.rgb*=0.72;
     diffuseColor*=mapTexelToLinear(texelColor);
-    diffuseColor.rgb*=surfaceGrain(vFace*1.2);
+    if((mat<0.5||abs(mat-2.)<0.5)&&texelColor.r>0.45&&diffuseColor.r>0.28)diffuseColor.rgb=mix(diffuseColor.rgb,texelColor.rgb*vec3(0.9,0.87,0.78),0.6);
+    diffuseColor.rgb*=miniatureDetail((mat>0.5&&mat<1.5)||mat>2.5?5.:4.,vFace/vec2(3.,2.8));
+    if(mat<2.5&&texelColor.r<0.45)diffuseColor.rgb*=miniatureDetail(6.,vFace/vec2(1.2,3.));
     diffuseColor.rgb*=1.-0.08*(1.-smoothstep(0.,0.45,max(0.,yv)));
     diffuseColor.rgb*=1.-0.09*smoothstep(vDim.y-0.5,vDim.y,vFace.y);
   }
@@ -4673,6 +4805,7 @@ function roofTexture(){ // tile or thatch courses running along the ridge
 function roofMaterial(){ // metre-sized courses; the triangular ends are walls, not roof covering
   const mat=surfaceDetail(new THREE.MeshLambertMaterial({map:G.roofTex||(G.roofTex=roofTexture())}));
   mat.onBeforeCompile=sh=>{
+    miniatureShader(sh);
     sh.uniforms.uGableAtlas={value:G.wallTex};
     sh.vertexShader='attribute vec3 aGableColor;attribute float aKind;attribute float aRoofKind;varying vec2 vRoofUV;varying vec2 vGableUV;varying vec3 vGableColor;varying float vGable;varying float vGableKind;varying float vRoofKind;\n'+sh.vertexShader
       .replace('#include <begin_vertex>',`#include <begin_vertex>
@@ -4686,16 +4819,12 @@ function roofMaterial(){ // metre-sized courses; the triangular ends are walls, 
         if(vGable>0.5){
           vec2 bay=fract(vGableUV/vec2(3.1,2.8));
           vec4 wall=texture2D(uGableAtlas,vec2((vGableKind+clamp(bay.x,0.03,0.97))/4.,1.-(2.-clamp(bay.y,0.03,0.97))/3.));
-          diffuseColor.rgb=vGableColor*mapTexelToLinear(wall).rgb*(0.91+0.09*smoothstep(0.,0.35,vGableUV.y));
+          vec3 gableBase=vGableColor;
+          if(vGableKind<0.5||abs(vGableKind-2.)<0.5)gableBase=mix(gableBase,vec3(0.9,0.87,0.78),0.6);
+          diffuseColor.rgb=gableBase*mapTexelToLinear(wall).rgb*miniatureDetail(vGableKind>2.5?5.:4.,vGableUV/vec2(3.,2.8));
         }else{
-          if(vRoofKind<0.5){ // thatch: long fibres and gently overlapping bundles
-            float fibre=mix(0.5,surfaceNoise(vec2(vRoofUV.x*4.,vRoofUV.y*0.45)),1.-smoothstep(0.2,0.7,surfaceFootprint(vRoofUV)*4.));
-            float bundle=surfaceLine(vRoofUV.y/0.65,0.04);
-            diffuseColor.rgb*=(0.91+0.12*fibre-0.07*bundle)*surfaceGrain(vRoofUV*0.8);
-          }else{
-            vec4 roof=texture2D(map,vRoofUV*0.5);diffuseColor*=mapTexelToLinear(roof);
-            diffuseColor.rgb*=(0.96+0.08*surfaceNoise(vRoofUV*(vRoofKind>1.5?0.7:1.3)))*surfaceGrain(vRoofUV*0.8);
-          }
+          float cell=vRoofKind<0.5?8.:vRoofKind>1.5?10.:9.;
+          diffuseColor.rgb*=miniatureDetail(cell,vRoofUV/vec2(2.4,2.4));
         }`);
   };
   return mat;
@@ -4708,6 +4837,7 @@ function detailMaterial(cyl=false){ // masonry on towers and church parts shares
   const mat=surfaceDetail(new THREE.MeshLambertMaterial({map:G.wallTex}));
   if(cyl)mat.defines={...mat.defines,MASONRY_CYLINDER:1};
   mat.onBeforeCompile=sh=>{
+    miniatureShader(sh);
     sh.vertexShader='attribute float aMasonry;varying float vMasonry;varying vec2 vStoneUV;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
       vec3 isc=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));
       vStoneUV=vec2(abs(normal.x)>0.5?position.z*isc.z:position.x*isc.x,position.y*isc.y);
@@ -4719,7 +4849,8 @@ function detailMaterial(cyl=false){ // masonry on towers and church parts shares
     sh.fragmentShader='varying float vMasonry;varying vec2 vStoneUV;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
       if(vMasonry>0.5){vec2 uv=fract(vStoneUV/vec2(2.,1.));
         vec4 stone=texture2D(map,vec2((3.+clamp(uv.x,0.03,0.97))/4.,1.-(2.-clamp(uv.y,0.03,0.97))/3.));
-        diffuseColor*=mapTexelToLinear(stone);}
+        diffuseColor.rgb*=miniatureDetail(5.,vStoneUV/vec2(3.,1.6));}
+      else{float timber=diffuseColor.r-diffuseColor.b;diffuseColor.rgb*=miniatureDetail(timber>0.12?6.:4.,vStoneUV/vec2(2.,3.));}
       #endif`);
   };
   return mat;
@@ -4778,7 +4909,7 @@ function buildBuildings(){
   for(const[k,g,n]of[['box',box,cap],['fence',box,(N+SP)*6+400],['cyl',cyl,800],['cone',cone,900],['pyr',pyr,600],['gab',gableGeom(),1400]]){
     if(k==='gab')roofAttributes(g,n);
     if(k==='box'||k==='cyl')g.setAttribute('aMasonry',new THREE.InstancedBufferAttribute(new Float32Array(n),1));
-    const m=new THREE.InstancedMesh(g,k==='gab'?roofMaterial():k==='box'||k==='cyl'?detailMaterial(k==='cyl'):new THREE.MeshLambertMaterial({}),n);
+    const m=new THREE.InstancedMesh(g,k==='gab'?roofMaterial():k==='box'||k==='cyl'?detailMaterial(k==='cyl'):miniatureMaterial(k==='fence'?-1:-2,k==='fence'?[3,1.2]:[2.4,2.4],{}),n);
     for(let i=0;i<n;i++)m.setColorAt(i,C1.setHex(0xffffff)); // allocate colours at full size now: created lazily at count 0 (no cones yet in a Dark Ages realm) they render black
     m.castShadow=k!=='fence';m.receiveShadow=true;m.frustumCulled=false;scene.add(m);G.det[k]=m; // fences are too low to throw much shadow
   }
@@ -4791,7 +4922,7 @@ function buildBuildings(){
     const b=s.mill,grp=new THREE.Group();let bestK=0,bd=1e9; // the wheel goes on the side that faces the water: the river, the millpond or the lake
     for(let k=0;k<4;k++){const th=b.rot+k*Math.PI/2,dx=Math.cos(th),dz=-Math.sin(th),half=(k%2?b.d:b.w)/2;let d=60;
       for(let r=0;r<60;r+=2)if(wetAt(b.x+dx*(half+r),b.z+dz*(half+r))){d=r;break;}if(d<bd){bd=d;bestK=k;}}
-    const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1.2,12),new THREE.MeshLambertMaterial({color:0x6e5636}));
+    const wh=new THREE.Mesh(new THREE.CylinderGeometry(4,4,1.2,12),miniatureMaterial(6,[2,3],{color:0x6e5636}));
     wh.rotation.z=Math.PI/2;wh.position.set((bestK%2?b.d:b.w)/2+0.9,3.2,0);wh.castShadow=true;grp.add(wh);
     grp.position.set(b.x,b.y0,b.z);grp.rotation.y=b.rot+bestK*Math.PI/2;
     scene.add(grp);G.wheels.push(wh);
@@ -5768,7 +5899,7 @@ function rebuildWalls(){
       const mm=new THREE.Mesh(mg,new THREE.MeshLambertMaterial({color:0x6d7d44}));mm.position.set(m.x,g,m.z);mm.castShadow=mm.receiveShadow=true;grp.add(mm);
       const dg=new THREE.RingGeometry(m.r,m.r+5,28);dg.rotateX(-Math.PI/2);const dm=new THREE.Mesh(dg,new THREE.MeshLambertMaterial({color:0x4d4a33,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));dm.position.set(m.x,g+0.3,m.z);grp.add(dm);
       const tg=new THREE.CylinderGeometry(8.6,8.6,s.motteStone?4:2.6,20,1,true);tg.translate(0,(s.motteStone?4:2.6)/2,0); // a palisade, later a shell wall, round the top
-      const tm=new THREE.Mesh(tg,new THREE.MeshLambertMaterial({color:s.motteStone?0xa59c8d:0x6e5334,side:THREE.DoubleSide}));tm.position.set(m.x,g+MOTTEH,m.z);tm.castShadow=true;grp.add(tm);
+      const tm=new THREE.Mesh(tg,miniatureMaterial(s.motteStone?5:6,[3,2],{color:s.motteStone?0xa59c8d:0x6e5334,side:THREE.DoubleSide}));tm.position.set(m.x,g+MOTTEH,m.z);tm.castShadow=true;grp.add(tm);
       if(s.bailey)ring(s.bailey.x,s.bailey.z,s.bailey.r,16,s.baileyStone?6:3.8,!!s.baileyStone,s,casCfg(s,s.bailey));
     }
     if(s.burgRing)ring(s.burgRing.x,s.burgRing.z,s.burgRing.r,14,4.5,false,s);
@@ -5898,10 +6029,10 @@ function rebuildWalls(){
       }else inst.gate.push([q.x,hAt(q.x,q.z),q.z,ry,stone,H,gates.roads[gi2]?10:7,shut&&!broke,broke]);
     });
   }
-  const mesh=accMesh(acc,new THREE.MeshLambertMaterial({vertexColors:true,shadowSide:THREE.DoubleSide})); // every face in the shadow map: a thin wall seen edge-on by the sun cast a broken shadow
+  const mesh=accMesh(acc,miniatureMaterial(-1,[3,1.6],{vertexColors:true,shadowSide:THREE.DoubleSide})); // every face in the shadow map: a thin wall seen edge-on by the sun cast a broken shadow
   mesh.castShadow=true;mesh.receiveShadow=true;grp.add(mesh);
-  if(acc2.i.length){const m2=accMesh(acc2,new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide}));m2.castShadow=true;m2.receiveShadow=true;grp.add(m2);}
-  if(ditch.i.length){const m3=accMesh(ditch,new THREE.MeshLambertMaterial({vertexColors:true,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));m3.receiveShadow=true;grp.add(m3);}
+  if(acc2.i.length){const m2=accMesh(acc2,miniatureMaterial(-1,[3,1.6],{vertexColors:true,side:THREE.DoubleSide}));m2.castShadow=true;m2.receiveShadow=true;grp.add(m2);}
+  if(ditch.i.length){const m3=accMesh(ditch,miniatureMaterial(3,[3,3],{vertexColors:true,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3}));m3.receiveShadow=true;grp.add(m3);}
   const bx=new THREE.BoxGeometry(1,1,1);bx.translate(0,0.5,0);
   const cy=new THREE.CylinderGeometry(0.5,0.56,1,10);cy.translate(0,0.5,0);
   const cn=new THREE.ConeGeometry(0.5,1,10);cn.translate(0,0.5,0);
@@ -6184,10 +6315,10 @@ function fenceStone(s){return !!s&&((s.res&&s.res.stone>=6)||price(s,'stone')<pr
 function buildFenceMeshes(){
   const post=new THREE.BoxGeometry(0.22,1.3,0.22),rail=new THREE.BoxGeometry(1,0.1,0.08),M4=new THREE.Matrix4();
   const wood=mergeGeoms([[rail,M4.clone().makeTranslation(0,0.55,0)],[rail,M4.clone().makeTranslation(0,1.0,0)]]);post.translate(0,0.65,0);
-  G.fencePost=new THREE.InstancedMesh(post,new THREE.MeshLambertMaterial({color:0x5a4029}),40000);G.fencePost.count=0;
+  G.fencePost=new THREE.InstancedMesh(post,miniatureMaterial(6,[1.2,3],{color:0x5a4029}),40000);G.fencePost.count=0;
   const wall=new THREE.BoxGeometry(1,0.95,0.6);wall.translate(0,0.45,0);
-  G.fenceWood=new THREE.InstancedMesh(wood,new THREE.MeshLambertMaterial({color:0x6a4e32}),40000);G.fenceWood.count=0;
-  G.fenceStone=new THREE.InstancedMesh(wall,new THREE.MeshLambertMaterial({color:0x8d877c}),30000);G.fenceStone.count=0;
+  G.fenceWood=new THREE.InstancedMesh(wood,miniatureMaterial(6,[1.2,3],{color:0x6a4e32},true),40000);G.fenceWood.count=0;
+  G.fenceStone=new THREE.InstancedMesh(wall,miniatureMaterial(5,[3,1.2],{color:0x8d877c}),30000);G.fenceStone.count=0;
   for(const m of[G.fenceWood,G.fenceStone,G.fencePost]){m.castShadow=false;m.receiveShadow=true;scene.add(m);}G.fenceDirty=true;}
 /* ---------------- farm tracks: no lord or crown keeps them. Worn by carts and beasts from each village out to its
    fields, they keep to the property lines (the furlongs' bounds) instead of crossing anyone's corn, and step round water
@@ -6242,7 +6373,7 @@ function projectTracks(){
     for(let q=0;q<n;q++){const t0=q/n,t1=(q+1)/n,x0=A.x+(Bp.x-A.x)*t0,z0=A.z+(Bp.z-A.z)*t0,x1=A.x+(Bp.x-A.x)*t1,z1=A.z+(Bp.z-A.z)*t1,y0=hAt(x0,z0)+0.18,y1=hAt(x1,z1)+0.18;
       pos.push(x0-uz*hw,y0,z0+ux*hw, x0+uz*hw,y0,z0-ux*hw, x1+uz*hw,y1,z1-ux*hw, x0-uz*hw,y0,z0+ux*hw, x1+uz*hw,y1,z1-ux*hw, x1-uz*hw,y1,z1+ux*hw);}}
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.computeVertexNormals();
-  G.trackMesh=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({color:0x8b7355,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+  G.trackMesh=new THREE.Mesh(geo,miniatureMaterial(7,[3,3],{color:0x8b7355,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
   G.trackMesh.receiveShadow=true;G.trackMesh.renderOrder=2;scene.add(G.trackMesh);
   /* where a lane crosses a stream: a plank bridge with a handrail, or, in a later and better-off parish, a little stone bridge with parapets */
   for(const k of['trackBridgeW','trackBridgeS'])if(G[k]){scene.remove(G[k]);G[k].geometry.dispose();G[k]=null;}
@@ -6253,7 +6384,14 @@ function projectTracks(){
     else{P.push([new THREE.BoxGeometry(span,0.22,2.6).translate(0,0,0),M]);for(const sd of[-1,1]){P.push([new THREE.BoxGeometry(span,0.12,0.12).translate(0,0.85,sd*1.2),M]);
       for(let q=0;q<=Math.ceil(span/3);q++)P.push([new THREE.BoxGeometry(0.16,0.95,0.16).translate(-span/2+q*span/Math.ceil(span/3),0.4,sd*1.2),M]);}}
   }
-  for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const m=new THREE.Mesh(mergeGeoms(P),new THREE.MeshLambertMaterial({color:col}));m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
+  for(const[k,P,col]of[['trackBridgeW',wood,0x6b4f33],['trackBridgeS',stone,0x9a9283]])if(P.length){const timber=k==='trackBridgeW';
+    for(const[g]of P){g.computeBoundingBox();const dims=new THREE.Vector3().subVectors(g.boundingBox.max,g.boundingBox.min),A=g.attributes.position,N=g.attributes.normal,U=[];
+      for(let i=0;i<A.count;i++){const top=Math.abs(N.getY(i))>0.5;
+        if(timber)U.push(top?A.getZ(i):A.getY(i),dims.y>dims.x?A.getY(i):A.getX(i));
+        else U.push(top?A.getZ(i):A.getX(i),top?A.getX(i):A.getY(i));}
+      g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(U,2));}
+    const material=miniatureMaterial(timber?6:5,[3,2],{color:col});material.defines={...material.defines,MINI_STRUCTURE_UV:1};
+    const m=new THREE.Mesh(mergeGeoms(P),material);m.castShadow=m.receiveShadow=true;scene.add(m);G[k]=m;}}
 function prepareTrackBridges(){
   if(!G.rivHash)riverStrips();const T=G.tg,used=G.trackSet,plan=[];G.trackBridgeAt=[];
   for(const k of used){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b],L=e.L;if(!L)continue;const ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L;
@@ -6343,6 +6481,7 @@ function hookTerrainShader(mat){ // strips, headlands and hedges, drawn per pixe
   L.uni={...G.surfaceU,uSeed:{value:L.seedTex},uData:{value:L.dataTex},uMask:{value:L.maskTex},uFG:{value:FG},uFN:{value:FN},uSize:{value:SIZE},uGrid:{value:GRID},
     uYear:{value:0},uCol:{value:LANDCOL.map(t=>new THREE.Color(t[0]))},uFeat1:{value:G.feat.tex1},uFeat2:{value:G.feat.tex2},uFeaturePixel:{value:FPX},uSea:{value:SEA},uLord:{value:L.lordTex},uHouse:{value:Array.from({length:12},()=>new THREE.Color(0x888888))},uTerr:{value:0}};
   mat.onBeforeCompile=sh=>{
+    miniatureShader(sh);
     Object.assign(sh.uniforms,L.uni);
     sh.vertexShader='varying vec3 vWP;varying vec3 vWN;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vWP=(modelMatrix*vec4(transformed,1.0)).xyz;vWN=normalize(objectNormal);');
     sh.fragmentShader=`varying vec3 vWP;
@@ -6382,6 +6521,9 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
       else if(abs(kind-3.)<0.5)col=uCol[6];else if(abs(kind-4.)<0.5)col=uCol[7];
       else if(abs(kind-5.)<0.5)col=fr<0.45?uCol[8]:uCol[10];                       // vine rows on bare soil
       else col=crop(mod(floor(D1.a*255.+0.5)+uYear,3.));                           // the great field's course
+      float groundCell=col.g>col.r*1.03?0.:col.r>col.g*1.22?1.:15.;
+      col*=miniatureDetail(groundCell,vec2(dot(wp,acr)/4.,dot(wp,ax)/6.));
+      if(groundCell<0.5)col*=vec3(0.88,0.9,0.72);
       if(w>0.5&&abs(kind-5.)>0.5&&!isCommon){
         if(abs(kind-3.)<0.5)col*=0.94+0.1*step(0.5,fract(si*0.5));                  // meadow doles, mown in turn
         else col*=0.91+0.18*hv;                                                     // each tenant's strip a shade apart
@@ -6415,15 +6557,15 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
     vec2 fall=length(nrm.xz)>0.001?normalize(nrm.xz):vec2(1.,0.),cont=vec2(-fall.y,fall.x);
     float n2=lnoise(wp*0.35),n3=mix(0.5,lnoise(wp*1.3),1.-smoothstep(0.3,1.1,pixelM)),urb=1.-smoothstep(10.,30.,min(dWall,dB));
     vec3 c=diffuseColor.rgb;
-    c*=surfaceGrain(wp); // matte soil and grass grain across cultivated and common ground
+    c*=mix(miniatureDetail(0.,wp/8.)*vec3(0.7,0.78,0.52),vec3(1.),fieldA); // meadow flowers fade into the field material at headlands
     float wood=1.-smoothstep(0.,max(8.,uFeaturePixel*2.),dWd);
     float wild=(1.-smoothstep(0.,0.1,fieldA))*(1.-wood);
     c*=mix(1.,0.93+0.12*lnoise(wp*0.06)+0.06*(n3-0.5)+0.03*step(0.93,lh(floor(wp*0.8)))*(0.6+0.4*n2)*(1.-smoothstep(0.25,0.8,pixelM)),wild);
-    c=mix(c,vec3(0.28,0.3,0.18)*(0.88+0.24*n2),0.28*wood)*mix(1.,0.94+0.12*lnoise(wp*0.08),wood); // leaf litter fades through the canopy margin
+    c=mix(c,vec3(0.28,0.3,0.18)*miniatureDetail(15.,wp/4.)*(0.88+0.24*n2),0.28*wood)*mix(1.,0.94+0.12*lnoise(wp*0.08),wood); // leaf litter fades through the canopy margin
     if(slope>0.3){ // steep: bare earth and scree streaked down the fall line (valley sides below this stay grass)
       float t=smoothstep(0.32,0.52,slope+(n2-0.5)*0.12)*0.8;
       float st=lnoise(vec2(dot(wp,cont)*0.45,dot(wp,fall)*0.04));
-      c=mix(c,mix(vec3(0.45,0.41,0.35),vec3(0.6,0.57,0.52),st)*(0.85+0.3*n3),t*mix(0.8,0.45,wood));
+      c=mix(c,mix(vec3(0.45,0.41,0.35),vec3(0.6,0.57,0.52),st)*miniatureDetail(3.,wp/3.)*(0.85+0.3*n3),t*mix(0.8,0.45,wood));
     }else if(fieldA>0.3&&slope>0.07){ // ploughing along a slope builds lynchets: grassy risers between terraces
       float r=fract(h/3.2+n2*0.15);c=mix(c,vec3(0.42,0.5,0.28),(1.-smoothstep(0.0,0.12,r))*0.55*smoothstep(0.07,0.12,slope));
     }
@@ -6436,29 +6578,43 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
     }
     if(dRd<6.&&dW>1.5){ // road verges worn to earth; a ditch beside the country roads; banks where it climbs
       float t=1.-smoothstep(0.6,3.4,dRd);
-      c=mix(c,vec3(0.56,0.5,0.39)*surfaceGrain(wp),t*(0.6-0.3*urb));
+      vec3 verge=mix(vec3(0.49,0.43,0.32)*miniatureDetail(3.,wp/3.),vec3(0.56,0.5,0.39)*miniatureDetail(7.,wp/3.),smoothstep(0.4,2.2,dRd));
+      c=mix(c,verge,t*(0.85-0.2*urb));
       if(urb<0.5)c*=1.-0.26*(1.-smoothstep(0.,0.8,abs(dRd-4.4)))*(1.-urb*2.);
       if(slope>0.1)c*=1.-0.3*smoothstep(0.1,0.2,slope)*(1.-smoothstep(1.,5.,dRd)); // a hollow way, worn deep
     }
-    if(dRd<14.&&dW<14.){float t=1.-smoothstep(3.,14.,max(dRd,dW));c=mix(c,vec3(0.34,0.29,0.21)*(0.9+0.2*n3),t*0.6);} // mud at the landing and the ford
-    if(dWall<10.&&dW>2.){float t=1.-smoothstep(2.,10.,dWall);c=mix(c,vec3(0.5,0.45,0.37)*(0.8+0.3*n3)+0.05*step(0.85,lh(floor(wp*0.6))),t*0.7);} // trampled earth and rubble at the wall's foot
+    if(dRd<14.&&dW<14.){float t=1.-smoothstep(3.,14.,max(dRd,dW));c=mix(c,vec3(0.34,0.29,0.21)*miniatureDetail(3.,wp/3.)*(0.9+0.2*n3),t*0.6);} // mud at the landing and the ford
+    if(dWall<10.&&dW>2.){float t=1.-smoothstep(2.,10.,dWall);c=mix(c,vec3(0.5,0.45,0.37)*miniatureDetail(3.,wp/3.)*(0.8+0.3*n3)+0.05*step(0.85,lh(floor(wp*0.6))),t*0.7);} // trampled earth and rubble at the wall's foot
     if(dB<15.&&dRd>0.8&&fieldA<0.5){ // yards about the houses, and kitchen gardens behind
-      c=mix(c,vec3(0.5,0.44,0.34)*(0.85+0.3*n3),(1.-smoothstep(1.5,5.,dB))*0.6);
+      c=mix(c,vec3(0.5,0.44,0.34)*miniatureDetail(7.,wp/3.)*(0.85+0.3*n3),(1.-smoothstep(1.5,5.,dB))*0.6);
       float ga=lh(c1)*6.28;vec2 gu=vec2(cos(ga),sin(ga)),gq=vec2(dot(wp,gu)/5.5,dot(wp,vec2(-gu.y,gu.x))/13.); // a plot's rows have one heading
       vec2 gc=floor(gq),gf=fract(gq);float hh=lh(gc);
       if(dB>4.&&hh>0.45){ // oblong beds, dug in rows
         float edge=smoothstep(0.02,0.08,min(min(gf.x,1.-gf.x),min(gf.y,1.-gf.y)));
         float rowMix=0.5+0.5*cos(gq.y*13./1.3*6.283185)*(1.-smoothstep(0.25,0.8,pixelM));
         vec3 bed=mix(vec3(0.3,0.44,0.2),vec3(0.44,0.35,0.24),rowMix)*(0.92+0.16*hh);
-        c=mix(c,bed,edge*0.24*(1.-smoothstep(10.,14.,dB))*(1.-smoothstep(0.15,0.5,pixelM)));}
+        c=mix(c,bed*miniatureDetail(1.,vec2(dot(wp,gu),dot(wp,vec2(-gu.y,gu.x)))/4.),edge*0.24*(1.-smoothstep(10.,14.,dB))*(1.-smoothstep(0.15,0.5,pixelM)));}
     }
-    if(h<uSea+3.&&dW<22.){c=mix(c,vec3(0.78,0.72,0.56)*(0.9+0.15*n3),(1.-smoothstep(uSea+0.5,uSea+3.,h))*(1.-smoothstep(12.,22.,dW))*0.8);} // a continuous tide line
+    if(T2.b>0.15&&dB>4.&&dRd>3.&&dW>8.){ // kitchen plots follow the long edge of their actual property parcel
+      float angle=T2.a*3.14159265;vec2 axis=vec2(cos(angle),sin(angle)),cross=vec2(-axis.y,axis.x);
+      vec2 gardenUV=vec2(dot(wp,cross)/4.,dot(wp,axis)/6.);
+      vec3 earth=vec3(0.38,0.31,0.21)*miniatureDetail(1.,gardenUV);
+      float garden=smoothstep(0.15,0.8,T2.b)*smoothstep(4.,9.,dB)*smoothstep(3.,6.,dRd)*smoothstep(8.,13.,dW);
+      c=mix(c,earth,garden*0.9);
+    }
+    if(h<uSea+2.&&dW<10.){
+      float wet=1.-smoothstep(uSea+0.3,uSea+1.8,h+(n2-0.5)*0.3);
+      vec3 beach=mix(vec3(0.78,0.72,0.56),vec3(0.38,0.39,0.31),wet)*miniatureDetail(3.,wp/3.);
+      c=mix(c,beach,(1.-smoothstep(uSea+0.5,uSea+2.,h))*(1.-smoothstep(3.,8.,dW))*0.88);
+    } // a continuous tide line
     if(dW<10.){ // mud grades into reeds over the existing feature texels
-      float band=1.-smoothstep(1.5,10.,dW);
-      vec3 bank=mix(vec3(0.4,0.34,0.26)*(0.9+0.2*n3),mix(vec3(0.43,0.49,0.27),vec3(0.6,0.57,0.34),n3),smoothstep(0.5,4.5,dW));
-      bank=mix(bank,vec3(0.52,0.38,0.27)*(0.85+0.25*n2),smoothstep(0.2,0.35,slope)); // a raw cut bank where the river undercuts
+      float bankDistance=max(0.,dW+(n2-0.5)*1.4);
+      float band=1.-smoothstep(0.6,3.5,bankDistance);
+      vec2 bankUV=wp/3.; // gravel is isotropic; vertical banks use restrained earth tones
+      vec3 bank=mix(vec3(0.34,0.31,0.24)*miniatureDetail(3.,bankUV)*(0.9+0.2*n3),mix(vec3(0.43,0.49,0.27),vec3(0.6,0.57,0.34),n3)*miniatureDetail(0.,wp/8.),smoothstep(0.5,4.5,bankDistance));
+      bank=mix(bank,vec3(0.52,0.38,0.27)*(0.94+0.12*n2),smoothstep(0.2,0.35,slope)); // a raw cut bank where the river undercuts
       bank=mix(bank,vec3(0.2,0.29,0.17),0.7*(1.-smoothstep(3.,12.,dWd))); // alders crowding the water
-      vec3 stone=vec3(0.62,0.6,0.55)*(0.82+0.18*step(0.5,fract(h/0.7+n3*0.15)))*(0.92+0.1*n2); // coursed masonry of the town's quays and embankments
+      vec3 stone=vec3(0.54,0.52,0.46)*mix(vec3(1.),miniatureDetail(3.,wp/3.),0.55); // quay banks: no stretched ashlar or artificial contour stripes
       c=mix(c,mix(bank,stone,urb),band*0.88);
     }
     diffuseColor.rgb=mix(c,diffuseColor.rgb,smoothstep(2400.,3200.,dcam));
@@ -6491,7 +6647,7 @@ vec3 crop(float c){return c<0.5?uCol[0]:c<1.5?uCol[1]:uCol[2];}
   mat.needsUpdate=true;
 }
 /* ---------------- ground detail from context ---------------------------------
-   No texture library: the ground is dressed by what lies around it. Distance
+   The compact material atlas is blended by context. Distance
    fields (≈6 m cells) to water, walls, roads, the wood's edge and buildings
    are kept up to date as the map changes; the terrain shader reads them and
    paints by circumstance — and by combinations of circumstance:
@@ -6514,7 +6670,8 @@ function featInit(){
   for(const s of W.settlements)if(s.lake){const P=s.lake.poly;let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const q of P){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);z0=Math.min(z0,q.z);z1=Math.max(z1,q.z);}
     featRect(x0,z0,x1,z1,(i,x,z)=>{if(inPoly(P,x,z))F.src[0][i]=1;});}
   for(let j=0;j<FR;j++)for(let i=0;i<FR;i++){const x=(i+0.5)*FPX-SIZE/2,z=(j+0.5)*FPX-SIZE/2,c=cIdx(toCell(x),toCell(z));
-    if(W.water[c]===1||(W.h[c]<SEA+6&&hAt(x,z)<SEA+0.2))F.src[0][j*FR+i]=1;}
+    if(hAt(x,z)<SEA+0.2)F.src[0][j*FR+i]=1; // survey the rendered coastline, not the coarse water-cell outline
+  }
   for(const s of W.settlements)featWalls(s);
   featRoads();
   for(const k of['dec','pine','small'])for(const t of G.treeSpots[k])if(t.shown!==false)featTree(t,1);
@@ -6522,6 +6679,7 @@ function featInit(){
   featCompute(0,0,FR-1,FR-1);
   const mk=d=>{const t=new THREE.DataTexture(d,FR,FR,THREE.RGBAFormat);t.magFilter=t.minFilter=THREE.LinearFilter;t.generateMipmaps=false;t.needsUpdate=true;return t;};
   F.tex1=mk(F.d1);F.tex2=mk(F.d2);
+  G.waterU.uWaterFeat.value=F.tex1;G.waterU.uWaterFeaturesReady.value=1;
 }
 const fI=v=>clamp(Math.floor((v+SIZE/2)/FPX),0,FR-1);
 function featRect(x0,z0,x1,z1,fn){for(let j=fI(z0);j<=fI(z1);j++)for(let i=fI(x0);i<=fI(x1);i++)fn(j*FR+i,(i+0.5)*FPX-SIZE/2,(j+0.5)*FPX-SIZE/2);}
@@ -6555,13 +6713,16 @@ function featLots(){ // the yards as a field of their own: redrawn only where a 
   const grow=B=>{x0=Math.min(x0,B[0]);z0=Math.min(z0,B[1]);x1=Math.max(x1,B[2]);z1=Math.max(z1,B[3]);any=true;};
   for(const b of G.bldList){const live=b.lot&&b.lot.length>2&&!b.removed&&b.state!=='gone'&&!b._inCastle;
     if(!live){if(b._lotB){grow(b._lotB);b._lotB=null;b._lotK=null;}continue;}
-    const k=b.lot.map(p=>Math.round(p.x)+','+Math.round(p.z)).join(';');if(k===b._lotK)continue;
+    const k=b.lot.map(p=>Math.round(p.x)+','+Math.round(p.z)).join(';')+':'+b.tier+':'+b.arch;if(k===b._lotK)continue;
     if(b._lotB)grow(b._lotB);let a0=1e9,c0=1e9,a1=-1e9,c1=-1e9;for(const p of b.lot){a0=Math.min(a0,p.x);c0=Math.min(c0,p.z);a1=Math.max(a1,p.x);c1=Math.max(c1,p.z);}
     b._lotB=[a0,c0,a1,c1];b._lotK=k;grow(b._lotB);if(G.land)markLot(b.lot);} // only a lot that has changed is marked again
   if(!any)return;
-  featRect(x0,z0,x1,z1,i=>{S[i]=0;});
+  featRect(x0,z0,x1,z1,i=>{S[i]=0;F.d2[i*4+2]=F.d2[i*4+3]=0;});
   for(const b of G.bldList){const B=b._lotB;if(!B||B[2]<x0||B[0]>x1||B[3]<z0||B[1]>z1)continue;const P=b.lot;
-    featRect(Math.max(B[0],x0),Math.max(B[1],z0),Math.min(B[2],x1),Math.min(B[3],z1),(i,x,z)=>{if(inPoly(P,x,z))S[i]=1;});}
+    let longest=0,heading=0;for(let k=0;k<P.length;k++){const a=P[k],c=P[(k+1)%P.length],d=Math.hypot(c.x-a.x,c.z-a.z);if(d>longest){longest=d;heading=Math.atan2(c.z-a.z,c.x-a.x);}}
+    const garden=['house','longhouse'].includes(b.arch)&&b.tier===0&&hash01(b.idx+19)<0.42,angle=Math.round((((heading%Math.PI)+Math.PI)%Math.PI)/Math.PI*255);
+    featRect(Math.max(B[0],x0),Math.max(B[1],z0),Math.min(B[2],x1),Math.min(B[3],z1),(i,x,z)=>{if(inPoly(P,x,z)){S[i]=1;if(garden){F.d2[i*4+2]=255;F.d2[i*4+3]=angle;}}});}
+  F.tex2.needsUpdate=true;
   featDirty(x0,z0,x1,z1);}
 function featBuilding(b){featDisc(4,b.x,b.z,Math.hypot(b.w,b.d)/2,1);}
 const FT=64; // the fields are kept current tile by tile (64 texels, some 380 m): a change dirties the tiles its halo can reach
@@ -6583,7 +6744,7 @@ function featCompute(i0,j0,i1,j1){ // chamfer distance transform over a window (
     for(let y=Math.max(j0,b0);y<=Math.min(j1,b1);y++)for(let x=Math.max(i0,a0);x<=Math.min(i1,a1);x++)
       out[(y*FR+x)*4+o]=Math.min(255,Math.round(Math.min(FMAX,D[(y-b0)*w+x-a0])*4));
   }
-  for(let y=j0;y<=j1;y++)for(let x=i0;x<=i1;x++)F.d2[(y*FR+x)*4+3]=255;
+  // Feature texture 2: R building distance, G lot distance, B garden mask, A garden-row heading.
 }
 function featFlush(now,catchUp=false){ // apply pending changes a few tiles at a time, so no frame stalls on a map-wide recompute
   const F=G.feat;if(!F||!F.tiles||!F.tiles.size||!catchUp&&now-F.t<0.3)return;

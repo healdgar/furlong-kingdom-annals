@@ -1,13 +1,15 @@
 # Context balloon worktree
 
-Branch: `codex/context-balloon`, based on `19a4f06` of `claude/annals-kingdom-sim-oop6ub`.
+Branch: `codex/context-balloon`, based on `19a4f06`; first implementation commit `2fd9998`.
 
 Preview: http://127.0.0.1:8766/#s=1001&f=1001&c=sea
 
 Restart from this checkout: `python3 -m http.server 8766 --bind 127.0.0.1`.
 
-Click a town/person/building to select it. Click the card or Expand for full details. Minimize or Escape returns to its map anchor; Close dismisses it. Menu provides Crown, Annals, realm settings, overlays, planning and existing save/help flows. When an overlay has a legend, Map legend appears in Menu. Orders requires ruling the appropriate house/crown.
+Select a town/person/building. Click its card or Expand for nearly full-screen details. Minimize or Escape returns to its map anchor; Close dismisses it. Menu contains existing realm, Annals, planning, overlays and save/help flows.
 
-Changes: `index.html` only for runtime UI/materials; `tools/context-card.test.mjs` for placement behavior. Reuses existing command DOM and shared focus/inert handling. UI state is separate from simulation state. Material grain remains procedural, with no added high-resolution textures or polygons.
+Runtime comprises `index.html` and the two images under `assets/materials/`; serve both together. The prior procedural-only texture pass was incomplete. The correction adds generated raster materials, parcel-wall orientation, physical path coordinates for paving/water, narrow gravel margins, terrain-height coastal blending and parcel-aligned decorative soil plots. It preserves simulation rules and seasonal coloration. Garden decoration does not alter yields or crop ownership.
 
-Validation: see root `design-qa.md`, `test-results.txt`, `ui-checks.json`, `renderer-checks.json`, `provenance.json`, and screenshots in this folder. No push/merge/deploy. Physical devices, performance timing and long soaks remain unverified.
+Current evidence: root `design-qa.md` and `texture-correction/`. Earlier UI evidence remains under this folder; older texture screenshots and renderer numbers describe `2fd9998`, not the corrected source. Image generation prompts and sources: `material-atlas.md`, `water-ripples.md`.
+
+Local testing only. No push, merge or deployment.
