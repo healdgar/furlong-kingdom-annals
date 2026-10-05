@@ -4772,7 +4772,8 @@ function strip(pts,acc,o){
     let tx=b.x-a.x,tz=b.z-a.z;const L=Math.hypot(tx,tz)||1;tx/=L;tz/=L;
     const hw=o.hw(k),yc=o.flatY?o.flatY(k):0;
     for(let j=0;j<m;j++){
-      const x=pts[k].x-tz*hw*fr[j],z=pts[k].z+tx*hw*fr[j];
+      const off=o.offset?o.offset(k):{x:-tz*hw,z:tx*hw};
+      const x=pts[k].x+off.x*fr[j],z=pts[k].z+off.z*fr[j];
       const vi=acc.p.length/3;acc.uv[vi*2]=hw*fr[j];acc.uv[vi*2+1]=along;acc.tangent[vi*2]=tx;acc.tangent[vi*2+1]=tz;acc.bank[vi]=hw*(1.-Math.abs(fr[j]));
       acc.p.push(x,o.flatY?yc:hAt(x,z)+o.lift,z);
       const nn=o.flatY?[0,1,0]:terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
@@ -4877,6 +4878,24 @@ function riverAt(x,z,pad){ // the river segment under (x,z), if any
 }
 const ROADCOL={verge:0x6d6a44,dirt:0x8f7a52,rut:0x7a6546,crown:0x9c8660};
 const PAVECOL={verge:0x6f685a,dirt:0x8d8576,rut:0x80796b,crown:0x9a9384};
+function streetJoinArms(arms){ // segment subdivisions and repeated endpoint hits are not extra streets
+  const out=[];
+  for(const a of arms){const L=Math.hypot(a.dx,a.dz);if(L<1e-6||a.hw<=0)continue;
+    const d={dx:a.dx/L,dz:a.dz/L,hw:a.hw},same=out.find(b=>b.dx*d.dx+b.dz*d.dz>0.985);
+    if(same)same.hw=Math.max(same.hw,d.hw);else out.push(d);
+  }return out;
+}
+function streetJoinPath(j,arms){ // the two street edges meet at their mitre, rather than a widened disc
+  const [a,b]=arms,mh=Math.max(a.hw,b.hw),den=a.dx*b.dz-a.dz*b.dx;
+  let mx=a.dz*a.hw,mz=-a.dx*a.hw;
+  if(Math.abs(den)>1e-4){const bx=-b.dz*b.hw,bz=b.dx*b.hw,t=((bx-mx)*b.dz-(bz-mz)*b.dx)/den;mx+=a.dx*t;mz+=a.dz*t;}
+  else{mx=a.dz*(a.hw+b.hw)*0.5;mz=-a.dx*(a.hw+b.hw)*0.5;}
+  const ml=Math.hypot(mx,mz),limit=mh*2.5;if(ml>limit){mx*=limit/ml;mz*=limit/ml;}
+  const ext=Math.max(mh*1.5+2,Math.hypot(mx,mz)+1);
+  return[{x:j.x+a.dx*ext,z:j.z+a.dz*ext,hw:a.hw,offset:{x:a.dz*a.hw,z:-a.dx*a.hw}},
+    {x:j.x,z:j.z,hw:(a.hw+b.hw)*0.5,offset:{x:mx,z:mz}},
+    {x:j.x+b.dx*ext,z:j.z+b.dz*ext,hw:b.hw,offset:{x:-b.dz*b.hw,z:b.dx*b.hw}}];
+}
 function rebuildRoadMesh(){ // king's roads, streets and market squares: one draped, vertex-coloured mesh; bridges where roads meet rivers
   if(G.roads){scene.remove(G.roads);G.roads.geometry.dispose();}
   if(G.bridges){scene.remove(G.bridges);G.bridges.geometry.dispose();}
@@ -4908,7 +4927,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
   for(const s of W.settlements){
     const pr=s.paveR||0;
     for(const st of s.streets||[]){
-      if(st.hidden||st.kind==='edge')continue; // lanes not yet built on, and place outlines
+      if(st.hidden||st.gone||st.kind==='edge')continue; // lanes not yet built on, and place outlines
       if(s.baechle&&(st.planned||st.kind==='mstreet')){ // Freiburg's Bächle: a runnel of clear water along the street
         const q=resample(st.pts,5),off=q.map((p,k)=>{const a=q[Math.max(0,k-1)],b=q[Math.min(q.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1;
           return{x:p.x-(b.z-a.z)/L*(st.hw-1.1),z:p.z+(b.x-a.x)/L*(st.hw-1.1)};}).filter(p=>!riverAt(p.x,p.z,1));
@@ -4917,14 +4936,6 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       const pv=st.kind==='wallst'||st.kind==='quay'&&pr>0;
       lay(resample(st.pts,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j));
     }
-    { // where a street meets another, or the road, the ruts and verges run together: a worn patch of the crossing
-      const jk=(s.streets||[]).length+':'+(s.streets||[]).filter(t=>t.hidden||t.gone).length+':'+W.roads.length;
-      if(s._junK!==jk){s._junK=jk;const J=s._jun=[],segs=[];for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')segs.push(st);
-        const si=W.settlements.indexOf(s),rds=W.roads.filter(r=>r.a===si||r.b===si).map(r=>({pts:r.drawn||r.path,hw:4.2}));
-        for(const st of segs)for(const e of[st.pts[0],st.pts[st.pts.length-1]]){let hit=null;
-          for(const o of[...segs,...rds]){if(o===st)continue;const P=o.pts;for(let k=1;k<P.length;k++){if(Math.abs(P[k].x-e.x)>60&&Math.abs(P[k-1].x-e.x)>60)continue;if(segDist(e.x,e.z,P[k-1],P[k])<(o.hw||3)+st.hw+1.5){hit=o;break;}}if(hit)break;}
-          if(hit&&!riverAt(e.x,e.z,4))J.push({x:e.x,z:e.z,R:Math.max(st.hw,hit.hw||3)*1.35+1});}}
-      for(const q of s._jun){const pv=dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr;placeMesh(acc,{x:q.x,z:q.z,r:new Array(PLN).fill(q.R)},0.29,(r)=>r>=5?(pv?PAVECOL:ROADCOL).verge:(pv?PAVECOL:ROADCOL).dirt);}}
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
       :(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
@@ -4961,8 +4972,13 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
           for(const d of armsAt(l,{a,b,k},t))addArm(x,z,d,l.hw,l.pv);for(const d of armsAt(o,g,u))addArm(x,z,d,o.hw,o.pv);}}
     });
     const jacc=newAcc(true);
-    for(const j of J){if(j.arms.length<2||riverAt(j.x,j.z,4))continue;
+    for(const j of J){j.arms=streetJoinArms(j.arms);if(j.arms.length<2||riverAt(j.x,j.z,4))continue;
       const own=W.settlements.find(s=>(s.places||[]).some(p=>dist2d(p.x,p.z,j.x,j.z)<Math.max(...(p.r||[8]))+2));if(own)continue; // a market square is its own junction
+      if(j.arms.length===2){
+        const path=streetJoinPath(j,j.arms);
+        strip(path,jacc,{fr:FR,hw:k=>path[k].hw,offset:k=>path[k].offset,lift:0.36,col:roadCol(j.pv?PAVECOL:ROADCOL)});
+        continue;
+      }
       const mh=Math.max(...j.arms.map(a=>a.hw)),ext=mh*1.25+1.5,pts=[];
       for(const a of j.arms){const px=-a.dz,pz=a.dx;for(const sd of[-1,1])pts.push({x:j.x+a.dx*ext+px*a.hw*sd*1.02,z:j.z+a.dz*ext+pz*a.hw*sd*1.02});
         pts.push({x:j.x+a.dx*mh*0.9+px*mh*0.9,z:j.z+a.dz*mh*0.9+pz*mh*0.9},{x:j.x+a.dx*mh*0.9-px*mh*0.9,z:j.z+a.dz*mh*0.9-pz*mh*0.9});}

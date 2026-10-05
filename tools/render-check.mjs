@@ -162,12 +162,14 @@ async function check(which,w){
     await ev(c,"(async()=>{if(!await G.miniatureReady||!await G.waterRippleReady)throw Error('material images failed to load')})()");
     await ev(c,"setSpeed(0);cam.mode='free';document.body.classList.add('hideui');");
     const gardenView="(()=>{let best=-Infinity,q;for(let i=0;i<G.feat.d2.length;i+=4){if(G.feat.d2[i+2]<255)continue;const k=i/4,x=(k%FR+0.5)*FPX-SIZE/2,z=(Math.floor(k/FR)+0.5)*FPX-SIZE/2,d=Math.hypot(x-W.capital.pos.x,z-W.capital.pos.z);if(d>400)continue;const clearance=Math.min(G.feat.d2[i]/4,G.feat.d1[i]/4,G.feat.d1[i+2]/4),score=clearance-d*0.025;if(score>best){best=score;q=[x,z,38,G.feat.d2[i+3]/255*Math.PI+0.3,0.5];}}if(!q)throw Error('No visible capital garden');return q;})()";
-    const views={waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
+    const joinView="[-3168.1078406073434,-3248.1033372513384,64.11971192656942,3.6702058129495168]"; // reported seed-1001 street view
+    const views={streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
       bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
     const result={id,views:{},errors};
     for(const[v,expr]of Object.entries(views)){
+      if(args.views&&!String(args.views).split(',').includes(v))continue;
       await ev(c,`(()=>{const q=${expr};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);scene.updateMatrixWorld(true);renderer.render(scene,camera);})()`);
       result.views[v]=await ev(c,INSPECT);
       const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+v+'.png'),Buffer.from(shot.data,'base64'));
@@ -244,7 +246,7 @@ for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.see
   const ok=r=>r&&!r.failed&&!r.errors.length&&r.simErrors===0&&Object.values(r.views).every(v=>v.linked&&v.errors===0);
   const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),reflectivity:!!candidate?.reflectivity?.valid,metalModel:!!candidate?.metalModel,gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
-    row.sameGeometry=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].geometryTriangles===baseline.views[v].geometryTriangles);
+    row[args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>args['geometry-budget']?candidate.views[v].geometryTriangles<=baseline.views[v].geometryTriangles:candidate.views[v].geometryTriangles===baseline.views[v].geometryTriangles);
     row.sameDrawCalls=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].render.calls===baseline.views[v].render.calls);
     row.sameTextureCounts=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].textureCount===baseline.views[v].textureCount);
     row.sameTextureSizes=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>JSON.stringify(candidate.views[v].textureSizes)===JSON.stringify(baseline.views[v].textureSizes));}
