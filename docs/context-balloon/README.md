@@ -17,3 +17,7 @@ Local testing only. No push, merge or deployment.
 ## Waterwheel follow-up
 
 Open timber spokes, rims and buckets replace the cylinder; local wood grain rotates with the wheel. Newly generated mills use actual river/pond edges, placing their wheel in water and body on dry ground. Saved chronicles retain their earlier mill locations. Checks, two rotation phases and pond evidence: [mill-correction](mill-correction/README.md). Generated settlement layouts intentionally differ from the texture-only commit. Local preview remains on port 8766; nothing deployed.
+
+## Full detail sheets and type
+
+Expanded sheets use 18px body text and at least 16px annotations/controls. The brief card remains minimal; expansion exposes complete stock, building, household, family, property and muster registers plus full recorded histories and court explanations. Shortcuts remain visible while scrolling, wide ledgers stack on phones, and records link back to their settlement. Validation and captures: [ui-detail-correction](ui-detail-correction/README.md). 64 focused tests pass; a 30-day history matches `43fd815`. Local worktree only.

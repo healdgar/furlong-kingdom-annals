@@ -1,0 +1,15 @@
+# Full detail sheets and readable type
+
+Expanded card body text is 18px; annotations and controls are at least 16px. Compact body text is 16px, metadata 15px. The large-text preference raises expanded body text to 20px. HUD/menu text was also enlarged. Full sheets retain their persistent Minimize/Close header and one scroll region; desktop reading width increases to 960px.
+
+Settlement details include the complete stock/market register, buildings (including removed/gone records), named household groups, every living family name/count, and visible recorded history. Section shortcuts stay available while scrolling. The day-zero seed-1001 register has seven goods, 246 building records, 339 household groups and 105 family names. Household groups are read from existing account/head relationships, including legacy day-zero people whose accounts are not initialized; listing them does not create accounts or mutate quotes.
+
+Building details show recorded ownership, dimensions and every resident household/member. Person details include local household goods (held, sale, beasts and reserve targets), recorded household holdings across settlements, all living account members, and every skill. A settlement-return control accompanies building/person records. Army details retain every origin and add the full muster. Family trees traverse all recorded generations and succession candidates with cycle protection. Full court sheets retain all stored memos with unshortened explanations, both current/prior-year ledgers, and fractional ledger entries. Data absent from a chronicle is shown as absent; the UI does not invent it or add historical records discarded by the simulation.
+
+The compact speech card remains a summary. Complete registers are built on expansion and released on minimize; all rows remain reachable in the full sheet. Wider household ledgers become labeled vertical entries on phones. Refresh preserves focus on section and building links. No renderer or economic rule changes.
+
+`ui-checks.json` records computed font sizes, register counts, read-only day-zero checks, section scrolling, building return, minimize/scroll restoration, Escape, modal inertness, cyclic Tab focus, large text, phone/short-screen bounds and populated phone-ledger wrapping. Tested sizes: 1440×900, 390×844, 390×460 and the actual 627×930 app panel. No horizontal overflow. Persistent controls remain within the viewport. Expanded refreshed data retains the section control's focus.
+
+64 source, inspector, context-card and ownership tests pass. The 30-day seed-1001 history matches `43fd815` exactly while each version has the settlement sheet expanded. The fingerprint covers the fields declared in `provenance.json`; it is not a complete serialized-world or long-soak equivalence claim. Both fingerprints: `3be0518994b0ade57ab57a1d3264a1e3160761f221431ae6d1110742a528bedc`.
+
+Captures show the compact card, full overview, stock ledger, household register, populated phone pantry and responsive desktop/phone/short-height sheets. Runtime pictures and checks remain local. Source hash: `provenance.json`. No physical-device claim, push, merge or deployment.
