@@ -398,6 +398,11 @@ body[data-ui-size=large] #insp ul.tree,body[data-ui-size=large] #insp ol.tline{f
 #mapview p{font-size:14px;margin:8px 0 0;line-height:1.4;}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none !important;scroll-behavior:auto !important;}}
 
+#contextpanel[data-kind=event] #eventpanel{display:block !important;}
+#eventtext{line-height:1.5;margin:12px 0;}#eventdate{margin:4px 0;}
+.eventactions{display:flex;gap:8px;flex-wrap:wrap;}.eventactions button{min-height:44px;flex:1 0 40%;font:inherit;color:var(--ink);background:transparent;border:1px solid var(--edge);border-radius:5px;cursor:pointer;}
+#eventbubble{position:fixed;z-index:23;width:300px;max-width:calc(100vw - 24px);max-height:calc(var(--viewH,100dvh) - var(--hudH) - 24px);padding:12px 14px;background:var(--parch);color:var(--ink);border:1px solid var(--edge);border-radius:10px;box-shadow:0 4px 16px #0003;font:16px/1.5 Georgia,serif;}
+#eventbubble[hidden],body.hideui #eventbubble{display:none !important;}#eventbubble strong{display:block;padding-right:32px;font:21px 'IM Fell English',Georgia,serif;}#eventbubble p{margin:8px 0;max-height:140px;overflow:auto;}#eventbubble button{font:inherit;min-height:44px;border:0;background:transparent;color:var(--ink);cursor:pointer;}#eventbubbledetails{text-decoration:underline;}#eventbubbleclose{position:absolute;right:6px;top:3px;width:44px;}#eventbubble::after{content:'';position:absolute;top:calc(100% - 35px);width:25px;height:20px;background:var(--parch);clip-path:polygon(0 0,100% 50%,0 100%);}#eventbubble[data-side=left]::after{left:100%;}#eventbubble[data-side=right]::after{right:100%;transform:rotate(180deg);}#eventbubble[data-side=none]::after,#eventbubble[data-side=above]::after{display:none;}
 /* ---------- one transforming contextual card ---------- */
 #hud{background:#201a12ed;gap:16px;padding:6px 16px;min-height:48px;}
 #brand{font:22px 'IM Fell English',Georgia,serif;color:var(--parch);pointer-events:none;}
@@ -1070,7 +1075,7 @@ const cellX=(cx)=>cx*CELL-SIZE/2;   // lattice-aligned with the terrain mesh ver
 const cellZ=(cz)=>cz*CELL-SIZE/2;
 const toCell=(x)=>clamp(Math.round((x+SIZE/2)/CELL),0,GRID-1);
 
-function hAt(x,z){ // exact height of the RENDERED surface: PlaneGeometry splits each quad along
+function hAt(x,z){ // exact height of the survey terrain: PlaneGeometry splits each quad along
   // its (0,1)-(1,0) diagonal, so bilinear sampling put roads, walls and houses metres off the ground
   const fx=clamp((x+SIZE/2)/CELL,0,GRID-1.001), fz=clamp((z+SIZE/2)/CELL,0,GRID-1.001);
   const x0=Math.floor(fx),z0=Math.floor(fz),tx=fx-x0,tz=fz-z0,h=W.h;
@@ -4463,6 +4468,7 @@ function initGraphics(){
   camera=new THREE.PerspectiveCamera(50,innerWidth/innerHeight,2,26000);
   // r128 does not upload cameraPosition for Lambert materials without an envMap.
   G.surfaceU={uSurfaceEye:{value:camera.position}};
+  G.seasonU={uSeasonGrass:{value:new THREE.Color(PAL.seasons[0].mead)},uSeasonWood:{value:new THREE.Color(PAL.seasons[0].forest)},uDormancy:{value:0},uGroundSnow:{value:0},uLeafless:{value:0}};
   G.surfaceDerivatives=renderer.capabilities.isWebGL2||renderer.extensions.has('OES_standard_derivatives');
   initMiniatureMaterials();
   G.waterU={uWaterTime:{value:0},uWaterFeat:{value:null},uWaterFeaturesReady:{value:0},uWaterSize:{value:SIZE},uWaterHeight:{value:null},uWaterGrid:{value:GRID},uWaterSea:{value:SEA},uWaterCoastal:{value:0},...G.surfaceU};
@@ -4538,10 +4544,12 @@ function initMiniatureMaterials(){
     t.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());G.miniatureU.uMiniatureAtlas.value=t;
   });
 }
-function miniatureShader(sh){Object.assign(sh.uniforms,G.miniatureU);}
+function miniatureShader(sh){Object.assign(sh.uniforms,G.miniatureU,G.seasonU);}
 // Shared metre-scale filtering and sampling of the miniature material atlas.
 const SURFACE_GLSL=`
 uniform sampler2D uMiniatureAtlas;uniform float uMiniatureReady;uniform vec3 uMiniatureMean[16];
+uniform vec3 uSeasonGrass,uSeasonWood;uniform float uDormancy,uGroundSnow;
+vec3 seasonalVegetation(vec3 detail){return mix(detail,vec3(dot(detail,vec3(0.2126,0.7152,0.0722))),uDormancy);}
 float surfaceHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float surfaceNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(surfaceHash(i),surfaceHash(i+vec2(1.,0.)),f.x),mix(surfaceHash(i+vec2(0.,1.)),surfaceHash(i+vec2(1.,1.)),f.x),f.y);}
 float surfaceFootprint(vec2 p){
@@ -4673,24 +4681,38 @@ function reflectiveShader(sh,finish,f0,strength=1){
 }
 function waterMaterial(options,channel=false,sea=false){
   const mat=surfaceDetail(new THREE.MeshPhongMaterial({...options,shininess:70,specular:0x08090a}));
-  if(channel)mat.defines={...mat.defines,MINI_CHANNEL:1};
+  if(channel){mat.defines={...mat.defines,MINI_CHANNEL:1};mat.defaultAttributeValues={...mat.defaultAttributeValues,aJoinFlow:[0,0,0,0],aJoinOrigins:[0,0,0,0],aJoinWidths:[0,0]};}
   if(sea)mat.defines={...mat.defines,MINI_SEA:1};
   mat.onBeforeCompile=sh=>{
     Object.assign(sh.uniforms,G.waterU,G.waterRippleU);miniatureShader(sh);
     sh.vertexShader=`varying vec3 vWaterWP;
       #ifdef MINI_CHANNEL
-      attribute vec2 aSurfaceUV,aSurfaceTangent;attribute float aBankDistance;varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;
+      attribute vec2 aSurfaceUV,aSurfaceTangent;attribute float aBankDistance;attribute vec4 aJoinFlow,aJoinOrigins;attribute vec2 aJoinWidths;varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
       #endif
       `+sh.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
       vWaterWP=(modelMatrix*vec4(transformed,1.)).xyz;
       #ifdef MINI_CHANNEL
-      vWaterUV=aSurfaceUV;vWaterTangent=aSurfaceTangent;vWaterBank=aBankDistance;
+      vWaterUV=aSurfaceUV;vWaterTangent=aSurfaceTangent;vWaterBank=aBankDistance;vJoinFlow=aJoinFlow;vJoinOrigins=aJoinOrigins;vJoinWidths=aJoinWidths;
       #endif`);
     sh.fragmentShader=`varying vec3 vWaterWP;uniform float uWaterTime,uWaterFeaturesReady,uWaterSize,uWaterRippleReady;uniform sampler2D uWaterFeat,uWaterRippleMap,uWaterHeight;uniform float uWaterGrid,uWaterSea,uWaterCoastal;uniform vec3 uSurfaceEye;
       #ifdef MINI_CHANNEL
-      varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;
+      varying vec2 vWaterUV,vWaterTangent;varying float vWaterBank;varying vec4 vJoinFlow,vJoinOrigins;varying vec2 vJoinWidths;
       #endif
-      ` +SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      ` +SURFACE_GLSL+`
+float coastalWaterCover(vec2 wp){
+  vec2 lattice=(wp+uWaterSize*.5)/(uWaterSize/uWaterGrid);if(any(lessThan(lattice,vec2(0.)))||any(greaterThan(lattice,vec2(uWaterGrid-1.))))return 1.;
+  vec2 cell=floor(lattice),f=fract(lattice);float h00=texture2D(uWaterHeight,(cell+.5)/uWaterGrid).r*32.-16.;
+  float h10=texture2D(uWaterHeight,(cell+vec2(1.5,.5))/uWaterGrid).r*32.-16.,h01=texture2D(uWaterHeight,(cell+vec2(.5,1.5))/uWaterGrid).r*32.-16.,h11=texture2D(uWaterHeight,(cell+1.5)/uWaterGrid).r*32.-16.;
+  float h=f.x+f.y<=1.?h00+(h10-h00)*f.x+(h01-h00)*f.y:h11+(h01-h11)*(1.-f.x)+(h10-h11)*(1.-f.y);
+  return smoothstep(0.,.45,.5-h+(surfaceFilteredNoise(wp*.7)-.5)*.3);
+}
+vec3 channelRipple(vec2 p,vec2 flow,vec2 drift){
+  vec2 cell=floor(p/12.),f=fract(p/12.);f=f*f*(3.-2.*f);vec2 across=vec2(-flow.y,flow.x);vec3 value=vec3(0.);
+  for(int j=0;j<2;j++)for(int i=0;i<2;i++){vec2 c=cell+vec2(float(i),float(j)),local=p-c*12.;
+    vec2 uv=vec2(dot(local,flow),dot(local,across))/vec2(16.,24.)+c*vec2(.317,.419)+drift;
+    float weight=(i==0?1.-f.x:f.x)*(j==0?1.-f.y:f.y);value+=texture2D(uWaterRippleMap,uv).rgb*weight;}return value;
+}
+`+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       vec2 waterWP=vWaterWP.xz,waterFU=(waterWP+uWaterSize*0.5)/uWaterSize,waterOff=vec2(3./uWaterSize,0.);
       vec2 waterGrad=vec2(texture2D(uWaterFeat,waterFU+waterOff).r-texture2D(uWaterFeat,waterFU-waterOff).r,texture2D(uWaterFeat,waterFU+waterOff.yx).r-texture2D(uWaterFeat,waterFU-waterOff.yx).r);
       vec2 waterAcross=length(waterGrad)>0.0001?normalize(waterGrad):normalize(vec2(0.7,0.3));
@@ -4702,19 +4724,23 @@ function waterMaterial(options,channel=false,sea=false){
       waterUV=vWaterUV.yx;waterDrift=vec2(-uWaterTime*0.055,0.);
       #endif
       vec3 rippleTex=texture2D(uWaterRippleMap,waterUV/vec2(16.,24.)+waterDrift).rgb;
+      #ifdef MINI_CHANNEL
+      rippleTex=channelRipple(waterWP,waterAlong,waterDrift);
+      if(vJoinWidths.x>0.){vec2 mainFlow=normalize(vJoinFlow.xy),incomingFlow=normalize(vJoinFlow.zw);
+        float mainDistance=abs(dot(waterWP-vJoinOrigins.xy,vec2(-mainFlow.y,mainFlow.x)))/vJoinWidths.x;
+        float incomingDistance=abs(dot(waterWP-vJoinOrigins.zw,vec2(-incomingFlow.y,incomingFlow.x)))/vJoinWidths.y;
+        float mainWeight=pow(max(0.,1.-mainDistance),3.),incomingWeight=pow(max(0.,1.-incomingDistance),3.);
+        float blend=incomingWeight/(mainWeight+incomingWeight+.0001);
+        rippleTex=mix(channelRipple(waterWP,mainFlow,waterDrift),channelRipple(waterWP,incomingFlow,waterDrift),blend);
+        waterAlong=normalize(mix(mainFlow,incomingFlow,blend));waterAcross=vec2(-waterAlong.y,waterAlong.x);
+      }
+      #endif
       float waterFinish=1.;
       float detail=dot(rippleTex,vec3(0.2126,0.7152,0.0722))/0.3721;
-      float visible=uWaterRippleReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(waterUV/vec2(16.,24.))));
+      float visible=uWaterRippleReady*(1.-smoothstep(0.08,0.6,surfaceFootprint(waterWP/vec2(16.,24.))));
       diffuseColor.rgb*=mix(1.,clamp(detail,0.75,1.5),visible*0.95); // sparse ripples, no bitmap foam overlay
       #ifdef MINI_SEA
-      vec2 lattice=(waterWP+uWaterSize*0.5)/(uWaterSize/uWaterGrid),cell=floor(lattice),f=fract(lattice);
-      float h00=texture2D(uWaterHeight,(cell+0.5)/uWaterGrid).r*32.-16.;
-      float h10=texture2D(uWaterHeight,(cell+vec2(1.5,0.5))/uWaterGrid).r*32.-16.;
-      float h01=texture2D(uWaterHeight,(cell+vec2(0.5,1.5))/uWaterGrid).r*32.-16.;
-      float h11=texture2D(uWaterHeight,(cell+1.5)/uWaterGrid).r*32.-16.;
-      float shoreHeight=f.x+f.y<=1.?h00+(h10-h00)*f.x+(h01-h00)*f.y:h11+(h01-h11)*(1.-f.x)+(h10-h11)*(1.-f.y);
-      float depth=0.5-shoreHeight;
-      if(all(greaterThanEqual(lattice,vec2(0.)))&&all(lessThan(lattice,vec2(uWaterGrid-1.))))diffuseColor.a*=smoothstep(0.,0.45,depth+(surfaceFilteredNoise(waterWP*0.7)-0.5)*0.3);
+      diffuseColor.a*=coastalWaterCover(waterWP);
       #endif
       #ifdef MINI_CHANNEL
       float shoreNoise=surfaceFilteredNoise(waterWP*0.85),shoreWidth=1.15+shoreNoise*0.7;
@@ -4722,12 +4748,12 @@ function waterMaterial(options,channel=false,sea=false){
       vec3 wetGravel=vec3(0.37,0.36,0.29)*miniatureDetail(3.,waterWP/2.5);
       diffuseColor.rgb=mix(diffuseColor.rgb,wetGravel,shore*0.92);
       diffuseColor.a*=smoothstep(0.,0.45+shoreNoise*0.65,vWaterBank);
-      if(uWaterCoastal>0.5)diffuseColor.a*=smoothstep(uWaterSea+0.35,uWaterSea+1.2,vWaterWP.y); // gravel and a broken wet margin follow the actual channel, including bends
+      if(uWaterCoastal>.5)diffuseColor.a*=1.-(1.-smoothstep(uWaterSea+.52,uWaterSea+.7,vWaterWP.y))*coastalWaterCover(waterWP); // the same coverage on both sides of the river-sea join
       #endif
       `).replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
       float ripple=(1.-smoothstep(600.,1500.,distance(vWaterWP,uSurfaceEye)))*(1.-smoothstep(0.8,3.,surfaceFootprint(waterWP)));
       // Irregular, flow-aligned waves break up the highlight; periodic sine bands looked like a comb.
-      vec2 waveUV=waterUV*vec2(0.28,0.48)+waterDrift*3.;
+      vec2 waveUV=waterWP*.35-waterAlong*uWaterTime*.03;
       float wave=surfaceNoise(waveUV);
       vec2 slope=vec2(surfaceNoise(waveUV+vec2(0.18,0.))-wave,surfaceNoise(waveUV+vec2(0.,0.18))-wave);
       vec2 tilt=(waterAlong*slope.x+waterAcross*slope.y)*0.16*ripple;
@@ -4783,14 +4809,14 @@ function strip(pts,acc,o){
       const off=o.offset?o.offset(k):{x:-tz*hw,z:tx*hw};
       const x=pts[k].x+off.x*fr[j],z=pts[k].z+off.z*fr[j];
       const vi=acc.p.length/3;acc.uv[vi*2]=hw*fr[j];acc.uv[vi*2+1]=along;acc.tangent[vi*2]=tx;acc.tangent[vi*2+1]=tz;acc.bank[vi]=hw*(1.-Math.abs(fr[j]));
-      acc.p.push(x,o.flatY?yc:hAt(x,z)+o.lift,z);
-      const nn=o.flatY?[0,1,0]:terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
+      acc.p.push(x,o.height?o.height(k,j,x,z,yc):o.flatY?yc:hAt(x,z)+o.lift,z);
+      const nn=o.normal?o.normal(k,j,tx,tz):o.flatY?[0,1,0]:terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);
       C1.setHex(o.col(k,j,x,z));acc.c.push(C1.r,C1.g,C1.b);
       if(acc.e)acc.e.push(Math.min(1,(1-Math.abs(fr[j]))*4));
     }
   }
-  for(let k=0;k<n-1;k++)for(let j=0;j<m-1;j++){
-    const i0=base+k*m+j,i1=i0+1,i2=i0+m,i3=i2+1;
+  for(let k=0;k<n-1;k++)for(let j=0;j<m-1;j+=o.indexStep||1){
+    const i0=base+k*m+j,i1=i0+(o.indexStep||1),i2=i0+m,i3=i2+(o.indexStep||1);
     acc.i.push(i0,i1,i2,i1,i3,i2);
   }
 }
@@ -4884,6 +4910,108 @@ function riverAt(x,z,pad){ // the river segment under (x,z), if any
   for(const o of G.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;
   return null;
 }
+function riverPolygonDifference(P,F){ // subtract a convex channel footprint, keeping the land outside it
+  const area=Q=>Q.reduce((n,p,i)=>{const q=Q[(i+1)%Q.length];return n+p.x*q.z-q.x*p.z;},0),sign=Math.sign(area(F))||1,out=[];
+  let inside=P;
+  const clip=(Q,a,b,keep)=>{const R=[],distance=p=>sign*((b.x-a.x)*(p.z-a.z)-(b.z-a.z)*(p.x-a.x));
+    for(let i=0;i<Q.length;i++){const p=Q[i],q=Q[(i+1)%Q.length],dp=distance(p),dq=distance(q),ip=keep?dp>=-1e-8:dp<=1e-8,iq=keep?dq>=-1e-8:dq<=1e-8;
+      if(ip)R.push(p);if(ip!==iq){const t=dp/(dp-dq),x=p.x+(q.x-p.x)*t,z=p.z+(q.z-p.z)*t,dx=b.x-a.x,dz=b.z-a.z,u=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1),0,1);
+        const onBank=F.every((v,j)=>{const n=F[(j+1)%F.length];return sign*((n.x-v.x)*(z-v.z)-(n.z-v.z)*(x-v.x))>=-1e-6;}),water=a.y+(b.y-a.y)*u;
+        R.push({x,z,y:p.y+(q.y-p.y)*t,w:p.w?.map((v,j)=>v+(q.w[j]-v)*t),water:onBank?water:undefined,join:onBank?F:undefined});}}
+    return R.length>=3&&Math.abs(area(R))>1e-7?R:[];};
+  let overlap=P;for(let i=0;i<F.length&&overlap.length;i++)overlap=clip(overlap,F[i],F[(i+1)%F.length],true);if(!overlap.length)return[P];
+  for(let i=0;i<F.length&&inside.length;i++){const a=F[i],b=F[(i+1)%F.length],outside=clip(inside,a,b,false);if(outside.length)out.push(outside);inside=clip(inside,a,b,true);}return out;
+}
+function riverJoinPolygon(P){ // one convex join between channel arms, without a circular cap
+  const Q=[...P].sort((a,b)=>a.x-b.x||a.z-b.z),cross=(a,b,c)=>(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x),lower=[],upper=[];
+  for(const p of Q){while(lower.length>1&&cross(lower.at(-2),lower.at(-1),p)<=0)lower.pop();lower.push(p);}
+  for(const p of Q.reverse()){while(upper.length>1&&cross(upper.at(-2),upper.at(-1),p)<=0)upper.pop();upper.push(p);}lower.pop();upper.pop();return lower.concat(upper);
+}
+function clipGroundFootprints(acc,footprints){ // remove channel coverage from the outer land apron
+  const original=acc.i.slice(),indices=[],arrays=[['p',3],['n',3],['c',3],['uv',2],['tangent',2],['bank',1]];
+  for(const [name,size]of arrays)while(acc[name].length<acc.p.length/3*size)acc[name].push(0);acc.blends=[];
+  for(let k=0;k<original.length;k+=3){const ids=original.slice(k,k+3),points=ids.map((id,j)=>({id,x:acc.p[id*3],y:acc.p[id*3+1],z:acc.p[id*3+2],w:[0,1,2].map(i=>Number(i===j))}));let pieces=[points];
+    for(const F of footprints){const xs=points.map(p=>p.x),zs=points.map(p=>p.z),fx=F.map(p=>p.x),fz=F.map(p=>p.z);if(Math.max(...xs)<Math.min(...fx)||Math.min(...xs)>Math.max(...fx)||Math.max(...zs)<Math.min(...fz)||Math.min(...zs)>Math.max(...fz))continue;pieces=pieces.flatMap(P=>riverPolygonDifference(P,F));}
+    for(const P of pieces){const verts=P.map(q=>{if(q.id!==undefined)return q.id;const id=acc.p.length/3;for(const [name,size]of arrays)for(let c=0;c<size;c++)acc[name].push(ids.reduce((n,j,i)=>n+(acc[name][j*size+c]||0)*q.w[i],0));acc.blends.push({id,ids,w:q.w});return id;});for(let j=1;j<P.length-1;j++)indices.push(verts[0],verts[j],verts[j+1]);}}
+  acc.i=indices;
+}
+function levelRiverJoins(riv,joins){ // a junction is one level pool above every arm it covers
+  const hash=makeHash(80);for(const F of joins){const x=F.reduce((n,q)=>n+q.x,0)/F.length,z=F.reduce((n,q)=>n+q.z,0)/F.length;F.level=Math.max(...F.map(q=>q.y));hash.add({x,z,F},Math.max(...F.map(q=>Math.hypot(q.x-x,q.z-z)))+80);}
+  const rows=[];for(let i=0;i<riv.p.length/3;i+=5){const x=riv.p[(i+2)*3],z=riv.p[(i+2)*3+2],hw=Math.hypot(riv.p[i*3]-x,riv.p[i*3+2]-z),near=hash.near(x,z,1).filter(o=>riverFootprintDepth(o.F,x,z)>-hw*2);rows.push({i,x,z,hw,near});for(const {F}of near)if([0,1,2,3,4].some(j=>riverFootprintDepth(F,riv.p[(i+j)*3],riv.p[(i+j)*3+2])>=-1e-5))F.level=Math.max(F.level,riv.p[i*3+1]);}
+  for(const F of joins)F.level+=.025;
+  for(const {i,x,z,hw,near}of rows){let y=riv.p[i*3+1];for(const {F}of near){const t=clamp((riverFootprintDepth(F,x,z)+hw*2)/(hw||1),0,1);y=Math.max(y,lerp(riv.p[i*3+1],F.level,t*t*(3-2*t)));}for(let j=0;j<5;j++)riv.p[(i+j)*3+1]=y;}
+  for(const F of joins)for(const q of F)q.y=F.level;
+}
+function appendRiverJoin(acc,F,offset=0,water=false){ // a planar overlay; its material blends the two arm textures in world space
+  const center={x:F.reduce((n,q)=>n+q.x,0)/F.length,y:F.level??Math.max(...F.map(q=>q.y)),z:F.reduce((n,q)=>n+q.z,0)/F.length},base=acc.p.length/3;
+  for(const q of[center,...F]){acc.p.push(q.x,center.y+offset,q.z);acc.n.push(0,1,0);acc.c.push(...(water?[36/255,91/255,114/255]:[.3,.27,.2]));acc.uv.push(q.x,q.z);acc.tangent.push(...(F.flow||[0,1]));acc.bank.push(3);}
+  if(water){F.overlayBase=base;F.overlayCount=F.length+1;}for(let k=0;k<F.length;k++)acc.i.push(base,base+1+(k+1)%F.length,base+1+k);
+}
+function riverFootprintDepth(F,x,z){ // signed distance from a convex channel boundary
+  const sign=Math.sign(F.reduce((n,p,i)=>{const q=F[(i+1)%F.length];return n+p.x*q.z-q.x*p.z;},0))||1;
+  return Math.min(...F.map((p,i)=>{const q=F[(i+1)%F.length];return sign*((q.x-p.x)*(z-p.z)-(q.z-p.z)*(x-p.x))/(Math.hypot(q.x-p.x,q.z-p.z)||1);}));
+}
+function riverBankIntervals(a,b,others){ // retain only exposed banks, excluding joins inside another channel
+  let intervals=[[0,1]];
+  for(const F of others){const d0=F.map((p,i)=>{const q=F[(i+1)%F.length],sign=Math.sign(F.reduce((n,v,j)=>{const w=F[(j+1)%F.length];return n+v.x*w.z-w.x*v.z;},0))||1;return [sign*((q.x-p.x)*(a.z-p.z)-(q.z-p.z)*(a.x-p.x)),sign*((q.x-p.x)*(b.z-p.z)-(q.z-p.z)*(b.x-p.x))];});
+    let lo=0,hi=1;for(const [u,v]of d0){const d=v-u;if(Math.abs(d)<1e-9){if(u<=1e-6){hi=-1;break;}}else if(d>0)lo=Math.max(lo,(1e-6-u)/d);else hi=Math.min(hi,(1e-6-u)/d);}
+    if(hi<=lo)continue;intervals=intervals.flatMap(([u,v])=>hi<=u||lo>=v?[[u,v]]:[[u,Math.min(v,lo)],[Math.max(u,hi),v]].filter(([x,y])=>y-x>1e-7));if(!intervals.length)break;
+  }return intervals;
+}
+function renderedWaterNear(x,z,pad=0){
+  if(W.coastal&&hAt(x,z)<=SEA_SURFACE+pad)return true;
+  for(const s of W.settlements)if(s.lake&&(inPoly(s.lake.poly,x,z)||s.lake.poly.some((p,i)=>segDist(x,z,p,s.lake.poly[(i+1)%s.lake.poly.length])<pad)))return true;
+  for(const o of G.drawRivHash?.near(x,z,1)||[])if(riverFootprintDepth(o.F,x,z)>=0||o.F.some((p,i)=>segDist(x,z,p,o.F[(i+1)%o.F.length])<pad))return true;
+  return false;
+}
+function riverFacetCuts(a,b){const ts=[0,1];for(const [start,delta,origin]of[[a.x,b.x-a.x,-SIZE/2],[a.z,b.z-a.z,-SIZE/2],[a.x+a.z,b.x+b.z-a.x-a.z,-SIZE]])if(Math.abs(delta)>1e-8){
+  for(let k=Math.ceil((Math.min(start,start+delta)-origin)/CELL);k<=Math.floor((Math.max(start,start+delta)-origin)/CELL);k++){const t=(origin+k*CELL-start)/delta;if(t>1e-8&&t<1-1e-8)ts.push(t);}}return [...new Set(ts)].sort((a,b)=>a-b);}
+function riverEmbankments(banks,hash){ // expose only the shoreline, then give neighbouring bank sections a shared crest
+  const segments=[],vertices=new Map(),key=q=>q.x.toFixed(5)+':'+q.z.toFixed(5),vertex=(q,n)=>{const id=key(q);let v=vertices.get(id);if(!v){v={...q,nx:0,nz:0};vertices.set(id,v);}v.nx+=n.x;v.nz+=n.z;return v;};
+  for(const F of banks)for(const [i,j]of(F.allEdges?F.map((p,i)=>[i,(i+1)%F.length]):[[0,3],[1,2]])){const a=F[i],b=F[j],dx=b.x-a.x,dz=b.z-a.z,L=Math.hypot(dx,dz)||1,cx=F.reduce((n,q)=>n+q.x,0)/F.length,cz=F.reduce((n,q)=>n+q.z,0)/F.length,side=(-dz*(cx-a.x)+dx*(cz-a.z)>0)?1:-1,n={x:side*dz/L,z:-side*dx/L};
+    const others=hash.near((a.x+b.x)/2,(a.z+b.z)/2,1).filter(o=>o.F!==F).map(o=>o.F);
+    for(const [u,v]of riverBankIntervals(a,b,others)){const point=t=>({x:lerp(a.x,b.x,t),y:lerp(a.y,b.y,t),z:lerp(a.z,b.z,t)});segments.push([vertex(point(u),n),vertex(point(v),n)]);}}
+  for(const v of vertices.values()){const L=Math.hypot(v.nx,v.nz)||1,run=clamp(Math.abs(hAt(v.x,v.z)-v.y)*.7+1.2,1.2,10);v.crest={x:v.x+v.nx/L*run,z:v.z+v.nz/L*run};v.crest.y=hAt(v.crest.x,v.crest.z);}
+  const out=[];for(const [a,b]of segments){const point=(p,q,t)=>({x:lerp(p.x,q.x,t),z:lerp(p.z,q.z,t),y:lerp(p.y,q.y,t)}),ts=riverFacetCuts(a.crest,b.crest);
+    for(let k=1;k<ts.length;k++)if(ts[k]-ts[k-1]>1e-7){const p=point(a,b,ts[k-1]),q=point(a,b,ts[k]),u=point(a.crest,b.crest,ts[k-1]),v=point(a.crest,b.crest,ts[k]);u.y=hAt(u.x,u.z);v.y=hAt(v.x,v.z);out.push([p,q,v,u]);}}
+  return out;
+}
+function riverGroundColorRef(x,z){const fx=clamp((x+SIZE/2)/CELL,0,GRID-1.001),fz=clamp((z+SIZE/2)/CELL,0,GRID-1.001),cx=Math.floor(fx),cz=Math.floor(fz),u=fx-cx,v=fz-cz;
+  return u+v<=1?{ids:[cIdx(cx,cz),cIdx(cx+1,cz),cIdx(cx,cz+1)],w:[1-u-v,u,v]}:{ids:[cIdx(cx+1,cz+1),cIdx(cx,cz+1),cIdx(cx+1,cz)],w:[u+v-1,1-u,1-v]};}
+function cutRiverTerrain(g,footprints,water,banks=footprints){ // cut the rendered ground only; saved heights and simulation geometry are unchanged
+  const P=g.attributes.position,colors=g.attributes.color,old=g.index.array,pos=Array.from(P.array),col=Array.from(colors.array),indices=[],bankColors=[],bins=new Map();
+  G.drawRivHash=makeHash(CELL);for(const F of footprints){const xs=F.map(p=>p.x),zs=F.map(p=>p.z);F.bounds=[Math.min(...xs),Math.min(...zs),Math.max(...xs),Math.max(...zs)];const x=(F.bounds[0]+F.bounds[2])/2,z=(F.bounds[1]+F.bounds[3])/2;G.drawRivHash.add({x,z,F},Math.hypot(F.bounds[2]-F.bounds[0],F.bounds[3]-F.bounds[1])/2);}
+  const embankments=riverEmbankments(banks,G.drawRivHash),cuts=[...footprints,...embankments];
+  for(const F of cuts){const xs=F.map(p=>p.x),zs=F.map(p=>p.z);F.bounds=[Math.min(...xs),Math.min(...zs),Math.max(...xs),Math.max(...zs)];
+    for(let z=clamp(Math.floor((F.bounds[1]+SIZE/2)/CELL),0,GRID-2);z<=Math.min(GRID-2,Math.floor((F.bounds[3]+SIZE/2)/CELL));z++)for(let x=clamp(Math.floor((F.bounds[0]+SIZE/2)/CELL),0,GRID-2);x<=Math.min(GRID-2,Math.floor((F.bounds[2]+SIZE/2)/CELL));x++){const key=z*(GRID-1)+x;if(!bins.has(key))bins.set(key,[]);bins.get(key).push(F);}}
+  for(let i=0;i<water.p.length/3;i++){const x=water.p[i*3],z=water.p[i*3+2];if((G.drawRivHash.near(x,z,1)||[]).some(o=>riverFootprintDepth(o.F,x,z)>0.1))water.bank[i]=Math.max(3,water.bank[i]);}
+  for(const F of embankments){const x=(F.bounds[0]+F.bounds[2])/2,z=(F.bounds[1]+F.bounds[3])/2;G.drawRivHash.add({x,z,F},Math.hypot(F.bounds[2]-F.bounds[0],F.bounds[3]-F.bounds[1])/2);}
+  for(let i=0;i<old.length;i+=3){const ids=[old[i],old[i+1],old[i+2]],cx=Math.min(...ids.map(j=>j%GRID)),cz=Math.min(...ids.map(j=>Math.floor(j/GRID))),near=bins.get(cz*(GRID-1)+cx);
+    if(!near){indices.push(...ids);continue;}let pieces=[ids.map((id,j)=>({id,x:P.getX(id),y:P.getY(id),z:P.getZ(id),w:[0,1,2].map(k=>Number(k===j))}))];
+    for(const F of near){const next=[];for(const Q of pieces){const xs=Q.map(p=>p.x),zs=Q.map(p=>p.z);if(Math.max(...xs)<F.bounds[0]||Math.min(...xs)>F.bounds[2]||Math.max(...zs)<F.bounds[1]||Math.min(...zs)>F.bounds[3])next.push(Q);else next.push(...riverPolygonDifference(Q,F));}pieces=next;if(!pieces.length)break;}
+    for(const Q of pieces){const verts=Q.map(q=>{if(q.id!==undefined&&q.water===undefined)return q.id;const id=pos.length/3;pos.push(q.x,q.y,q.z);for(let c=0;c<3;c++)col.push(ids.reduce((n,j,k)=>n+colors.array[j*3+c]*q.w[k],0));bankColors.push({id,ids,w:q.w});return id;});
+      for(let j=1;j<Q.length-1;j++)indices.push(verts[0],verts[j],verts[j+1]);}}
+  const uv=Array.from(g.attributes.uv.array),normals=Array.from(g.attributes.normal.array);for(const q of bankColors){for(let c=0;c<2;c++)uv.push(q.ids.reduce((n,id,j)=>n+g.attributes.uv.array[id*2+c]*q.w[j],0));for(let c=0;c<3;c++)normals.push(q.ids.reduce((n,id,j)=>n+g.attributes.normal.array[id*3+c]*q.w[j],0));}
+  g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));g.setIndex(indices);g.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));g.computeBoundingSphere();g.userData.bankColors=bankColors;
+  const bed=newAcc();for(const F of footprints){const base=bed.p.length/3;for(const q of F){bed.p.push(q.x,q.y-1.5,q.z);bed.n.push(0,1,0);bed.c.push(0.3,0.27,0.2);}const sign=Math.sign(F.reduce((n,p,i)=>{const q=F[(i+1)%F.length];return n+p.x*q.z-q.x*p.z;},0));for(let j=1;j<F.length-1;j++)sign<0?bed.i.push(base,base+j,base+j+1):bed.i.push(base,base+j+1,base+j);}
+  const joins=G.drawRivRuns.filter(r=>r.join).map(r=>r.join);
+  for(const F of joins)appendRiverJoin(bed,F,-1.5);
+  const embankColors=[],waterFootprints=new Set(footprints);
+  for(const F of embankments){ // bank wedges must not intrude into the water at bends or confluences
+    let pieces=[F.map((q,k)=>({...q,w:F.map((_,j)=>Number(j===k))}))];
+    const near=G.drawRivHash.near(F.reduce((n,q)=>n+q.x,0)/4,F.reduce((n,q)=>n+q.z,0)/4,20).filter(o=>waterFootprints.has(o.F));
+    for(const {F:waterF}of near)pieces=pieces.flatMap(Q=>riverPolygonDifference(Q,waterF));
+    for(const Q of pieces){const base=bed.p.length/3,a=Q[0],b=Q[1],c=Q.at(-1),n=new THREE.Vector3().crossVectors(new THREE.Vector3(b.x-a.x,b.y-a.y,b.z-a.z),new THREE.Vector3(c.x-a.x,c.y-a.y,c.z-a.z));if(n.y<0)n.negate();n.normalize();
+      for(const q of Q){const wet=q.w[0]+q.w[1],ref=riverGroundColorRef(q.x,q.z);bed.p.push(q.x,q.y-wet*.3,q.z);bed.n.push(n.x,n.y,n.z);bed.c.push(...[0,1,2].map(c=>lerp(ref.ids.reduce((v,id,j)=>v+colors.array[id*3+c]*ref.w[j],0),[.3,.27,.2][c],wet)));embankColors.push({id:bed.p.length/3-1,...ref,wet});}
+      const sign=Math.sign(Q.reduce((n,p,i)=>{const q=Q[(i+1)%Q.length];return n+p.x*q.z-q.x*p.z;},0));for(let j=1;j<Q.length-1;j++)sign<0?bed.i.push(base,base+j,base+j+1):bed.i.push(base,base+j+1,base+j);}}
+  // The outer land apron can also cover a low channel at the map boundary.
+  const apron=G.apron.geometry,A=newAcc(),boundary=cuts.filter(F=>F.bounds[0]<cellX(0)||F.bounds[1]<cellZ(0)||F.bounds[2]>cellX(GRID-1)||F.bounds[3]>cellZ(GRID-1));
+  A.p=Array.from(apron.attributes.position.array);A.n=Array.from(apron.attributes.normal.array);A.c=Array.from(apron.attributes.color.array);A.i=Array.from(apron.index.array);clipGroundFootprints(A,boundary);
+  for(const [name,data]of[['position',A.p],['normal',A.n],['color',A.c]])apron.setAttribute(name,new THREE.Float32BufferAttribute(data,3));apron.setIndex(A.i);apron.computeBoundingSphere();G.apron.userData.blends=A.blends;
+  G.riverBed=accMesh(bed,G.terrain.material);G.riverBed.geometry.userData.bankColors=embankColors;G.riverBed.geometry.userData.blends=bed.blends;G.riverEmbankments=embankments;G.riverBed.receiveShadow=true;G.riverBed.renderOrder=1;scene.add(G.riverBed);G.riverFootprints=footprints;
+}
+function riverDrawLevel(x,z,ceiling=Infinity){return Math.min(ceiling,hAt(x,z)+0.35);} // the channel bed, not an upstream maximum across neighbouring banks
+function riverDrawAt(x,z){const r=riverAt(x,z,3);if(!r)return null;const dx=r.b.x-r.a.x,dz=r.b.z-r.a.z,t=clamp(((x-r.a.x)*dx+(z-r.a.z)*dz)/(dx*dx+dz*dz||1),0,1);return riverDrawLevel(r.a.x+dx*t,r.a.z+dz*t,r.y);}
 const ROADCOL={verge:0x6d6a44,dirt:0x8f7a52,rut:0x7a6546,crown:0x9c8660};
 const PAVECOL={verge:0x6f685a,dirt:0x8d8576,rut:0x80796b,crown:0x9a9384};
 function streetJoinArms(arms){ // segment subdivisions and repeated endpoint hits are not extra streets
@@ -5045,7 +5173,7 @@ function colorForVertex(i,sp,snowT,seed){
         const t=clamp(-h/26,0,1);
         c=C1.setHex(0xc9bd93).lerp(new THREE.Color(0x24506e),0.35+t*0.65);
       }else{ // river cell: wet bank — the ribbon itself carries the water
-        c=C1.setHex(0x5c6e4a);
+        c=C1.setHex(sp.marsh).multiplyScalar(0.82);
       }
       break;
     case B.MARSH:c=C1.setHex(sp.marsh);break;
@@ -5102,14 +5230,15 @@ function buildApron(){
   g.setAttribute('color',new THREE.Float32BufferAttribute(new Float32Array(pos.length),3));
   const am=new THREE.MeshLambertMaterial({vertexColors:true,side:THREE.DoubleSide});
   am.onBeforeCompile=sh=>{ // woods and open country mottle the land beyond the map by world position (vertex colours would streak along the long quads)
+    Object.assign(sh.uniforms,G.seasonU);
     sh.vertexShader='varying vec3 vAP;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n  vAP=(modelMatrix*vec4(transformed,1.0)).xyz;');
-    sh.fragmentShader=`varying vec3 vAP;
+    sh.fragmentShader=`varying vec3 vAP;uniform vec3 uSeasonGrass,uSeasonWood;
 float ah(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i),ah(i+vec2(1.,0.)),f.x),mix(ah(i+vec2(0.,1.)),ah(i+vec2(1.,1.)),f.x),f.y);}
 `+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
   { float out_=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.+(an(vAP.xz/300.)-0.5)*260.;float t=smoothstep(0.,120.,out_);
     float v=an(vAP.xz/420.)*0.6+an(vAP.xz/130.)*0.4;
-    vec3 land=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.5,0.62,v))*(0.9+0.2*an(vAP.xz/40.));
+    vec3 land=mix(uSeasonGrass*1.17,uSeasonWood*0.78,smoothstep(0.5,0.62,v))*(0.9+0.2*an(vAP.xz/40.));
     if(vAP.y>${SEA}.+0.5)diffuseColor.rgb=mix(diffuseColor.rgb,land,0.8+0.15*t); }`)
       .replace('#include <fog_fragment>',`#include <fog_fragment>
   { float out2=max(abs(vAP.x),abs(vAP.z))-${SIZE/2}.; // unknown lands: gone into the haze within a few hundred paces of the map's edge
@@ -5123,13 +5252,14 @@ float an(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(ah(i)
   G.apron.receiveShadow=false;scene.add(G.apron);recolorApron(); // beyond the shadow camera: receiving smeared its edge texels into streaks
 }
 function recolorApron(){
-  if(!G.apron)return;const nzf=G.apronNoise||(G.apronNoise=makeNoise(SEED^0xA9E)),nz2=(x,z)=>fbm(nzf,x,z,3,2,0.5),woodC=new THREE.Color(0x587a45),fieldC=new THREE.Color(0x9bab6c);
-  const col=G.apron.geometry.attributes.color,src=G.apron.userData.src,tc=G.terrain.geometry.attributes.color,haze=new THREE.Color(0x98a684),c=new THREE.Color();
+  if(!G.apron)return;const fieldC=G.seasonU.uSeasonGrass.value;
+  const col=G.apron.geometry.attributes.color,src=G.apron.userData.src,tc=G.terrain.geometry.attributes.color,haze=fieldC.clone().lerp(new THREE.Color(0xaaa8a1),0.3),c=new THREE.Color();
   const sm=new Map();for(const E of G.apron.userData.sides)E.forEach((vi,k)=>{let r=0,g=0,b=0,n=0;for(let d=-12;d<=12;d++){const j=E[clamp(k+d,0,E.length-1)];r+=tc.getX(j);g+=tc.getY(j);b+=tc.getZ(j);n++;}sm.set(vi,[r/n,g/n,b/n]);});
-  for(let i=0;i<col.count;i++){const vi=src[i*2],f=src[i*2+1],m=sm.get(vi);
+  for(let i=0;i<src.length/2;i++){const vi=src[i*2],f=src[i*2+1],m=sm.get(vi);
     if(f===0)c.setRGB(tc.getX(vi),tc.getY(vi),tc.getZ(vi));else{c.setRGB(m[0],m[1],m[2]);
       if(W.h[vi]>SEA)c.lerp(fieldC,Math.min(0.85,f*2)).lerp(haze,f*0.4);}
     col.setXYZ(i,c.r,c.g,c.b);}
+  for(const q of G.apron.userData.blends||[])col.setXYZ(q.id,...[0,1,2].map(c=>q.ids.reduce((n,id,j)=>n+col.array[id*3+c]*q.w[j],0)));
   col.needsUpdate=true;
 }
 function buildTerrain(){
@@ -5154,11 +5284,11 @@ function buildTerrain(){
   // sea
   if(W.coastal){
     const sg=new THREE.PlaneGeometry(SIZE*4.4,SIZE*4.4,64,64);sg.rotateX(-Math.PI/2); /* wide enough to cover the apron beyond the edge */
-    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:0.92},false,true));
+    G.sea=new THREE.Mesh(sg,waterMaterial({color:0x2e6285,transparent:true,opacity:1,depthWrite:false},false,true));
     G.sea.position.y=SEA_SURFACE;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
-  const riv=newAcc();
+  const riv=newAcc(),footprints=[],banks=[];G.drawRivRuns=[];
   const drawnPart=st=>{ // for drawing only (layouts still see the whole channel): no overlapping tongues
     const me=G.rivStrips.indexOf(st),inOther=(q,w)=>G.rivStrips.some((o,oi)=>o!==st&&!o.canal&&o.pts.some((p2,k)=>k<o.pts.length-1&&segDist(q.x,q.z,p2,o.pts[k+1])<o.hw[k]*0.6&&(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me)));
     const sea=q=>hAt(q.x,q.z)<SEA+0.2; // trim against the rendered coast, not the coarse water-cell mask
@@ -5166,26 +5296,40 @@ function buildTerrain(){
     if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;a=Math.max(0,a-1);b=Math.min(st.pts.length,b+1);}
     else{let k=b-1;while(k>1&&(sea(st.pts[k-1])||inOther(st.pts[k-1],st.hw[k-1])))k--;b=Math.min(b,k+1);} // keep one point in, to meet the water
     if(b-a<2)return null;
-    const out={pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:st.ys.slice(a,b),mouth:0};
+    const out={pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:st.ys.slice(a,b).map((y,k)=>st.canal?y:riverDrawLevel(st.pts[a+k].x,st.pts[a+k].z,y)),mouth:0};
     if(!st.canal){ // a confluence (a stream now ends on the river it joins): the mouth flares and runs onto the other's midline at its level, so the waters meet, not overlap
       const q=out.pts[out.pts.length-1];let best=null,bd=1e9;
-      for(const o of G.rivStrips){if(o===st||o.canal)continue;for(let k=0;k<o.pts.length-1;k++){const p0=o.pts[k],p1=o.pts[k+1],d=segDist(q.x,q.z,p0,p1);if(d<bd){bd=d;best={o,k};}}}
+      for(const o of G.rivStrips){if(o===st||o.canal)continue;const oi=G.rivStrips.indexOf(o),w=out.hw[out.hw.length-1];for(let k=0;k<o.pts.length-1;k++){if(!(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me))continue;const p0=o.pts[k],p1=o.pts[k+1],d=segDist(q.x,q.z,p0,p1);if(d<bd){bd=d;best={o,k};}}}
       if(best&&bd<best.o.hw[best.k]*1.2){const{o,k}=best,p0=o.pts[k],p1=o.pts[k+1],dx=p1.x-p0.x,dz=p1.z-p0.z,t=clamp(((q.x-p0.x)*dx+(q.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1),n=out.pts.length;
-        out.pts[n-1]={x:p0.x+dx*t,z:p0.z+dz*t};out.ys[n-1]=o.ys[k]-0.12; // tucked just under the river it joins, so the two never fight for the surface
+        out.pts[n-1]={x:p0.x+dx*t,z:p0.z+dz*t};out.ys[n-1]=lerp(riverDrawLevel(p0.x,p0.z,o.ys[k]),riverDrawLevel(p1.x,p1.z,o.ys[k+1]),t)+0.015; // joins at the actual channel level
         out.hw[n-1]=Math.min(o.hw[k]*0.9,out.hw[n-1]*1.7);
-        if(n>2)out.hw[n-2]*=1.25;for(let j=0;j<n-1;j++)out.ys[j]=Math.max(out.ys[j],o.ys[k]);out.mouth=1;}
+        if(n>2)out.hw[n-2]*=1.25;out.mouth=1;
+        const ux=dx/(Math.hypot(dx,dz)||1),uz=dz/(Math.hypot(dx,dz)||1),hw=o.hw[k],end=out.pts[n-1],prev=out.pts[n-2],L=dist2d(prev.x,prev.z,end.x,end.z)||1,nx=-(end.z-prev.z)/L,nz=(end.x-prev.x)/L,points=[];
+        for(const [p,w]of[[p0,o.hw[k]],[p1,o.hw[k+1]]])for(const side of[-1,1])points.push({x:p.x-uz*w*side,z:p.z+ux*w*side});
+        for(const [p,w]of[[prev,out.hw[n-2]],[end,out.hw[n-1]]])for(const side of[-1,1])points.push({x:p.x+nx*w*side,z:p.z+nz*w*side});
+        const y0=riverDrawLevel(p0.x,p0.z,o.ys[k]),y1=riverDrawLevel(p1.x,p1.z,o.ys[k+1]);out.join=riverJoinPolygon(points).map(p=>({...p,y:lerp(y0,y1,clamp(((p.x-p0.x)*dx+(p.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1))+0.02}));out.joinFlow={x:ux,z:uz,hw};out.join.flow=[ux,uz];out.join.inFlow=[(end.x-prev.x)/L,(end.z-prev.z)/L];out.join.origins=[p0.x,p0.z,prev.x,prev.z];out.join.widths=[hw,out.hw[n-2]];}
     }
     if(!out.mouth){ // the channel dives beneath the sea rather than ending as a square blue tongue
       const n=out.pts.length;
-      if(sea(out.pts[n-1])){out.ys[n-1]=SEA+0.35;out.hw[n-1]*=1.12;}
+      if(sea(out.pts[n-1])){out.ys[n-1]=SEA_SURFACE;out.hw[n-1]*=1.12;
+        const a=out.pts[n-2],b=out.pts[n-1],L=dist2d(a.x,a.z,b.x,b.z)||1,ux=(b.x-a.x)/L,uz=(b.z-a.z)/L;
+        for(let d=8;d<=3200;d+=d<320?8:80){const q={x:b.x+ux*d,z:b.z+uz*d};out.pts.push(q);out.ys.push(SEA_SURFACE);out.hw.push(out.hw[n-1]*(1+Math.min(d/120,1)*0.25));const w=out.hw.at(-1);if(d>=320&&Math.max(Math.abs(q.x),Math.abs(q.z))<SIZE/2-100&&[-1,0,1].every(side=>hAt(q.x-uz*w*side,q.z+ux*w*side)<SEA-0.8))break;}}
+
       if(st.canal&&sea(out.pts[0]))out.ys[0]=SEA+0.35;
     }
     return out;
   };
-  for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;
-    strip(st.pts,riv,{fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k]; // drowned under a mill-pond, the old channel stays below its surface
+  for(const st0 of riverStrips()){const st=drawnPart(st0);if(!st)continue;G.drawRivRuns.push(st);const base=riv.p.length/3;
+    strip(st.pts,riv,{indexStep:2,fr:[-1,-0.6,0,0.6,1],hw:k=>st.hw[k],flatY:k=>{let y=st.ys[k];const q=st.pts[k];
         for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))y=Math.min(y,s.lake.y-0.8);return y;},
-      col:(k,j)=>j===2||st.mouth&&k===st.pts.length-1?0x245b72:(j===1||j===3)?0x306d82:0x568da0});}
+      col:()=>0x245b72});
+    const point=i=>({id:i,x:riv.p[i*3],y:riv.p[i*3+1],z:riv.p[i*3+2]});for(let k=0;k<st.pts.length-1;k++){const i=base+k*5,F=[point(i),point(i+4),point(i+9),point(i+5)];banks.push(F);
+      const turns=F.map((p,j)=>{const q=F[(j+1)%4],r=F[(j+2)%4];return(q.x-p.x)*(r.z-q.z)-(q.z-p.z)*(r.x-q.x);});
+      if(turns.every(v=>v>0)||turns.every(v=>v<0))footprints.push(F);
+      else for(let j=0;j<4;j++){footprints.push([point(i+j),point(i+j+1),point(i+j+5)],[point(i+j+1),point(i+j+6),point(i+j+5)]);}}}
+  G.riverCrossVertices=riv.p.length/3;levelRiverJoins(riv,G.drawRivRuns.filter(r=>r.join).map(r=>r.join));
+  for(const F of [...footprints,...banks])for(const q of F)q.y=riv.p[q.id*3+1];
+  for(const st of G.drawRivRuns)if(st.join){const F=st.join;appendRiverJoin(riv,F,0,true);F.allEdges=true;footprints.push(F);banks.push(F);}
   const lk=newAcc(); // mill-ponds: a flat, opaque sheet at the dam's level (the shore is where the ground rises through it; the drowned channel stays hidden)
   for(const s of W.settlements)if(s.lake){
     const P=s.lake.poly,base=lk.p.length/3,y=s.lake.y;
@@ -5193,13 +5337,18 @@ function buildTerrain(){
     for(let i=1;i<P.length-1;i++)lk.i.push(base,base+i+1,base+i);
   }
   if(lk.i.length){G.lakes=accMesh(lk,waterMaterial({vertexColors:true,side:THREE.DoubleSide}));scene.add(G.lakes);}
-  G.rivers=accMesh(riv,waterMaterial({vertexColors:true,transparent:true,side:THREE.DoubleSide,
+  cutRiverTerrain(g,footprints,riv,banks);G.rivers=accMesh(riv,waterMaterial({vertexColors:true,transparent:true,depthWrite:false,side:THREE.DoubleSide,
     polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-3},true));
+  const joinFlow=new Float32Array(riv.p.length/3*4),joinOrigins=new Float32Array(joinFlow.length),joinWidths=new Float32Array(riv.p.length/3*2);
+  for(const st of G.drawRivRuns)if(st.join){const F=st.join;for(let i=F.overlayBase;i<F.overlayBase+F.overlayCount;i++){joinFlow.set([...F.flow,...F.inFlow],i*4);joinOrigins.set(F.origins,i*4);joinWidths.set(F.widths,i*2);}}
+  G.rivers.geometry.setAttribute('aJoinFlow',new THREE.BufferAttribute(joinFlow,4));G.rivers.geometry.setAttribute('aJoinOrigins',new THREE.BufferAttribute(joinOrigins,4));G.rivers.geometry.setAttribute('aJoinWidths',new THREE.BufferAttribute(joinWidths,2));
   scene.add(G.rivers);
   rebuildRoadMesh();
 }
 let lastSeasonKey='';
-function updateTerrainColors(si,blend,amp){ // amp: how much of the season to show (fast-forward settles on a steady summer)
+function vegetationDormancy(si,blend,amp=1){const d=[0,0,0.8,1];return (d[si]+(d[(si+1)%4]-d[si])*blend*blend)*amp;}
+function deciduousLeafLoss(si,blend){const ease=(a,b)=>{const t=clamp((blend-a)/(b-a),0,1);return t*t*(3-2*t);};return si===3?1:si===0?1-ease(0,0.45):si===2?ease(0.25,0.95):0;}
+function updateTerrainColors(si,blend,amp){ // all ground passes share this seasonal palette
   amp=amp??1;
   if(!G.tvar){const nv=makeNoise(SEED^0x7A11);G.tvar=new Float32Array(GRID*GRID);
     for(let i=0;i<GRID*GRID;i++){const cx=i%GRID,cz=(i/GRID)|0;G.tvar[i]=clamp((fbm(nv,cx/26,cz/26,3,2,0.5)-0.5)*3,-1,1);}}
@@ -5210,7 +5359,13 @@ function updateTerrainColors(si,blend,amp){ // amp: how much of the season to sh
   const sp={};for(const k of['mead','farm','forest','pine','rock','marsh']){
     const c0=new THREE.Color(sp0[k]),c1=new THREE.Color(sp1[k]);sp[k]=new THREE.Color(still[k]).lerp(c0.lerp(c1,blend*blend),aq).getHex();
   }
-  const col=G.terrain.geometry.attributes.color,N=col.count;
+  G.seasonU.uSeasonGrass.value.setHex(sp.mead);G.seasonU.uSeasonWood.value.setHex(sp.forest);
+  if(W.drought)G.seasonU.uSeasonGrass.value.lerp(new THREE.Color(0xb3a35c),0.55);
+  const snow=new THREE.Color(0xd4d9df);
+  G.seasonU.uSeasonGrass.value.lerp(snow,snowT*0.55);G.seasonU.uSeasonWood.value.lerp(snow,snowT*0.45);
+  G.seasonU.uDormancy.value=vegetationDormancy(si,blend,aq);G.seasonU.uGroundSnow.value=snowT;
+  G.seasonU.uLeafless.value=deciduousLeafLoss(si,blend)*aq;
+  const col=G.terrain.geometry.attributes.color,N=GRID*GRID;
   if(!G._cbuf)G._cbuf=new Float32Array(N*3);
   const buf=G._cbuf;
   for(let i=0;i<N;i++){
@@ -5230,20 +5385,23 @@ function updateTerrainColors(si,blend,amp){ // amp: how much of the season to sh
   }
   // river cells: darker wet banks under the water strip (painting them blue made blocky diamonds;
   // roads are real meshes now, so the ground under them is left alone)
-  const bankC=new THREE.Color(snowT>0.5?0x9aa39a:0x4d6a3c);
+  const bankC=new THREE.Color(sp.marsh).multiplyScalar(0.85).lerp(snow,snowT*0.55);
   for(let i=0;i<N;i++)if(W.water[i]===2){
     C1.setRGB(col.getX(i),col.getY(i),col.getZ(i)).lerp(bankC,0.55);col.setXYZ(i,C1.r,C1.g,C1.b);
   }
+  for(const q of G.terrain.geometry.userData.bankColors||[])col.setXYZ(q.id,...[0,1,2].map(c=>q.ids.reduce((n,id,j)=>n+col.array[id*3+c]*q.w[j],0)));
+  if(G.riverBed){const bc=G.riverBed.geometry.attributes.color;for(const q of G.riverBed.geometry.userData.bankColors||[])bc.setXYZ(q.id,...[0,1,2].map(c=>lerp(q.ids.reduce((n,id,j)=>n+col.array[id*3+c]*q.w[j],0),[.3,.27,.2][c],q.wet||0)));
+    for(const q of G.riverBed.geometry.userData.blends||[])bc.setXYZ(q.id,...[0,1,2].map(c=>q.ids.reduce((n,id,j)=>n+bc.array[id*3+c]*q.w[j],0)));bc.needsUpdate=true;}
   recolorApron();
   col.needsUpdate=true;
   recolorFields(si,blend,snowT,aq);
   // trees seasonal tint
   if(G.decid){
-    const tint=(summer,now)=>new THREE.Color(summer).lerp(new THREE.Color(now),aq); // fast-forward holds the summer leaf
-    const dc=tint(0x4a6c2e,[0x40682f,0x4a6c2e,0x96541e,0x5e5344][si]);
+    const tint=col=>new THREE.Color(col[1]).lerp(new THREE.Color(col[si]).lerp(new THREE.Color(col[(si+1)%4]),blend*blend),aq);
+    const dc=tint([0x40682f,0x4a6c2e,0x96541e,0x5e5344]);
     G.decid.material.color.copy(dc);
-    G.pine.material.color.copy(tint(0x28472f,si===3?0x314a37:0x28472f));
-    if(G.small)G.small.material.color.copy(tint(0x6d9444,[0x9cc46e,0x6d9444,0xc08a2e,0x7a6a58][si])); // fresh leaf in spring, gold in autumn
+    G.pine.material.color.copy(tint([0x28472f,0x28472f,0x28472f,0x314a37]));
+    if(G.small)G.small.material.color.copy(tint([0x9cc46e,0x6d9444,0xc08a2e,0x7a6a58])); // fresh leaf in spring, gold in autumn
     if(G.regrow)G.regrow.material.color.copy(dc);
   }
 }
@@ -5263,16 +5421,50 @@ function treeGeom(parts){ // [geometry, bark or leaf colour, 1 if crown]: the cr
   out.setAttribute('color',new THREE.Float32BufferAttribute(col,3));out.setAttribute('aCrown',new THREE.Float32BufferAttribute(cr,1));
   return out;
 }
-function crownMat(hex,leafCell=13){ // the material colour is the leaf of the season, and it tints the crown only: bark stays bark
-  const m=surfaceDetail(new THREE.MeshLambertMaterial({color:hex,vertexColors:true}));
+const TREE_BRANCH_GLSL=`
+varying float vBranchCrown;varying vec3 vBranchP,vBranchEye;uniform float uLeafless;
+float branchDistance(vec2 p,vec2 a,vec2 b){vec2 d=b-a;return length(p-a-d*clamp(dot(p-a,d)/dot(d,d),0.,1.));}
+float leaflessPatch(vec3 p){return step(fract(sin(dot(floor(p*6.),vec3(17.3,53.7,91.1)))*43758.5453),uLeafless);}
+float winterBranches(vec3 p){
+  vec3 eye=normalize(vBranchEye),right=normalize(vec3(eye.z,0.,-eye.x));
+  vec2 q=vec2(dot(p,right)*0.45,p.y*0.5+0.5);
+  // The bole stays central; near and far twigs shift slightly as the eye moves.
+  q.y+=(1.-dot(p,eye))*0.035*sin(q.x*8.);
+  float bend=0.025*sin(q.y*4.);
+  float d=branchDistance(q,vec2(0.,0.),vec2(bend,0.86));
+  for(int i=0;i<3;i++){
+    float y=0.24+float(i)*0.21,x=bend*y;
+    d=min(d,branchDistance(q,vec2(x,y),vec2(-0.38+float(i)*0.05,y+0.24)));
+    d=min(d,branchDistance(q,vec2(x,y+0.08),vec2(0.4-float(i)*0.04,y+0.31)));
+  }
+  float width=mix(0.025,0.006,clamp(q.y,0.,1.));
+  return 1.-smoothstep(width,width+BRANCH_AA,d);
+}
+`;
+function treeBranchShader(sh,shape){ // alpha cutouts wrap the crown; the same cutout also casts the shadow
+  Object.assign(sh.uniforms,G.seasonU,G.surfaceU);sh.uniforms.uCrownShape={value:new THREE.Vector3(...shape)};
+  sh.vertexShader='attribute float aCrown;varying float vBranchCrown;varying vec3 vBranchP,vBranchEye;uniform vec3 uCrownShape,uSurfaceEye;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+    vBranchCrown=aCrown;vBranchP=(position-vec3(0.,uCrownShape.y,0.))/vec3(uCrownShape.x,uCrownShape.z,uCrownShape.x);
+    mat4 treeFrame=modelMatrix*instanceMatrix;
+    vec3 eyeDelta=uSurfaceEye-(treeFrame*vec4(0.,uCrownShape.y,0.,1.)).xyz;
+    vBranchEye=vec3(dot(eyeDelta,treeFrame[0].xyz)/dot(treeFrame[0].xyz,treeFrame[0].xyz),dot(eyeDelta,treeFrame[1].xyz)/dot(treeFrame[1].xyz,treeFrame[1].xyz),dot(eyeDelta,treeFrame[2].xyz)/dot(treeFrame[2].xyz,treeFrame[2].xyz));`);
+  sh.fragmentShader=TREE_BRANCH_GLSL.replace('BRANCH_AA',G.surfaceDerivatives?'max(fwidth(q.x),fwidth(q.y))*0.75+0.002':'0.008')+sh.fragmentShader.replace('#include <clipping_planes_fragment>',`#include <clipping_planes_fragment>
+    if(vBranchCrown>0.5&&uLeafless>0.001&&leaflessPatch(vBranchP)>0.5&&winterBranches(vBranchP)<0.5)discard;`);
+}
+function crownMat(hex,leafCell=13,shape=[3.2,6.6,3.36]){ // the material colour tints the crown only: bark stays bark
+  const deciduous=leafCell===13,m=surfaceDetail(new THREE.MeshLambertMaterial({color:hex,vertexColors:true,side:deciduous?THREE.DoubleSide:THREE.FrontSide}));
+  if(deciduous){const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking,side:THREE.DoubleSide});depth.extensions={derivatives:G.surfaceDerivatives};depth.onBeforeCompile=sh=>treeBranchShader(sh,shape);m.userData.branchDepth=depth;}
   m.onBeforeCompile=sh=>{
     miniatureShader(sh);sh.uniforms.uLeafCell={value:leafCell};
-    sh.vertexShader='attribute float aCrown;varying float vCrown;varying vec3 vTreeP,vTreeN;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+    if(deciduous)treeBranchShader(sh,shape);
+    sh.vertexShader=(deciduous?'':'attribute float aCrown;')+'varying float vCrown;varying vec3 vTreeP,vTreeN;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
       vCrown=aCrown;vTreeP=position*vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));vTreeN=normal;`);
     sh.fragmentShader='varying float vCrown;varying vec3 vTreeP,vTreeN;uniform float uLeafCell;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       diffuseColor.rgb=mix(vColor.rgb,diffuseColor.rgb,vCrown);
       vec3 an=abs(vTreeN);vec2 tp=an.y>max(an.x,an.z)?vTreeP.xz:an.x>an.z?vTreeP.zy:vTreeP.xy;
-      diffuseColor.rgb*=miniatureDetail(vCrown>0.5?uLeafCell:12.,tp/vec2(2.,3.));`);
+      vec3 detail=miniatureDetail(vCrown>0.5?uLeafCell:12.,tp/vec2(2.,3.));
+      diffuseColor.rgb*=mix(detail,seasonalVegetation(detail),vCrown*(1.-step(13.5,uLeafCell)));
+      ${deciduous?'if(vCrown>0.5&&uLeafless>0.001)diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.24,0.16,0.1)*miniatureDetail(12.,tp/vec2(2.,3.)),leaflessPatch(vBranchP));':''}`);
   };
   return m;
 }
@@ -5321,21 +5513,24 @@ function buildTrees(){
   for(const k of['dec','pine','small']){const a=spots[k],cap=Math.round((k==='small'?3000:9000)*MAPK*MAPK);if(a.length>cap){const st=a.length/cap;spots[k]=Array.from({length:cap},(_,i)=>a[Math.floor(i*st)]);}}
   /* each species is cut into a 5×5 grid of chunks, each its own instanced mesh with its own bounds, so the renderer
      draws (and shadows) only the woods in view rather than every tree in the realm */
-  G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138,14),small:crownMat(0x6f9444)};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
+  G.treeMat={dec:crownMat(0x4c7a3c),pine:crownMat(0x2e5138,14),small:crownMat(0x6f9444,13,[1.8,3.9,2.25])};G.decid={material:G.treeMat.dec};G.pine={material:G.treeMat.pine};G.small={material:G.treeMat.small};
   const TG={dec:decidG,pine:pineG,small:smallG},NC=5,CS=SIZE*1.4/NC,cix=v=>clamp(Math.floor((v+SIZE*0.7)/CS),0,NC-1);G.treeChunks=[];
   for(const k in TG){const by=new Map();for(const t of spots[k]){const c=cix(t.z)*NC+cix(t.x);if(!by.has(c))by.set(c,[]);by.get(c).push(t);}
     for(const[c,list]of by){const g=TG[k].clone(),cx=(c%NC+0.5)*CS-SIZE*0.7,cz=(Math.floor(c/NC)+0.5)*CS-SIZE*0.7;
       g.boundingSphere=new THREE.Sphere(new THREE.Vector3(cx,hAt(cx,cz),cz),CS*0.75+120); // the chunk's own bounds: world-placed instances, culled as one
       const m=new THREE.InstancedMesh(g,G.treeMat[k],list.length);m.frustumCulled=true;m.castShadow=true;
+      if(G.treeMat[k].userData.branchDepth)m.customDepthMaterial=G.treeMat[k].userData.branchDepth;
       list.forEach((t,i)=>{t.m=m;t.ci=i;setInst(m,i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s*treeSX(k,t.v),t.s*treeSY(k,t.v),t.s*treeSZ(k,t.v));m.setColorAt(i,C1.setRGB(0.84+t.v*0.26,0.86+t.v*0.24,0.82+t.v*0.2));});
       m.instanceMatrix.needsUpdate=true;G.treeChunks.push(m);}}
   G.regrow=new THREE.InstancedMesh(decidG,crownMat(0x557f40),5000);G.regrow.castShadow=true;G.regrowFree=[];
+  G.regrow.customDepthMaterial=G.regrow.material.userData.branchDepth;
   for(let i=4999;i>=0;i--){setInst(G.regrow,i,0,-500,0,0,0.001,0.001,0.001);G.regrowFree.push(i);}G.regrow.count=0;scene.add(G.regrow); // drawn only as far as the highest slot in use
   G.treeHash=makeHash(40);G.treeSpots=spots;
   for(const k of['dec','pine','small'])spots[k].forEach((t,i)=>{t.k=k;t.i=i;G.treeHash.add(t,1);});
   linkTrees();
   featInit();hookTerrainShader(G.terrain.material);
   for(const m of G.treeChunks)scene.add(m);
+  lastSeasonKey=''; // new leaf materials must receive the current season on their first frame
 }
 
 /* ---------------- buildings ---------------------------------------------- */
@@ -5583,7 +5778,7 @@ function millWheelGeometry(){ // open spokes, two timber rims and sixteen bucket
   const g=mergeGeoms(parts);for(const [part] of parts)part.dispose();return g;
 }
 function rebuildMillWheels(){
-  for(const wh of G.wheels||[])scene.remove(wh.userData.pivot);
+  for(const wh of G.wheels||[]){scene.remove(wh.userData.pivot);if(wh.userData.raceGroup)scene.remove(wh.userData.raceGroup);for(const m of wh.userData.race||[])m.geometry.dispose();}
   G.wheels=[];if(!G.millWheelGeo)G.millWheelGeo=millWheelGeometry();
   if(!G.millWheelMat){G.millWheelMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millWheelMat.defines={...G.millWheelMat.defines,MINI_STRUCTURE_UV:1};}
   for(const s of W.settlements){const b=s.mill;if(!b||b.removed||b.state==='gone')continue;
@@ -5595,11 +5790,56 @@ function rebuildMillWheels(){
           if(r||lake){if(!best||d<best.d)best={d,side:k,y:lake?s.lake.y:r.y};break;}}}
       if(!best)continue;water={...best,kind:'legacy'};
     }
-    const k=water.side,th=b.rot+k*Math.PI/2,off=water.offset||((k%2?b.d:b.w)/2+1.6);
+    const k=water.side,off=water.offset||((k%2?b.d:b.w)/2+1.6),plan=millOutletPlan(s,b,water,off),th=plan.th;
     const wh=new THREE.Mesh(G.millWheelGeo,G.millWheelMat),pivot=new THREE.Group();pivot.rotation.y=th;
-    pivot.position.set(b.x+Math.cos(th)*off,water.y+3.05,b.z-Math.sin(th)*off);
+    pivot.position.set(plan.x,millWheelCentre(plan),plan.z);
     wh.castShadow=wh.receiveShadow=true;wh.userData.building=b;pivot.add(wh);scene.add(pivot);G.wheels.push(wh);wh.userData.pivot=pivot;
+    wh.userData.flowSign=plan.sign;wh.userData.hydraulics=plan;wh.userData.race=[];
+    if(plan.head>0.65){const group=buildMillRace(plan,b,pivot.position.y);scene.add(group);wh.userData.race=group.children;wh.userData.raceGroup=group;}
   }
+}
+function millOutletPlan(s,b,water,off){ // render hydraulics without moving saved buildings or changing their ownership
+  let th=b.rot+water.side*Math.PI/2,x=b.x+Math.cos(th)*off,z=b.z-Math.sin(th)*off,y=riverDrawAt(x,z)??water.y;
+  const direct=riverAt(x,z,3),sign=direct&&((direct.b.x-direct.a.x)*Math.sin(th)+(direct.b.z-direct.a.z)*Math.cos(th))<0?1:-1;
+  const L=s.lake;if(!L||dist2d(x,z,L.dam.x,L.dam.z)>180){
+    if(!direct)return{x,z,y,th,sign,head:0};
+    const dx=direct.b.x-direct.a.x,dz=direct.b.z-direct.a.z,len=Math.hypot(dx,dz),ux=dx/len,uz=dz/len;
+    let fx=Math.sin(th),fz=Math.cos(th);if(fx*ux+fz*uz<0){fx=-fx;fz=-fz;}
+    const source={x:x-ux*12,z:z-uz*12,y:0},tail={x:x+ux*12,z:z+uz*12,y};source.y=riverDrawAt(source.x,source.z)??y;tail.y=riverDrawAt(tail.x,tail.z)??y;
+    return{x,z,y,th,sign,head:Math.max(0,source.y-y),source,tail,fx,fz};
+  }
+  const dm=L.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,side=(b.x-dm.x)*nx+(b.z-dm.z)*nz>=0?1:-1;
+  const reach=riverAt(dm.x+dx*8,dm.z+dz*8,8)||direct;if(!reach)return{x,z,y,th,sign,head:0};
+  for(const inset of[1.2,3,5,8]){const w=Math.max(1,reach.hw-inset),wx=dm.x+dx*7+nx*side*w,wz=dm.z+dz*7+nz*side*w;
+    if(riverAt(wx,wz,1)&&hAt(wx,wz)<reach.y-0.6){x=wx;z=wz;break;}}
+  if(inPoly(L.poly,x,z))return{x,z,y,th,sign,head:0};
+  y=riverDrawAt(x,z)??reach.y;th=Math.atan2(-(z-b.z),x-b.x);
+  let fx=Math.sin(th),fz=Math.cos(th);if(fx*dx+fz*dz<0){fx=-fx;fz=-fz;}
+  const source={x:dm.x-dx*5+nx*side*Math.min(reach.hw*0.5,6),z:dm.z-dz*5+nz*side*Math.min(reach.hw*0.5,6),y:L.y};
+  if(!inPoly(L.poly,source.x,source.z)){source.x=dm.x-dx*10;source.z=dm.z-dz*10;}
+  const tail={x:dm.x+dx*24,z:dm.z+dz*24,y:Math.min(y,riverDrawAt(dm.x+dx*24,dm.z+dz*24)??y)};
+  return{x,z,y,th,sign:fx*Math.sin(th)+fz*Math.cos(th)>0?-1:1,head:L.y-y,source,tail,fx,fz};
+}
+function millWheelCentre(p){return p.head>5?p.source.y-1.3:p.y+3.05;}
+function millInlet(p){const side=Math.sqrt(Math.max(1,16-(p.source.y-millWheelCentre(p))**2));return{x:p.x-p.fx*side,z:p.z-p.fz*side,y:p.source.y};}
+function millSluiceSlots(s){const dm=s.lake.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,out=[];
+  for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'&&b.millWater){const w=b.millWater,p=millOutletPlan(s,b,w,w.offset||((w.side%2?b.d:b.w)/2+1.6));if(p.head<=0.65)continue;
+    const a=p.source,c=millInlet(p),da=(a.x-dm.x)*dx+(a.z-dm.z)*dz,dc=(c.x-dm.x)*dx+(c.z-dm.z)*dz;if(da>=0||dc<=0)continue;
+    const t=-da/(dc-da),x=a.x+(c.x-a.x)*t,z=a.z+(c.z-a.z)*t,u=(x-dm.x)*nx+(z-dm.z)*nz;if(Math.abs(u)<dm.w/2)out.push([Math.max(-dm.w/2,u-1.15),Math.min(dm.w/2,u+1.15)]);}
+  return out.sort((a,b)=>a[0]-b[0]);}
+function buildMillRace(p,b,centreY){ // sluice, falling sheet, tailrace and a shaft back to the mill
+  const water=newAcc(),parts=[],put=(w,h,d,x,y,z,ry=0)=>{const g=new THREE.BoxGeometry(w,h,d),m=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(0,ry,0)),new THREE.Vector3(1,1,1));parts.push([g,m]);};
+  const feedY=p.source.y,inlet=millInlet(p),bottom={...inlet,y:p.y+0.2};
+  let along=0;const sheet=(a,c)=>{const dx=c.x-a.x,dz=c.z-a.z,L=Math.hypot(dx,dz),fx=L>0.01?dx/L:p.fx,fz=L>0.01?dz/L:p.fz,base=water.p.length/3;
+    for(const q of[a,c])for(const s of[-1,1]){water.p.push(q.x-fz*s*0.7,q.y,q.z+fx*s*0.7);water.n.push(L>0.01?0:-p.fx,L>0.01?1:0,L>0.01?0:-p.fz);C1.setHex(L>0.01?0x326d86:0x81afbf);water.c.push(C1.r,C1.g,C1.b);water.uv.push(s*0.7,along);water.tangent.push(fx,fz);water.bank.push(4);}water.i.push(base,base+1,base+2,base+1,base+3,base+2);along+=Math.hypot(L,c.y-a.y);};
+  sheet(p.source,inlet);sheet(inlet,bottom);sheet(bottom,p.tail);
+  const dx=inlet.x-p.source.x,dz=inlet.z-p.source.z,len=Math.hypot(dx,dz),angle=Math.atan2(dx,dz),nx=len?dz/len:1,nz=len?-dx/len:0;
+  for(const s of[-1,1])put(0.25,0.65,len,(p.source.x+inlet.x)/2+nx*s*0.85,feedY-0.12,(p.source.z+inlet.z)/2+nz*s*0.85,angle);
+  put(1.9,0.2,len,(p.source.x+inlet.x)/2,feedY-0.22,(p.source.z+inlet.z)/2,angle);
+  const shaft=Math.hypot(p.x-b.x,p.z-b.z);put(shaft,0.3,0.3,(p.x+b.x)/2,centreY,(p.z+b.z)/2,p.th);
+  const g=mergeGeoms(parts);for(const [geo]of parts)geo.dispose();
+  G.millRaceStone=G.millRaceStone||miniatureMaterial(5,[2,2],{color:0x8f8776});G.millRaceWater=G.millRaceWater||waterMaterial({vertexColors:true,side:THREE.DoubleSide},true);
+  const group=new THREE.Group(),stone=new THREE.Mesh(g,G.millRaceStone);stone.castShadow=stone.receiveShadow=true;group.add(stone,accMesh(water,G.millRaceWater));return group;
 }
 function hash01(n){const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
 /* ---------------- a church is built in parts, as its parish can pay ----------------
@@ -6560,9 +6800,9 @@ function rebuildWalls(){
       else if(!cfg.noGates)inst.gate.push([g.m.x,y,g.m.z,g.ry,stone,h,7,!!s.siegeBy,false]);}
   };
   for(const s of W.settlements){
-    if(s.lake){const dm=s.lake.dam,px=-Math.sin(dm.a)*dm.w/2,pz=Math.cos(dm.a)*dm.w/2; // the mill dam
-      prism([{x:dm.x+px-Math.cos(dm.a)*2.5,z:dm.z+pz-Math.sin(dm.a)*2.5},{x:dm.x+px+Math.cos(dm.a)*2.5,z:dm.z+pz+Math.sin(dm.a)*2.5},
-        {x:dm.x-px+Math.cos(dm.a)*2.5,z:dm.z-pz+Math.sin(dm.a)*2.5},{x:dm.x-px-Math.cos(dm.a)*2.5,z:dm.z-pz-Math.sin(dm.a)*2.5}],s.lake.y+1,0x8f877a,0x9a917f);}
+    if(s.lake){const dm=s.lake.dam,nx=-Math.sin(dm.a),nz=Math.cos(dm.a),dx=Math.cos(dm.a)*2.5,dz=Math.sin(dm.a)*2.5;
+      const segment=(a,b)=>{if(b<=a)return;prism([{x:dm.x+nx*a-dx,z:dm.z+nz*a-dz},{x:dm.x+nx*a+dx,z:dm.z+nz*a+dz},{x:dm.x+nx*b+dx,z:dm.z+nz*b+dz},{x:dm.x+nx*b-dx,z:dm.z+nz*b-dz}],s.lake.y+1,0x8f877a,0x9a917f);};
+      let edge=-dm.w/2;for(const [a,b]of millSluiceSlots(s)){segment(edge,a);edge=Math.max(edge,b);}segment(edge,dm.w/2);}
     if(s.hillCastle)ring(s.hillCastle.x,s.hillCastle.z,s.hillCastle.r,14,s.hillCastle.timber&&!s.motteStone?4.5:7.5,!(s.hillCastle.timber&&!s.motteStone),s,casCfg(s,s.hillCastle));
     if(s.ward)ring(s.ward.x,s.ward.z,s.ward.r,Math.max(14,Math.round(s.ward.r/2.2)),s.ward.stone?7:4,!!s.ward.stone,s,casCfg(s,s.ward));
     {const R=casRing(s),c=s.cas;if(R&&c&&c.outer){const st=casStone(s),r=R.r+c.outer; // the outer ward: a lower curtain beyond the first
@@ -7212,8 +7452,9 @@ float gardenHeading(vec2 fu){
       else if(abs(kind-5.)<0.5)col=mix(mix(uCol[10],uCol[8],0.45),fr<0.45?uCol[8]:uCol[10],stripVisible);                       // vine rows on bare soil
       else col=crop(mod(floor(D1.a*255.+0.5)+uYear,3.));                           // the great field's course
       float groundCell=col.g>col.r*1.03?0.:col.r>col.g*1.22?1.:15.;
-      col*=miniatureDetail(groundCell,vec2(dot(wp,acr)/4.,dot(wp,ax)/6.));
-      if(groundCell<0.5)col*=vec3(0.88,0.9,0.72);
+      vec3 groundDetail=miniatureDetail(groundCell,vec2(dot(wp,acr)/4.,dot(wp,ax)/6.));
+      col*=groundCell<0.5?seasonalVegetation(groundDetail):groundDetail;
+      if(groundCell<0.5)col*=mix(vec3(0.88,0.9,0.72),vec3(0.88),uDormancy);
       if(w>0.5&&abs(kind-5.)>0.5&&!isCommon){
         if(abs(kind-3.)<0.5)col*=mix(0.99,0.94+0.1*step(0.5,fract(si*0.5)),stripVisible);                  // meadow doles, mown in turn
         else col*=mix(1.,0.91+0.18*hv,stripVisible);                                                     // each tenant's strip a shade apart
@@ -7247,21 +7488,21 @@ float gardenHeading(vec2 fu){
     vec2 fall=length(nrm.xz)>0.001?normalize(nrm.xz):vec2(1.,0.),cont=vec2(-fall.y,fall.x);
     float n2=lnoise(wp*0.35),n3=mix(0.5,lnoise(wp*1.3),1.-smoothstep(0.3,1.1,pixelM)),urb=1.-smoothstep(10.,30.,min(dWall,dB));
     vec3 c=diffuseColor.rgb;
-    c*=mix(miniatureDetail(0.,wp/8.)*vec3(0.7,0.78,0.52),vec3(1.),fieldA); // meadow flowers fade into the field material at headlands
+    c*=mix(seasonalVegetation(miniatureDetail(0.,wp/8.))*mix(vec3(0.7,0.78,0.52),vec3(0.88),uDormancy),vec3(1.),fieldA); // texture detail follows dormant meadow colours
     float wood=1.-smoothstep(0.,max(8.,uFeaturePixel*2.),dWd);
     float wild=(1.-smoothstep(0.,0.1,fieldA))*(1.-wood);
     c*=mix(1.,0.93+0.12*lnoise(wp*0.06)+0.06*(n3-0.5)+0.03*step(0.93,lh(floor(wp*0.8)))*(0.6+0.4*n2)*(1.-smoothstep(0.25,0.8,pixelM)),wild);
-    c=mix(c,vec3(0.28,0.3,0.18)*miniatureDetail(15.,wp/4.)*(0.88+0.24*n2),0.28*wood)*mix(1.,0.94+0.12*lnoise(wp*0.08),wood); // leaf litter fades through the canopy margin
+    c=mix(c,mix(uSeasonWood*0.72,vec3(0.38,0.3,0.22),uDormancy)*miniatureDetail(15.,wp/4.)*(0.88+0.24*n2),0.28*wood)*mix(1.,0.94+0.12*lnoise(wp*0.08),wood); // leaf litter fades through the canopy margin
     if(slope>0.3){ // steep: bare earth and scree streaked down the fall line (valley sides below this stay grass)
       float t=smoothstep(0.32,0.52,slope+(n2-0.5)*0.12)*0.8;
       float st=lnoise(vec2(dot(wp,cont)*0.45,dot(wp,fall)*0.04));
       c=mix(c,mix(vec3(0.45,0.41,0.35),vec3(0.6,0.57,0.52),st)*miniatureDetail(3.,wp/3.)*(0.85+0.3*n3),t*mix(0.8,0.45,wood));
     }else if(fieldA>0.3&&slope>0.07){ // ploughing along a slope builds lynchets: grassy risers between terraces
-      float r=fract(h/3.2+n2*0.15);c=mix(c,vec3(0.42,0.5,0.28),(1.-smoothstep(0.0,0.12,r))*0.55*smoothstep(0.07,0.12,slope));
+      float r=fract(h/3.2+n2*0.15);c=mix(c,uSeasonGrass*0.72,(1.-smoothstep(0.0,0.12,r))*0.55*smoothstep(0.07,0.12,slope));
     }
     if(dWd<18.&&dW>3.){ // bracken and a soft bank; narrow lines respect the feature-field precision
       float t=smoothstep(0.,3.,dWd)*(1.-smoothstep(6.,18.,dWd));
-      c=mix(c,mix(vec3(0.36,0.43,0.21),vec3(0.52,0.47,0.25),n3)*(0.85+0.2*n2),t*0.5);
+      c=mix(c,mix(uSeasonGrass*0.8,uCol[4]*1.08,n3)*(0.85+0.2*n2),t*0.5);
       float bw=max(1.5,max(pixelM,uFeaturePixel*0.4));
       c*=1.+0.05*(1.-smoothstep(0.,bw,abs(dWd-4.6)))-0.08*(1.-smoothstep(0.,bw,abs(dWd-8.)));
       if(fieldA>0.3)c=mix(c,vec3(0.34,0.26,0.17),(1.-smoothstep(0.,bw,abs(dWd-8.)))*0.2*surfaceLine(dot(wp,cont)/2.4,0.3));
@@ -7282,7 +7523,7 @@ float gardenHeading(vec2 fu){
       if(dB>4.&&hh>0.45&&T2.b<0.15){ // spare yards only: parcel gardens have their own rows
         float edge=smoothstep(0.02,0.08,min(min(gf.x,1.-gf.x),min(gf.y,1.-gf.y)));
         float rowMix=0.5+0.5*cos(gq.y*13./1.3*6.283185)*(1.-smoothstep(0.25,0.8,pixelM));
-        vec3 bed=mix(vec3(0.3,0.44,0.2),vec3(0.44,0.35,0.24),rowMix)*(0.92+0.16*hh);
+        vec3 bed=mix(uCol[7]*0.72,vec3(0.44,0.35,0.24),rowMix)*(0.92+0.16*hh);
         c=mix(c,bed*miniatureDetail(1.,vec2(dot(wp,gu),dot(wp,vec2(-gu.y,gu.x)))/4.),edge*0.24*(1.-smoothstep(10.,14.,dB))*(1.-smoothstep(0.15,0.5,pixelM)));}
     }
     if(T2.b>0.15&&dB>4.&&dRd>3.&&dW>8.){ // kitchen plots follow the long edge of their actual property parcel
@@ -7304,16 +7545,20 @@ float gardenHeading(vec2 fu){
       float bankDistance=max(0.,dW+(n2-0.5)*1.4);
       float band=1.-smoothstep(0.6,3.5,bankDistance);
       vec2 bankUV=wp/3.; // gravel is isotropic; vertical banks use restrained earth tones
-      vec3 bank=mix(vec3(0.34,0.31,0.24)*miniatureDetail(3.,bankUV)*(0.9+0.2*n3),mix(vec3(0.43,0.49,0.27),vec3(0.6,0.57,0.34),n3)*miniatureDetail(0.,wp/8.),smoothstep(0.5,4.5,bankDistance));
+      vec3 bank=mix(vec3(0.34,0.31,0.24)*miniatureDetail(3.,bankUV)*(0.9+0.2*n3),mix(uSeasonGrass*0.9,uCol[4]*1.3,n3)*seasonalVegetation(miniatureDetail(0.,wp/8.)),smoothstep(0.5,4.5,bankDistance));
       bank=mix(bank,vec3(0.52,0.38,0.27)*(0.94+0.12*n2),smoothstep(0.2,0.35,slope)); // a raw cut bank where the river undercuts
-      bank=mix(bank,vec3(0.2,0.29,0.17),0.7*(1.-smoothstep(3.,12.,dWd))); // alders crowding the water
+      bank=mix(bank,uSeasonWood*0.56,0.7*(1.-smoothstep(3.,12.,dWd))); // alders crowding the water
       vec3 stone=vec3(0.54,0.52,0.46)*mix(vec3(1.),miniatureDetail(3.,wp/3.),0.55); // quay banks: no stretched ashlar or artificial contour stripes
       c=mix(c,mix(bank,stone,urb),band*0.88);
     }
+    // Context detail is painted after the base snow; restore cover on exposed land,
+    // leaving water, wet banks and steep cut faces visible.
+    float snowCover=uGroundSnow*(h>380.?1.:h>120.?0.75:0.55)*(1.-smoothstep(0.2,0.6,slope))*smoothstep(uSea+0.5,uSea+2.,h)*smoothstep(0.6,3.,dW);
+    c=mix(c,vec3(0.83,0.85,0.87)*(0.95+0.05*n2),snowCover);
     diffuseColor.rgb=mix(c,diffuseColor.rgb,smoothstep(2400.,3200.,dcam));
   }
   { float e=max(abs(wp.x),abs(wp.y))-uSize*0.5+(lnoise(wp*0.0033)-0.5)*260.+(lnoise(wp*0.011)-0.5)*120.; // the known world frays at its edge into the country beyond, not a ruled line
-      vec3 far=mix(vec3(0.6,0.66,0.42),vec3(0.33,0.45,0.27),smoothstep(0.45,0.6,lnoise(wp*0.0024)))*(0.9+0.2*lnoise(wp*0.025));
+      vec3 far=mix(uSeasonGrass*1.17,uSeasonWood*0.78,smoothstep(0.45,0.6,lnoise(wp*0.0024)))*(0.9+0.2*lnoise(wp*0.025));
       if(e>-700.)diffuseColor.rgb=mix(diffuseColor.rgb,far,smoothstep(-700.,0.,e)*0.8); }
   if(vWP.y>uSea+0.5&&texture2D(uMask,(wp+uSize*0.5)/uSize+0.5/uGrid).a>0.5){ // territorial ink stays above the water and outside rivers and lakes
     vec4 L1=texture2D(uLord,(c1+0.5)/uFN),L2=texture2D(uLord,(c2+0.5)/uFN);
@@ -7899,15 +8144,77 @@ function spoils(a,s,sack){ // what is taken from a fallen or raided town: coin p
 function takeHorses(a,s,list){const riders=(list||[]).filter(p=>p.sk[KRi]>=0.45).length;const h=s?Math.min(riders,Math.floor((s.stores.horses||0)*0.6)):0;if(s){herdSync(s);herdLoss(s,'horses',h);}a.horses=(a.horses||0)+h;}
 /* the herds on the map: each beast drawn stands for a few head, on the grass its village grazes; click one to learn whose it is */
 const HERDDRAW={sheep:{per:8,cap:3000},cattle:{per:2,cap:1600},horses:{per:1.5,cap:700},swine:{per:4,cap:1400}};
+function animalGeometry(k,w,h,d){ // distinct silhouettes, still one instanced draw per species
+  const parts=[],partCodes=[],put=(sx,sy,sz,x,y,z,part,tilt=0)=>{const g=new THREE.BoxGeometry(sx,sy,sz);g.rotateZ(tilt);g.translate(x,y,z);partCodes.push(...new Array(g.index.count).fill(part));parts.push([g,new THREE.Matrix4()]);};
+  const horse=k==='horses',cow=k==='cattle',sheep=k==='sheep';
+  const leg=horse?h*0.47:cow?h*0.4:sheep?h*0.28:h*0.2,body=h-leg;
+  put(w*(sheep?0.85:0.77),body*(horse?0.67:0.84),d,0,leg+body*0.43,0,0);
+  if(horse){
+    put(w*0.19,h*0.48,d*0.61,w*0.32,h*0.77,0,1,-0.32); // high sloping neck
+    put(w*0.24,h*0.23,d*0.52,w*0.48,h*1.02,0,1,-0.25);
+    put(w*0.22,h*0.13,d*0.46,w*0.62,h*0.94,0,3,-0.25); // long muzzle
+    put(w*0.065,h*0.4,d*0.14,w*0.23,h*0.78,0,5,-0.32); // mane
+    put(w*0.06,h*0.45,d*0.22,-w*0.43,leg+body*0.28,0,5,-0.22); // hanging tail
+  }else if(cow){
+    put(w*0.24,h*0.36,d*0.65,w*0.37,h*0.75,0,1);
+    put(w*0.2,h*0.19,d*0.67,w*0.53,h*0.63,0,3);
+    for(const z of[-1,1])put(w*0.055,h*0.16,d*0.1,w*0.36,h*0.98,z*d*0.34,6,z*0.3); // horns
+    put(w*0.035,h*0.42,d*0.07,-w*0.41,h*0.44,0,5);
+  }else if(sheep){
+    put(w*0.2,h*0.31,d*0.44,w*0.4,h*0.63,0,1);
+    put(w*0.16,h*0.17,d*0.38,w*0.5,h*0.53,0,3);
+    put(w*0.13,h*0.16,d*0.22,-w*0.43,h*0.58,0,0); // short fleece tail
+  }else{
+    put(w*0.31,h*0.36,d*0.66,w*0.38,h*0.47,0,1); // low wedge-like head
+    put(w*0.16,h*0.21,d*0.55,w*0.56,h*0.43,0,3); // blunt snout
+    put(w*0.075,h*0.12,d*0.1,-w*0.43,h*0.68,0,5,0.7);
+  }
+  for(const x of[-1,1])for(const z of[-1,1])put(w*(horse?0.065:0.09),leg,d*0.15,x*w*0.28,leg*0.5,z*d*0.32,2);
+  for(const z of[-1,1])put(w*(horse?0.065:0.13),h*(horse?0.16:0.12),d*0.12,w*(horse?0.43:cow?0.33:0.35),h*(horse?1.17:cow?0.88:sheep?0.79:0.72),z*d*0.29,4,horse?0:z*0.5);
+  const g=mergeGeoms(parts);g.setAttribute('aBeastPart',new THREE.Float32BufferAttribute(partCodes,1));for(const [p]of parts)p.dispose();return g;
+}
+const HERD_MATURE_DAYS={sheep:300,cattle:540,horses:720,swine:180};
+function animalGrowth(k,born,now){const age=Math.max(0,now-born)/HERD_MATURE_DAYS[k];return 0.45+0.55*Math.min(1,age);}
+function herdVisualBirth(s,k,q){ // aggregate births supply visual cohorts; ownership and physical counts stay canonical
+  if(W.prehistory||!(q>0))return;G.herdYoung=G.herdYoung||new Map();const key=W.settlements.indexOf(s)+':'+k,now=day(),A=(G.herdYoung.get(key)||[]).filter(c=>now-c.born<HERD_MATURE_DAYS[k]);
+  const last=A[A.length-1];if(last&&last.born===now)last.q+=q;else A.push({born:now,q});G.herdYoung.set(key,A);G.herdsDirty=true;
+}
+function herdVisualAge(si,k,p){const s=W.settlements[si],now=day(),A=G.herdYoung?.get(si+':'+k)||[];let fraction=0;
+  for(const c of A)if(now-c.born<HERD_MATURE_DAYS[k]){fraction+=c.q/Math.max(1,s.stores[k]||0);if(p<fraction)return c.born;}return now-HERD_MATURE_DAYS[k];}
+function animalMaterial(k,w,h,d){
+  const m=surfaceDetail(new THREE.MeshLambertMaterial());
+  m.onBeforeCompile=sh=>{
+    miniatureShader(sh);sh.uniforms.uBeastSize={value:new THREE.Vector3(w,h,d)};sh.uniforms.uBeastEye={value:new THREE.Vector2(w*(k==='horses'?0.48:k==='cattle'?0.4:0.42),h*(k==='horses'?1.04:k==='cattle'?0.83:k==='sheep'?0.7:0.58))};sh.uniforms.uBeastKind={value:['sheep','cattle','horses','swine'].indexOf(k)};
+    sh.vertexShader='attribute float aBeastPart;attribute vec4 aAnimal;varying vec3 vBeastP,vBeastN;varying float vBeastPart,vCoat;uniform vec3 uBeastSize;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vBeastP=position;vBeastN=normal;vBeastPart=aBeastPart;vCoat=aAnimal.x;
+      if(aBeastPart==1.||aBeastPart==3.||aBeastPart==4.)transformed.y-=aAnimal.y*uBeastSize.y*0.28;
+      if(aBeastPart==2.)transformed.y+=max(0.,sin(aAnimal.z+step(0.,position.x)*3.14159+step(0.,position.z)*3.14159))*aAnimal.w*0.1;`);
+    sh.fragmentShader='varying vec3 vBeastP,vBeastN;varying float vBeastPart,vCoat;uniform vec3 uBeastSize;uniform float uBeastKind;uniform vec2 uBeastEye;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+      vec3 p=vBeastP;vec2 coatUV=abs(vBeastN.y)>0.5?p.xz:p.xy;
+      float fleck=surfaceFilteredNoise(coatUV*10.+vCoat*31.),coatPatch=surfaceNoise(coatUV*1.5+vCoat*17.);
+      vec3 coat;
+      if(uBeastKind<0.5)coat=mix(vec3(0.65,0.59,0.48),vec3(0.9,0.86,0.73),vCoat)*mix(0.89,1.09,fleck); // fleeces
+      else if(uBeastKind<1.5)coat=mix(mix(vec3(0.24,0.12,0.065),vec3(0.54,0.3,0.13),vCoat),vec3(0.82,0.77,0.63),smoothstep(0.55,0.68,coatPatch)); // irregular pied hides
+      else if(uBeastKind<2.5)coat=mix(vec3(0.13,0.09,0.065),vec3(0.48,0.27,0.12),vCoat)*(0.94+fleck*0.1);
+      else coat=mix(vec3(0.44,0.28,0.21),vec3(0.74,0.49,0.4),vCoat)*(0.88+fleck*0.2);
+      if(vBeastPart>1.5&&vBeastPart<2.5)coat*=uBeastKind<0.5?0.42:0.65; // legs and hooves
+      if(vBeastPart>4.5&&vBeastPart<5.5)coat*=0.35;
+      if(vBeastPart>5.5)coat=vec3(0.72,0.66,0.49);
+      if(vBeastPart>2.5&&vBeastPart<3.5)coat=mix(coat,vec3(0.18,0.13,0.105),uBeastKind>2.5?0.25:0.65);
+      if(uBeastKind>1.5&&uBeastKind<2.5&&p.y>uBeastSize.y*0.84&&abs(p.z)<uBeastSize.z*0.2)coat*=0.43; // mane
+      if(vBeastPart>0.5&&vBeastPart<1.5&&abs(vBeastN.z)>0.5){vec2 eye=vec2((p.x-uBeastEye.x)/0.045,(p.y-uBeastEye.y)/0.04);coat=mix(coat,vec3(0.035),1.-smoothstep(0.65,1.25,length(eye)));}
+      diffuseColor.rgb=coat;`);
+  };return m;
+}
 function buildHerdMeshes(){
-  const mk=(k,w,h,d,c,cap)=>{const g=new THREE.BoxGeometry(w,h,d);g.translate(0,h/2+0.35,0);const m=new THREE.InstancedMesh(g,new THREE.MeshLambertMaterial({color:c}),cap);m.count=0;m.castShadow=false;m.userData.beast=k;scene.add(m);return m;};
+  const mk=(k,w,h,d,c,cap)=>{const g=animalGeometry(k,w,h,d);g.setAttribute('aAnimal',new THREE.InstancedBufferAttribute(new Float32Array(cap*4),4));const m=new THREE.InstancedMesh(g,animalMaterial(k,w,h,d),cap);m.count=0;m.castShadow=false;m.userData.beast=k;scene.add(m);return m;};
   G.herdMesh={sheep:mk('sheep',1.6,1.1,1,0xdcd6c8,3000),cattle:mk('cattle',2.6,1.5,1.1,0x7a5236,1600),horses:mk('horses',2.4,1.7,0.8,0x4a3426,700),swine:mk('swine',1.3,0.8,0.8,0xc99a8a,1400)};
   G.herdOwner={sheep:new Int16Array(3000),cattle:new Int16Array(1600),horses:new Int16Array(700),swine:new Int16Array(1400)};G.herdPos=[];}
 function inPolyXZ(P,x,z){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],q=P[j];if((a.z>z)!==(q.z>z)&&x<(q.x-a.x)*(z-a.z)/(q.z-a.z)+a.x)c=!c;}return c;}
 function insetPoly(P,d){ // the field's outline drawn in behind its fence
   let cx=0,cz=0;for(const q of P){cx+=q.x;cz+=q.z;}cx/=P.length;cz/=P.length;
   return P.map(q=>{const L=dist2d(q.x,q.z,cx,cz)||1;return {x:q.x+(cx-q.x)/L*d,z:q.z+(cz-q.z)/L*d};});}
-function grazeOK(x,z){const c=cIdx(toCell(x),toCell(z)),m=G.land.mask;return !W.water[c]&&!m[c*4+2]&&!(G.trackSet&&trackAt(x,z,3.5));}
+function grazeOK(x,z){const c=cIdx(toCell(x),toCell(z)),m=G.land.mask;return !renderedWaterNear(x,z,2.5)&&!W.water[c]&&!m[c*4+2]&&!(G.trackSet&&trackAt(x,z,3.5));}
 /* the herds on the map: each town's beasts in flocks of their own kind — sheep on the widest pasture, cattle near the
    village, swine in the wood, horses in the paddock by the town, and after harvest the flocks go onto the stubble.
    A flock keeps together and wanders its field as it grazes, inside the fence; click a beast to learn whose it is. */
@@ -7926,20 +8233,36 @@ function renderHerds(){ // which flocks, in which fields: only the places about 
         let c0=null;for(let t=0;t<40&&!c0;t++){const x=P?f.x+(r()-0.5)*FG*0.8:s.pos.x+(r()-0.5)*((s.radius||60)*2+120),z=P?f.z+(r()-0.5)*FG*0.8:s.pos.z+(r()-0.5)*((s.radius||60)*2+120);
           if((!P||inPolyXZ(P,x,z))&&grazeOK(x,z)&&(P||dist2d(x,z,s.pos.x,s.pos.z)>(s.radius||60)+10))c0={x,z};}
         if(!c0)continue;
-        const mem=[];for(let q=0;q<size;q++){const a=r()*6.283,d=Math.sqrt(r())*(3+Math.sqrt(size)*2.2);mem.push({ox:Math.cos(a)*d,oz:Math.sin(a)*d,ph:r()*6.283,rot:r()*6.283});}
+        const mem=[];for(let q=0;q<size;q++){const a=r()*6.283,d=Math.sqrt(r())*(3+Math.sqrt(size)*2.2),ox=Math.cos(a)*d,oz=Math.sin(a)*d;let x=c0.x+ox,z=c0.z+oz;if((P&&!inPolyXZ(P,x,z))||!grazeOK(x,z)){x=c0.x;z=c0.z;}
+          const coat=r();mem.push({ox,oz,x,z,ph:r()*6.283,rot:r()*6.283,coat,born:herdVisualAge(si,k,coat),walk:0,graze:0});}
         G.flocks.push({k,si,P,c0,cx:c0.x,cz:c0.z,seed:r()*1000,mem});}}});
   animateHerds(true);}
-function animateHerds(force){ // each frame near the herds: the flocks drift across their fields as they graze
+function stepGrazingFlock(fl,dt,valid){ // visual state only: independent rests, cohesion, separation and bounded turns
+  if(!(dt>0))return;fl.time=(fl.time||0)+dt;const t=fl.time,space=fl.k==='sheep'?1.7:fl.k==='swine'?1.5:2.8;
+  const tx=fl.c0.x+Math.sin(t*0.026+fl.seed)*22,tz=fl.c0.z+Math.cos(t*0.021+fl.seed*1.3)*22;
+  const cd=Math.hypot(tx-fl.cx,tz-fl.cz)||1,cs=Math.min(0.32*dt,cd),cx=fl.cx+(tx-fl.cx)/cd*cs,cz=fl.cz+(tz-fl.cz)/cd*cs;
+  if(valid(cx,cz)){fl.cx=cx;fl.cz=cz;}
+  for(const a of fl.mem){
+    const period=13+a.coat*14,phase=(t+a.ph*5)%period,walking=phase<period*(0.3+a.coat*0.25);
+    let vx=(fl.cx+a.ox+Math.sin(t*0.11+a.ph)*4-a.x)*0.24,vz=(fl.cz+a.oz+Math.cos(t*0.09+a.ph)*4-a.z)*0.24,sep=false;
+    for(const b of fl.mem){if(a===b)continue;let dx=a.x-b.x,dz=a.z-b.z,d=Math.hypot(dx,dz);if(d>=space)continue;
+      if(d<0.01){dx=Math.cos(a.ph);dz=Math.sin(a.ph);d=1;}const push=(space-d)/space*1.4;vx+=dx/d*push;vz+=dz/d*push;sep=true;}
+    a.walk+=(Number(walking||sep)-a.walk)*Math.min(1,dt*3);a.graze+=(Number(!walking&&!sep)-a.graze)*Math.min(1,dt*2);
+    const v=Math.hypot(vx,vz),speed=Math.min(v,fl.k==='horses'?0.95:fl.k==='cattle'?0.65:0.55)*a.walk;
+    if(v>0.02&&speed>0.01){const target=Math.atan2(-vz,vx),turn=Math.atan2(Math.sin(target-a.rot),Math.cos(target-a.rot));a.rot+=clamp(turn,-dt*1.4,dt*1.4);
+      const x=a.x+Math.cos(a.rot)*speed*dt,z=a.z-Math.sin(a.rot)*speed*dt;if(valid(x,z)){a.x=x;a.z=z;}else a.rot+=dt*1.4;}
+  }
+}
+function animateHerds(force){ // keep the visual flock clock still when the simulation is paused
   if(!G.flocks||!G.herdMesh)return;if(!force&&cam.cur.dist>1600)return;
-  const now=day()+(W.clock.frac||0),vt=performance.now()/1000,M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0},pos=[];
+  const now=day()+(W.clock.frac||0),vt=performance.now()/1000,prev=G._herdTime,dt=prev&&now>prev.game?Math.min(0.25,Math.max(0,vt-prev.real),(now-prev.game)*86400):0;G._herdTime={game:now,real:vt};
+  const M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0},pos=[];
   for(const fl of G.flocks){const m=M[fl.k],D=HERDDRAW[fl.k];
-    const tx=fl.c0.x+Math.sin(now*0.9+fl.seed)*22+Math.sin(now*0.37+fl.seed*2)*14,tz=fl.c0.z+Math.cos(now*0.7+fl.seed*1.3)*22+Math.cos(now*0.29+fl.seed)*14; // a slow wander, a few hundred metres a day
-    if((!fl.P||inPolyXZ(fl.P,tx,tz))&&!W.water[cIdx(toCell(tx),toCell(tz))]){fl.cx+=(tx-fl.cx)*0.2;fl.cz+=(tz-fl.cz)*0.2;} // it turns back at the fence
+    stepGrazingFlock(fl,dt,(x,z)=>(!fl.P||inPolyXZ(fl.P,x,z))&&grazeOK(x,z));
     for(const a of fl.mem){if(cnt[fl.k]>=D.cap)break;
-      const sw=isLife()?1.2:0,T1=now*60;let x=fl.cx+a.ox+Math.sin(T1*0.3+a.ph)*sw,z=fl.cz+a.oz+Math.cos(T1*0.23+a.ph)*sw; // grazing steps in game time: still when paused
-      if(fl.P&&!inPolyXZ(fl.P,x,z)){x=fl.cx+a.ox*0.3;z=fl.cz+a.oz*0.3;} // no beast through the fence
-      const i=cnt[fl.k]++;setInst(m,i,x,hAt(x,z),z,a.rot+Math.sin(now*6+a.ph)*0.6*(sw?1:0),1,1,1);G.herdOwner[fl.k][i]=fl.si;pos.push(x,hAt(x,z)+1,z,BEASTS.indexOf(fl.k),fl.si);}}
-  for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;}G.herdPos=pos;}
+      const x=a.x,z=a.z,i=cnt[fl.k]++,phase=(fl.time||0)*(2.5+a.coat)+a.ph;const size=animalGrowth(fl.k,a.born,now);setInst(m,i,x,hAt(x,z)+Math.sin(phase*2)*0.025*a.walk,z,a.rot,size,size,size);
+      m.geometry.attributes.aAnimal.setXYZW(i,a.coat,a.graze,phase,a.walk);G.herdOwner[fl.k][i]=fl.si;pos.push(x,hAt(x,z)+1,z,BEASTS.indexOf(fl.k),fl.si);}}
+  for(const k in M){M[k].count=cnt[k];M[k].instanceMatrix.needsUpdate=true;M[k].geometry.attributes.aAnimal.needsUpdate=true;}G.herdPos=pos;}
 
 const BEAST_TEXT={sheep:['A flock of sheep','Wool for the looms (spun at home, or sold to the weavers and fullers of the towns), mutton and milk. Each drawn beast stands for about eight head.'],
   cattle:['Cattle','Oxen for the plough-teams, cows for milk and cheese, hides for the tanners, beef when they are old. Each drawn beast stands for about two head.'],
@@ -8441,16 +8764,16 @@ function fxParticle(kind,x,y,z,vx,vy,vz,life,col,grav){ // kind 0 = soft puff, 1
   const P=G.fxP[kind],p=P[G.fxI[kind]];G.fxI[kind]=(G.fxI[kind]+1)%P.length;
   Object.assign(p,{x,y,z,vx,vy,vz,life,max:life,grav:grav||0});C1.setHex(col);p.r=C1.r;p.g=C1.g;p.b=C1.b;
 }
-function fxRing(x,z,col,R,dur,y){
+function fxRing(x,z,col,R,dur,y,ev){
   const r=G.rings.find(q=>q.t>=q.dur)||G.rings[0];
-  r.x=x;r.z=z;r.y=y??hAt(x,z)+3;r.R=R;r.t=0;r.dur=dur;r.m.material.color.setHex(col);r.m.visible=true;
+  r.x=x;r.z=z;r.y=y??hAt(x,z)+3;r.R=R;r.t=0;r.dur=dur;r.m.material.color.setHex(col);r.m.visible=true;r.m.userData.pick=ev?{type:'event',ev}:null;return r;
 }
 function fxEvent(ev){ // called by emit(): mark the place and start the scene
   if(!ev.pos||!G.fxList)return;
   let kind=ev.opts&&ev.opts.fx;if(!kind)for(const[re,k]of FXRULES)if(re.test(ev.text)){kind=k;break;}
   const x=ev.pos.x,z=ev.pos.z,col=FXCOL[ev.cat]||0xe8dcc0;
-  fxRing(x,z,col,70+ev.pri*18,3.2);if(ev.pri>=6)setTimeout(()=>fxRing(x,z,col,50+ev.pri*14,2.6),500);
-  if(kind&&G.fxList.length<40)G.fxList.push({kind,x,z,t:0,dur:{feast:14,mourning:12,battle:10,raid:9,clearing:16,founding:8,flood:9,quake:4,plague:10,famine:10,riot:10,fire:4,siege:6,survey:5}[kind]||6});
+  postEventDialog(ev);fxRing(x,z,col,70+ev.pri*18,3.2,undefined,ev);if(ev.pri>=6)setTimeout(()=>fxRing(x,z,col,50+ev.pri*14,2.6,undefined,ev),500);
+  if(kind&&G.fxList.length<40)G.fxList.push({kind,ev,x,z,t:0,dur:{feast:14,mourning:12,battle:10,raid:9,clearing:16,founding:8,flood:9,quake:4,plague:10,famine:10,riot:10,fire:4,siege:6,survey:5}[kind]||6});
 }
 function fxNear(x,z){return dist2d(camera.position.x,camera.position.z,x,z)<4200;}
 function fxScene(e,dt,now){ // one running vignette
@@ -8461,10 +8784,10 @@ function fxScene(e,dt,now){ // one running vignette
     case 'feast':case 'founding':
       if(R()<dt*40)fxParticle(1,x+(R()-0.5)*50,y+18+R()*10,z+(R()-0.5)*50,(R()-0.5)*6,4+R()*6,(R()-0.5)*6,2.5,[0xe8c247,0xc0392b,0x3a78c0,0xf2efe6,0x4f9a4a][R()*5|0],-4); // pennants and petals tossed up
       if(e.kind==='feast'){if(R()<dt*14)fxParticle(1,x+(R()-0.5)*4,y+2,z+(R()-0.5)*4,0,6+R()*4,0,0.9,0xff9a30); if(R()<dt*4)fxParticle(0,x,y+8,z,0,5,0,4,0x9a9a9a);} // the bonfire
-      if(R()<dt*0.9)fxRing(tower.x,tower.z,0xe8c247,60,2.2,(tower.y||y)+tower.h*1.4); // the bells
+      if(R()<dt*0.9)fxRing(tower.x,tower.z,0xe8c247,60,2.2,(tower.y||y)+tower.h*1.4,e.ev); // the bells
       break;
     case 'mourning':
-      if(R()<dt*0.45)fxRing(tower.x,tower.z,0x2a2630,80,3.4,(tower.y||y)+tower.h*1.4); // the passing bell, slow
+      if(R()<dt*0.45)fxRing(tower.x,tower.z,0x2a2630,80,3.4,(tower.y||y)+tower.h*1.4,e.ev); // the passing bell, slow
       if(R()<dt*3)fxParticle(0,x+(R()-0.5)*20,y+6,z+(R()-0.5)*20,0,2,0,6,0x3a3440);
       break;
     case 'battle':
@@ -8479,7 +8802,7 @@ function fxScene(e,dt,now){ // one running vignette
       break;
     case 'flood':
       if(R()<dt*40){const a=R()*6.28,r=40+R()*140;fxParticle(1,x+Math.cos(a)*r,y+1,z+Math.sin(a)*r,0,5+R()*4,0,1.1,0xcfe3ef,-14);}
-      if(R()<dt*1.2)fxRing(x,z,0x5b8ea8,120+R()*100,2.5);
+      if(R()<dt*1.2)fxRing(x,z,0x5b8ea8,120+R()*100,2.5,undefined,e.ev);
       break;
     case 'quake':
       if(R()<dt*60){const b=s.buildings[R()*s.buildings.length|0];if(b)fxParticle(0,b.x,b.y+2,b.z,(R()-0.5)*4,3,(R()-0.5)*4,3.5,0xb0a58e);}
@@ -8616,7 +8939,7 @@ function prodSprite(p,mx,s){
   sp.userData.prod=si;(G.prodSprites||(G.prodSprites=[])).push(sp);return sp; // the same size on screen at any height; click one to read it close
 }
 let overlayMode=null;
-function disposeTree(o){o.traverse(x=>{if(x.geometry)x.geometry.dispose();if(x.material){if(x.material.map)x.material.map.dispose();x.material.dispose();}if(x.isInstancedMesh&&x.dispose)x.dispose();});} // instance buffers and canvas textures too, or every rebuild leaks them
+function disposeTree(o){o.traverse(x=>{if(x.geometry)x.geometry.dispose();if(x.customDepthMaterial)x.customDepthMaterial.dispose();if(x.material){if(x.material.map)x.material.map.dispose();x.material.dispose();}if(x.isInstancedMesh&&x.dispose)x.dispose();});} // instance buffers and canvas textures too, or every rebuild leaks them
 function setOverlay(mode){
   const was=overlayMode;
   overlayMode=(overlayMode===mode)?null:mode;
@@ -9026,7 +9349,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
   raycaster.setFromCamera(new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1),camera);
   const mk=pickMarkers(cx,cy);if(mk)return mk;
   const gp=rayGround(raycaster.ray),gd=gp?raycaster.ray.origin.distanceTo(gp):Infinity,lim=gd+3+gd*0.004; // hits deeper than the ground are behind a hill
-  const targets=[...G.pickS,...(G.cairnMesh?[G.cairnMesh]:[]),...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),...(G.envoyMeshes?G.envoyMeshes.values():[]),G.bodies,G.roofs];
+  const targets=[...(G.rings||[]).filter(r=>r.m.visible&&r.t<r.dur&&r.m.userData.pick).map(r=>r.m),...G.pickS,...(G.cairnMesh?[G.cairnMesh]:[]),...W.armies.filter(a=>a.flag).map(a=>a.flag),...G.campMeshes.values(),...(G.envoyMeshes?G.envoyMeshes.values():[]),G.bodies,G.roofs];
   if(G.soldiers)targets.push(G.soldiers);
   if(G.herdMesh&&cam.cur.dist<1400)targets.push(...Object.values(G.herdMesh));
   if(G.citizens&&G.citizens.count)targets.push(G.citizens,G.citKit);
@@ -9102,8 +9425,39 @@ function nearestSettlementIdx(x,z){
 
 /* ---------------- one contextual card: UI state, never simulation state ---------------- */
 const contextUI={ready:false,kind:null,expanded:false,scroll:new Map(),side:null,lastPosition:''};
-const CONTEXT_IDS={insp:'insp',drawer:'drawer',chron:'chron',plan:'planbar',petition:'petition',legend:'terrlegend',info:'infopanel'};
+const CONTEXT_IDS={insp:'insp',drawer:'drawer',chron:'chron',plan:'planbar',petition:'petition',legend:'terrlegend',info:'infopanel',event:'eventpanel'};
 // These sheets read existing records. Opening them must not create accounts, quotes or journal entries.
+// Explanations belong to visible events, not a global notification queue.
+const eventUI={current:null,recent:[],bubble:null,hold:null,closed:new WeakSet(),position:''};
+function eventTitle(ev){return ({weather:'Weather',war:'Conflict',crown:'The Crown',folk:'Parish news',trade:'Trade',faith:'Faith',land:'The land',world:'In the realm',dynasty:'The houses'})[ev?.cat]||'In the realm';}
+function eventViewCandidate(recent,now,project,bounds,held=null){
+  for(const item of [...recent].reverse()){if(item.until<=now&&item.ev!==held)continue;const p=project(item.ev.pos);
+    if(p&&p.d>0&&p.x>=12&&p.x<=bounds.width-12&&p.y>=bounds.top+12&&p.y<=bounds.height-12&&(!held||item.ev===held))return{ev:item.ev,point:p};}return null;
+}
+function postEventDialog(ev){
+  if(!contextUI.ready||!ev.pos)return;const now=performance.now();eventUI.recent=eventUI.recent.filter(e=>e.until>now||e.ev===eventUI.hold);eventUI.recent.push({ev,until:now+12000});if(eventUI.recent.length>40)eventUI.recent.splice(eventUI.recent[0].ev===eventUI.hold?1:0,1);eventBubbleUpdate();
+}
+function eventBubbleUpdate(){
+  const bubble=document.getElementById('eventbubble');if(!bubble||!contextUI.ready)return;
+  const bounds={width:innerWidth,height:innerHeight,top:document.getElementById('hud').getBoundingClientRect().bottom};
+  const q=eventViewCandidate(eventUI.recent.filter(e=>!eventUI.closed.has(e.ev)),performance.now(),p=>p?{...pickScr(p.x,hAt(p.x,p.z)+4,p.z)}:null,bounds,eventUI.hold);
+  bubble.hidden=!q||!!activeUIDialog||!!placeMode;if(!q)eventUI.hold=null;if(bubble.hidden)return;
+  if(eventUI.bubble!==q.ev){eventUI.bubble=q.ev;document.getElementById('eventbubbletitle').textContent=eventTitle(q.ev);document.getElementById('eventbubbletext').textContent=q.ev.text;}
+  let pos=contextPlacement(q.point,bubble.offsetWidth,bubble.offsetHeight,bounds,null);
+  const panel=document.getElementById('contextpanel');if(!panel.hidden){const r=panel.getBoundingClientRect();if(pos.x<r.right&&pos.x+bubble.offsetWidth>r.left&&pos.y<r.bottom&&pos.y+bubble.offsetHeight>r.top){
+    pos=contextPlacement(q.point,bubble.offsetWidth,bubble.offsetHeight,bounds,pos.side==='left'?'right':'left');
+    if(pos.x<r.right&&pos.x+bubble.offsetWidth>r.left&&pos.y<r.bottom&&pos.y+bubble.offsetHeight>r.top){bubble.hidden=true;return;}}}
+  const key=pos.x.toFixed(1)+':'+pos.y.toFixed(1);if(key!==eventUI.position){bubble.style.left=pos.x+'px';bubble.style.top=pos.y+'px';eventUI.position=key;}
+  bubble.dataset.side=pos.detached?'none':pos.side||'none';
+}
+function showEventDialog(ev){
+  if(!ev)return;if(inspTarget)hideInspect();eventUI.current=ev;eventUI.closed.add(ev);eventUI.hold=null;document.getElementById('eventbubble').hidden=true;
+  setHTML(document.getElementById('eventtext'),linkNames(esc(ev.text)));document.getElementById('eventdate').textContent=dateStr(ev.day)+' · '+eventTitle(ev);
+  document.getElementById('eventlocate').hidden=!ev.pos;document.getElementById('eventinspect').hidden=!ev.pos;
+  contextShow('event');contextUI.lastPosition='';contextPosition();
+}
+function inspectEventPlace(){const ev=eventUI.current;if(!ev?.pos)return;const p=ev.pos,si=nearestSettlementIdx(p.x,p.z),s=W.settlements[si];
+  markManual();flyTo(p.x,p.z,300);const pk=s&&dist2d(p.x,p.z,s.pos.x,s.pos.z)<Math.max(120,(s.radius||60)*2)?{type:'settlement',s}:groundPick(p.x,p.z);if(pk)showInspect(pk);}
 const infoUI={kind:'about',town:null};
 function accountBalances(town=null){
   const places=town?[town]:W.settlements,by={crown:town?0:(W.treasury||0),houses:0,households:0,church:0,townFunds:0,craftFunds:0,hoard:town?0:(W.dragon?.hoard||0),escrow:0},seen=new Set(),churches=new Set();let debt=0;
@@ -9166,6 +9520,7 @@ function contextAnchor(pk){
   switch(pk.type){
     case 'settlement':case 'wall':case 'beast':p=(pk.s||W.settlements[pk.si])?.pos;break;
     case 'building':p=pk.b;break;
+    case 'event':p=pk.ev?.pos;break;
     case 'army':p=agentPos(pk.a||pk.army);break;
     case 'notable':case 'tree':{const n=pk.n||pk.x;if(isN(n)){const w=notableWhere(n);p=w?.army?agentPos(w.army):w;}else p=n?.bh||W.settlements[n?.si]?.pos;break;}
     case 'person':{const t=(W.travellers||[]).find(t=>t.p===pk.p&&day()>=t.depart&&day()<t.arrive);if(t)p=polyPos(t.poly,clamp((day()+(W.clock.frac||0)-t.depart)/Math.max(0.01,t.arrive-t.depart),0,1));if(!p){const c=(G.citList||[]).find(c=>c.p===pk.p&&c.out);p=c||householdHead(pk.p)?.bh||pk.s?.pos;}break;}
@@ -9192,6 +9547,7 @@ function contextPlacement(anchor,width,height,viewport,side){
 }
 function contextTitle(){
   const k=contextUI.kind;
+  if(k==='event')return esc(eventTitle(eventUI.current));
   if(k==='info')return infoUI.kind==='about'?'About Furlong':infoUI.kind==='timeline'?'The timeline':infoUI.town?esc(infoUI.town.name)+' · Accounts':'Kingdom ledger';
   if(k==='insp')return document.getElementById('insptitle').innerHTML;
   if(k==='drawer')return {crown:'The Crown',rates:'Rates',acts:'Acts',over:'Map overlays',world:'The realm'}[drawerTab];
@@ -9238,12 +9594,14 @@ function contextDismiss(){
   if(!contextUI.ready)return;
   const kind=contextUI.kind,opener=kind==='info'?contextUI.opener:null;contextUI.opener=null;contextExpand(false);contextUI.kind=null;document.getElementById('contextpanel').hidden=true;
   if(kind==='insp')hideInspect();else if(kind==='drawer')setDrawerClosed(true);else if(kind==='chron')setChronMin(true);else if(kind==='plan')planClose();else if(kind==='petition')document.getElementById('petition').classList.add('min');else if(kind==='legend')document.getElementById('terrlegend')?.classList.add('min');
+  if(kind==='event')eventUI.current=null;
   (opener?.isConnected?opener:document.getElementById('menubtn')).focus();document.dispatchEvent(new Event('contextchange'));
 }
 function contextPosition(){
+  eventBubbleUpdate();
   if(!contextUI.ready||!contextUI.kind||contextUI.expanded)return;
   const el=document.getElementById('contextpanel');if(el.hidden)return;
-  let p=contextUI.kind==='insp'?contextAnchor(inspTarget):contextUI.kind==='petition'?W.petitions[0]?.pos:null;
+  let p=contextUI.kind==='insp'?contextAnchor(inspTarget):contextUI.kind==='petition'?W.petitions[0]?.pos:contextUI.kind==='event'?contextAnchor({type:'event',ev:eventUI.current}):null;
   const q=p?{...pickScr(p.x,p.y??hAt(p.x,p.z)+4,p.z)}:null;
   const pos=contextPlacement(q,el.offsetWidth,el.offsetHeight,{width:innerWidth,height:innerHeight,top:document.getElementById('hud').getBoundingClientRect().bottom},contextUI.side);
   contextUI.side=pos.side;el.classList.toggle('detached',pos.detached);
@@ -9259,6 +9617,13 @@ function contextPosition(){
   }
 }
 function initContextUI(){
+  const events=document.createElement('section');events.id='eventpanel';events.innerHTML='<p id="eventdate" class="note"></p><p id="eventtext" aria-live="polite"></p><div class="eventactions"><button id="eventlocate" class="pbb">Show on map</button><button id="eventinspect" class="pbb">Inspect place</button><button class="pbb" data-info-annals>Annals</button></div>';document.getElementById('contextcontent').append(events);
+  const bubble=document.createElement('aside');bubble.id='eventbubble';bubble.hidden=true;bubble.setAttribute('aria-label','Nearby event');bubble.innerHTML='<strong id="eventbubbletitle"></strong><button id="eventbubbleclose" aria-label="Dismiss event explanation">×</button><p id="eventbubbletext"></p><button id="eventbubbledetails">Details</button>';document.body.append(bubble);
+  document.getElementById('eventbubbledetails').onclick=()=>{showEventDialog(eventUI.bubble);contextExpand(true);};
+  document.getElementById('eventbubbleclose').onclick=()=>{if(eventUI.bubble)eventUI.closed.add(eventUI.bubble);eventUI.hold=null;bubble.hidden=true;};
+  bubble.onpointerenter=()=>{eventUI.hold=eventUI.bubble;};bubble.onpointerleave=()=>{if(!bubble.contains(document.activeElement))eventUI.hold=null;};bubble.onfocusin=()=>{eventUI.hold=eventUI.bubble;};bubble.onfocusout=e=>{if(!bubble.contains(e.relatedTarget))eventUI.hold=null;};
+  document.getElementById('eventinspect').onclick=inspectEventPlace;
+  document.getElementById('eventlocate').onclick=()=>{const p=eventUI.current?.pos;if(p){markManual();flyTo(p.x,p.z,420);}};
   const host=document.getElementById('contextcontent');for(const id of Object.values(CONTEXT_IDS)){const e=document.getElementById(id);if(e)host.append(e);}
   contextUI.ready=true;setDrawerClosed(true);setChronMin(true);
   const panel=document.getElementById('contextpanel');
@@ -9315,6 +9680,7 @@ function detailArmy(a){return detailTable('detail-muster',`Muster · ${(a.men||[
 function detailPlaceBack(s){return `<nav class="detail-jumps" aria-label="Return to settlement"><button data-detail-settlement="${W.settlements.indexOf(s)}">← ${esc(s.name)}</button></nav>`;}
 function detailJumps(items){return `<nav class="detail-jumps" aria-label="Detail sections">${items.map(([id,t])=>`<button data-detail-jump="${id}">${t}</button>`).join('')}</nav>`;}
 function showInspect(pk){
+  if(pk.type==='event'){showEventDialog(pk.ev);return;}
   const opening=document.getElementById('insp').style.display!=='flex',changed=!inspTarget||Object.keys(pk).some(k=>pk[k]!==inspTarget[k]);
   if(opening)inspectReturn=false;
   inspTarget=pk;
@@ -11653,7 +12019,7 @@ function youngPull(o){return foodYr()*0.5*Math.log10(1+o.pop)/3;} // to the youn
 const BEAST_YR={cattle:k=>GOODBASE.cattle*0.12,sheep:k=>GOODBASE.wool*0.55,swine:k=>GOODBASE.swine*0.35,horses:k=>GOODBASE.horses*0.06}; // milk and dung; a fleece and a lamb; a litter for the pot; a horse's work hired out
 function herdOf(h,s){const account=householdAccount(h);s=s||W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
 function herdLoss(s,k,q){const was=s.stores[k]||0;if(!(was>0&&q>0))return;const lost=Math.min(q,was),f=(was-lost)/was;for(const x of (s._owners||new Map()).values())for(const kind of ['animals','sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;s.stores[k]=was-lost;if(s._herdLast)s._herdLast[k]=s.stores[k];}
-function herdBirth(s,k,q){const was=s.stores[k]||0;s.stores[k]=was+q;if(was>0)for(const x of (s._owners||new Map()).values())if(x.animals[k])x.animals[k]*=(was+q)/was;if(s._herdLast)s._herdLast[k]=(s._herdLast[k]||0)+q;}
+function herdBirth(s,k,q){const was=s.stores[k]||0;s.stores[k]=was+q;if(was>0)for(const x of (s._owners||new Map()).values())if(x.animals[k])x.animals[k]*=(was+q)/was;if(s._herdLast)s._herdLast[k]=(s._herdLast[k]||0)+q;if(typeof herdVisualBirth==='function')herdVisualBirth(s,k,q);}
 function herdSync(s){const L=s._herdLast;if(!L)return;const H=[...(s._owners||new Map()).values()].map(x=>x.animals);
   for(const x of H)for(const k of BEASTS)if(x[k]!==undefined&&!Number.isFinite(x[k]))throw new Error('Non-finite '+k+' ownership at '+s.name);
   for(const k of BEASTS){const now=s.stores[k]||0,was=L[k]||0;if(was<=0)continue;const fam=H.reduce((n,x)=>n+(x[k]||0),0);let f;
@@ -12121,7 +12487,7 @@ function chronicleAdd(ev){
   const el=document.createElement('div');
   el.className='centry';el.dataset.cat=ev.cat;
   el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(ev.text.replace(/</g,'&lt;')); // names in the entry fly to what they name
-  if(ev.pos){el.setAttribute('role','button');el.tabIndex=0;el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();});}decorateControls(el);
+  if(ev.pos){el.setAttribute('role','button');el.tabIndex=0;el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();showEventDialog(ev);});}decorateControls(el);
   if(chronFilter!=='all'&&ev.cat!==chronFilter)el.style.display='none';
   const list=chronList();
   const stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
@@ -13821,7 +14187,7 @@ function currentDayF(){
   const t=(W.visT||0)%1;
   return t<0.8?0.25+(t/0.8)*0.5:0.75+((t-0.8)/0.2)*0.5;
 }
-function calmTarget(){const pace=SPEEDS[speedIdx]||0;return pace<=4?0:clamp(Math.log2(pace/4)/Math.log2(30/4),0,1);} // ▶▶ and below: every season; ▶▶▶ a third calmed; ▶▶▶▶ and ⏩ steady
+function calmTarget(){const pace=SPEEDS[speedIdx]||0;return pace<=4?0:clamp(Math.log2(pace/4)/Math.log2(30/4),0,1);} // high speeds calm day/night and weather; seasons keep the calendar
 function animateWorld(dt,now){
   G.calm=(G.calm??calmTarget())+(calmTarget()-(G.calm??0))*Math.min(1,dt*1.2); // eases in and out over a second or so, never a jump
   const dayF=currentDayF();
@@ -13884,12 +14250,12 @@ function animateWorld(dt,now){
     for(let i=ti;i<G.torches.length;i++)G.torches[i].intensity=0;
   }else G.torches.forEach(t=>t.intensity=0);
   /* --- seasons --- */
-  updateTerrainColors(seasonIdx(),(simDay%90)/90,1-calm);
+  updateTerrainColors(seasonIdx(),(simDay%90)/90,1); // the calendar and landscape agree at every playback speed
   /* --- water --- */
   G.waterU.uWaterTime.value=now;
-  if(G.rivers){G.rivers.position.y=(W.flooding>0?2.6:0)+Math.sin(now*1.7)*0.15;}
-  if(G.sea)G.sea.position.y=SEA+0.5+Math.sin(now*0.9)*0.3;
-  for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.visible)wh.rotation.x+=dt*1.4;} // UVs rotate with the actual wheel geometry
+  if(G.rivers)G.rivers.position.y=W.flooding>0?2.6:0; // fixed banks; surface ripples belong in the shader
+  if(G.sea)G.sea.position.y=SEA_SURFACE; // surface ripples change the normals, not the outlet elevation
+  for(const wh of G.wheels){const b=wh.userData.building;wh.visible=!b.removed&&b.state!=='gone'&&b.state!=='ruin';if(wh.userData.raceGroup)wh.userData.raceGroup.visible=wh.visible;if(wh.visible)wh.rotation.x+=dt*1.4*(wh.userData.flowSign||-1);} // UVs and paddles follow the actual flow
   if(G.sails&&G.sails.length){const w=W.weather.state,gust=0.75+0.25*Math.sin(now*0.23)+0.15*Math.sin(now*0.71);
     const sp=(w==='storm'?1.1:w==='rain'?0.7:w==='overcast'?0.5:w==='snow'?0.35:0.28*clamp(Math.sin(now*0.05+1)*1.5,0,1))*gust; // a fair still day may leave them standing
     for(const g of G.sails){const c=g.userData.cross;c.rotation.z-=dt*sp;if(g.userData.b)g.userData.b.sailA=c.rotation.z;}}

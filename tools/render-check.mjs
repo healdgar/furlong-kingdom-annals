@@ -4,7 +4,10 @@
    Node 22+ and Chrome; all snapshots and measurements remain on disk.
    node tools/render-check.mjs --baseline HEAD --seeds 1001:sea,2002:land --days 720 --out /tmp/furlong-render-check
    --webgl1 exercises the r128 fallback using a temporary source snapshot, not an app setting.
-   --touch --width 390 --height 844 emulates a phone viewport on this host. */
+   --touch --width 390 --height 844 emulates a phone viewport on this host.
+   --seasons checks seasonal production shaders and saves matched seasonal views.
+   --world-visuals checks winter silhouettes, animal models and river contact.
+   --river-banks checks flat water and budgets the carved ground and recessed channel bed. */
 import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -68,12 +71,13 @@ const previewURL='http://127.0.0.1:'+server.address().port+'/';
 
 const INSPECT=`(()=>{
   const gl=renderer.getContext(),count=m=>m?(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1):0;
-  const parts=[G.terrain,G.apron,G.roads,G.roadJoins,G.bridges,G.rivers,G.lakes,G.sea,G.bodies,G.roofs,...G.treeChunks,G.regrow,...Object.values(G.det)];
+  const parts=[G.terrain,G.apron,G.roads,G.roadJoins,G.bridges,G.rivers,G.riverBed,G.lakes,G.sea,G.bodies,G.roofs,...G.treeChunks,G.regrow,...Object.values(G.det)];
   const textures=new Set();for(const m of parts.filter(Boolean)){if(m.material.map)textures.add(m.material.map);for(const t of Object.values(renderer.properties.get(m.material).uniforms||{}))if(t?.value?.isTexture)textures.add(t.value);}
   const P=renderer.properties.get(G.terrain.material).currentProgram,name=G.land.uni.uSurfaceEye?'uSurfaceEye':'cameraPosition',loc=gl.getUniformLocation(P.program,name),eye=loc?Array.from(gl.getUniform(P.program,loc)):null;
-  return{errors:errN,linked:renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS)),webgl2:renderer.capabilities.isWebGL2,
+  return{errors:errN,glError:gl.getError(),linked:renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS)),webgl2:renderer.capabilities.isWebGL2,
     camera:camera.position.toArray(),terrainEye:eye,textureSizes:[...textures].map(t=>[t.image.width,t.image.height]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]),
-    textureCount:renderer.info.memory.textures,triangles:Object.fromEntries(parts.filter(Boolean).map((m,i)=>[i,count(m)])),geometryTriangles:parts.filter(Boolean).reduce((n,m)=>n+count(m),0),
+    textureCount:renderer.info.memory.textures,triangles:Object.fromEntries(parts.filter(Boolean).map((m,i)=>[i,count(m)])),geometryTriangles:parts.filter(Boolean).reduce((n,m)=>n+count(m),0),riverTriangles:count(G.rivers),terrainTriangles:count(G.terrain),bedTriangles:count(G.riverBed),apronTriangles:count(G.apron),
+    herdModels:Object.fromEntries(Object.entries(G.herdMesh||{}).map(([k,m])=>[k,(m.geometry.index?.count||m.geometry.attributes.position.count)/3])),millRaceDraws:(G.wheels||[]).reduce((n,w)=>n+(w.userData.race?.length||0),0),
     render:{...renderer.info.render},shadow:{extent:G.sun.shadow.camera.right,normalBias:G.sun.shadow.normalBias}};
 })()`;
 const HISTORY=`(()=>({day:W.clock.day,treasury:W.treasury,monarch:W.monarch.id,houses:W.houses.map(h=>({name:h.name,gold:h.gold,seat:h.seat,exiled:h.exiled})),
@@ -146,6 +150,86 @@ function reflectivityCheck(){
     for(const g of geometries)g.dispose();for(const m of materials)m.dispose();target.dispose();}
 }
 
+// Isolate context overlays with constant feature textures and real production materials.
+// Texture/geometry allocation is confined to this probe; the simulation never advances.
+function seasonalSurfaceCheck(){
+  const target=new THREE.WebGLRenderTarget(64,64),old=renderer.getRenderTarget(),pixels=new Uint8Array(64*64*4),resources=[];
+  const stage=new THREE.Scene();stage.add(new THREE.AmbientLight(0xffffff,1));
+  const view=new THREE.OrthographicCamera(-8,8,8,-8,0.1,100),results={};
+  const texture=bytes=>{const t=new THREE.DataTexture(new Uint8Array(bytes),1,1,THREE.RGBAFormat);t.needsUpdate=true;resources.push(t);return t;};
+  const zero=texture([0,0,0,0]),mask=texture([255,255,0,255]);
+  const contexts={meadow:[255,255,255,255,255,0],woodland:[255,255,255,0,255,0],margin:[255,255,255,36,255,0],bank:[8,255,255,255,255,0],garden:[255,255,255,255,48,255],boundary:[255,255,255,255,255,0],apron:null};
+  try{
+    renderer.setRenderTarget(target);
+    for(const [name,feature]of Object.entries(contexts)){
+      const x=name==='boundary'?SIZE*0.5-200:0,y=SEA+10;
+      const geometry=new THREE.PlaneGeometry(16,16);geometry.rotateX(-Math.PI/2);geometry.translate(x,y,0);resources.push(geometry);
+      geometry.setAttribute('color',new THREE.Float32BufferAttribute(new Array(4).fill([1,1,1]).flat(),3));
+      const original=name==='apron'?G.apron.material:G.terrain.material,material=original.clone();resources.push(material);
+      const feat=feature&&texture(feature.slice(0,4)),feat2=feature&&texture([feature[4],255,feature[5],128]);
+      material.onBeforeCompile=sh=>{original.onBeforeCompile(sh);if(feature)Object.assign(sh.uniforms,{uData:{value:zero},uMask:{value:mask},uFeat1:{value:feat},uFeat2:{value:feat2},uSurfaceEye:{value:view.position}});};
+      const mesh=new THREE.Mesh(geometry,material);stage.add(mesh);view.position.set(x,y+40,0.01);view.lookAt(x,y,0);view.updateMatrixWorld(true);
+      results[name]={};
+      for(const [label,si]of [['summer',1],['autumn',2],['winter',3]]){
+        lastSeasonKey='';updateTerrainColors(si,0,1);
+        const c=G.seasonU.uSeasonGrass.value;for(let i=0;i<4;i++)geometry.attributes.color.setXYZ(i,c.r,c.g,c.b);geometry.attributes.color.needsUpdate=true;
+        renderer.render(stage,view);renderer.readRenderTargetPixels(target,0,0,64,64,pixels);
+        const rgb=[0,0,0];let n=0;for(let yy=8;yy<56;yy++)for(let xx=8;xx<56;xx++){const j=(yy*64+xx)*4;for(let k=0;k<3;k++)rgb[k]+=pixels[j+k];n++;}
+        results[name][label]=rgb.map(v=>v/n);
+      }stage.remove(mesh);
+    }
+    const winterLeaf=G.treeMat.dec.color.clone(),winterPine=G.treeMat.pine.color.clone();
+    lastSeasonKey='';updateTerrainColors(1,0,1);
+    results.foliage={deciduousChanged:!winterLeaf.equals(G.treeMat.dec.color),winterDeciduousDormant:winterLeaf.r>winterLeaf.g,winterPineEvergreen:winterPine.g>winterPine.r};
+    const geometry=new THREE.PlaneGeometry(16,16);geometry.rotateX(-Math.PI/2);resources.push(geometry);
+    const material=new THREE.ShaderMaterial({uniforms:{uDormancy:G.seasonU.uDormancy},vertexShader:'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',fragmentShader:SURFACE_GLSL+'\nvoid main(){gl_FragColor=vec4(seasonalVegetation(vec3(0.3,0.9,0.4)),1.);}'});resources.push(material);
+    const mesh=new THREE.Mesh(geometry,material);stage.add(mesh);view.position.set(0,40,0.01);view.lookAt(0,0,0);view.updateMatrixWorld(true);
+    const colour=[];for(const si of [1,3]){lastSeasonKey='';updateTerrainColors(si,0,1);renderer.render(stage,view);renderer.readRenderTargetPixels(target,0,0,64,64,pixels);colour.push(Array.from(pixels.slice((32*64+32)*4,(32*64+32)*4+3)));}stage.remove(mesh);
+    results.texture={summerKeepsColour:colour[0][1]-colour[0][0]>30,winterNeutral:Math.max(...colour[1])-Math.min(...colour[1])<=1};
+    const saved={day:W.clock.day,speed:speedIdx,calm:G.calm};
+    try{W.clock.day=270;speedIdx=SPEEDS.length-1;G.calm=1;lastSeasonKey='';animateWorld(0,0);results.fastWinter=G.seasonU.uDormancy.value===1&&G.seasonU.uGroundSnow.value>0.8;}
+    finally{W.clock.day=saved.day;speedIdx=saved.speed;G.calm=saved.calm;animateWorld(0,0);}
+    const shader=renderer.getContext(),linked=renderer.info.programs.every(p=>shader.getProgramParameter(p.program,shader.LINK_STATUS));
+    results.valid=linked&&Object.keys(contexts).every(name=>{const r=results[name],a=r.summer,b=r.winter;return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])+Math.abs(a[2]-b[2])>8&&(name==='garden'?b[0]+b[1]+b[2]>a[0]+a[1]+a[2]:b[1]-b[0]<a[1]-a[0]);})&&Object.values(results.foliage).every(Boolean)&&Object.values(results.texture).every(Boolean)&&results.fastWinter;
+    return results;
+  }finally{renderer.setRenderTarget(old);resources.forEach(r=>r.dispose());target.dispose();lastSeasonKey='';updateTerrainColors(seasonIdx(),(day()%90)/90,1);}
+}
+
+function worldVisualCheck(){
+  const stage=new THREE.Scene();stage.background=new THREE.Color(0xffffff);stage.add(new THREE.HemisphereLight(0xffffff,0x807768,1));
+  const light=new THREE.DirectionalLight(0xffffff,0.6);light.position.set(10,12,8);stage.add(light);
+  const view=new THREE.PerspectiveCamera(40,1,0.1,100);view.position.set(12,7,10);view.lookAt(0,4.5,0);
+  const target=new THREE.WebGLRenderTarget(128,128),pixels=new Uint8Array(128*128*4),oldTarget=renderer.getRenderTarget(),oldEye=G.surfaceU.uSurfaceEye.value;
+  const source=G.treeChunks.find(m=>m.material.userData.branchDepth),tree=new THREE.InstancedMesh(source.geometry,source.material,1);tree.setMatrixAt(0,new THREE.Matrix4());stage.add(tree);
+  const coverage=(si,angle)=>{view.position.set(Math.cos(angle)*15,7,Math.sin(angle)*15);view.lookAt(0,4.5,0);G.surfaceU.uSurfaceEye.value=view.position;
+    lastSeasonKey='';updateTerrainColors(si,0.25,1);renderer.setRenderTarget(target);renderer.render(stage,view);renderer.readRenderTargetPixels(target,0,0,128,128,pixels);
+    let total=0,spine=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<220&&pixels[i+1]<220&&pixels[i+2]<220){total++;const x=(i/4)%128,y=Math.floor(i/512);if(x>=60&&x<=68&&y>40)spine++;}return{total,spine};};
+  const crowns=[0,Math.PI/4,Math.PI/2].map(angle=>({angle,summer:coverage(1,angle),winter:coverage(3,angle)}));
+  stage.remove(tree);tree.dispose();target.dispose();renderer.setRenderTarget(oldTarget);G.surfaceU.uSurfaceEye.value=oldEye;lastSeasonKey='';updateTerrainColors(seasonIdx(),(day()%90)/90,1);
+  const models={},meshes=[];for(const [i,k]of ['sheep','cattle','horses','swine'].entries()){
+    const original=G.herdMesh[k],geometry=original.geometry.clone(),a=geometry.attributes.aAnimal;for(let j=0;j<2;j++)a.setXYZW(j,0.32+i*0.16,0,0,0);a.needsUpdate=true;
+    const m=new THREE.InstancedMesh(geometry,original.material,2);for(let j=0;j<2;j++){const size=j?animalGrowth(k,day(),day()):1;m.setMatrixAt(j,new THREE.Matrix4().compose(new THREE.Vector3((i-1.5)*3.8,0,j*2.6),new THREE.Quaternion(),new THREE.Vector3(size,size,size)));}
+    geometry.computeBoundingBox();const box=geometry.boundingBox;models[k]={triangles:geometry.attributes.position.count/3,height:box.max.y,width:box.max.x-box.min.x,parts:[...new Set(geometry.attributes.aBeastPart.array)]};meshes.push(m);stage.add(m);
+  }
+  view.aspect=renderer.domElement.width/renderer.domElement.height;view.position.set(14,9,20);view.lookAt(0,0.7,1);renderer.render(stage,view);window.__animalProbe={meshes};
+  const P=G.rivers.geometry.attributes.position,I=G.rivers.geometry.index.array;let crossSlope=0;const exposed=[];
+  for(let i=0;i<(G.riverCrossVertices||P.count);i+=5)for(let j=1;j<5;j++)crossSlope=Math.max(crossSlope,Math.abs(P.getY(i)-P.getY(i+j)));
+  const ray=new THREE.Raycaster(),down=new THREE.Vector3(0,-1,0);let exposedGround=0,recessedBed=0,checked=0;
+  for(let i=0;i<I.length;i+=Math.max(3,Math.floor(I.length/144)*3)){const ids=[I[i],I[i+1],I[i+2]],x=ids.reduce((n,j)=>n+P.getX(j),0)/3,z=ids.reduce((n,j)=>n+P.getZ(j),0)/3,y=ids.reduce((n,j)=>n+P.getY(j),0)/3;
+    ray.set(new THREE.Vector3(x,y+1000,z),down);const ground=ray.intersectObjects([G.terrain,G.apron],false)[0],bed=ray.intersectObject(G.riverBed,false)[0];if(ground&&ground.point.y>y-0.01){exposedGround++;exposed.push({x,z,y,ground:ground.point.y});}if(bed&&bed.point.y<y-0.5)recessedBed++;checked++;}
+  const joins=[];for(const r of G.drawRivRuns||[])if(r.join){const F=r.join,x=F.reduce((n,p)=>n+p.x,0)/F.length,z=F.reduce((n,p)=>n+p.z,0)/F.length;
+    ray.set(new THREE.Vector3(x,1000+hAt(x,z),z),down);const water=ray.intersectObject(G.rivers,false)[0],ground=ray.intersectObjects([G.terrain,G.apron],false)[0],bed=ray.intersectObject(G.riverBed,false)[0];
+    joins.push({x,z,water:water?.point.y,ground:ground?.point.y,bed:bed?.point.y});}
+  let overlayVertices=0,overlayFailures=0;const joinFlow=G.rivers.geometry.attributes.aJoinFlow;
+  for(const r of G.drawRivRuns||[])if(r.join){const F=r.join;for(let i=F.overlayBase;i<F.overlayBase+F.overlayCount;i++){overlayVertices++;if(Math.abs(P.getY(i)-F.level)>.001||Math.hypot(joinFlow.getX(i)-F.flow[0],joinFlow.getY(i)-F.flow[1])>.001)overlayFailures++;}}
+  const slopedBanks=(G.riverEmbankments||[]).every(F=>Math.hypot(F[3].x-F[0].x,F[3].z-F[0].z)>.1&&Math.abs(F[3].y-hAt(F[3].x,F[3].z))<.001);
+  const seaLevel=!G.sea||Math.abs(G.sea.position.y-SEA_SURFACE)<.001,transparentDepth=!G.rivers.material.depthWrite&&(!G.sea||!G.sea.material.depthWrite);
+  const attributes=G.terrain.geometry.attributes,attributeCapacity=Object.values(attributes).every(a=>a.count>=attributes.position.count);
+
+  const gl=renderer.getContext(),linked=renderer.info.programs.every(p=>gl.getProgramParameter(p.program,gl.LINK_STATUS));
+  return{crowns,models,river:{joins,crossSlope,exposed,exposedGround,recessedBed,checked,attributeCapacity,overlayVertices,overlayFailures,slopedBanks,seaLevel,transparentDepth},valid:linked&&crowns.every(c=>c.winter.total<c.summer.total*0.8&&c.winter.total>c.summer.total*0.02&&c.winter.spine>10)&&Object.values(models).every(m=>m.triangles<=216)&&models.horses.height>models.cattle.height&&models.cattle.parts.includes(6)&&!models.horses.parts.includes(6)&&overlayVertices>0&&overlayFailures===0&&slopedBanks&&seaLevel&&transparentDepth&&crossSlope<0.001&&exposedGround===0&&recessedBed===checked&&attributeCapacity&&joins.every(q=>q.water!==undefined&&(q.ground===undefined||q.ground<q.water)&&(q.bed!==undefined&&q.bed<q.water-0.5))};
+}
+
 async function check(which,w){
   const {c,kill}=await launch(),id=which+'-'+w.seed+'-'+w.coast,errors=[];
   try{
@@ -166,7 +250,11 @@ async function check(which,w){
     const views={streetJoin:joinView,waterGlint:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)],sun=G.skyU.sunPos.value;return[p.x,p.z,170,Math.atan2(-sun.z,-sun.x),-0.15];})()",garden:gardenView,gardenMiddle:gardenView.replace(',38,',',110,'),gardenFar:gardenView.replace(',38,',',380,'),capital:"[W.capital.pos.x,W.capital.pos.z,110,2.3]",street:"(()=>{const b=W.capital.buildings.find(b=>b.arch==='house');return[b.x,b.z,48,b.rot+0.8];})()",
       woodland:"(()=>{const t=G.treeSpots.dec.find(t=>Math.hypot(t.x,t.z)<3200)||G.treeSpots.dec[0];return[t.x,t.z,95,0.6];})()",
       river:"(()=>{const r=G.rivStrips.find(r=>r.pts.length>50)||G.rivStrips[0],p=r.pts[Math.floor(r.pts.length*0.7)];return[p.x,p.z,110,0.9];})()",
-      bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
+      riverMouth:"(()=>{const r=G.rivStrips.find(r=>hAt(r.pts[r.pts.length-1].x,r.pts[r.pts.length-1].z)<SEA+.2)||G.rivStrips[0],p=r.pts.findLast(p=>hAt(p.x,p.z)>SEA+.7)||r.pts[r.pts.length-2];return[p.x,p.z,200,.8,-.35];})()",
+      riverJoin:"(()=>{const r=G.rivStrips.find(r=>!r.canal&&r.pts.length>40&&hAt(r.pts[r.pts.length-1].x,r.pts[r.pts.length-1].z)>SEA+2),p=r.pts[r.pts.length-1];return[p.x,p.z,180,.8];})()",
+      riverReportedJoin:"(()=>{const r=G.drawRivRuns.filter(r=>r.join).sort((a,b)=>Math.hypot(a.pts.at(-1).x+2835,a.pts.at(-1).z+2990)-Math.hypot(b.pts.at(-1).x+2835,b.pts.at(-1).z+2990))[0],p=r.pts.at(-1);return[p.x,p.z,130,1.2,-.25];})()",
+      riverInnerJoin:"(()=>{const r=G.rivStrips.find(r=>!r.canal&&r.pts.length>40&&Math.abs(r.pts.at(-1).x)<SIZE/2-200&&Math.abs(r.pts.at(-1).z)<SIZE/2-200&&hAt(r.pts.at(-1).x,r.pts.at(-1).z)>SEA+2)||G.rivStrips[0],p=r.pts.at(-1);return[p.x,p.z,180,.8];})()",
+      millDrop:"(()=>{const b=W.settlements.flatMap(s=>s.buildings).filter(b=>b.arch==='mill')[5]||W.settlements.flatMap(s=>s.buildings).find(b=>b.arch==='mill');return[b.x,b.z,65,b.rot+1.3,-0.1];})()",bridge:"(()=>{const q=G.bridgeSpans.reduce((a,b)=>Math.hypot(b.a.x-W.capital.pos.x,b.a.z-W.capital.pos.z)<Math.hypot(a.a.x-W.capital.pos.x,a.a.z-W.capital.pos.z)?b:a);return[(q.a.x+q.b.x)/2,(q.a.z+q.b.z)/2,95,Math.atan2(q.b.z-q.a.z,q.b.x-q.a.x)+0.6];})()",town:"[W.capital.pos.x,W.capital.pos.z,480,2.3]",district:"[W.capital.pos.x,W.capital.pos.z,1100,2.3]",farmland:"[W.capital.pos.x,W.capital.pos.z,2200,2.3]",realm:"[0,0,4200,0.8]"};
     const result={id,views:{},errors};
     for(const[v,expr]of Object.entries(views)){
       if(args.views&&!String(args.views).split(',').includes(v))continue;
@@ -189,6 +277,15 @@ async function check(which,w){
         const valid=ext&&!gl.getParameter(ext.GPU_DISJOINT_EXT),gpu=valid?queries.slice(3).filter(q=>gl.getQueryParameter(q,gl.QUERY_RESULT_AVAILABLE)).map(q=>gl.getQueryParameter(q,gl.QUERY_RESULT)/1e6):[];
         queries.forEach(q=>gl.deleteQuery(q));return{submitMs:a.reduce((a,b)=>a+b)/a.length,gpuMs:gpu.length?gpu.reduce((a,b)=>a+b)/gpu.length:null};})()`);
     }
+    if(args.seasons){
+      if(which==='candidate')result.seasons=await ev(c,`(${seasonalSurfaceCheck.toString()})()`);
+      for(const [name,si]of [['spring',0],['summer',1],['autumn',2],['winter',3]]){
+        for(const v of ['garden','river','woodland','realm']){
+          await ev(c,`(()=>{const q=${views[v]};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);lastSeasonKey='';updateTerrainColors(${si},0.25,1);scene.updateMatrixWorld(true);renderer.render(scene,camera);})()`);
+          const shot=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-'+name+'-'+v+'.png'),Buffer.from(shot.data,'base64'));
+        }
+      }await ev(c,"lastSeasonKey='';updateTerrainColors(seasonIdx(),(day()%90)/90,1)");
+    }
     await ev(c,'window.__renderLighting={visT:W.visT,frac:W.clock.frac,cycle:dayCycleOn}');
     for(const [name,frac]of [['waterDusk',0.735],['waterNight',1.]]){
       await ev(c,`(()=>{W.clock.frac=${frac};W.visT=${frac<.75?(frac-.25)*1.6:.8+(frac-.75)*.4};dayCycleOn=true;animateWorld(0,0);const q=${views.waterGlint};cam.pitchBias=cam.cur.pitchBias=q[4]||0;flyTo(...q);cam.cur.focus.copy(cam.focus);cam.cur.dist=cam.dist;cam.cur.yaw=cam.yaw;updateCamera(0,0);animateWorld(0,0);renderer.render(scene,camera);})()`);
@@ -196,6 +293,7 @@ async function check(which,w){
     }
     await ev(c,'W.visT=window.__renderLighting.visT;W.clock.frac=window.__renderLighting.frac;dayCycleOn=window.__renderLighting.cycle;delete window.__renderLighting;animateWorld(0,0)');
     if(which==='candidate'){
+      if(args['world-visuals']){result.worldVisuals=await ev(c,`(${worldVisualCheck.toString()})()`);const animals=await c.send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(OUT,id+'-animal-models.png'),Buffer.from(animals.data,'base64'));await ev(c,'window.__animalProbe.meshes.forEach(m=>{m.geometry.dispose();m.dispose();});delete window.__animalProbe;renderer.render(scene,camera)');}
       result.reflectivity=await ev(c,`(${reflectivityCheck.toString()})()`);
       result.metalModel=await ev(c,`(()=>{
         const stage=new THREE.Scene();stage.background=new THREE.Color(0x29343e);
@@ -243,11 +341,14 @@ const results=[];
 for(const w of worlds)for(const which of Object.keys(sources)){console.log('Checking '+which+' '+w.seed+' '+w.coast);results.push(await check(which,w));fs.writeFileSync(path.join(OUT,'results.json'),JSON.stringify(results,null,2));}
 const checks=[];
 for(const w of worlds){const candidate=results.find(r=>r.id==='candidate-'+w.seed+'-'+w.coast),baseline=results.find(r=>r.id==='baseline-'+w.seed+'-'+w.coast);
-  const ok=r=>r&&!r.failed&&!r.errors.length&&r.simErrors===0&&Object.values(r.views).every(v=>v.linked&&v.errors===0);
+  const ok=r=>r&&!r.failed&&!r.errors.length&&r.simErrors===0&&Object.values(r.views).every(v=>v.linked&&v.errors===0&&v.glError===0);
   const row={seed:w.seed,coast:w.coast,compiled:ok(candidate),reflectivity:!!candidate?.reflectivity?.valid,metalModel:!!candidate?.metalModel,gardenBearing:!!candidate?.gardenBearing?.valid,cameraCorrect:!!candidate?.cameraCorrect,liveRebuild:!!candidate?.liveRebuild&&Object.values(candidate.liveRebuild).every(Boolean),churchVariants:!!candidate?.churchVariants};
+  if(args['world-visuals'])row.worldVisuals=!!candidate?.worldVisuals?.valid;
+  if(args.seasons)row.seasons=!!candidate?.seasons?.valid;
   if(baseline){row.baselineCompiled=ok(baseline);row.sameHistory=baseline.historySHA256===candidate?.historySHA256;
-    row[args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>args['geometry-budget']?candidate.views[v].geometryTriangles<=baseline.views[v].geometryTriangles:candidate.views[v].geometryTriangles===baseline.views[v].geometryTriangles);
-    row.sameDrawCalls=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].render.calls===baseline.views[v].render.calls);
+    row[args['river-banks']?'bankGeometryBudget':args['geometry-budget']?'withinGeometryBudget':'sameGeometry']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>{
+      const a=candidate.views[v],b=baseline.views[v];return args['river-banks']?a.riverTriangles<=b.riverTriangles*1.03&&a.geometryTriangles-a.terrainTriangles-a.bedTriangles-a.riverTriangles-a.apronTriangles===b.geometryTriangles-b.terrainTriangles-b.riverTriangles-b.apronTriangles&&a.terrainTriangles+a.bedTriangles+a.apronTriangles<=b.terrainTriangles+b.apronTriangles+b.riverTriangles*4:args['geometry-budget']?a.geometryTriangles<=b.geometryTriangles:a.geometryTriangles===b.geometryTriangles;});
+    row[args['world-visuals']?'waterworksDrawBudget':'sameDrawCalls']=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>args['world-visuals']?candidate.views[v].render.calls<=baseline.views[v].render.calls+candidate.views[v].millRaceDraws*1.5+(candidate.views[v].bedTriangles?1:0):candidate.views[v].render.calls===baseline.views[v].render.calls);
     row.sameTextureCounts=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>candidate.views[v].textureCount===baseline.views[v].textureCount);
     row.sameTextureSizes=!!candidate?.views&&!!baseline.views&&Object.keys(candidate.views).every(v=>JSON.stringify(candidate.views[v].textureSizes)===JSON.stringify(baseline.views[v].textureSizes));}
   checks.push(row);}
