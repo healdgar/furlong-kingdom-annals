@@ -205,3 +205,42 @@ comparison are unfinished. Two-year conservation is not century-scale clearance.
 Year-two hunger with food in the same town still occurs; aggregate stock does not
 prove that a hungry household owns or can afford it. This integration publishes
 the approved checkpoint without claiming those broader questions are resolved.
+
+
+## Reel inventory crash repair
+
+The Shershire save (`s=806769900&f=104344028`, day 360) exposed two
+floating-point discrepancies between compatibility counters and numeric balances:
+
+- A proportional purchase from many sellers returned its theoretical target,
+  slightly exceeding the buyer's credited held stock. Caravan dispatch then
+  rejected that unbacked quantity. `purchase.got` now reports the actual held
+  balance delta for native commodities; legacy and livestock paths retain their
+  previous arithmetic.
+- Production calculated from large town-total differences could put `_made`
+  slightly above the small unassigned balance. Town migration then rejected
+  pending timber. `made` now limits its existing pending-output assignment to
+  actual unassigned stock within town-total arithmetic roundoff, and rejects
+  material excess. Core transfer and migration shortage checks remain strict.
+
+Neither repair adds inventory mutations, per-person budgets, lot events, or
+journal emission calls. Household pantry, hunger, debt and owner identities
+remain authoritative. These repairs make no new throughput claim.
+
+Validated simulation source SHA256:
+`51ee722408296b5f12f0200e5f48790f742d360143f918a685b3f7ce4a403b0b`.
+
+- All 752 source/unit tests pass, including purchase, pending-production,
+  inventory conservation and material-shortage regressions. The precise
+  purchase/migration failures reproduce against published `ab15897`.
+- Actual animation-driven Reel speed reaches day 1086 from a fresh Shershire
+  world and day 1083 from the supplied day-360 save. Both have zero simulation,
+  journal or model errors. All 58/43 polled inventory checks pass; these are
+  sampled checks during animation, not daily or century-scale clearance.
+- Independent thirty-day v3 replay matches all 31 boundaries and accepted versus
+  persisted history hashes; no pending journal bytes or faults remain.
+
+Local ignored evidence: `tools/soak-results/reel-inventory-crash-2026-10-04/`
+(`repeat1` original cargo failure, `pending-trace` production drift,
+`hotfix-final-fresh` and `hotfix-final-resume`), and
+`tools/soak-results/commodity-cargo-fix-final-replay30-2026-10-05/`.
