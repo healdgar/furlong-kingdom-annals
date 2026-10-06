@@ -134,6 +134,9 @@ test('the citizen plan walks the folk a frame of the pace at a time, ahead of th
   assert.equal(A.track.at(-4),50+steps1+steps2,'the old hand goes on where his steps had brought him');assert.deepEqual([B.track[0],B.track.at(-4)],[50,50+steps2],'the new hand starts where the plan puts him');
   assert.equal(vm.runInContext('G._workerCitizenPlans.get(0).people.find(w=>w.p.id===4).fw.flip',c),(steps1+steps2)%2===1,'the furrow turned as it was walked');
   auditDTO(next);
+  const ahead=vm.runInContext('workerRenderCitizens(0,{frac:.06,view:8.3})',c);
+  assert.ok(ahead.times.at(-1)>=8.3+0.4*0.5-1e-9&&ahead.times[0]<=8.06,'the walk keeps to the screen\'s clock where it runs ahead of the reading');
+  const far=vm.runInContext('workerRenderCitizens(0,{frac:.07,view:60})',c);assert.ok(far.times.at(-1)<=8.07+1+0.4*0.5+h,'a screen clock days astray is held to a day of the reading');
 });
 
 test('landscape packets omit unchanged structure bodies and publish one dirty building',()=>{

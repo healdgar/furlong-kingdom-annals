@@ -16992,16 +16992,18 @@ function workerRenderPath(path){return Array.isArray(path)?path.map(workerRender
 const WALKER_CARRY=['x','z','ry','t','state','until','route','ri','out','walking','goal','doing','via','dayDone','chDay','wedW','visDay','visitOf','tavDay','mktDay','nextChore','errWhat']; // a walker's day so far
 // The townsfolk's walk (#2). The worker walks them a frame of the chosen pace at a time, as the main-thread screen walked
 // them, a little ahead of the calendar, and keeps each step's place: a reply carries the steps from a little before the
-// reading to past the next reply, and the screen goes between them by its own clock (trackAt). Display only.
+// reading to past the next reply, and the screen goes between them by its own clock (trackAt). The walk keeps to whichever
+// of the two clocks is further on: the screen's runs ahead of the reading by up to a reply's latency, and after a slower pace
+// is chosen it may stand far ahead (a hundredth of a day at Fast is half a minute of life pace). Display only.
 const WALK_TRACK={ahead:0.4,behind:0.15,most:60,fine:8}; // seconds of pace walked ahead of the reading and kept behind it; most frames one reply walks; the fastest pace (days a second) walked frame by frame
 function workerWalkSample(c){(c._tr||(c._tr=[])).push(workerRenderFinite(c.x),workerRenderFinite(c.z),workerRenderFinite(c.ry),(c.out?1:0)|(c.walking?2:0));}
-function workerWalkOn(entry,now,frac){
-  const rate=speedIdx===5?0:SPEEDS[speedIdx]||0,fine=rate>0&&rate<=WALK_TRACK.fine,h=rate/60,T=entry.times;
+function workerWalkOn(entry,now,frac,view=now){
+  const rate=speedIdx===5?0:SPEEDS[speedIdx]||0,fine=rate>0&&rate<=WALK_TRACK.fine,h=rate/60,T=entry.times,lo=Math.min(now,view),hi=Math.max(now,view);
   const restart=at=>{entry.day=at;T.length=0;T.push(at);for(const c of entry.people){c._tr=[];workerWalkSample(c);}};
-  if(fine&&entry.day>now+2*WALK_TRACK.ahead*rate)restart(now); // walked far ahead at a faster pace: they go on from there
-  if(now>entry.day&&(!fine||now-entry.day>WALK_TRACK.most*h)){const dt=(now-entry.day)*DAYSEC;for(const c of entry.people)stepWalker(c,dt,frac,day());restart(now);} // paused, too fast to follow, or long away: one stride to now
-  if(fine)for(let n=0,end=now+WALK_TRACK.ahead*rate;entry.day<end&&n<WALK_TRACK.most;n++){const t=entry.day+h,D=Math.floor(t);for(const c of entry.people){stepWalker(c,h*DAYSEC,t-D,D);workerWalkSample(c);}entry.day=t;T.push(t);}
-  if(rate>0){const keep=now-WALK_TRACK.behind*rate;let cut=0;while(cut<T.length-1&&T[cut+1]<=keep)cut++;if(cut){T.splice(0,cut);for(const c of entry.people)c._tr.splice(0,cut*4);}}
+  if(fine&&entry.day>hi+5*WALK_TRACK.ahead*rate)restart(hi); // walked more than two seconds of the new pace ahead at a faster one: they go on from there (nearer, they walk out the steps already taken)
+  if(hi>entry.day&&(!fine||hi-entry.day>WALK_TRACK.most*h)){const D=hi===now?day():Math.floor(hi),dt=(hi-entry.day)*DAYSEC;for(const c of entry.people)stepWalker(c,dt,hi===now?frac:hi-D,D);restart(hi);} // paused, too fast to follow, or long away: one stride
+  if(fine)for(let n=0,end=hi+WALK_TRACK.ahead*rate;entry.day<end&&n<WALK_TRACK.most;n++){const t=entry.day+h,D=Math.floor(t);for(const c of entry.people){stepWalker(c,h*DAYSEC,t-D,D);workerWalkSample(c);}entry.day=t;T.push(t);}
+  if(rate>0){const keep=lo-WALK_TRACK.behind*rate;let cut=0;while(cut<T.length-1&&T[cut+1]<=keep)cut++;if(cut){T.splice(0,cut);for(const c of entry.people)c._tr.splice(0,cut*4);}}
 }
 function workerWalkTrack(c){const R=c._tr||[];for(let i=4;i<R.length;i++)if(R[i]!==R[i&3])return Float32Array.from(R);return Float32Array.from(R.slice(0,4));} // one place for those who stand
 function workerRenderCitizens(si,options={}){
@@ -17034,7 +17036,7 @@ function workerRenderCitizens(si,options={}){
     }finally{
       if(colorDescriptor)Object.defineProperty(globalThis,'THREE',colorDescriptor);else if(typeof THREE!=='undefined'&&THREE?.Color?.name==='PlanColor')delete globalThis.THREE;
     }
-    workerWalkOn(entry,now,frac);
+    workerWalkOn(entry,now,frac,Number.isFinite(options.view)?clamp(options.view,now-1,now+1):now); // the screen's clock, which after a change of pace may stand well ahead of the reading
     const people=[];
     for(const c of entry.people){
       const p=c.p,col=c.col;
@@ -17201,7 +17203,7 @@ async function workerGoName(code){
 function workerRefreshActors(herds=false){
   if(!BACKGROUND||!cam.cur.focus)return;const focus={x:cam.cur.focus.x,z:cam.cur.focus.z};let si=-1,d=Infinity;for(let i=0;i<W.settlements.length;i++){const s=W.settlements[i],v=dist2d(s.pos.x,s.pos.z,focus.x,focus.z);if(v<d){d=v;si=i;}}
   if(cam.cur.dist>=700||d>(W.settlements[si]?.extentR||W.settlements[si]?.radius||0)+160)si=-1;
-  return workerQuery('actors',{kind:'actors',si,focus,range:Math.max(1800,cam.cur.dist*2.5),herds},packet=>{G.workerCitizens=packet.citizens;G.clockFrac=packet.fraction||0;G.walkDay=packet.day+(packet.fraction||0);presAnchor(packet.day+(packet.fraction||0),packet.at);if(packet.herds){G.herdsDirty=false;G._hPlan={x:focus.x,z:focus.z,R:packet.herds.range,t:performance.now()};G.flocks=reconcileFlocks(G.flocks,packet.herds.flocks);}});
+  return workerQuery('actors',{kind:'actors',si,focus,range:Math.max(1800,cam.cur.dist*2.5),herds,view:displayDay()},packet=>{G.workerCitizens=packet.citizens;G.clockFrac=packet.fraction||0;G.walkDay=packet.day+(packet.fraction||0);presAnchor(packet.day+(packet.fraction||0),packet.at);if(packet.herds){G.herdsDirty=false;G._hPlan={x:focus.x,z:focus.z,R:packet.herds.range,t:performance.now()};G.flocks=reconcileFlocks(G.flocks,packet.herds.flocks);}});
 }
 function renderTransportCitizens(nearest,d){
   const now=performance.now(),si=W.settlements.indexOf(nearest),prior=G.workerActorFocus,close=nearest&&cam.cur.dist<700&&d<(nearest.extentR||nearest.radius)+160;
@@ -17473,7 +17475,7 @@ function simulationWorkerModel(){return{
     if(kind==='plan-quote')return workerCommandPlanQuote({...payload,kind:payload.kindName});
     if(kind==='storage-preview')return workerCommandStoragePreview(payload);
     if(kind==='overlay')return workerOverlayQuery(payload.mode);
-    if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,at:performance.timeOrigin+performance.now(),citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
+    if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,at:performance.timeOrigin+performance.now(),citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction,view:payload.view}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
     if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,revision:WORKER_PRESENTATION.revision,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
     if(kind==='household'){const h=W.households.get(payload.id);if(!h)throw Error('Unknown household');return{id:h.id,head:h.head?.id??null,members:[...h.members].map(p=>p.id),purse:h.assets.w,debt:h.assets._debt,hunger:h.hunger,pantry:W.settlements.flatMap((s,si)=>{const held=s._owners?.get(h)?.held;return held?[{si,goods:{...held}}]:[];})};}
     if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT(payload);
