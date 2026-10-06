@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-06 02:40 UTC · separate simulation and presentation</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-06 15:41 UTC · after 7c78bc5</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -17844,6 +17844,9 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
 ## Automated checks
 
+[Legacy-search audit and migration gate](docs/LEGACY-SEARCH-MIGRATION.md) identify
+remaining broad searches and reject new or increased recognized scans.
+
 `node --test tools/provision.test.mjs` checks food replenishment, ownership,
 credit and payment conservation against the functions in `index.html`.
 `tools/soak.mjs` measures longer histories in isolated Chrome instances using
@@ -19895,6 +19898,91 @@ The first inventory failure appears in annual JSON and fails `inventoryMatched`;
 the audit preserves it through later years. Waiting between days uses the sticky
 fault-aware outcome `wait()`, including the independent storage-event harness.
 
+<<<FILE docs/LEDGER-REDUNDANT-WORK.md>>>
+# Ledger redundant-work batch
+
+Three Luna 6 audits identified repeated balance selection, unchanged facility refreshes and household array construction. GPU acceleration is deferred at the user's request. This batch adds no maintained index, economic record or journal event.
+
+## Completed
+
+- [x] Read an addressed balance directly without allocating a key array.
+- [x] Update existing owner/facility membership only when cell membership changes.
+- [x] Plan fully addressed consumption/transfers without selecting and sorting rows; retain selector snapshot semantics, shortage tolerance and atomic preflight.
+- [x] Skip unchanged managed facility refreshes, occupancy recounts and metadata writes. Changed metadata, refits and custom volumes retain original validation.
+- [x] Reuse exposed row keys for the carriage report, reading their current balances. Exposed destinations retain the complete post-transfer selection.
+- [x] Remove the second spoilage snapshot and duplicate location lookup.
+- [x] Build household producer and reconciliation lists in one ordered pass.
+- [x] Select a lender directly from existing households without intermediate head arrays; retain richest-first tie order and eligibility.
+- [x] Sum all four herd species in one owner pass, retaining each species' addition order.
+
+Deferred: generic multi-row planning needs stronger arithmetic/order proof; hoisting the realm farm mean is unsafe because daughter settlements can appear during the pass; deleting journal outcomes needs a separate replay-preserving design.
+
+## Native comparison
+
+Baseline `450d2b6`, HTML SHA-256 `9b8cc31045e0be212430d9f06e71df0695d1a2612b96f08dbb56540ef2125f93`.
+CPU candidate before the urgent database-connection fix: `dd8e09f787c6a2b41ac0f5d3e611ce61076389b6841180f8205d0827d5f1e81e`.
+
+Isolated Chrome on Apple M4 Max, seed `287970763`, fate `370450810`, two complete 360-day years, baseline and candidate run serially without concurrent test load. Timing includes worker day processing, journal backpressure and monthly yields; excludes checkpoint fingerprints and explicit year-end flushes.
+
+| Snapshot | Year 1 | Year 2 | Total |
+| --- | ---: | ---: | ---: |
+| Baseline | 16,086.6 ms | 18,532.1 ms | 34,618.7 ms |
+| CPU candidate | 15,020.9 ms | 17,080.4 ms | 32,101.3 ms |
+
+Elapsed time fell **7.27%**. Initial and both year-end authoritative graph fingerprints, RNG, population, household counts and journal sequence match exactly. The journal retains 5,416 records at day 360 and 11,357 at day 720. This removes redundant processing and writes; it does not reduce journal record count or establish century throughput.
+
+Evidence: `/tmp/furlong-ledger-work-baseline-b`, `/tmp/furlong-ledger-work-candidate-final`, source-pinned harness `/tmp/furlong-ledger-work-check.mjs` and probe `/tmp/furlong-ledger-work-probe.mjs`. The harness uses its existing diagnostic probe channel; this probe executes CPU simulation, with no GPU economy kernel.
+
+## Urgent database connection recovery
+
+The reported Safari error occurs when a cached IndexedDB connection rejects transaction creation because it is closing. Both journal writers and live exports now reopen once at that boundary, before any write starts. Completed/aborted transactions are never blindly replayed. The retained chunk, sequence and atomic chunk/metadata commit remain unchanged. Close/version-change events invalidate cached connections; recovery refuses to silently recreate a removed history database.
+
+Focused validation: 61 history/journal checks and 128 commodity/household/worker-boundary checks pass. Worker and foreground failure fixtures verify one reopen, exact records and hashes, and preservation of an aborted transaction's pending tail. Native eight-day worker/reference comparison passes graph/RNG/save/replay/continuation and view parity. Physical iOS reproduction remains unverified.
+
+<<<FILE docs/LEGACY-SEARCH-MIGRATION.md>>>
+# Legacy search audit
+
+Run from the repository root:
+
+```sh
+node tools/legacy-search-audit.mjs > /tmp/furlong-searches.json
+node --test tools/legacy-search-audit.test.mjs tools/legacy-search-gate.test.mjs
+node tools/legacy-search-gate.mjs
+```
+
+The report lists functions, absolute `index.html` lines, scan patterns, loop
+nesting, and callers. It uses the local vendored JavaScript parser. Nothing runs
+in the game; no simulation writes, indexes, or journal records are added.
+
+The tests reject new or increased recognized scans relative to
+`tools/legacy-search-inventory.json`. Reduce that inventory when a migration
+removes a search. Existing inventory entries identify pending work, not approved
+architecture. Do not refresh the inventory merely to pass a failed test.
+
+The stricter migration command intentionally exits **1** while these reviewed
+transaction searches remain:
+
+- [ ] `borrow`: household lender search per credit request.
+- [ ] `buildWorks`: repeated construction/carriage worker rosters.
+- [ ] `commodityExposed`: unscoped commodity row materialization.
+- [ ] `commodityFacilities`: daily whole-building reconciliation.
+- [ ] `storageRoute`: street signature reconstruction per route lookup.
+
+At source `0626f4e`: **11 unresolved transaction sites**, **291 scan sites**
+across the full inventory. Necessary one-pass updates also appear in the report;
+these counts do not measure defects or CPU cost.
+
+Coverage includes `heads_`, `workers_`, `headsOf`, iteration of `folk`, `_owners`,
+`buildings`, and `streets`, simple aliases, and unscoped `.entries()` calls.
+Dynamic dispatch, destructured/parameter aliases, computed property names, and
+index-loop bounds require manual review. The call graph resolves top-level
+named functions and collection callbacks; it is not a complete runtime graph.
+
+Separate from these searches, failed warehouse completion repeatedly invokes
+road pathfinding. The native two-year profile at `0626f4e` attributed about 84%
+of year-two CPU time to that placement path. Review site access and completion
+retry behavior before adding search structures.
+
 <<<FILE docs/MOTTE-BAILEY-PLAN.md>>>
 # Motte and bailey within the fortification system
 
@@ -20093,6 +20181,84 @@ The native audit checks actual generated plots, church-property containment, res
 Fresh maps, every daily tick, every named person and household, and existing ownership and
 inheritance rules remain intact. No era presets, saved-world bank, actor culling or SQLite were added.
 The app remains a single HTML file with no build step.
+
+## Fast-forward limits and next work
+
+The fastest player speed requests 360 days/second. `animate` executes daily ticks
+on the main thread for up to 28 ms per frame, then animates the world, rebuilds
+dirty geometry, refreshes UI and renders. A slow single tick can exceed that
+budget. Later-era generation also executes every day, although it omits the
+normal frame loop. Removing rendering alone cannot solve slow era generation.
+850 to 1066 requires 77,760 daily ticks. One simulated year per second allows
+only 2.78 ms per day before display and persistence costs.
+
+This batch removes repeated work without additional simulation indexes or events:
+
+- Daily feeding prepares ownership and food reconciliation once; independent
+  food top-up calls still prepare their own inputs.
+- Monthly wage payments retain only the first five sorted poor candidates,
+  enough for four recipients after excluding the payer. Payment order and ties
+  remain unchanged.
+- A household's migration roots are evaluated once for its destination search,
+  rather than scanning its fields for each destination.
+- Hidden Crown and realm panels skip their periodic reconstruction. Opening a
+  panel refreshes its data immediately. Crown reference linking otherwise
+  searches living and historical people even when the drawer is hidden.
+
+All 916 source tests pass. Focused tests cover household food, hunger, debt and money equivalence, wage
+recipient ordering, migration-root values and panel visibility. They establish
+removed work, not a measured whole-game speedup or century-scale clearance.
+
+Remaining architectural work, in order:
+
+1. Eliminate remaining household-by-population and owner-history scans using
+   authoritative household membership and existing active balance membership.
+   Preserve ordering where it affects RNG, inheritance or money.
+2. Separate display projection from daily state changes. `animateWorld` currently
+   mutates traffic, envoy and actor state; throttling it wholesale is unsafe.
+   Keep authoritative changes in simulation, then refresh visible geometry and
+   animation at a bounded cadence during reeling.
+3. Move the serial daily engine behind the existing worker boundary, with one
+   authoritative world, ordered player commands and bounded display deltas.
+   A worker improves responsiveness; it does not make the same CPU work cheaper.
+4. Measure matched drawn and undrawn runs on the resulting source, including
+   later-year cost growth and persistence backpressure. Faster short fixtures
+   cannot establish practical fast-forward throughput.
+
+Daily pantry, hunger and debt settlement remains required. Monthly and annual
+decisions should run only when due; no coarser approximation is enabled here.
+
+## Failed army retreat retries, 5 October 2026
+
+A 32.9-second main-thread profile of the running `48c2b35` release, seed
+287970763 / fate 370450810, found `tickMilitary` at 62.9% inclusive CPU and
+`armyDetour` at 62.4%. Two hungry armies repeatedly tried an impassable retreat.
+These nested percentages overlap. Journal-worker CPU was outside this profile.
+
+Failed automatic retreats now reuse `holdUntil` to retry after 30 days, retaining
+any longer hold. Explicit orders remain immediate. Failed moves preserve the
+field position and do not announce successful foraging. Roads and paid sea
+crossings remain available from a field position; the army joins the nearest
+origin-side land segment through a physically checked connector. If the road
+route fails or is absent, passable cross-country travel remains possible at
+`FIELD_MPD`. Both routes retain river, building, wall and slope checks. No new
+maintained index or event was added. Automatic retries see changed obstacles
+on the next retry; a new explicit order can retry immediately.
+
+Nine focused regression tests cover cooldown, longer holds, queued orders,
+changed passability, field position, terrain fallback and charged sea crossings.
+A matched synthetic Node/V8 kernel fixture over 60 days reduced failed orders
+from 60 to 2, detour calls from 180 to 12 and segment checks from 1,500 to 100.
+It uses the actual terrain-search kernel with a synthetic impassable cliff;
+these are fixture results, not whole-game timing or long-run clearance.
+
+The final game source (SHA256
+`b666e678300c24f59a68830a7450d08b1d269811ae0359fa0a6d08cc3c4c6c77`)
+also passed a three-year native Chrome run with the same map/fate seeds:
+2,160 independent inventory checks, zero simulation errors, zero annual money
+residuals, and complete journal settlement. This does not reproduce the live
+year-five army state or establish later-year throughput. All 39 focused army,
+campaign, routing and old-search guard tests pass.
 
 ## Algorithms
 
@@ -20378,6 +20544,17 @@ A separate animated smoke run exercised realm and street views at maximum speed 
 
 The 200-year soak was interrupted when work was redirected to this fix; neither cohort establishes long-term calibration. The change is isolated on `codex/provisioning`, based on `36648d5`, in `/Users/alexwall/.codex/worktrees/provisioning/furlong-kingdom-annals`. Integration status and final ownership validation are recorded separately in the local worker handoff.
 
+<<<FILE docs/PUBLIC-ORDER.md>>>
+# Public order
+
+The local watch, friendly idle or arrived hosts in town, and half the emergency militia deter riots and revolts. Royal troops can support a peaceful vassal's town, and vassal troops can support the Crown's town, under the existing friendly-town rules. Marching, routed, enemy and field armies do not count. Presence lowers unrest by up to 0.35 points per day, reaching that limit at 15% of the population under arms. The effect fades below 40 unrest and stops at 10. Hunger, taxation and other existing causes still apply.
+
+Town orders can muster up to 40 local watch recruits for 10 crowns per recruit, without raising the total watch above 12% of the population. Existing watch wages and demobilization apply. Calling the watch out as a host retains its effect while it remains in town; marching it away removes that contribution.
+
+Forceful suppression requires troops present. Its immediate reduction scales with their numbers, capped at 20 points. It retains the 150 crown cost, 30 day cooldown, prosperity loss and risk of violent resistance. Troop presence reduces riot probability by at most 90%; it cannot guarantee peace.
+
+This uses the existing army settlement index and unrest value. It adds no simulation index, per-person budget or daily journal event. Focused checks: `node --test tools/public-order.test.mjs tools/army-settlement-index.test.mjs tools/ruler-controls.test.mjs`.
+
 <<<FILE docs/REEL-NOTIFICATIONS.md>>>
 # Notifications while reeling
 
@@ -20437,6 +20614,118 @@ The same original-parent (`9753322dea76eeca750a928e9133cf38d17f211d`) and integr
 Nine focused regressions cover current account credit, adult/child ownership, dead-owner successors, same-account purse and income, available funds, absent owners, tiny payments, independent household formation and property rebinding. All 267 Node tests pass. Local evidence: `.git/storage/2026-10-03/inventory/mature-{money-frozen-full,rent-frozen}`, `rural-rent-baseline-proof.json`, and `rural-rent-tests.txt`.
 
 This repair intentionally changes erroneous rent losses and subsequent financial outcomes. The exact combined source still requires mature multi-seed reruns. Separately, controlled original/current fixtures show `killNotable` erases a signed purse when a noble line ends; this distinct latent defect is not changed here. Neither this bounded repair nor passing samples establish whole-engine financial correctness.
+
+<<<FILE docs/SIMULATION-PRESENTATION-HANDOFF.md>>>
+# Simulation–presentation separation: integration status
+
+The refactor moves simulation-owned land, parcels, buildings and growth into `W` and its model paths, while rendering remains a projection. Final checks passed at exact source SHA `42b9a2b3edecf4a7b3e40d768661127dd148809721f9d609264737dff0ba84e4`: four-mode day 0/day 30 canonical state matched, animation made zero canonical writes, expanded inspectors completed without errors, and the fast suite passed 950/950. The strict full-source 8-day save/replay check also passed separately.
+
+## Current boundary
+
+- `W` owns generated land, parcels, buildings, household/economic records and simulation state. HISTORY roots it directly; playback controls remain a distinct recorded root.
+- `G.citList`, `herdPos`, `herdOwner`, `citIdx` and `travIdx` are disposable projections. `HASH_STAMP`, `__hs` and `G.entityViews` are query/computed-view caches, not semantic roots. The source-pinned history/config prototype remains explicitly incomplete; it does not implement worker export or complete accessor/facade hydration.
+- Model-side paths cover land-market/founding, land ticking, livestock, trees, tracks/layout, parcel settlement and structural growth. Shared prehistory advances the same real simulation tick from headless and browser initialization.
+- `startSimulation` runs the real generator and initializer in a VM without `document` or `THREE`. `tools/simulation-boundary.mjs` exercises actual `simTick`, the outcome journal, save and replay. Its diagnostics must remain observational.
+- `packSave`/`unpackSave` use `globalThis` compression APIs with the J1 fallback retained.
+
+## Evidence
+
+- Full-source headless runs completed without model errors: seed 1001/fate 42/sea at AD 850 plus 360 actual daily ticks reached day 360; AD 851 ran actual shared prehistory to ready day 360. These runs used successive source snapshots, so their population/building counts are not a parity comparison.
+- Strict 8-day no-DOM/no-Three.js save/replay passed. At the save boundary, W, RNG, settlement/household state, MOD, storage sequence and annals matched.
+- Final four-mode 30-day parity at the exact source SHA above matched all canonical roots at day 0 and day 30; RNG streams and layouts matched, animation made zero canonical writes, and expanded settlement/person/household/river/fort/beast inspectors produced no errors. Evidence: `/tmp/furlong-cadence-final-source/meta.json`. This includes the visual-only bird RNG fix in `buildAgents`, `G.entityViews` UI memo relocation, pure population/beast-price reads and recorded migration-row reads.
+- Final fast full source suite passed 950/950 in 5.8 s (`/tmp/furlong-final-integrated-suite.log`), excluding the separately passed strict 8-day full-source save/replay test. The public-order fixture extracts the actual `detailPopulation` helper. Configuration tests passed 8/8 after HISTORY/config migration. `git diff --check` is clean. The general history/config audit remains incomplete by design; retain its unsupported alias, accessor, native-call and facade hydration blockers.
+- A native Metal baseline/candidate two-year pair passed at `/tmp/furlong-cpu-final/results.json`. Baseline `e0cd7e5` plus only the null-target `siegeArc` fix (snapshot SHA `7eeeb50b…57ce5`) measured year 1 tick/projection 18.359/1.919 s, year 2 28.544/1.766 s. Candidate `6f16d983…274605` measured 16.989/2.596 s and 27.562/2.217 s. The candidate-only 720-day recheck also passed without errors at exact source SHA `42b9a2b3edecf4a7b3e40d768661127dd148809721f9d609264737dff0ba84e4`: year 1 tick/projection/total 16.906/2.634/19.539 s; year 2 27.457/2.222/29.679 s. Its populations, households and buildings repeat the earlier candidate snapshot. Baseline and candidate founding histories differ; the raw totals are about 3.6% and 2.1% lower, but this single comparison is not an isolated speedup proof. No speedup claim is made.
+- Native Metal render checks at `/tmp/furlong-render-final/run.json` covered 1001/sea and 2002/land through 30 days, including compile, materials, camera, live rebuilds, church/world visuals and reel smoke. This is graphics validation only and predates final read-only guards.
+
+## Status and limits
+
+All current integration gates pass. Validation covers full-source runs up to 720 days, four-mode cadence through 30 days, the strict 8-day save/replay path, final fixtures and bounded native timing/render checks. It does not establish 200-year behavior, worker execution, archive/export or complete history hydration. Native timing remains raw, near-neutral evidence across different founding histories; no isolated speedup is claimed.
+
+<<<FILE docs/SIMULATION-PRESENTATION-SEPARATION.md>>>
+# Simulation–presentation separation
+
+Implementation checkpoint, 2026-10-05. Final integration evidence is pinned to HTML SHA `42b9a2b3edecf4a7b3e40d768661127dd148809721f9d609264737dff0ba84e4`.
+
+## Ownership boundary
+
+- `W` is authoritative for semantic land, parcels, buildings, household/economic records and simulation state. HISTORY roots `W`; playback state is recorded separately.
+- Renderer indexes (`G.citList`, `herdPos`, `herdOwner`, `citIdx`, `travIdx`) and query/computed-view caches (`HASH_STAMP`, `__hs`, `G.entityViews`) are disposable, not additional semantic roots.
+- Model-side code handles land-market/founding, land tick, livestock, trees, tracks/layout, parcel settlement and structural growth. Renderer construction consumes model state. Shared prehistory invokes the real simulation tick for both headless and browser starts.
+- `tools/simulation-boundary.mjs` runs the real game source in a VM without DOM or Three.js; its boundary tests cover actual ticks, journal, save/replay and canonical state. Inspection/query helpers are checked for observational reads.
+- `tools/game-write-game-config.mjs` source-pins W and playback ownership and classifies known projections/scratch. It is an incomplete analysis prototype, not a worker or save-history runtime; unsupported aliases, accessors, native calls and facade hydration remain blockers.
+
+## Waterfront road layout
+
+Quays are surveyed on dry banks at construction time. Unsafe smoothing falls back to the surveyed bend; channel crossings split the survey instead of creating a bridge. Access paths reserve river clearance for the lane width and can join segment interiors. Both walking graphs and rendering preserve those bends through shared pure resampling. This adds no maintained index, daily repair pass, or ledger event.
+
+HTML SHA `cf2cf52353a65068006eeb07a89ccf25039eee6bd579fb1a97df5fd99f1b32a0`: native seed 287970763/fate 370450810 validated 13 connected, dry quays and 14 connected mills (`/tmp/quay-final-render/results.json`). Eight-day model-only/continuous cadence matched all canonical roots, with zero projection writes (`/tmp/quay-final-boundary/meta.json`). New regressions cover concave banks, channel splitting, coast/pond width, turn preservation and bank detours. These checks establish routing correctness, not a simulation speedup.
+
+## Verification and limits
+
+- Full-source headless checks completed: seed 1001/fate 42/sea at AD 850 plus 360 real days reached day 360; AD 851 ran real shared prehistory to ready day 360. Their source snapshots differ, so they do not establish parity.
+- The strict 8-day headless save/replay check passed with W, RNG, settlements/households, MOD, storage sequence and annals matching at the save boundary.
+- Final four-mode cadence at the exact source SHA above matched canonical roots, RNG streams and layouts at day 0 and day 30. Animation made zero canonical writes; expanded settlement/person/household/river/fort/beast inspectors produced no errors. Evidence: `/tmp/furlong-cadence-final-source/meta.json`. The check includes the deterministic visual-only bird change in `buildAgents`, UI memo relocation to `G.entityViews`, pure population/beast-price reads and recorded migration-row reads.
+- The final fast source suite passed 950/950 in 5.8 s (`/tmp/furlong-final-integrated-suite.log`), excluding the separately passed strict 8-day full-source save/replay. The public-order fixture extracts the actual `detailPopulation` helper. Configuration tests passed 8/8 and `git diff --check` is clean.
+- Native Metal baseline/candidate two-year runs passed (`/tmp/furlong-cpu-final/results.json`). Baseline `e0cd7e5` with only a null-target `siegeArc` fix (snapshot `7eeeb50b…57ce5`) recorded year 1 tick/projection 18.359/1.919 s and year 2 28.544/1.766 s. Candidate `6f16d983…274605` recorded 16.989/2.596 s and 27.562/2.217 s. The candidate-only 720-day run passed without errors at the pinned source: year 1 tick/projection/total 16.906/2.634/19.539 s; year 2 27.457/2.222/29.679 s. Candidate population, household and building counts repeat the earlier candidate snapshot. Since generated founding histories differ, these raw totals do not isolate a speedup; none is claimed.
+- Native render validation passed for seed 1001/sea and 2002/land through day 30, including graphics compile/material/camera/live-rebuild/church/world/reel checks. It is graphics validation, not throughput evidence.
+
+Current gates pass. Evidence covers model execution through 720 days and cadence/rendering through 30 days; it does not establish 200-year behavior, worker execution, archive/export or complete history hydration. Do not describe the prototype as worker-ready or infer accelerated-time safety.
+
+Historical 2026-10-04 checkpoint: parent `61ba24d`, branch `codex/ruler-controls`, source SHA `f1cf4296f2ec74aa528cd6a1e6401306f54d187494acf059403a2888231d0708`. Its earlier tests and open checklist are superseded by the evidence above.
+
+<<<FILE docs/SIMULATION-WORKER-ROADMAP.md>>>
+# Simulation worker and GPU boundaries
+
+The default game now has one worker-owned simulation: `W`, household accounts, pantry, hunger, debt, RNG streams, commands and outcome journals. The foreground owns input, dialogs, camera and Three.js. Its `W` is a disposable display projection, containing no household, ownership-account or storage-ledger graphs. `#foreground=1` retains the diagnostic reference driver.
+
+## Completed boundaries
+
+- [x] Full-source worker boot, generation and prehistory; progress messages keep loading UI independent.
+- [x] Ordered command lane for all six journal classes: clicks, ruler selection, petitions, settings, placements and plans. Validate before recording; apply each accepted command once between complete days. Map picking and brush previews remain UI state.
+- [x] Inspectors, accounts, ruler panels, petitions, narrative links and advisor reads query the worker. Stable entity IDs replace live model references. Visible panels request their own bounded results.
+- [x] Economic overlays query worker calculations; foreground overlays draw returned values.
+- [x] Rendering bootstrap transfers copied terrain buffers and public geometry. Later packets contain existing dirty fields/buildings and structural changes, rather than daily copies of the economy or complete geometry.
+- [x] Citizens and livestock use numeric worker plans. Renderer objects and walking interpolation remain disposable; simulation RNG does not drive display animation.
+- [x] Stable display identities preserve camera following, army markers, roads, dragons and saplings. Accessor-backed population and title IDs have explicit scalar projections.
+- [x] Annals and reign headings, ruler transitions, campaign-end dialogs and local achievement/best-score persistence cross explicit presentation boundaries.
+- [x] Worker-owned save capture, existing save format, replay and continuation. Browser camera/preferences and save shelf remain local UI data.
+- [x] Journal backpressure precedes each daily transaction. Save/close await settlement. Page hiding requests a worker flush.
+- [x] Faults pause mutation and retain read/save access where possible. Client transport failures reject pending work; recovery explicitly reloads a committed save, without creating a second authority.
+- [x] Uncapped Reel driver; actual landscape publications every 30 days, immediate refresh on pause/orders, one unacknowledged publication with coalescing. Pushed and requested display packets install in transport order, preserving every dirty delta. Camera/input do not execute simulation ticks.
+- [x] Awaitable complete-day barrier in the worker driver, prehistory and replay. Future asynchronous GPU phases must finish inside that barrier before commands, saves or subsequent days run.
+
+Read helpers can warm the existing derived `s._sg` street graph. Valuation reads use a disposable memo for the current request and cannot prime the annual simulation-owned `s._lvf` grid. Early UI priming previously changed later rents and demographics, breaking save replay. Queries reuse an already valid model valuation but leave model valuation admission to simulation. No additional maintained economic index or journal record is introduced.
+
+## Remaining GPU/performance work
+
+GPU optimization is deferred at the user's request. The next CPU batch removes redundant ledger lookups and no-op writes; see [its checklist and native comparison](LEDGER-REDUNDANT-WORK.md).
+
+These are acceleration experiments, not unfinished ownership boundaries:
+
+- Adopt a production GPU kernel only after matched whole-year timing includes upload, readback and CPU finishing costs. No production GPU economy kernel is enabled by this cutover.
+- Keep ordered daily pantry, hunger, debt and economic outcomes exact. Do not skip daily settlement or add indexes/copies merely to exercise the GPU.
+- Measure later-year cost growth and a complete 850-to-1066 run on the drawn game. Worker ownership improves responsiveness; it does not itself reduce tick CPU work or prove practical century throughput.
+
+The existing annual land-value WebGPU probe uses real Apple Metal hardware. Seed 1001 measured warm CPU/GPU medians of 6.3/1.7 ms, with 141 ms cold setup. Player seed 287970763 measured 8.1/2.0 ms. These save only about 5–6 ms per annual calculation and are diagnostic, never installed in authoritative `W`; they do not establish a whole-game speedup.
+
+## Validation
+
+Validation records are frozen local source snapshots, with SHA-256 identities. The repository harnesses are reusable:
+
+- `tools/simulation-worker-host.test.mjs`: FIFO ordering, asynchronous daily barriers, pacing, publication acknowledgements, queue limits, journal backpressure, save and fault behavior.
+- `tools/simulation-worker-boundaries.test.mjs`: private-graph exclusion, packet-owned transfer buffers, deterministic actor planning, dirty projections, population/title accessors, ruler UI, army flags, campaign-end/profile delivery and foreground tick rejection.
+- `tools/simulation-worker-check.mjs --days 8 --views true`: full native source, worker/reference canonical graph and RNG parity, eight-day save/replay plus eight-day continuation, inspectors/accounts/actors/economic overlay output parity.
+- `tools/simulation-worker-play-check.mjs`: owned Chrome profile and local frozen source; drawn boot, ruler/tax controls, inspectors, nine overlays, Reel/pause/normal/life transitions, delayed publication acknowledgement, save/reload/camera/continuation, campaign end and local profile persistence. Console errors and worker faults fail the check.
+
+Validated production HTML SHA-256: `9b8cc31045e0be212430d9f06e71df0695d1a2612b96f08dbb56540ef2125f93`. Local evidence remains under `/tmp`, outside the deployed repository.
+
+- Broad regression suite: 1,013/1,013, including display-delivery ordering and valuation-cache isolation; the separately run full-source simulation boundary test also passed.
+- Native seed 1001: full graph/RNG/save/replay/continuation and view-output parity passed (`/tmp/furlong-worker-final-native-20261005-query`). This predecessor snapshot differed only in transport error notification. Eight-day worker/reference timings were 362/366 ms; maximum worker-page heartbeat interval was 19 ms.
+- Native player seed 287970763/fate 370450810: final-source full graph/RNG/save/replay/continuation and view-output parity passed (`/tmp/furlong-worker-final-player-native-20261005`). Eight-day worker/reference timings were 512/508 ms; worker-page heartbeat maximum was 18 ms.
+- Drawn Chrome: `/tmp/furlong-worker-play-1791269827192/results.json`, production baseline matching the SHA above. The instrumented snapshot has a separate hash because it adds test-only audit hooks. Nine overlays, ruler tax controls, 103-day Reel advance, zero ticks after pause, day-126 exact save replay, day-129 continuation, campaign end and local profile persistence passed without runtime/console errors or worker faults.
+- Independent 128-day no-UI versus UI-read comparison matched RNG, population, people and buildings after fixing valuation cache admission.
+
+Worker ownership establishes independent execution and ordering. Native timings show no tick CPU reduction; drawn frame timing under concurrent test load is not a performance measure. Century throughput and production GPU kernels remain to be validated.
 
 <<<FILE docs/SIM_DEBT.md>>>
 # Simulation debt
@@ -21087,6 +21376,32 @@ A foreign ship cancelling a purchased load below its one-unit departure minimum 
 When no eligible household head can buy necessities, provision may use the lord's purse for an orphan household. The payer and recipient remain explicit: the lord's completed pending purchase transfers title to the recipient before its pantry is credited, while custody stays at the seller's location. A settlement with no household recipient retains the institutional account as recipient. This applies to every provisioned good, including timber, cloth and tools.
 
 Paid pending custody is excluded from ordinary held/sale matching and from physical surplus available for reconciliation to offer again. Only explicit completion, gift, purchased consumption or purchased cargo dispatch releases protection for the affected units. Daily food top-ups transfer the fallback lord purchaser's pending lots to the final household before crediting its pantry. Native merchant dispatch selects newly purchased pending lots, preserving previously held stock; the generic cargo helper retains its existing behavior. Reconciliation sums non-transit pending quantities by physical good, adding one traversal of that good's lot index per call.
+# Road access and completed construction
+
+Storage commissioning now requires a short, dry connector from the building
+door to an accessible street. The survey uses the existing street-segment hash,
+checks the proposed footprint and obstacles, and limits the connector to 32 map
+units. It creates no building, road, inventory index, or journal record. Live
+placement repeats that bounded survey and installs its access lane once.
+
+Completed projects awaiting placement no longer pay more labor, increment their
+working days, or emit repeated progress records. A failed placement can retry
+when its site becomes accessible without town-wide detour searches. Daily
+unfinished-site checks retain the inexpensive footprint check.
+
+At seed/fate 1001, sea, 12 settlements, two native Chrome years, year-two elapsed
+processing changed from 210,726 ms to 14,917 ms (585.35 to 41.44 ms/day).
+`tickProjects` changed from 185,123 ms to 55 ms. Both runs had zero simulation
+errors and balanced money totals. Histories differ because siting and payment
+behavior were corrected; this is a matched initial workload, not state parity
+or a general performance guarantee. Source snapshots and profiles are in
+`/tmp/legacy-search-baseline-patched` and `/tmp/storage-frontage-native`.
+
+Validation: 87 focused tests passed, including the legacy-search regression
+guard, construction/material conservation, failed-completion retries, road
+surveys, and route batching. Native rendering at seed 287970763 passed mill,
+quay, grange access, and paid-crossing checks in
+`/tmp/storage-frontage-render/checks.json`.
 
 <<<FILE docs/UI-INTEGRATION.md>>>
 # UI integration and service access
