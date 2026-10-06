@@ -8779,7 +8779,7 @@ function agentPos(t){
 }
 
 /* ---------------- input ---------------------------------------------------- */
-let placeMode=null, hoverPick=null;
+let placeMode=null, hoverPick=null, placeHint='';
 function markManual(){cam.manualUntil=perfNow()+30;if(cam.mode==='director')cam.mode='free';}
 function perfNow(){return performance.now()/1000;}
 function initInput(){
@@ -9093,7 +9093,7 @@ function setPlaceHint(hint){
   const text=document.getElementById('placetext');if(text)text.textContent=String(hint||'Click the map to place').replace(/ — Esc to (cancel|stop)/g,'').replace(/click/gi,uiLayout()==='phone'||matchMedia('(pointer:coarse)').matches?'tap':'click');
 }
 function setPlaceMode(mode,arg,hint){
-  placeMode=mode;placeArg=arg??null;if(MODEL_ONLY)return;document.body.classList.toggle('placing',!!mode);
+  placeMode=mode;placeArg=arg??null;placeHint=hint||'';if(MODEL_ONLY)return;document.body.classList.toggle('placing',!!mode);
   if(mode)hideBeat();
   const ph=document.getElementById('placehint');
   ph.innerHTML='<span id="placetext" role="status"></span><button id="placecancel">Cancel</button>';
@@ -9793,7 +9793,7 @@ function workerUIQuery(payload={}){
     const e=ADV.byName(payload.name);if(!e)return{error:'nothing by that name'};
     const card=workerInspectorQuery(e.code,false),plain=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p\s*>/gi,'\n').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim();
     const links=[],rx=/<a\b([^>]*)>([\s\S]*?)<\/a>/gi;let m;while((m=rx.exec(card.body))&&links.length<60){const code=(m[1].match(/\bdata-nm="([^"]*)"/)||[])[1]||(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1]&&'p'+(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1];if(code){const name=plain(m[2]);if(name&&name!=='Open the card')links.push({name,code});}}
-    return{code:e.code,card:(plain(card.title)+' — '+plain(card.sub)+'\n'+plain(card.body)).slice(0,4000),links,tools:[]};
+    return{code:e.code,at:card.anchor&&{x:Math.round(card.anchor.x),z:Math.round(card.anchor.z)},card:(plain(card.title)+' — '+plain(card.sub)+'\n'+plain(card.body)).slice(0,4000),links,tools:[]};
   }
   throw Error('This view has not migrated to the worker');
 }
@@ -17064,7 +17064,7 @@ function workerQuery(key,payload,install){
 let ADV_PENDING=null;
 function workerSubmitCommand(entry){const run=workerSubmitNow(entry);ADV_PENDING?.push(run);return run;}
 async function workerSubmitNow(entry){
-  try{const reply=await BACKGROUND.request('command',entry);await workerRefreshLandscape();refreshCrownPanel(true);refreshInspect();renderPetition();return reply;}
+  try{const reply=await BACKGROUND.request('command',entry);if(entry.k==='place'&&reply?.place&&!placeMode)setPlaceMode(reply.place.mode,reply.place.arg,reply.place.hint);await workerRefreshLandscape();refreshCrownPanel(true);refreshInspect();renderPetition();return reply;}
   catch(error){storageFaultNotice(String(error.message||error));return{accepted:false,error:String(error.message||error)};}
 }
 function workerSetSpeed(index){const run=workerSetSpeedNow(index);ADV_PENDING?.push(run);return run;}
@@ -17410,7 +17410,8 @@ function simulationWorkerModel(){return{
   validate(command){
     const prepared=workerCommandValidate(command);if(prepared.target==='main')throw Error('Command requires the main-thread interface');return prepared;
   },
-  command(command,prepared){const n0=allLines.length;workerCommandApply(command,prepared||workerCommandValidate(command));return{news:allLines.slice(n0)};}, // the reply carries the annals the command wrote
+  command(command,prepared){const n0=allLines.length;workerCommandApply(command,prepared||workerCommandValidate(command));const r={news:allLines.slice(n0)}; // the reply carries the annals the command wrote,
+    if(placeMode){r.place={mode:placeMode,arg:serializePlaceArg(placeMode,placeArg),hint:placeHint};setPlaceMode(null);}return r;}, // and a second place the first one asked for (a road's far end)
   view(kind,payload={}){
     const prior=QUERY_LAND_VALUES;QUERY_LAND_VALUES=['inspect','ui','plan-quote','overlay','actors'].includes(kind)?new Map():prior;
     try{
@@ -17829,11 +17830,12 @@ const ADV={muted:false,
     {name:'game:inspect',kind:'verb',label:"Fly to a place, house or person and open its card (then discover('card') lists the card's own buttons)",args:{name:'a name as game:find returns it'}},
     {name:'game:chronicle',kind:'verb',label:'The latest entries of the annals',args:{n:'how many (default 20)'}},
     {name:'game:persona',kind:'verb',label:'Who the advisor is in this game: the ruler’s closest confidant when the player rules, else the game master'},
-    {name:'game:place',kind:'verb',label:'Finish a tool that asked for a place on the map (marked place:true)',args:{at:'a place name, or {x,z}'}},
+    {name:'game:place',kind:'verb',label:'Finish a tool that asked for a place on the map (marked place:true), as a click would; {cancel:true} gives it up',args:{at:'a place name, or {x,z} (game:find and game:inspect give points)',target:'optional code of what is clicked: a host a12 to march on, a town s3, a building building:si:x:z:arch, a wall wall:si:key',cancel:'true to cancel'}},
+    {name:'game:plan',kind:'verb',label:'Plan works with the brush (when you rule): the surveyors’ price for a stroke, and with commit:true the commission',args:{kind:'street, square, wall, stopup or raze',points:'[{x,z},…]: a line, or a loop for a square or wall',commit:'true to commission it'}},
     {name:'game:advise',kind:'verb',label:'Whether the player wants counsel unasked (the player can silence the advisor in the Advisor dialog)'}],
-  entities(){const E=[];W.settlements.forEach((s,i)=>E.push({name:s.name,kind:s.kind,code:'s'+i}));W.houses.forEach((h,i)=>{if(!h.extinct)E.push({name:h.name,kind:'house',code:'h'+i});});
+  entities(){const E=[],at=p=>p&&{x:Math.round(p.x),z:Math.round(p.z)};W.settlements.forEach((s,i)=>E.push({name:s.name,kind:s.kind,code:'s'+i,at:at(s.pos)}));W.houses.forEach((h,i)=>{if(!h.extinct)E.push({name:h.name,kind:'house',code:'h'+i});});
     for(const n of W.notables||[])if(n.alive)E.push({name:fullTitle(n),kind:'person',code:'n'+n.id});
-    for(const a of W.armies)if(!a.gone)E.push({name:a.name,kind:'host',code:'a'+a.id});return E;},
+    for(const a of W.armies)if(!a.gone){let p=null;try{p=at(armySimPos(a));}catch(_){}E.push({name:a.name,kind:'host',code:'a'+a.id,at:p});}return E;},
   byName(name){const t=String(name||'').toLowerCase(),E=ADV.entities();return E.find(e=>e.name.toLowerCase()===t)||E.find(e=>e.name.toLowerCase().includes(t))||null;},
   safe(v,depth){depth=depth??2;if(v==null||typeof v==='number'||typeof v==='boolean')return typeof v==='number'?Math.round(v*100)/100:v;if(typeof v==='string')return v.slice(0,300);
     if(typeof v==='function'||v.isObject3D||v.isMaterial||v.isTexture||v instanceof Float32Array||v instanceof Uint8Array)return undefined;
@@ -17905,17 +17907,56 @@ const ADV={muted:false,
     if(v==='chronicle')return ADV.view('annals',{count:a.n});
     if(v==='advise')return{muted:ADV.muted};
     if(v==='inspect'){const r=await ADV.view('advisor-inspect',{name:a.name});if(r&&!r.error){await goName(r.code);r.tools=(await ADV.discover('card')).tools;}return r;}
-    if(v==='place'){
-      if(!placeMode)return{error:'nothing is waiting for a place'};
-      let at=a.at;
-      if(typeof at==='string'){const matches=await ADV.view('advisor-find',{name:at}),q=at.toLowerCase(),e=matches.find(x=>x.name.toLowerCase()===q)||matches.find(x=>x.name.toLowerCase().includes(q));
-        if(!e||e.code[0]!=='s')return{error:'no such place: '+at};const s=W.settlements[+e.code.slice(1)];if(!s)return{error:'that place has no current map position'};at={x:s.pos.x,z:s.pos.z};}
-      if(!at||!Number.isFinite(+at.x)||!Number.isFinite(+at.z))return{error:'give a place name or finite {x,z} coordinates'};
-      const mode=placeMode,arg=placeArg,p={x:+at.x,y:0,z:+at.z},P=[],n0=allLines.length;setPlaceMode(null); // as a click on the map: the mode is spent
-      ADV_PENDING=P;try{if(mode!=='storage')jot({k:'place',m:mode,a:serializePlaceArg(mode,arg),x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:null});doPlace(mode,arg,p,null);}finally{ADV_PENDING=null;}
-      const replies=(await Promise.all(P)).filter(r=>r&&typeof r==='object'),bad=replies.find(r=>r.accepted===false);
-      return bad?{error:bad.error||'the place could not be made'}:{ok:true,done:mode,news:BACKGROUND?replies.flatMap(x=>x.news||[]):allLines.slice(n0)};}
+    if(v==='place')return ADV.placeAt(a);
+    if(v==='plan')return ADV.plan(a);
     return{error:'unknown verb'};},
+  // Run what a press or a pick sets going, and gather the worker's replies to it and the annals they wrote.
+  async settle(fn){const P=[],n0=allLines.length;ADV_PENDING=P;try{fn(P);}finally{ADV_PENDING=null;}
+    const replies=(await Promise.all(P.map(p=>Promise.resolve(p).catch(e=>({accepted:false,error:String(e&&e.message||e)}))))).filter(r=>r&&typeof r==='object');
+    return{replies,bad:replies.find(r=>r.accepted===false),news:BACKGROUND?replies.flatMap(x=>x.news||[]):allLines.slice(n0)};},
+  // A map pick the agent cannot click, given as the click would give it: a town s3, a host a12, a building building:si:x:z:arch,
+  // a wall wall:si:key (with the point on it), each with the point it stands at.
+  pickOf(code,at){code=String(code||'');let m;
+    if(m=code.match(/^s(\d+)$/)){const s=W.settlements[+m[1]];return s?{type:'settlement',si:+m[1],at:{x:s.pos.x,z:s.pos.z}}:null;}
+    if(m=code.match(/^a(\d+)$/)){const x=(W.armies||[]).find(y=>y.id===+m[1]&&!y.gone);if(!x)return null;const p=armyDisplayPos(x);return{type:'army',id:x.id,at:p?{x:p.x,z:p.z}:null};}
+    if(m=code.match(/^building:(\d+):(-?[\d.]+):(-?[\d.]+):([a-z][a-z0-9_-]*)$/))return W.settlements[+m[1]]?{type:'building',si:+m[1],x:+m[2],z:+m[3],arch:m[4],at:{x:+m[2],z:+m[3]}}:null;
+    if(m=code.match(/^wall:(\d+):([a-z]+)$/)){const s=W.settlements[+m[1]];if(!s)return null;let angle=null,p=at;
+      try{const c=fortCircuits(s).find(c=>fortCircuitKey(s,c)===m[2]),C=c&&fortCenter(c),n=c?.wallRad?.length;if(C&&n){p=p||{x:C.x+(c.wallR||40),z:C.z};const k=Math.round(((Math.atan2(p.z-C.z,p.x-C.x)/(Math.PI*2)+1)%1)*n)%n;angle=k/n*Math.PI*2;}}catch(_){}
+      return{type:'wall',si:+m[1],circuit:m[2],angle,at:p||{x:s.pos.x,z:s.pos.z}};}
+    return null;},
+  async placeAt(a){
+    if(a.cancel){const was=placeMode;if(was)setPlaceMode(null);return{ok:true,cancelled:was||null};}
+    if(!placeMode)return{error:'nothing is waiting for a place'};
+    const mode=placeMode,arg=placeArg;let at=a.at,pick=null;
+    if(a.target!=null){pick=ADV.pickOf(a.target,at&&typeof at==='object'?at:null);if(!pick)return{error:'no such target now: '+a.target};}
+    if(typeof at==='string'){const matches=await ADV.view('advisor-find',{name:at}),q=at.toLowerCase(),e=matches.find(x=>x.name.toLowerCase()===q)||matches.find(x=>x.name.toLowerCase().includes(q));
+      if(!e||e.code[0]!=='s')return{error:'no such place: '+at};const s=W.settlements[+e.code.slice(1)];if(!s)return{error:'that place has no current map position'};at={x:s.pos.x,z:s.pos.z};}
+    if(at==null&&pick)at=pick.at;
+    if(!at||!Number.isFinite(+at.x)||!Number.isFinite(+at.z))return{error:'give at: a place name or finite {x,z}, or target: a code'};
+    const p={x:+at.x,y:0,z:+at.z};let pk=null;
+    if(mode==='order'&&pick?.type==='army'&&pick.id!==arg?.id)pk=pick.id; // pointed at another host: march on it
+    if(mode==='objective'){const kind=arg?.kind,si=pick?.si??nearestSettlementIdx(p.x,p.z);
+      if(kind==='destroy'){if(pick?.type!=='building')return{error:'destroy wants target: a building code (building:si:x:z:arch), as a card’s links give it'};pk={type:'building',si,arch:pick.arch,x:pick.x,z:pick.z};}
+      else if(kind==='demolish'){if(pick?.type!=='wall'||!Number.isFinite(pick.angle))return{error:'demolish wants target: a wall code (wall:si:town|outer|ward|bailey|hill|motte) and at: a point on that wall'};pk={type:'wall',si,circuit:pick.circuit,angle:pick.angle};}
+      else pk={type:'settlement',si};}
+    setPlaceMode(null); // as a click on the map: the mode is spent, whatever comes of it
+    const r=await ADV.settle(P=>{if(mode==='storage'){P.push(storagePreview(arg.si,arg.arch,p.x,p.z));return;}jot({k:'place',m:mode,a:serializePlaceArg(mode,arg),x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk});doPlace(mode,arg,p,pk);});
+    if(r.bad)return{error:r.bad.error||'the place could not be made'};
+    const out={ok:true,done:mode,at:{x:+p.x.toFixed(2),z:+p.z.toFixed(2)},news:r.news};if(pk!=null)out.target=pk;
+    if(placeMode)out.needsPlace='another place is wanted ('+placeMode+'): '+(document.getElementById('placetext')?.textContent||'');return out;},
+  // The plan brush without a drag: points as a stroke (a line, or a loop for a square or wall), drawn out as the brush samples
+  // it, priced by the surveyors, and commissioned only with {commit:true}.
+  stroke(P){if(!Array.isArray(P)||P.length<2||P.length>2000||!P.every(q=>q&&Number.isFinite(+q.x)&&Number.isFinite(+q.z)))return null;const out=[],r=v=>+(+v).toFixed(2);
+    for(let i=0;i<P.length-1;i++){const a=P[i],b=P[i+1],n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/3));for(let k=0;k<n;k++)out.push({x:r(+a.x+(b.x-a.x)*k/n),z:r(+a.z+(b.z-a.z)*k/n)});}
+    out.push({x:r(P.at(-1).x),z:r(P.at(-1).z)});return out.length>=3&&out.length<=5000?out:null;},
+  async plan(a){const kinds=Object.keys(PLANB);if(!kinds.includes(a.kind))return{error:'kind is one of '+kinds.join(', ')};
+    if(!sovOn())return{error:'only a ruler plans works: take the crown or rule a house first'};
+    const st=ADV.stroke(a.points);if(!st)return{error:'give points: [{x,z},…], at least two, within a town’s reach'};
+    const payer=plyH(),D=BACKGROUND?null:planDraft(a.kind,st,payer);
+    const quote=BACKGROUND?await workerPlanQuote({kind:a.kind,st,p:payer}).catch(e=>({ok:false,why:String(e.message||e)})):D.ok?{ok:true,kind:a.kind,title:D.title,total:Math.round(D.total),first:Math.round(D.first),days:Math.round(D.days),lines:D.lines}:{ok:false,kind:a.kind,why:D.why};
+    if(!quote.ok||a.commit!==true)return quote.ok?{quote,next:'call again with the same points and {commit:true} to commission it'}:{quote};
+    const r=await ADV.settle(()=>{if(BACKGROUND)workerSubmitCommand({k:'plan',kind:a.kind,st,p:payer});else{jot({k:'plan',kind:a.kind,st,p:payer});planCommit(D,payer);}});
+    return r.bad?{error:r.bad.error||'the plan was refused',quote}:{ok:true,quote,news:r.news};},
   async discover(scope){const S=scope?[ADV.scopeName(scope)]:ADV.scopes(),out={scopes:ADV.scopes(),tools:[]};
     for(const sc of S)for(const d of await ADV.controls(sc)){const{_el,_act,...x}=d;out.tools.push(x);}
     if(!scope)out.tools.push(...ADV.verbs);out.muted=ADV.muted;return out;},
@@ -18055,7 +18096,7 @@ state:'none',ready:null,
       {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
       {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
       {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "menu", "crown", "rates", "acts", "over", "world", "annals", and while open "card", "petition", "plan", "context", "info", "event", "legend", "place", "dialog"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
-      {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); answers with the game’s own reply and the annals the press wrote. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
+      {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: a place name or {x,z}, target: a code such as a host a12} to finish an act that wants a place ({cancel:true} gives it up), or "game:plan" {kind, points, commit} for the plan brush. Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); answers with the game’s own reply and the annals the press wrote. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   async brief(){let P,st,ch;if(BACKGROUND){[P,st,ch]=await Promise.all([BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}),BACKGROUND.request('view',{kind:'ui',panel:'advisor-state',path:'realm'}),BACKGROUND.request('view',{kind:'ui',panel:'annals',count:6})]);ch=ch.join('\n');}else{P=ADV.persona();st=ADV.state('realm');ch=allLines.slice(-6).join('\n');}
     return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
 Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to. Write in Markdown. Whenever you name a place, house, lord, host or any of the folk, make it a link the player can click to go there: [[Name]] with the name exactly as the tools give it, or [words](game:CODE) with the code the tools give (s… places, h… houses, n… lords and ladies, a… hosts, p… the folk; inspect lists a card's links with their codes).${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}

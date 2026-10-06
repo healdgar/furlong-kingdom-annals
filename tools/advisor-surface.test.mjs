@@ -58,7 +58,7 @@ function page({tab='crown'}={}){
   const ctx={drawerTab:tab,build(t){dbody.childNodes=[];for(const k of builds[t]())dbody.append(k);ctx.drawerTab=t;}};
   ctx.build(tab);
   const document={getElementById:byId,body:Object.assign(body,{matches:()=>false}),querySelectorAll:sel=>body.querySelectorAll(sel)};
-  const g={document,window:{},W:{settlements:[],houses:[]},inspTarget:{type:'settlement'},contextUI:{ready:true,kind:'insp',expanded:false},placeMode:null,planUI:null,BACKGROUND:null,allLines:[],ADV_PENDING:null,
+  const g={document,window:{},W:{settlements:[],houses:[]},inspTarget:{type:'settlement'},contextUI:{ready:true,kind:'insp',expanded:false},placeMode:null,placeArg:null,planUI:null,BACKGROUND:null,allLines:[],ADV_PENDING:null,
     selectTab(t){ctx.build(t);},contextSync(){},refreshCrownPanel(){},setInspectorView(v){g.view=v;},contextExpand(on){g.expanded=on;},contextDismiss(){g.dismissed=true;},Event:class{constructor(type){this.type=type;}},setTimeout};
   Object.defineProperty(g,'drawerTab',{get:()=>ctx.drawerTab,set:v=>{ctx.drawerTab=v;}});
   for(const b of [...document.querySelectorAll('button')])b.matches=b.matches.bind(b);
@@ -127,4 +127,24 @@ test('a press that ends the game needs the player’s word; prompts are answered
   const r=await ADV.execute('world:reforge',{});assert.match(r.error,/confirm:true/);
   const menuexport=byId('menuexport');menuexport.onclick=()=>g.window.prompt('Share this realm:','file:///x#s=1');
   const x=await ADV.execute('menu:export',{});assert.deepEqual([...x.asked],['Share this realm:']);assert.equal(typeof g.window.prompt,'undefined');
+});
+
+test('game:place gives the pick as a click would, spends the mode, and can be cancelled',async()=>{
+  const{ADV,g}=page();const sent=[];g.W.settlements=[{name:'Aldwick',pos:{x:0,z:0}},{name:'Ashby',pos:{x:500,z:0}}];g.W.armies=[{id:7,name:'The Red Host',house:0},{id:9,name:'The Vane levy',house:1}];
+  g.setPlaceMode=(m,arg)=>{g.placeMode=m;g.placeArg=arg??null;};g.jot=()=>{};g.serializePlaceArg=(m,arg)=>arg&&arg.id!=null?{id:arg.id}:arg;g.armyDisplayPos=a=>({x:a.id*10,z:1});g.nearestSettlementIdx=x=>x>250?1:0;
+  g.doPlace=(mode,arg,p,pk)=>{sent.push({mode,p:{x:p.x,z:p.z},pk});g.ADV_PENDING?.push(Promise.resolve({day:3,news:['[Spring 4, AD 850] Fire!']}));};
+  g.placeMode='fire';
+  const r=await ADV.execute('game:place',{at:{x:500,z:3}});assert.equal(r.ok,true);assert.equal(g.placeMode,null,'the mode is spent');
+  assert.match((await ADV.execute('game:place',{at:{x:500,z:3}})).error,/nothing is waiting/);assert.equal(sent.length,1,'one fire, not two');
+  g.placeMode='order';g.placeArg=g.W.armies[0];await ADV.execute('game:place',{target:'a9'});
+  assert.deepEqual(JSON.parse(JSON.stringify(sent[1])),{mode:'order',p:{x:90,z:1},pk:9},'a host is marched on by its id, at its point');
+  g.placeMode='objective';g.placeArg={id:7,kind:'capture'};await ADV.execute('game:place',{at:{x:480,z:0}});assert.deepEqual({...sent[2].pk},{type:'settlement',si:1});
+  g.placeMode='objective';g.placeArg={id:7,kind:'destroy'};assert.match((await ADV.execute('game:place',{at:{x:480,z:0}})).error,/building code/);assert.equal(g.placeMode,'objective','a refused pick leaves the question open');
+  const c=await ADV.execute('game:place',{cancel:true});assert.equal(c.cancelled,'objective');assert.equal(g.placeMode,null);
+});
+
+test('the plan brush without a drag: points drawn out as the brush samples them, priced first, commissioned on request',()=>{
+  const{ADV}=page(),st=ADV.stroke([{x:0,z:0},{x:30,z:0}]);
+  assert.equal(st.length,11);assert.deepEqual({...st[1]},{x:3,z:0});assert.deepEqual({...st.at(-1)},{x:30,z:0});
+  assert.equal(ADV.stroke([{x:0,z:0}]),null);assert.equal(ADV.stroke([{x:0,z:'a'},{x:1,z:1}]),null);
 });
