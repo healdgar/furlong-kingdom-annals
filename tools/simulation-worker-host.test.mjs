@@ -21,7 +21,7 @@ function hostFixture(overrides={},options={}){
     async wait(){this.log.push(['wait',this.d]);await overrides.wait?.(this);},
     tick(){if(overrides.tick)return overrides.tick(this);this.log.push(['tick',this.d+1]);this.d++;c.setNow(c.now()+10);return true;},
     validate(x){if(x?.bad)throw Error('invalid command');},command(x){this.log.push(['command',x.name]);overrides.command?.(this,x);},
-    view(kind){if(overrides.view) return overrides.view(this,kind);return{day:this.d,kind};},
+    view(kind,payload){if(overrides.view) return overrides.view(this,kind,payload);return{day:this.d,kind};},
     async save(name){this.log.push(['save',this.d,name]);return{day:this.d,name};},async flush(){this.log.push(['flush',this.d]);return{day:this.d};}};
   if(overrides.urgent)model.urgent=()=>overrides.urgent(model);if(overrides.clock)model.clock=()=>overrides.clock(model);
   let h;const send=m=>{out.push(m);options.onSend?.(m,x=>h.receive(x));};
@@ -150,6 +150,22 @@ test('leaving Reel does not carry elapsed-time backlog into ordinary speed',asyn
   f.h.receive(msg(3,'speed',{index:4}));await runOne(f);assert.equal(f.h.accum,0);
   await runOne(f);assert.equal(f.model.d,3); // the Reel ticks did not bank 30-days/sec time
   f.h.receive(msg(4,'pause'));await settle(f);assert.equal(reply(f,4).value.day,3);
+});
+
+test('a new pace or a pause keeps the part-day already run, and every reading carries it to its instant',async()=>{
+  const f=hostFixture({view(m,kind,payload){return{day:m.d,kind,fraction:payload?.fraction};},clock(m){return{day:m.d};}},{budget:0});await initialize(f);
+  f.h.receive(msg(2,'watch',{everyDays:1}));await settle(f);
+  f.h.receive(msg(3,'speed',{index:1}));await runOne(f);f.c.setNow(f.c.now()+1000); // half a day earned at Normal, not yet banked
+  assert.equal(f.h.part(),0.5);
+  f.h.receive(msg(4,'speed',{index:2}));await runOne(f);assert.equal(f.h.accum,0.5,'a new pace keeps it');assert.equal(f.model.d,0);
+  f.c.setNow(f.c.now()+100);f.h.receive(msg(5,'pause'));await runOne(f);assert.ok(Math.abs(f.h.accum-0.7)<1e-9,'so does a pause');
+  f.c.setNow(f.c.now()+5000);f.h.receive(msg(6,'view',{kind:'actors'}));await runOne(f);assert.ok(Math.abs(reply(f,6).value.fraction-0.7)<1e-9,'paused, the reading stands still');
+  f.h.receive(msg(7,'speed',{index:1}));await runOne(f);f.c.setNow(f.c.now()+200);f.h.receive(msg(8,'view',{kind:'actors'}));await runOne(f);
+  assert.ok(Math.abs(reply(f,8).value.fraction-0.8)<1e-9,'a reading counts the time since the pump last banked it');
+  f.c.setNow(f.c.now()+400);await runOne(f);assert.equal(f.model.d,1,'the resumed day ends 0.6 s after the resume, not 2 s');
+  const clock=f.out.filter(x=>x.type==='clock').at(-1);assert.equal(clock.value.day,1);assert.ok(Math.abs(clock.value.frac-0.005)<1e-9,'the clock message counts the tick it waited on');
+  f.h.receive(msg(9,'speed',{index:5}));await runOne(f);f.h.receive(msg(10,'speed',{index:1}));await runOne(f);assert.equal(f.h.accum,0,'Reel banks no part-day');
+  f.h.receive(msg(11,'pause'));await settle(f);
 });
 
 test('init, command and tick faults stop progress while reads remain available',async t=>{

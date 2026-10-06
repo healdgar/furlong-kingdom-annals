@@ -8023,7 +8023,7 @@ function stepGrazingFlock(fl,dt,valid){ // visual state only: independent rests,
 }
 function animateHerds(force){ // keep the visual flock clock still when the simulation is paused
   if(!G.flocks||!G.herdMesh)return;if(!force&&cam.cur.dist>1600)return;
-  const now=displayDay(),vt=performance.now()/1000,prev=G._herdTime,dt=prev&&now>prev.game?Math.min(0.25,Math.max(0,vt-prev.real),(now-prev.game)*86400):0;G._herdTime={game:now,real:vt};
+  const now=displayDay(),vt=performance.now()/1000,prev=G._herdTime,run=BACKGROUND?SPEEDS[speedIdx]>0:now>prev?.game,dt=prev&&run?Math.min(0.25,Math.max(0,vt-prev.real),BACKGROUND?1:(now-prev.game)*86400):0;G._herdTime={game:now,real:vt}; // in worker mode the beasts graze on while the realm runs
   const M=G.herdMesh,cnt={sheep:0,cattle:0,horses:0,swine:0},pos=[];
   for(const fl of G.flocks){const m=M[fl.k],D=HERDDRAW[fl.k];
     stepGrazingFlock(fl,dt,(x,z)=>(!fl.P||inPolyXZ(fl.P,x,z))&&grazeOK(x,z));
@@ -8287,8 +8287,8 @@ function buildAgents(){
     for(const m of[G.pennonPole,G.pennonFlag]){allocColors(m);m.frustumCulled=false;m.count=0;scene.add(m);}}
   // townsfolk walking the streets
   const cp=personParts('citizen');
-  G.citizens=new THREE.InstancedMesh(cp.tint,agentMat(),140);
-  G.citKit=new THREE.InstancedMesh(cp.fixed,agentMat(),140);
+  G.citizens=new THREE.InstancedMesh(cp.tint,agentMat(),200); // room for the 160 townsfolk drawn and an outlaw camp's men
+  G.citKit=new THREE.InstancedMesh(cp.fixed,agentMat(),200);
   for(const m of[G.citizens,G.citKit]){allocColors(m);m.frustumCulled=false;m.count=0;scene.add(m);}
   G.citList=[];
   // dragon: body, and two bat wings hinged at the shoulders
@@ -8605,8 +8605,8 @@ function buildDynamic(){
   G.cairns=[];
 }
 /* Disposable projection helpers. */
-function displayFrac(){const f=G.clockFrac??W.clock.frac??0;return Number.isFinite(f)?clamp(f,0,0.999):0;}
-function displayDay(){return day()+displayFrac();}
+function displayFrac(){if(BACKGROUND&&G.pres)return Math.min(0.999,displayDay()-day());const f=G.clockFrac??W.clock.frac??0;return Number.isFinite(f)?clamp(f,0,0.999):0;}
+function displayDay(){return BACKGROUND&&G.pres?Math.max(day(),G.pres.v):day()+displayFrac();} // in worker mode, the screen's own clock (presStep)
 function createArmyFlag(a){
   const tex=new THREE.CanvasTexture(makeSigil(W.houses[a.house].sigilHue,W.houses[a.house].charge));
   const bn=new THREE.Mesh(new THREE.PlaneGeometry(14,17),new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}));
@@ -9772,7 +9772,7 @@ function showInspect(pk){
   if(opening)sheet('insp');el.style.display='flex';document.body.classList.add('inspecting');document.getElementById('inspx').textContent=inspectReturn?'Back':'Close';document.getElementById('inspx').setAttribute('aria-label',inspectReturn?'Back to realm controls':'Close inspector');
   if(changed){inspectorView='details';contextUI.side=null;contextUI.scroll.delete('insp');document.getElementById('contextcontent').scrollTop=0;}setInspectorView(inspectorView);contextShow('insp');scheduleLayout();
 }
-function followInspector(pk){if(BACKGROUND&&pk._anchor&&['notable','person','tree'].includes(pk.type)){flyTo(pk._anchor.x,pk._anchor.z,90);return;}
+function followInspector(pk){if(BACKGROUND&&pk._anchor&&['notable','person','tree'].includes(pk.type)){flyTo(pk._anchor.x,pk._anchor.z,90);if(pk.type==='person'&&pk.p?.id!=null)cam.follow={pid:pk.p.id,pos:{x:pk._anchor.x,z:pk._anchor.z,y:hAt(pk._anchor.x,pk._anchor.z)}};return;}
   if(pk.type==='settlement'){const s=pk.s;flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340);return;}
   if(pk.type==='churchyard'){flyTo(pk.yard.x,pk.yard.z,100);return;}
   if(pk.type==='building'){flyTo(pk.b.x,pk.b.z,60);return;}
@@ -16123,6 +16123,7 @@ function animate(t){
   const now=t/1000;
   const rawDt=lastT?now-lastT:0.016; // the true frame interval, for the performance monitor
   let dt=Math.min(0.1,now-lastT||0.016);lastT=now;
+  if(BACKGROUND&&W?.clock)presStep(); // the screen's clock runs on between the worker's readings
   const tb=performance.now(),ticks=BACKGROUND?0:advanceSimulation(dt,tb),tSim=performance.now();
   if(SPEEDS[speedIdx]>0&&!BACKGROUND)G.clockFrac=clamp(simAccum,0,0.999); // queued whole days are not interpolation
   // cinematic sun: a full day/night cycle every ~150 real seconds while running,
@@ -16817,6 +16818,7 @@ function workerRenderFinite(n,fallback=0){return Number.isFinite(n)?n:fallback;}
 function workerRenderPoint(p){return p&&Number.isFinite(p.x)&&Number.isFinite(p.z)?{x:p.x,z:p.z}:null;}
 function workerRenderPath(path){return Array.isArray(path)?path.map(workerRenderPoint).filter(Boolean):[];}
 
+const WALKER_CARRY=['x','z','ry','t','state','until','route','ri','out','walking','goal','doing','via','dayDone','chDay','wedW','visDay','visitOf','tavDay','mktDay','nextChore','errWhat']; // a walker's day so far
 function workerRenderCitizens(si,options={}){
   const s=W.settlements?.[si];if(!s||!Array.isArray(s.folk))return{si,day:workerRenderFinite(day()),people:[]};
   const focus=workerRenderPoint(options.focus)||workerRenderPoint(s.pos)||{x:0,z:0};
@@ -16840,7 +16842,9 @@ function workerRenderCitizens(si,options={}){
       globalThis.THREE={Color:PlanColor};
     }
     try{
-      if(fresh){const people=townsfolkFor(s);warmWalkers(people);entry={s,signature,people,day:now};scratch.set(si,entry);}
+      if(fresh){const people=townsfolkFor(s),was=entry?.s===s?new Map(entry.people.map(c=>[c.p.id,c])):null,dt=was?Math.max(0,now-workerRenderFinite(entry.day,now))*DAYSEC:0,born=[];
+        for(const c of people){const o=was?.get(c.p.id);if(!o){born.push(c);continue;}for(const k of WALKER_CARRY)if(Object.hasOwn(o,k))c[k]=o[k];stepWalker(c,dt,frac);} // the day turns, the folk walk on: only those new to the plan start from their doors
+        warmWalkers(born);entry={s,signature,people,day:now};scratch.set(si,entry);}
     }finally{
       if(colorDescriptor)Object.defineProperty(globalThis,'THREE',colorDescriptor);else if(typeof THREE!=='undefined'&&THREE?.Color?.name==='PlanColor')delete globalThis.THREE;
     }
@@ -16858,7 +16862,7 @@ function workerRenderCitizens(si,options={}){
         role:p.tr||null,age:workerRenderFinite(ageYrs(p)),si:p.si,
         x:workerRenderFinite(c.x),z:workerRenderFinite(c.z),yaw:workerRenderFinite(c.ry),
         scale:workerRenderFinite(c.sc,1),colour:{hex:Number.isFinite(col?.hex)?col.hex:null,
-          gain:workerRenderFinite(col?.gain,1)},time:workerRenderFinite(c.t),until:workerRenderFinite(c.until),
+          gain:workerRenderFinite(col?.gain,1)},time:workerRenderFinite(c.t),until:workerRenderFinite(c.until),pace:workerRenderFinite(c.pace),
         state:String(c.state||''),goal:String(c.goal||''),doing:String(c.doing||''),out:!!c.out,walking:!!c.walking,
         route,routeIndex:Number.isInteger(c.ri)?c.ri:0,furrow:fw});
     }
@@ -16951,10 +16955,46 @@ function workerRefreshLandscape(){
 // A worker clock between landscape packets: the HUD's date, treasury and people keep pace; geometry waits for its packet.
 // G.workerClock keeps the latest {day,frac,speed,at} for a screen clock that runs on between messages.
 function installClock(c){
+  if(c&&W?.clock&&c.day>=W.clock.day)presAnchor(c.day+(c.frac||0),c.at); // every reading sets the screen's clock, of a new day or not
   if(!c||!W?.clock||c.day<W.clock.day)return;G.workerClock=c;if(c.day===W.clock.day)return;
   W.clock.day=c.day;W.treasury=c.treasury;W.legitimacy=c.legitimacy;W.drought=c.drought;W.plagueActive=c.plagueActive;if(W.weather&&c.weather)W.weather.state=c.weather;
   G.hudPop={day:c.day,pop:c.pop};const now=performance.now();if(now-(G.hudPaintAt??-Infinity)>=100){G.hudPaintAt=now;updateHUD();} // at most ten repaints a second; the frame loop paints the rest
 }
+// SCREEN MOTION BEGIN — the screen's own clock, walkers and flocks between the worker's readings. Display only: nothing here goes back to the worker.
+// Each reading (a day's clock message, an actors reply) says how far the calendar had run at an instant. Between them the
+// screen runs on at the chosen pace and eases toward the latest reading at half to twice that pace; it never runs back,
+// jumps only forward and only when well behind, and runs at most a day and a little past the last day reported.
+const SCREEN_CLOCK={ease:0.5,jump:0.5,slack:0.25}; // seconds of pace: to make up a difference; furthest behind before a jump; a reply's latency the screen may run past the reported day
+function presAnchor(v,at){if(!Number.isFinite(v))return;const now=performance.now(),t=Number.isFinite(at)?Math.min(now,at-performance.timeOrigin):now;if(G.pres&&t<G.pres.at)return; // older than the reading in hand (or than a change of pace): no news
+  G.pres=Object.assign(G.pres||{v},{av:v,at:t});}
+function presStep(now=performance.now()){
+  const d=day(),rate=speedIdx===5?0:SPEEDS[speedIdx]||0;let P=G.pres;
+  if(!P||P.d>d)P=G.pres={v:d,av:d,at:now}; // a new realm or a loaded save starts the clock afresh
+  const dt=Math.max(0,(now-(P.last??now))/1000);P.last=now; // on the same clock as the readings, whatever the frame's own stamp
+  if(P.rate!==rate){P.av+=(now-P.at)/1000*(P.rate||0);P.at=now;P.rate=rate;} // a new pace runs on from where the old one had brought the reading
+  let v=P.v;
+  if(rate>0){const target=P.av+(now-P.at)/1000*rate,lag=(target-v)/rate-dt; // seconds of pace a plain step would leave the screen behind the reading (less than nought: ahead)
+    v=lag>SCREEN_CLOCK.jump?target:v+dt*rate*clamp(1+lag/SCREEN_CLOCK.ease,0.5,2);}
+  else if(speedIdx!==5&&P.av>v)v=P.av; // paused: a reading further on (a bounded advance) is taken at once; Reel holds to the reported day
+  P.d=d;return P.v=Math.max(P.v,d,Math.min(v,d+1+SCREEN_CLOCK.slack*rate));}
+// Where a townsman is m metres of his own walking after (m<0: before) the worker saw him: along his route, or on toward
+// the end of his furrow. What he does at the end of it the next reply tells.
+function walkerAt(c,m){
+  let x=c.x,z=c.z,yaw=c.yaw,i=c.routeIndex|0;const R=c.route;if(!c.walking||!m||!Number.isFinite(m))return{x,z,yaw};
+  if(c.state==='walk'&&R?.length>1){
+    if(m>0)while(m>0&&i<R.length-1){const b=R[i+1],d=Math.hypot(b.x-x,b.z-z);if(d>1e-6)yaw=-Math.atan2(b.z-z,b.x-x)+Math.PI/2;if(d<=m){x=b.x;z=b.z;i++;m-=d;}else{x+=(b.x-x)/d*m;z+=(b.z-z)/d*m;m=0;}}
+    else for(m=-m;m>0&&i>=0;){const a=R[i],d=Math.hypot(a.x-x,a.z-z);if(d<=m){x=a.x;z=a.z;i--;m-=d;}else{x+=(a.x-x)/d*m;z+=(a.z-z)/d*m;m=0;}}}
+  else if(c.state==='work'&&c.furrow?.A&&c.furrow?.B&&m>0){const F=c.furrow,T=F.flip?F.A:F.B,d=Math.hypot(T.x-x,T.z-z),s=Math.min(d,m*(F.run?0.6:0.3)); // up the furrow at the plough's pace, or a child's run
+    if(d>1e-6){yaw=-Math.atan2(T.z-z,T.x-x)+Math.PI/2;x+=(T.x-x)/d*s;z+=(T.z-z)/d*s;}}
+  return{x,z,yaw};}
+// A new plan of the herds keeps each flock still in its field where it has wandered to, beasts and all; only a flock
+// put in another field, or a beast new to the plan, starts from the plan's places.
+function reconcileFlocks(old,plans){
+  const was=new Map((old||[]).map(f=>[f.key,f])),n=new Map(),same=(a,b)=>a===b||!!a&&!!b&&a.length===b.length&&a.every((q,i)=>q.x===b[i].x&&q.z===b[i].z);
+  return plans.map(f=>{const id=f.kind+':'+f.si;n.set(id,(n.get(id)||0)+1);const key=id+':'+n.get(id),P=f.boundary?.length>2?f.boundary:null,o=was.get(key),
+      mem=f.members.map((m,i)=>{const a=o&&same(o.P,P)?o.mem[i]:null;return a?Object.assign(a,{ox:m.ox,oz:m.oz,coat:m.coat,born:m.born}):{...m,ph:m.phase,rot:m.yaw};});
+    return o&&same(o.P,P)?Object.assign(o,{c0:f.center,seed:f.seed,mem}):{key,k:f.kind,si:f.si,P,c0:f.center,cx:f.center.x,cz:f.center.z,seed:f.seed,mem};});}
+// SCREEN MOTION END
 function workerRefreshCourt(force=false){if(drawerTab!=='crown'||!force&&(!drawerVisible()||uiBusy()))return;return workerQuery('court',{kind:'ui',panel:'crown',expanded:contextUI.expanded,section:crownSection,ledgerOpen:G.ledgerOpen},view=>{if(drawerTab==='crown')setHTML(document.getElementById('dbody'),workerHTML(view.html));});}
 function workerRefreshHousePanel(force=false){if(drawerTab!=='world'||!force&&!drawerVisible())return;return workerQuery('houses',{kind:'ui',panel:'house-panel'},view=>{if(drawerTab!=='world')return;setHTML(document.getElementById('housepanel'),workerHTML(view.houses));setHTML(document.getElementById('succpanel'),workerHTML(view.succession));});}
 function workerOpenInfo(kind,town=null,reference=null){
@@ -16979,13 +17019,13 @@ async function workerGoName(code){
 function workerRefreshActors(herds=false){
   if(!BACKGROUND||!cam.cur.focus)return;const focus={x:cam.cur.focus.x,z:cam.cur.focus.z};let si=-1,d=Infinity;for(let i=0;i<W.settlements.length;i++){const s=W.settlements[i],v=dist2d(s.pos.x,s.pos.z,focus.x,focus.z);if(v<d){d=v;si=i;}}
   if(cam.cur.dist>=700||d>(W.settlements[si]?.extentR||W.settlements[si]?.radius||0)+160)si=-1;
-  return workerQuery('actors',{kind:'actors',si,focus,range:Math.max(1800,cam.cur.dist*2.5),herds},packet=>{G.workerCitizens=packet.citizens;G.clockFrac=packet.fraction||0;G.walkDay=packet.day+(packet.fraction||0);if(packet.herds){G.herdsDirty=false;G._hPlan={x:focus.x,z:focus.z,R:packet.herds.range,t:performance.now()};G.flocks=packet.herds.flocks.map(f=>({k:f.kind,si:f.si,P:f.boundary,c0:f.center,cx:f.center.x,cz:f.center.z,seed:f.seed,mem:f.members.map(m=>({...m,ph:m.phase,rot:m.yaw}))}));}});
+  return workerQuery('actors',{kind:'actors',si,focus,range:Math.max(1800,cam.cur.dist*2.5),herds},packet=>{G.workerCitizens=packet.citizens;G.clockFrac=packet.fraction||0;G.walkDay=packet.day+(packet.fraction||0);presAnchor(packet.day+(packet.fraction||0),packet.at);if(packet.herds){G.herdsDirty=false;G._hPlan={x:focus.x,z:focus.z,R:packet.herds.range,t:performance.now()};G.flocks=reconcileFlocks(G.flocks,packet.herds.flocks);}});
 }
 function renderTransportCitizens(nearest,d){
   const now=performance.now(),si=W.settlements.indexOf(nearest),prior=G.workerActorFocus,close=nearest&&cam.cur.dist<700&&d<(nearest.extentR||nearest.radius)+160;
   if((!prior||dist2d(prior.x,prior.z,cam.cur.focus.x,cam.cur.focus.z)>30||now-prior.t>(speedIdx===5?1000:150))&&!BACKGROUND.reads?.has('actors')){G.workerActorFocus={x:cam.cur.focus.x,z:cam.cur.focus.z,t:now};workerRefreshActors();}
-  const list=close&&G.workerCitizens?.si===si?G.workerCitizens.people:[];let k=0;G.citIdx=[];const vs=clamp(cam.cur.dist/220,1,2.6);
-  for(const c of list){if(!c.out||k>=160)continue;const p={id:c.id,si:c.si,sx:c.sex},y=surfY(c.x,c.z)+.28,sc=c.scale*vs;setInst(G.citizens,k,c.x,y,c.z,c.yaw,sc,sc,sc);setInst(G.citKit,k,c.x,y,c.z,c.yaw,sc,sc,sc);G.citizens.setColorAt(k,new THREE.Color(c.colour.hex).multiplyScalar(c.colour.gain));G.citIdx[k]={p,s:nearest,x:c.x,z:c.z,out:c.out};k++;}
+  const list=close&&G.workerCitizens?.si===si?G.workerCitizens.people:[];let k=0;G.citIdx=[];const vs=clamp(cam.cur.dist/220,1,2.6),run=list.length?(displayDay()-G.workerCitizens.day)*DAYSEC:0; // calendar seconds since the worker saw them
+  for(const c of list){if(!c.out||k>=160)continue;const w=walkerAt(c,run*(c.pace||0)),bob=c.walking&&speedIdx===LIFE?Math.abs(Math.sin((c.time+run)*8.5))*0.06:0,p={id:c.id,si:c.si,sx:c.sex},y=surfY(w.x,w.z)+.28+bob,sc=c.scale*vs;if(cam.follow&&cam.follow.pid===c.id)cam.follow.pos={x:w.x,z:w.z,y};setInst(G.citizens,k,w.x,y,w.z,w.yaw,sc,sc,sc);setInst(G.citKit,k,w.x,y,w.z,w.yaw,sc,sc,sc);G.citizens.setColorAt(k,new THREE.Color(c.colour.hex).multiplyScalar(c.colour.gain));G.citIdx[k]={p,s:nearest,x:w.x,z:w.z,out:c.out};k++;}
   G.citizens.count=G.citKit.count=k;G.citizens.instanceMatrix.needsUpdate=G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
 }
 function projectTransportFences(){
@@ -16999,6 +17039,8 @@ class SimulationWorkerHost{
     this.queue=[];this.lastId=0;this.ready=false;this.closed=false;this.busy=false;this.timer=null;this.advance=null;this.fault=null;this.accum=0;this.lastTime=now();this.publication=null;this.viewSequence=0;
   }
   reply(message,value,error){this.send({protocol:1,replyTo:message.id,...(error?{error:String(error.message||error)}:{value})});}
+  // the part of the next day that wall time has earned by now (the pump banks it at its next turn); Reel runs on whole days
+  part(){return this.model.reeling?.()===true?0:Math.max(0,Math.min(.999,this.accum+Math.max(0,this.now()-this.lastTime)*this.model.rate()/1000));}
   receive(message){
     if(message?.protocol!==1||!Number.isSafeInteger(message.id)||message.id<=this.lastId){this.reply(message||{},null,Error('Simulation request sequence differs'));return;}
     this.lastId=message.id;
@@ -17027,13 +17069,13 @@ class SimulationWorkerHost{
         this.advance={...message,target:this.model.day()+payload.days};return;
       case 'speed':
         if(!Number.isInteger(payload.index)||payload.index<0||payload.index>6)throw Error('Invalid simulation speed');
-        if(this.advance)throw Error('A bounded advance is running');this.model.speed(payload.index);this.accum=0;this.lastTime=this.now();this.reply(message,this.model.view('summary'));return;
+        if(this.advance)throw Error('A bounded advance is running');{const part=this.part();this.model.speed(payload.index);this.accum=part;}this.lastTime=this.now();this.reply(message,this.model.view('summary'));return; // a new pace keeps the part-day already run, as the foreground driver does
       case 'pause':
-        this.model.speed(0);this.accum=0;if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
+        this.accum=this.part();this.model.speed(0);if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
       case 'command':
         // Validation precedes journal admission; every accepted command runs once.
         {const prepared=this.model.validate(payload);try{this.model.command(payload,prepared);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day()});return;}
-      case 'view':this.reply(message,await this.model.view(payload.kind||'summary',{...payload,fraction:Math.max(0,Math.min(.999,this.accum))}));return;
+      case 'view':this.reply(message,await this.model.view(payload.kind||'summary',{...payload,fraction:this.part()}));return;
       case 'save-record':this.reply(message,await this.model.saveRecord(payload));return;
       case 'watch':
         if(payload.enabled===false){this.publication=null;this.reply(message,{day:this.model.day()});return;}
@@ -17053,7 +17095,7 @@ class SimulationWorkerHost{
   async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next&&!this.urgent())return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view(p.kind)});}
   // Every simulated day, at every speed, a few bytes without geometry: the day, the fraction of the next already run, the speed,
   // when it was sent, and the HUD's figures. The screen keeps its date (and later its motion) on these between landscape packets.
-  clock(){if(!this.publication||!this.model.clock||this.model.day()<=(this.clockDay??-1))return;this.clockDay=this.model.day();this.send({protocol:1,type:'clock',value:{...this.model.clock(),frac:Math.max(0,Math.min(.999,this.accum))}});}
+  clock(){if(!this.publication||!this.model.clock||this.model.day()<=(this.clockDay??-1))return;this.clockDay=this.model.day();this.send({protocol:1,type:'clock',value:{...this.model.clock(),frac:this.part()}});}
   async pump(){
     if(this.busy||this.closed)return;this.busy=true;const start=this.now();
     try{
@@ -17248,7 +17290,7 @@ function simulationWorkerModel(){return{
     if(kind==='plan-quote')return workerCommandPlanQuote({...payload,kind:payload.kindName});
     if(kind==='storage-preview')return workerCommandStoragePreview(payload);
     if(kind==='overlay')return workerOverlayQuery(payload.mode);
-    if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
+    if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,at:performance.timeOrigin+performance.now(),citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
     if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,revision:WORKER_PRESENTATION.revision,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
     if(kind==='household'){const h=W.households.get(payload.id);if(!h)throw Error('Unknown household');return{id:h.id,head:h.head?.id??null,members:[...h.members].map(p=>p.id),purse:h.assets.w,debt:h.assets._debt,hunger:h.hunger,pantry:W.settlements.flatMap((s,si)=>{const held=s._owners?.get(h)?.held;return held?[{si,goods:{...held}}]:[];})};}
     if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT(payload);
