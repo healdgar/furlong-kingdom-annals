@@ -74,7 +74,7 @@ async function main(){
     const check=(name,ok,detail)=>{R.checks[name]={ok:!!ok,...(detail!==undefined?{detail}:{})};save();};
     const waitFor=async(expr,ms=15000)=>{const t0=Date.now();while(Date.now()-t0<ms){if(await ev(expr).catch(()=>false))return true;await sleep(200);}return false;};
     const pick=(d,re,scope)=>(d.tools||[]).filter(t=>!scope||String(t.name).replace(/^drawer:/,'').startsWith(scope+':')).find(t=>re.test(t.name)||re.test(t.label||''))?.name;
-    const cmdNames=d=>(d.tools||[]).map(t=>t.name).filter(n=>/:(h-|s-|a-|lord|decree|sov|notable|army|camp-len|storage)/.test(n)).sort();
+    const cmdNames=d=>(d.tools||[]).map(t=>t.name).filter(n=>/:(h-|s-|lord|decree|sov|camp-len|storage-pick)/.test(n)).sort(); // not hosts or people, who may be gone in a month
 
     await c.send('Page.navigate',{url:PAGE});
     const t0=Date.now();while(!await ev(READY).catch(()=>false)){if(Date.now()-t0>BOOT_MS)throw Object.assign(Error('boot timed out'),{exit:2});await sleep(500);}
