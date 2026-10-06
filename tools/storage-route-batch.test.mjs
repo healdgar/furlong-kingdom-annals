@@ -7,6 +7,7 @@ vm.runInContext(commodityActiveSource,c);
 // Compare batching against the frozen routing algorithm on the same current, water-safe graph.
 for(const name of ['resample','segDist','slopeAt','hAt','makeHash','riverAt','onRoad','paidRoadAt','roadAccessClear','streetGraph','streetPath','storageAccess','storageRoute','planLand','storageSiteQuote','storageCommission','storageInvestment'])vm.runInContext(fn(['onRoad','paidRoadAt','roadAccessClear','streetGraph'].includes(name)?candidate:source,name),c);
 if(source.includes('const STORAGE_ROUTE_BATCHES='))vm.runInContext('const STORAGE_ROUTE_BATCHES=new WeakMap();',c);
+if(source.includes('let STORAGE_NODE_DIST='))vm.runInContext('let STORAGE_NODE_DIST=new Float64Array(0),STORAGE_NODE_HEAP=new Int32Array(0);',c); // storageRoute's scratch for the nearest-node search
 if(source.includes('function storageRouteBatch('))vm.runInContext(fn(source,'storageRouteBatch'),c);
 vm.runInContext("K.exposedLots=()=>[...K.lots.values()].filter(l=>K.locations.get(l.location)?.exposed);",c);
 vm.runInContext(`G.rivHash=W.rivHash=makeHash(10);const originalAccess=storageAccess;storageAccess=function(){accessCalls++;return originalAccess.apply(this,arguments);};const originalPath=streetPath;streetPath=function(){pathCalls++;return originalPath.apply(this,arguments);};`,c);return {run:x=>vm.runInContext(x,c),c};}

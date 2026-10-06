@@ -66,7 +66,7 @@ test('riverAt reads the river hash cells in the order near() lists them',()=>{
   vm.runInContext([line('const clamp='),line('let HASH_STAMP'),block('function makeHash(','\nfunction groundBuilding'),line('function segDist(')].join('\n'),ctx);
   vm.runInContext('const W={rivHash:makeHash(40)};',ctx);
   vm.runInContext('function riverAtOld(x,z,pad){for(const o of W.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;return null;}',ctx);
-  vm.runInContext(line('const RIVER_HASH_CELL=')+'\n'+block('function riverAt(x,z,pad){','\n}\n')+'\n}',ctx);
+  vm.runInContext(block('function riverAt(x,z,pad){','\n}\n')+'\n}',ctx); // the cell size comes from the hash (makeHash keeps it on near)
   const r=rng(11);
   vm.runInContext('globalThis.addSeg=(ax,az,bx,bz,hw)=>{const o={a:{x:ax,z:az},b:{x:bx,z:bz},hw,y:1,x:ax,z:az};W.rivHash.add(o,Math.hypot(bx-ax,bz-az)+hw);};',ctx);
   for(let k=0;k<60;k++){const ax=(r()-.5)*600,az=(r()-.5)*600,a=r()*6.28,l=10+r()*120;ctx.addSeg(ax,az,ax+Math.cos(a)*l,az+Math.sin(a)*l,2+r()*8);}

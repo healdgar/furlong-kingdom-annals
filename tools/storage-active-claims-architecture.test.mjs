@@ -50,7 +50,8 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // commoditySettleAll alone changed since: a settlement before the day's end (a save, a flush) is now journaled
  // ({k:'settle'}) and replayed at the same point; the daily settlement passes daily=true. Settle calls, their order and
  // every quantity/title writer are unchanged; save-session.test.mjs covers the journaling.
- assert.equal(digest(source.slice(a,b)),"57da279b1bf6b15a25e23ffd438e7f226c204bf33b02ab3544544f91bd9f8467");
+ // Tick-cost: the ledger fast paths (fixed-depth nested maps, slot quantity cache, exposedOnly rows) keep writers, events and order; commodity-ledger-equivalence covers them.
+ assert.equal(digest(source.slice(a,b)),"1ba846f4ccce7597f24fa713e7925028843adc6ed3f44ae2b7fae0a7cc580b8d");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
@@ -63,6 +64,7 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Sort to tolerate declaration moves; exclude the added read-only herd inspector,
  // and normalize the land-uniform guard. Canonical claim and balance writes match HEAD.
  // Re-pinned with the embedded docs excluded: the corpus is identical at 9c66076, cd2eab8, e472d30 and HEAD; only stamped doc lines had varied.
- assert.equal(digest(outside),"ed8c1a733cae2098bb43c797c6987ebb6068b4a8c5f605cf9aeeed02169f47cf");
+ // Tick-cost: the smith/weaver owner scan is skipped when no owner holds ore and charcoal (or wool); one copy of _owners, no writer changed.
+ assert.equal(digest(outside),"89119c20e2944f1085e7e07a05ccc5ff44a14d6c57912ee013e27ff0054a7e04");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

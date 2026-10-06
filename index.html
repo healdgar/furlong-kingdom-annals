@@ -1701,7 +1701,7 @@ function obbOverlap(A,B){ // separating-axis test on two footprints {x,z,w,d,rot
 let HASH_STAMP=0;
 function makeHash(cs){ // tiny spatial hash for footprints and street segments
   const m=new Map(),key=(i,j)=>i*100003+j;
-  return{
+  const h={
     historyCells:m,
     add(o,r){for(let i=Math.floor((o.x-r)/cs);i<=Math.floor((o.x+r)/cs);i++)for(let j=Math.floor((o.z-r)/cs);j<=Math.floor((o.z+r)/cs);j++){
       const k=key(i,j);let a=m.get(k);if(!a)m.set(k,a=[]);a.push(o);}},
@@ -1710,6 +1710,8 @@ function makeHash(cs){ // tiny spatial hash for footprints and street segments
         const a=m.get(key(i,j));if(a)for(const o of a)if(o.__hs!==st){o.__hs=st;out.push(o);}}
       return out;}
   };
+  h.near.cell=cs; // on the method, not the record: the history graph keeps a function only by its source
+  return h;
 }
 function groundBuilding(b){ // floor on the highest corner, foundations down to the lowest
   const s=b.s,inBailey=s?.bailey&&dist2d(b.x,b.z,s.bailey.x,s.bailey.z)<=(s.bailey.r??30)+8,c=s?.motte&&dist2d(b.x,b.z,s.motte.x,s.motte.z)<s.motte.r?s.motte:b.hill&&s?.hillCastle?.timber?s.hillCastle:b.bailey||inBailey?s?.bailey:null;
@@ -5341,10 +5343,9 @@ function keepToBank(P0){ // a road never meets a river at too shallow an angle: 
     if(!hubs.some(h=>dist2d(q.x,q.z,h.m.x,h.m.z)<h.far))continue;const a=out[k-1],b=out[k+1];out[k]={x:q.x*0.5+(a.x+b.x)*0.25,z:q.z*0.5+(a.z+b.z)*0.25};}
   return out.map(q=>q.fix?{x:q.x,z:q.z}:q);
 }
-const RIVER_HASH_CELL=40; // W.rivHash is made with makeHash(40)
 function riverAt(x,z,pad){ // the river segment under (x,z), if any: the cells near(x,z,1) would list, in its order, without building the list
-  const cells=W.rivHash.historyCells,i1=Math.floor((x+1)/RIVER_HASH_CELL),j1=Math.floor((z+1)/RIVER_HASH_CELL);
-  for(let i=Math.floor((x-1)/RIVER_HASH_CELL);i<=i1;i++)for(let j=Math.floor((z-1)/RIVER_HASH_CELL);j<=j1;j++){const list=cells.get(i*100003+j);if(list)for(const o of list)if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;}
+  const H=W.rivHash,cs=H.near.cell,cells=H.historyCells,i1=Math.floor((x+1)/cs),j1=Math.floor((z+1)/cs);
+  for(let i=Math.floor((x-1)/cs);i<=i1;i++)for(let j=Math.floor((z-1)/cs);j<=j1;j++){const list=cells.get(i*100003+j);if(list)for(const o of list)if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;}
   return null;
 }
 function riverPolygonDifference(P,F){ // subtract a convex channel footprint, keeping the land outside it
@@ -11592,7 +11593,7 @@ function tickEconomy(){
       let vine=0;for(const f of s.furl||[])if(f.kind===LK.VINE&&f.state===LS.TILLED)vine+=f.area;s._smiths=sm;s._dyers=dy;s._vineHa=vine/1e4;} // the workshops and vineyards the place has, counted once a year
     { // crafts where there are workshops and the stuff to work: iron and charcoal into tools at the smithies, wool into cloth at the looms (every cottage spins and weaves a little), grapes into wine
       initOwnership(s);const smCap=s._smiths*0.45*(waterMill(s)&&AD()>=1200?1.4:1),wvCap=s._dyers*0.5+s.pop*0.0008;
-      const sm=phaseK&&!(commodityAnyHeld(phaseK,'ore')&&commodityAnyHeld(phaseK,'char'))?[]:[...s._owners].filter(([,x])=>(x.held.ore||0)>0&&(x.held.char||0)>0),wv=phaseK&&!commodityAnyHeld(phaseK,'wool')?[]:[...s._owners].filter(([,x])=>(x.held.wool||0)>0); // no owner holds the stuff: nothing to scan
+      const noSm=phaseK&&!(commodityAnyHeld(phaseK,'ore')&&commodityAnyHeld(phaseK,'char')),noWv=phaseK&&!commodityAnyHeld(phaseK,'wool'),owners=noSm&&noWv?[]:[...s._owners],sm=noSm?[]:owners.filter(([,x])=>(x.held.ore||0)>0&&(x.held.char||0)>0),wv=noWv?[]:owners.filter(([,x])=>(x.held.wool||0)>0); // no owner holds the stuff: nothing to scan
       for(const[o,x]of sm){const c=Math.max(0,Math.min((x.held.ore||0)/0.6,(x.held.char||0)/0.6,s.stores.ore/0.6,s.stores.timber/0.6,smCap/Math.max(1,sm.length)));
         consumeOwned(s,o,'ore',c*0.6);consumeOwned(s,o,'char',c*0.6);s.stores.tools+=c*0.8;offer(s,'tools',o,c*0.8,0.75*(price(s,'ore')+price(s,'timber')));}
       for(const[o,x]of wv){const w=Math.max(0,Math.min(x.held.wool||0,s.stores.wool||0,wvCap/Math.max(1,wv.length)));consumeOwned(s,o,'wool',w);s.stores.cloth+=w*0.8;offer(s,'cloth',o,w*0.8,price(s,'wool')/0.8);}
@@ -12185,8 +12186,8 @@ function armyObstacle(a,x,z){
     const placed=s._lay?.placed||(a.settlement===s&&a.placed);if(placed){
       const hit=list=>{for(const b of list){if(b.removed||b.state==='gone'||b.arch==='churchyard')continue;const c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0),X=x-b.x,Z=z-b.z;
         if(Math.abs(X*c-Z*sn)<b.w/2+0.6&&Math.abs(X*sn+Z*c)<b.d/2+0.6)return true;}return false;}; // any building under the point makes it 'building', whichever is met first
-      const cells=s._lay?.placed?placed.historyCells:null; // the 16 m cells near(x,z,1) lists, read without building the list
-      if(cells){const i1=Math.floor((x+1)/16),j1=Math.floor((z+1)/16);for(let ci=Math.floor((x-1)/16);ci<=i1;ci++)for(let cj=Math.floor((z-1)/16);cj<=j1;cj++){const list=cells.get(ci*100003+cj);if(list&&hit(list))return 'building';}}
+      const cells=s._lay?.placed?placed.historyCells:null,cs=placed.near?.cell; // the cells near(x,z,1) lists, read without building the list
+      if(cells){const i1=Math.floor((x+1)/cs),j1=Math.floor((z+1)/cs);for(let ci=Math.floor((x-1)/cs);ci<=i1;ci++)for(let cj=Math.floor((z-1)/cs);cj<=j1;cj++){const list=cells.get(ci*100003+cj);if(list&&hit(list))return 'building';}}
       else if(hit(placed.near(x,z,1)))return 'building';}
     let circuits=mem?mem.circuits.get(s):undefined;if(!circuits){circuits=fortCircuits(s);if(mem)mem.circuits.set(s,circuits);}
     for(const c of circuits){if(!c.wallRad)continue;const C=fortCenter(c),an=Math.atan2(z-C.z,x-C.x),r=wallRadAt(c,an);if(Math.abs(dist2d(x,z,C.x,C.z)-r)>1.3||wallKindAt(c,an)===1||!wallBuilt(c,an)||wallDmgAt(c,an)>=0.65)continue;
