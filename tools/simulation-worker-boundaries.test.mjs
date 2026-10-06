@@ -122,10 +122,106 @@ test('landscape packets omit unchanged structure bodies and publish one dirty bu
   const stable=vm.runInContext(`(()=>{G.structuresDirty=false;G.roadsDirty=false;G.wallsDirty=false;G.detDirty=false;G.buildingDirty.clear();return workerPresentation(false)})()`,c);
   assert.equal(stable.dirty.structures,false);assert.equal(stable.buildings,undefined);assert.equal(stable.roads,undefined);assert.equal(stable.mask,undefined);
 
-  const dirty=vm.runInContext(`(()=>{G.buildingDirty.add(W.bldList[1]);return workerPresentation(false)})()`,c);
+  const same=vm.runInContext(`(()=>{G.buildingDirty.add(W.bldList[1]);return workerPresentation(false)})()`,c);
+  assert.equal(same.buildings,undefined,'a body marked dirty that is as the screen has it is not sent');assert.equal(same.dirty.details,false);
+  const dirty=vm.runInContext(`(()=>{W.bldList[1].state='ruin';G.buildingDirty.add(W.bldList[1]);return workerPresentation(false)})()`,c);
   assert.equal(dirty.dirty.structures,false);assert.equal(dirty.dirty.buildings,false);
   assert.deepEqual(Array.from(dirty.buildings,b=>b.idx),[1],'only the changed body is sent');
   assert.equal(dirty.roads,undefined);assert.equal(dirty.settlements[0].buildings,undefined);
+});
+
+test('a day on which nothing a structure is drawn from changed publishes no streets, roads or structure flags; a change publishes only itself',()=>{
+  const c=context();
+  vm.runInContext(`
+    const b0={idx:0,arch:'house',state:'sound',x:1,z:2,w:4,d:5,rot:0,lot:[{x:0,z:0},{x:4,z:0},{x:4,z:4}]};
+    const st=(n,x)=>({pts:[{x,z:0},{x:x+5,z:5},{x:x+9,z:9}],hw:2,kind:'lane',name:n,hidden:false});
+    const s={name:'Test',kind:'town',owner:0,pos:{x:0,y:0,z:0},radius:10,extentR:20,hm:true,buildings:[b0],fires:[],furl:[],streets:[st('High',0),st('Low',30)],places:[{x:3,z:3,r:5}],folk:[]};
+    b0.s=s;W.bldList=[b0];W.settlements=[s];W.capital=s;W.houses=[];W.petitions=[];W.armies=[];W.caravans=[];W.envoys=[];W.travellers=[];W.ships=[];W.banditCamps=[];W.projects=[];
+    W.roads=[{a:0,b:1,path:[{x:0,z:0},{x:9,z:9}],drawn:[{x:0,z:0},{x:9,z:9}],bridges:[],cond:1}];W.bridges=[];W.memorials=[];
+    W.caravans=[{origin:0,dest:1,good:'grain',qty:3,departDay:2,poly:[{x:0,z:0},{x:50,z:50}],sea:false}];
+    globalThis.flag=()=>{G.structuresDirty=G.roadsDirty=G.detDirty=true;};
+  `,c);
+  const boot=vm.runInContext('workerPresentation(true)',c);
+  assert.equal(boot.settlements[0].streets.length,2);assert.equal(boot.roads.length,1);assert.equal(boot.caravans[0].poly.length,2);
+  const quiet=vm.runInContext('(()=>{flag();return workerPresentation(false)})()',c);
+  assert.equal(quiet.settlements[0].streets,undefined,'streets as the screen has them stay home');assert.equal(quiet.settlements[0].places,undefined);assert.equal(quiet.roads,undefined);
+  assert.equal(quiet.caravans[0].poly,undefined,'a caravan crosses once with its road');assert.equal(quiet.caravans[0].qty,3);assert.equal(quiet.memorials,undefined);
+  assert.deepEqual({...quiet.dirty,orders:undefined,armies:undefined,herds:undefined},{structures:false,buildings:false,walls:false,details:false,roads:false,labels:false,herds:undefined,orders:undefined,armies:undefined});
+  const moved=vm.runInContext('(()=>{W.settlements[0].streets.push({pts:[{x:60,z:0},{x:70,z:9}],hw:2,kind:"lane",name:"New",hidden:false});flag();return workerPresentation(false)})()',c);
+  assert.equal(moved.settlements[0].streets.length,3,'a changed list crosses whole');assert.equal(moved.settlements[0].places,undefined);assert.equal(moved.dirty.structures,true);assert.equal(moved.dirty.roads,true);assert.equal(moved.roads,undefined);
+  const road=vm.runInContext('(()=>{W.roads[0].cond=.5;flag();return workerPresentation(false)})()',c);
+  assert.equal(road.roads.length,1);assert.equal(road.roads[0].cond,.5);assert.equal(road.roads[0].path,undefined,'a road whose condition changed does not resend its path');assert.equal(road.dirty.roads,true);
+  const after=vm.runInContext('(()=>{flag();return workerPresentation(false)})()',c);
+  assert.equal(after.settlements[0].streets,undefined);assert.equal(after.roads,undefined);assert.equal(after.dirty.structures,false);
+  const again=vm.runInContext('(()=>{W.caravans.length=0;flag();return workerPresentation(false)})()',c);
+  const back=vm.runInContext('(()=>{W.caravans.push({origin:0,dest:1,good:"grain",qty:3,departDay:2,poly:[{x:0,z:0},{x:50,z:50}],sea:false});return workerPresentation(false)})()',c);
+  assert.equal(again.caravans.length,0);assert.equal(back.caravans[0].poly.length,2,'what the screen let go of crosses whole when it returns');
+});
+
+test('a content key reads what a copy would carry: scratch, links and accounts do not move it, a point or a name does',()=>{
+  const c=context();
+  const k=JSON.parse(JSON.stringify(vm.runInContext(`(()=>{
+    const a={pts:[{x:1,z:2},{x:3,z:4}],name:'High',hw:2,_scratch:{big:[1,2,3]},cands:[{mx:1,done:false}],s:{link:1},storage:{x:1}};
+    const k0=visualKey(a);a._scratch.big.push(9);a.cands[0].done=true;a.s.link=2;a.storage.x=9;const k1=visualKey(a);
+    a.pts[1].z=5;const k2=visualKey(a);a.pts[1].z=4;const k3=visualKey(a);a.name='Hig';const k4=visualKey(a);a.name='High';a.extra=true;const k5=visualKey(a);
+    const cyc={a:1};cyc.self=cyc;const k6=visualKey(cyc),k7=visualKey(new Float64Array([1,2,3])),k8=visualKey(new Float64Array([1,2,4]));
+    return [k0,k1,k2,k3,k4,k5,k6,k7,k8];})()`,c)));
+  assert.equal(k[0],k[1],'the planner\'s scratch (cands, _names), links and accounts are not part of what crosses');assert.notEqual(k[1],k[2],'a moved point');assert.equal(k[1],k[3],'and the same again when it is put back');
+  assert.notEqual(k[3],k[4],'a changed name');assert.notEqual(k[3],k[5],'a new name');assert.ok(Number.isFinite(k[6]),'a cycle ends');assert.notEqual(k[7],k[8],'typed arrays count');
+  const copy=vm.runInContext(`JSON.stringify([visualGeometry(Array.from({length:12},(_,i)=>({x:i,z:i*2}))),visualGeometry(Array.from({length:12},(_,i)=>({x:i,z:i*2,nb:-1}))).slice(0,2),visualGeometry([{x:1,z:2,_t:5,s:{a:1},c:{d:2}}])])`,c);
+  const [line,withNb,one]=JSON.parse(copy);assert.equal(line.length,12);assert.deepEqual(line[3],{x:3,z:6});assert.deepEqual(withNb[1],{x:1,z:2,nb:-1},'a point with more than x and z keeps what it has');assert.deepEqual(one,[{x:1,z:2,c:{d:2}}],'cut names stay cut');
+});
+
+test('install keeps the geometry a packet leaves out, and maps a town\'s buildings only when its list crossed',()=>{
+  const classes=new Set(),document={body:{classList:{toggle:(k,on)=>{if(on)classes.add(k);else classes.delete(k);},contains:k=>classes.has(k)}},getElementById:()=>({classList:{contains:()=>false}})};
+  const c=context({document});
+  vm.runInContext(`
+    W.settlements=[{buildings:[],streets:[],places:[],furl:[],folk:[],fires:[]}];W.bldList=[];W.treeSpots=[];
+    const base={protocol:1,day:7,speed:0,mod:{},world:{clock:{frac:0}},monarch:{},player:null,houses:[],petitions:[],commands:0,capital:0,armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],projects:[],events:[],dirty:{}};
+    base.world.player={on:true};
+    let packet={...base,revision:1,settlements:[{si:0,name:'T',buildings:[0,1],fires:[],furl:[],millId:null,streets:[{pts:[{x:1,z:2}]}]}],
+      buildings:[{idx:0,si:0,arch:'house',state:'sound',lot:[{x:1,z:1}]},{idx:1,si:0,arch:'hall',state:'sound'}],caravans:[{renderKey:'a',poly:[{x:1,z:1}],qty:3,renderIndex:0}],memorials:[{x:1,z:1}]};
+  `,c);
+  vm.runInContext('installPresentation(packet)',c);
+  const held=vm.runInContext('[W.settlements[0].buildings[0],W.settlements[0].buildings[1],W.caravans[0]]',c);
+  assert.equal(vm.runInContext('W.settlements[0].buildings.length',c),2);assert.equal(vm.runInContext('W.caravans[0].poly.length',c),1);
+  vm.runInContext(`packet={...base,revision:2,settlements:[{si:0,name:'T2',fires:[],millId:null}],buildings:[{idx:1,si:0,arch:'hall',state:'ruin'}],caravans:[{renderKey:'a',qty:2,renderIndex:0}]};installPresentation(packet)`,c);
+  const after=vm.runInContext('[W.settlements[0].buildings[0],W.settlements[0].buildings[1],W.caravans[0]]',c);
+  assert.equal(vm.runInContext('W.settlements[0].name',c),'T2');assert.equal(after[0],held[0]);assert.equal(after[1],held[1],'the same displayed bodies');assert.equal(after[2],held[2],'the same displayed caravan');
+  assert.equal(vm.runInContext('W.settlements[0].streets.length',c),1,'streets the packet did not carry are as they were');assert.equal(vm.runInContext('W.bldList[0].lot.length',c),1);
+  assert.equal(vm.runInContext('W.bldList[1].state',c),'ruin');assert.equal(vm.runInContext('W.caravans[0].poly.length',c),1);assert.equal(vm.runInContext('W.caravans[0].qty',c),2);assert.equal(vm.runInContext('W.memorials.length',c),1);
+  vm.runInContext(`packet={...base,revision:3,settlements:[{si:0,name:'T2',buildings:[0],fires:[],millId:null}]};installPresentation(packet)`,c);
+  assert.equal(vm.runInContext('W.settlements[0].buildings.length',c),1,'a list that crossed is mapped');assert.equal(vm.runInContext('W.bldList[1].state',c),'ruin');
+});
+
+test('a long route crosses as one buffer of x,z pairs and is laid out again as points in the display',()=>{
+  const classes=new Set(),document={body:{classList:{toggle:(k,on)=>{if(on)classes.add(k);else classes.delete(k);},contains:k=>classes.has(k)}},getElementById:()=>({classList:{contains:()=>false}})};
+  const worker=context(),main=context({document});
+  vm.runInContext(`
+    W.settlements=[];W.bldList=[];W.houses=[];W.petitions=[];W.projects=[];W.capital=null;
+    const route=Array.from({length:50},(_,i)=>({x:i*1.5,z:i*-2.25})),shortRoute=[{x:1,z:2},{x:3,z:4}];
+    W.caravans=[{origin:0,dest:1,good:'grain',qty:3,departDay:2,poly:route,sea:false},{origin:1,dest:2,good:'wool',qty:1,departDay:2,poly:shortRoute,sea:false}];
+    W.travellers=[{p:{id:5,si:0,sx:1},depart:3,poly:[...route.slice(0,10),{x:1,z:1,nb:7},...route.slice(10)]}];
+  `,worker);
+  const packet=vm.runInContext('(()=>{workerPresentation(true);return workerPresentation(false)})()',worker),boot=vm.runInContext('(()=>{WORKER_PRESENTATION.sent=null;return workerPresentation(false)})()',worker);
+  assert.ok(ArrayBuffer.isView(boot.caravans[0].poly)&&boot.caravans[0].poly.length===100,'fifty points as a hundred numbers');assert.equal(Array.isArray(boot.caravans[1].poly),true,'a short route is a short list');
+  assert.equal(Array.isArray(boot.travellers[0].poly),true,'a route whose points are more than x and z crosses as it is');assert.equal(packet.caravans[0].poly,undefined,'and once');
+  assert.equal(vm.runInContext('(()=>{const p=workerPresentation(true);return presentationTransfers(p).includes(p.caravans[0].poly.buffer)})()',worker),true,'the route buffer travels by transfer');
+  main.wire=boot;vm.runInContext(`W.settlements=[];W.armies=[];W.land.F=[];const base={protocol:1,revision:1,day:7,speed:0,mod:{},world:{clock:{frac:0}},monarch:{},player:null,houses:[],petitions:[],commands:0,capital:0,settlements:[],armies:[],envoys:[],ships:[],banditCamps:[],projects:[],events:[],dirty:{}};
+    installPresentation({...base,caravans:wire.caravans,travellers:wire.travellers})`,main);
+  const poly=JSON.parse(JSON.stringify(vm.runInContext('W.caravans[0].poly',main)));assert.equal(poly.length,50);assert.deepEqual(poly[3],{x:4.5,z:-6.75});assert.deepEqual(poly[49],{x:73.5,z:-110.25});
+  vm.runInContext(`{const c={...wire.caravans[0],qty:2};delete c.poly;installPresentation({...base,revision:2,caravans:[c],travellers:[]});}`,main);
+  assert.equal(vm.runInContext('W.caravans[0].poly.length',main),50,'the route the screen holds stays when a packet leaves it out');assert.equal(vm.runInContext('W.caravans[0].qty',main),2);
+});
+
+test('the land mask crosses only when a cell of it is not as the screen has it',()=>{
+  const c=context();
+  vm.runInContext(`W.houses=[];W.petitions=[];W.armies=[];W.caravans=[];W.envoys=[];W.travellers=[];W.ships=[];W.banditCamps=[];W.projects=[];W.bldList=[];W.settlements=[];W.capital=null;`,c);
+  vm.runInContext('workerPresentation(true)',c);
+  const same=vm.runInContext('(()=>{G.landMaskDirty=true;return workerPresentation(false)})()',c);
+  assert.equal(same.mask,undefined,'marked dirty with every cell as sent');
+  const changed=vm.runInContext('(()=>{G.landMaskDirty=true;W.land.mask[5]=9;return workerPresentation(false)})()',c);assert.equal(changed.mask[5],9);
+  const settled=vm.runInContext('(()=>{G.landMaskDirty=true;return workerPresentation(false)})()',c);assert.equal(settled.mask,undefined);
 });
 
 test('presentation DTOs explicitly materialize accessor-backed population and title ownership',()=>{
@@ -427,7 +523,7 @@ test('walls, castle rings, sieges and castle lots cross; circuits and hosts reli
   for(const k of ['roofPlan','wheel','waterwheel'])assert.ok(!(k in packet.buildings[0]));for(const k of ['gateAngles','wallGates','ramparts','breaches'])assert.ok(!(k in r));
 
   const main=context();new vm.Script(fortSeams+'\n'+fortReads).runInContext(main);
-  const day=n=>{vm.runInContext(`W.clock.day=${n};G.buildingDirty.add(keep);G.structuresDirty=true`,c);main.wire=structuredClone(vm.runInContext('workerPresentation(false)',c));vm.runInContext('installPresentation(wire)',main);
+  const day=n=>{vm.runInContext(`W.clock.day=${n};G.buildingDirty.add(keep);G.structuresDirty=true;WORKER_PRESENTATION.sent=null`,c); /* no memory of the screen (a restart): every packet crosses whole, as a bootstrap does */main.wire=structuredClone(vm.runInContext('workerPresentation(false)',c));vm.runInContext('installPresentation(wire)',main);
     return vm.runInContext(`(()=>{const s=W.settlements[0],host=W.armies.find(a=>a.id===7),col=W.armies.find(a=>a.id===8),rams=W.armies.find(a=>a.id===9);globalThis.lastRing=globalThis.ring;globalThis.ring=s.hillCastle;
       return {ring:host.siegeArc?.circuit===s.hillCastle,town:rams.siegeArc?.circuit===s,taken:s.takenCircuit===s.hillCastle,army:s.siegeBy?.army===host,joined:col.joined===host,strength:col.joined.strength,
         fresh:globalThis.lastRing!==globalThis.ring,kinds:[0,1,2,3,4,5,6,7].map(k=>wallKindAt(s,k/8*Math.PI*2)),inCastle:W.bldList[0]._inCastle,bldS:W.bldList[0].s===s,gates:s._gateTrafficVersion}})()`,main);};

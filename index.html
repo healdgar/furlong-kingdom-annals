@@ -16742,42 +16742,118 @@ function beginChronicle(){
    These records are disposable. The worker retains W, RNG and journals. */
 let BACKGROUND=null,backgroundApplying=false;
 const WORKER_PRESENTATION={events:[],camera:null,started:false,revision:0,buildingCount:0,towns:0,profile:null,profileDirty:false,endgame:null};
-function visualScalars(o){const out={};for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(o||{})))if(!k.startsWith('_')&&Object.hasOwn(d,'value')&&(d.value===null||['number','string','boolean'].includes(typeof d.value)))out[k]=d.value;return out;}
+function visualScalars(o){const out={};if(!o)return out;for(const k of visualDataNames(o)){const v=o[k];if(v===null||typeof v==='number'||typeof v==='string'||typeof v==='boolean')out[k]=v;}return out;}
+// The names of an object that hold plain data (not accessors, which are never read here), found with a descriptor each only when its names change (and now and then again).
+const VISUAL_SHAPES=new WeakMap();
+function visualDataNames(o){
+  const names=Object.getOwnPropertyNames(o),shape=VISUAL_SHAPES.get(o);
+  if(shape&&shape.age++<64&&shape.names.length===names.length){let i=0;while(i<names.length&&names[i]===shape.names[i])i++;if(i===names.length)return shape.data;}
+  const data=[];for(const k of names)if(!k.startsWith('_')&&Object.hasOwn(Object.getOwnPropertyDescriptor(o,k),'value'))data.push(k);
+  VISUAL_SHAPES.set(o,{names,data,age:0});return data;
+}
 // Names that always hold private accounts, and names that hold a link back into the world graph (a building's
 // town, a churchyard's church, a person or a crew). A link is cut; the same name holding a number (a tree's size
 // s, say) is plain geometry and crosses.
-const VISUAL_PRIVATE=new Set(['storage','ledger','holdings','account','ownerAccount','beneficiary']),VISUAL_LINKS=new Set(['s','churchyardOf','title','head','p','men','riders','crew']);
+// (cands: a street's frontage candidates, the layout planner's own scratch: a point every 2.2 m along both sides, most of the bytes of a town and nothing that is drawn.)
+const VISUAL_PRIVATE=new Set(['storage','ledger','holdings','account','ownerAccount','beneficiary','cands']),VISUAL_LINKS=new Set(['s','churchyardOf','title','head','p','men','riders','crew']);
 function visualGeometry(value,seen=new Set()){
   if(value===null||['number','string','boolean'].includes(typeof value))return value;
   if(!value||typeof value!=='object'||value instanceof Map||value instanceof Set||value.household||value._hh||seen.has(value))return undefined;
   if(ArrayBuffer.isView(value))return value.slice();
+  if(Array.isArray(value)&&value.length>8){const line=visualPoints(value);if(line)return line;}
   seen.add(value);const out=Array.isArray(value)?[]:{};
   for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(value))){if(!Object.hasOwn(d,'value')||k.startsWith('_')||VISUAL_PRIVATE.has(k)||d.value!==null&&typeof d.value==='object'&&VISUAL_LINKS.has(k))continue;const v=visualGeometry(d.value,seen);if(v!==undefined)out[k]=v;}
   seen.delete(value);return out;
 }
-function visualRecord(o,fields){const out=visualScalars(o);for(const k of fields.split(' '))if(o?.[k]!==undefined)out[k]=visualGeometry(o[k]);return out;}
+function visualPoints(a){ // a polyline of plain {x,z} points (most of the bytes that cross), copied without a descriptor for each: null when it is anything else
+  const out=new Array(a.length);
+  for(let i=0;i<a.length;i++){const p=a[i];if(p===null||typeof p!=='object'||typeof p.x!=='number'||typeof p.z!=='number')return null;let n=0;for(const k in p)n++;if(n!==2)return null;out[i]={x:p.x,z:p.z};}
+  return out;
+}
+function visualPack(a){ // a long route as one buffer of x,z pairs (it crosses by transfer, not as thousands of objects): null when it is anything else
+  if(a.length<32)return null;const out=new Float64Array(a.length*2);
+  for(let i=0;i<a.length;i++){const p=a[i];if(p===null||typeof p!=='object'||typeof p.x!=='number'||typeof p.z!=='number')return null;let n=0;for(const k in p)n++;if(n!==2)return null;out[2*i]=p.x;out[2*i+1]=p.z;}
+  return out;
+}
+function visualUnpack(f){const out=new Array(f.length>>1);for(let i=0;i<out.length;i++)out[i]={x:f[2*i],z:f[2*i+1]};return out;}
+function visualRecord(o,fields,m){const out=visualScalars(o);for(const k of fields.split(' '))if(o?.[k]!==undefined)visualPut(out,k,o[k],m);return out;}
+// DELTA. installPresentation assigns each packet over the records the display keeps, so a record need only carry what changed. The worker
+// remembers, for each record the display holds and each geometry field of it, a content key of what it last sent: a field whose key is
+// unchanged is left out, and a record that seals to the key it last sealed to is not sent at all. Keys are read off the world as it stands
+// (a walk of the numbers, no copy, nothing written back), so computing a packet changes nothing in the simulation. A record with no memory
+// (a new one, one the display let go of, a bootstrap) crosses whole. m is the memory of one record (visualMemo), or null for all of it.
+let VISUAL_KEY_A=0,VISUAL_KEY_B=0;const VISUAL_KEY_F=new Float64Array(1),VISUAL_KEY_I=new Uint32Array(VISUAL_KEY_F.buffer),VISUAL_KEY_UP=[];
+function visualKeyMix(x){VISUAL_KEY_A=Math.imul(VISUAL_KEY_A^x,16777619);VISUAL_KEY_B=Math.imul(VISUAL_KEY_B+x|0,0x2545f491)^VISUAL_KEY_B>>>15;}
+function visualKeyWalk(v,d){ // what visualGeometry would copy: data under names that do not start with _, are not private accounts, and are not links
+  switch(typeof v){
+    case'number':VISUAL_KEY_F[0]=v;visualKeyMix(VISUAL_KEY_I[0]);visualKeyMix(VISUAL_KEY_I[1]);return;
+    case'string':visualKeyMix(v.length+1013);for(let i=0;i<v.length;i++)visualKeyMix(v.charCodeAt(i));return;
+    case'boolean':visualKeyMix(v?7:11);return;
+    case'object':break;
+    default:visualKeyMix(13);return;
+  }
+  if(v===null){visualKeyMix(17);return;}
+  for(let j=0;j<d;j++)if(VISUAL_KEY_UP[j]===v){visualKeyMix(19);return;} // a cycle, as visualGeometry's seen
+  VISUAL_KEY_UP[d]=v;
+  if(Array.isArray(v)||ArrayBuffer.isView(v)){visualKeyMix(v.length+23);for(let i=0;i<v.length;i++)visualKeyWalk(v[i],d+1);}
+  else if(v instanceof Map||v instanceof Set||v.household||v._hh)visualKeyMix(31);
+  else for(const k in v){if(k.charCodeAt(0)===95)continue;const x=v[k];if(x!==null&&typeof x==='object'&&(VISUAL_PRIVATE.has(k)||VISUAL_LINKS.has(k)))continue;visualKeyMix(k.length*131+k.charCodeAt(0));visualKeyWalk(x,d+1);}
+}
+function visualKey(v){VISUAL_KEY_A=0x811c9dc5|0;VISUAL_KEY_B=0x9e3779b9|0;visualKeyWalk(v,0);return(VISUAL_KEY_A>>>0)*1048576+(VISUAL_KEY_B>>>12);}
+// A channel is the memory of one kind of record: persist (a Map by key) for those the display keeps for good, else old and now for lists the display
+// rebuilds by key each packet (a record left out of a list is forgotten, and so is what was sent of it).
+function visualMemo(L,key,ref){ // ref: the route polylines of travellers and caravans are replaced, never edited: the same array of the same length is the same road, unwalked
+  if(!L)return null;
+  if(L.persist){let rec=L.persist.get(key);const old=rec||null;if(!rec)L.persist.set(key,rec={});return{old,now:rec,sent:false,ref};}
+  const now={};L.now.set(key,now);return{old:L.old.get(key)||null,now,sent:false,ref};
+}
+function visualPut(out,k,v,m){
+  if(m){
+    if(m.ref&&k==='poly'&&Array.isArray(v)){const same=m.old!==null&&m.old.poly===v&&m.old.polyLength===v.length;m.now.poly=v;m.now.polyLength=v.length;if(same)return;m.sent=true;out.poly=visualPack(v)||visualGeometry(v);return;}
+    const h=visualKey(v),same=m.old!==null&&m.old[k]===h;m.now[k]=h;if(same)return;
+    m.sent=true;
+  }
+  out[k]=visualGeometry(v);
+}
+function visualSeal(m,out){ // does the display lack any of this record? Its own fields, and the geometry keys (whether or not that geometry went with it)
+  if(!m)return true;const g=m.now,prior=m.old!==null?m.old.$:undefined;g.$=0;VISUAL_KEY_A=0x811c9dc5|0;VISUAL_KEY_B=0x9e3779b9|0;
+  for(const k in out)if(!Object.hasOwn(g,k)){visualKeyMix(k.length*131+k.charCodeAt(0));visualKeyWalk(out[k],1);}
+  for(const k in g){visualKeyMix(k.length*131+k.charCodeAt(0));visualKeyWalk(g[k],1);}
+  const h=(VISUAL_KEY_A>>>0)*1048576+(VISUAL_KEY_B>>>12);g.$=h;if(prior!==h)m.sent=true;return m.sent;
+}
+function visualList(S,kind,items,key,build,ref){const L=S.lists[kind]||(S.lists[kind]={old:new Map,now:new Map});L.now=new Map;const out=items.map((o,i)=>build(o,i,visualMemo(L,key(o),ref)));L.old=L.now;return out;}
+function visualSent(){return{settlement:{persist:new Map},building:{persist:new Map},field:{persist:new Map},lists:{},memorials:null,mask:null,fences:null,tracks:null};}
+function visualMaskChanged(S,mask){ // the land mask as the display holds it, against the world's: whole words, nothing copied unless something moved
+  const a=S.mask;if(!a||a.length!==mask.length){S.mask=mask.slice();return true;}
+  const n=mask.length>>2;if(!(mask.length&3)&&!(mask.byteOffset&3)&&!(a.byteOffset&3)){const x=new Uint32Array(mask.buffer,mask.byteOffset,n),y=new Uint32Array(a.buffer,a.byteOffset,n);let i=0;while(i<n&&x[i]===y[i])i++;if(i===n)return false;}
+  else{let i=0;while(i<mask.length&&mask[i]===a[i])i++;if(i===mask.length)return false;}
+  a.set(mask);return true;
+}
+function visualCaravanKey(c){return c.storageCargo?.id||[c.origin,c.dest,c.departDay,c.good,!!c.sea,!!c.river].join(':');}
+function visualTravellerKey(t){return t.p.id+':'+t.depart;}
+function visualRoadKey(r){return r.a+':'+r.b;}
 function visualPerson(p){return p?{id:p.id,si:p.si,sx:p.sx,dead:!!p.dead}:null;}
-function visualBuilding(b){const out=visualRecord(b,'ch lot mill millWater dam _graveyard');out._inCastle=!!b._inCastle;if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
+function visualBuilding(b,m){const out=visualRecord(b,'ch lot mill millWater dam _graveyard',m);out._inCastle=!!b._inCastle;if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard)out._graveCount=graveyardBurials(b.s,b).length;return out;}
 // A wall circuit crosses as its town and its name in that town (fortCircuitKey), never as a copy: the foreground
 // finds the same ring it drew, so c===s and the gates of that ring hold.
 function visualCircuit(c,near){if(!c)return null;for(const t of near?[near,...W.settlements]:W.settlements){const key=fortCircuitKey(t,c);if(key)return{si:W.settlements.indexOf(t),key};}return null;}
-function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey hillCastle ward burgRing cas citadel tg wallRad wallKind wallDmg wallBuild');out.millId=s.mill?.idx??null;out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);out._gateTrafficVersion=s._gateTrafficVersion||0;
+function visualSettlement(s,structures,m){const out=visualRecord(s,'pos keepPos lake motte bailey hillCastle ward burgRing cas citadel tg wallRad wallKind wallDmg wallBuild',m);out.millId=s.mill?.idx??null;out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=s.wallRad?fortGateAngles(s,s):[];out._gateTrafficVersion=s._gateTrafficVersion||0;
   out.siegeBy=s.siegeBy?{houseName:s.siegeBy.houseName,army:s.siegeBy.army?{id:s.siegeBy.army.id}:null}:null;
   // the circuit stormed: by name while it is still one of the town's rings, else only the dates the streets fighting reads
   out.takenCircuit=s.takenCircuit?fortCircuitKey(s,s.takenCircuit)??{breachUntil:s.takenCircuit.breachUntil,breachA:s.takenCircuit.breachA}:null;
-  if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);out.relicWalls=visualGeometry(s.relicWalls||[]);}return out;}
-function visualField(f){const out=visualRecord(f,'poly sap');for(const k of ['own','wk'])if(typeof f[k]==='number'||typeof f[k]==='string')out[k]=f[k];out.treeRefs=f.trees.map(t=>({kind:t.k,index:t.i}));return out;}
+  if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){visualPut(out,'buildings',s.buildings.map(b=>b.idx),m);visualPut(out,'streets',s.streets||[],m);visualPut(out,'places',s.places||[],m);visualPut(out,'furl',(s.furl||[]).map(f=>f.k),m);visualPut(out,'remnants',s.remnants||[],m);visualPut(out,'relicWalls',s.relicWalls||[],m);}return out;}
+function visualField(f,m){const out=visualRecord(f,'poly sap',m);for(const k of ['own','wk'])if(typeof f[k]==='number'||typeof f[k]==='string')out[k]=f[k];out.treeRefs=f.trees.map(t=>({kind:t.k,index:t.i}));return out;}
 // One projector for each kind of moving or built thing the foreground draws. tools/simulation-projection-drift.test.mjs
 // holds each to the whole of its record: every object-valued name crosses, or is named there as the worker's alone.
 const VISUAL_ENTITY={
-  army(a){const b=visualRecord(a,'field poly battlePos raft objective');b.men=[];b.foe=a.foe?{id:a.foe.id}:null;b.joined=a.joined?{id:a.joined.id,strength:a.joined.strength,foe:a.joined.foe?{id:a.joined.foe.id}:null}:null;b.siegeArc=a.siegeArc?{...visualScalars(a.siegeArc),circuit:visualCircuit(a.siegeArc.circuit,W.settlements[a.at])}:null;const s=W.settlements[a.at];if(s)b.renderMuster=musterPos(s,a);return b;},
-  caravan:(c,i)=>({...visualRecord(c,'poly'),qty:c.qty,renderKey:c.storageCargo?.id||[c.origin,c.dest,c.departDay,c.good,!!c.sea,!!c.river].join(':'),renderIndex:i}),
-  envoy:e=>visualRecord(e,'poly'),
-  traveller:t=>({...visualRecord(t,'poly'),renderKey:t.p.id+':'+t.depart,p:visualPerson(t.p)}),
-  ship:s=>visualRecord(s,'poly berth'),
-  banditCamp:c=>({...visualRecord(c,''),men:(c.men||[]).slice(0,12).map(visualPerson)}),
-  dragon:d=>visualRecord(d,'path pos lair'),
-  road:r=>({...visualRecord(r,'path drawn bridges'),renderKey:r.a+':'+r.b}),
+  army(a,m){const b=visualRecord(a,'field poly tf battlePos raft objective',m);b.men=[];b.foe=a.foe?{id:a.foe.id}:null;b.joined=a.joined?{id:a.joined.id,strength:a.joined.strength,foe:a.joined.foe?{id:a.joined.foe.id}:null}:null;b.siegeArc=a.siegeArc?{...visualScalars(a.siegeArc),circuit:visualCircuit(a.siegeArc.circuit,W.settlements[a.at])}:null;const s=W.settlements[a.at];if(s)b.renderMuster=musterPos(s,a);return b;},
+  caravan:(c,i,m)=>({...visualRecord(c,'poly',m),qty:c.qty,renderKey:visualCaravanKey(c),renderIndex:i}),
+  envoy:(e,m)=>visualRecord(e,'poly',m),
+  traveller:(t,m)=>({...visualRecord(t,'poly',m),renderKey:visualTravellerKey(t),p:visualPerson(t.p)}),
+  ship:(s,m)=>visualRecord(s,'poly berth',m),
+  banditCamp:(c,m)=>({...visualRecord(c,'',m),men:(c.men||[]).slice(0,12).map(visualPerson)}),
+  dragon:(d,m)=>visualRecord(d,'path pos lair',m),
+  road:(r,m)=>({...visualRecord(r,'path drawn bridges',m),renderKey:visualRoadKey(r)}),
   project:q=>({...visualRecord(q,'cut st sts rad place'),P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null})};
 function workerTrackSegments(){return [...(W.trackSet||[])].map(k=>{const e=W.tg.E.get(k);return{a:{x:W.tg.pts[e.a].x,z:W.tg.pts[e.a].z},b:{x:W.tg.pts[e.b].x,z:W.tg.pts[e.b].z},L:e.L};});}
 function workerFenceSegments(){const out=[];for(const f of W.land.F){if(!fenceWorked(f))continue;const P=f.poly||computeFurlongPoly(f),stone=fenceStoneView(W.settlements[f.dom]);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?W.land.F[a.nb]:null,ta=W.tg?.V.get(tgKey(a)),tb=W.tg?.V.get(tgKey(b)),lane=W.trackSet&&ta!==undefined&&tb!==undefined&&W.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);if(!lane){if(g&&fenceWorked(g)&&g.dom===f.dom&&(g.state===LS.PASTURE)===(f.state===LS.PASTURE))continue;if(g&&fenceWorked(g)&&g.k<f.k)continue;}out.push({a:{x:a.x,z:a.z},b:{x:b.x,z:b.z},x:f.x,z:f.z,lane:!!lane,stone});}}return out;}
@@ -16785,26 +16861,34 @@ function workerPresentation(bootstrap=false){
   const P=WORKER_PRESENTATION,newBuildings=P.buildingCount!==W.bldList.length,newTowns=P.towns!==W.settlements.length;
   const structures=bootstrap||G.structuresDirty||G.roadsDirty||G.wallsDirty||newBuildings||newTowns;
   const details=bootstrap||G.detDirty,walls=bootstrap||G.wallsDirty,roads=bootstrap||G.roadsDirty;
+  const S=bootstrap||!P.sent?(P.sent=visualSent()):P.sent;let moved=false; // moved: something the foreground's structures, details or roads draw from is new to it
   P.speed=speedIdx;P.petitions=W.petitions.length;
-  const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map(s=>visualSettlement(s,structures)),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.reduce((n,e)=>e.k==='settle'?n:n+1,0),entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
+  const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map((s,i)=>{const m=visualMemo(S.settlement,i),r=visualSettlement(s,structures,m);moved=moved||m.sent;return r;}),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.reduce((n,e)=>e.k==='settle'?n:n+1,0),entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
   if(P.endgame){out.endgame=P.endgame;P.endgame=null;}if(P.profileDirty){out.profile=visualGeometry(P.profile);P.profileDirty=false;}
   out.petitions=W.petitions.map(p=>({key:p.key,title:p.title,pos:visualGeometry(p.pos),due:p.due}));
-  const V=VISUAL_ENTITY;out.armies=W.armies.map(a=>V.army(a));out.caravans=(W.caravans||[]).map((c,i)=>V.caravan(c,i));out.envoys=(W.envoys||[]).map(e=>V.envoy(e));
-  out.travellers=(W.travellers||[]).map(t=>V.traveller(t));out.ships=(W.ships||[]).map(s=>V.ship(s));out.banditCamps=(W.banditCamps||[]).map(c=>V.banditCamp(c));
-  out.dragon=W.dragon?V.dragon(W.dragon):null;out.memorials=visualGeometry(W.memorials||[]);
+  const V=VISUAL_ENTITY,id=o=>o.id;out.armies=visualList(S,'armies',W.armies,id,(a,i,m)=>V.army(a,m),true);out.caravans=visualList(S,'caravans',W.caravans||[],visualCaravanKey,(c,i,m)=>V.caravan(c,i,m),true);
+  out.envoys=visualList(S,'envoys',W.envoys||[],id,(e,i,m)=>V.envoy(e,m),true);out.travellers=visualList(S,'travellers',W.travellers||[],visualTravellerKey,(t,i,m)=>V.traveller(t,m),true);
+  out.ships=visualList(S,'ships',W.ships||[],id,(s,i,m)=>V.ship(s,m),true);out.banditCamps=visualList(S,'banditCamps',W.banditCamps||[],id,(c,i,m)=>V.banditCamp(c,m));
+  out.dragon=visualList(S,'dragon',W.dragon?[W.dragon]:[],d=>d.name,(d,i,m)=>V.dragon(d,m))[0]||null;
+  {const mem=W.memorials||[];if(bootstrap||S.memorials!==mem.length)out.memorials=visualGeometry(mem);S.memorials=mem.length;} // cairns are raised, never edited: the list crosses when one is
   const changedBuildings=bootstrap?W.bldList:new Set([...(G.buildingDirty||[]),...W.bldList.slice(P.buildingCount)]);
   if(!bootstrap&&details)for(const b of W.bldList)if(b.arch==='temple')changedBuildings.add(b);
-  if(bootstrap||changedBuildings.size)out.buildings=[...changedBuildings].map(visualBuilding);
-  if(roads){out.roads=W.roads.map(r=>V.road(r));out.bridges=visualGeometry(W.bridges);}
+  if(bootstrap||changedBuildings.size){const sent=[];for(const b of changedBuildings){const m=visualMemo(S.building,b.idx),r=visualBuilding(b,m);if(visualSeal(m,r))sent.push(r);} // a body marked dirty that is as the screen has it stays home
+    if(bootstrap||sent.length)out.buildings=sent;moved=moved||sent.length>0;}
+  let roadsMoved=false;
+  if(roads){const before=S.roadKeys||[],keys=[],bridges=visualKey(W.bridges);
+    out.roads=visualList(S,'roads',W.roads,visualRoadKey,(r,i,m)=>{const rec=V.road(r,m);visualSeal(m,rec);roadsMoved=roadsMoved||m.sent;keys.push(rec.renderKey);return rec;});
+    roadsMoved=roadsMoved||bridges!==S.bridges||keys.length!==before.length||keys.some((k,i)=>k!==before[i]);S.roadKeys=keys;S.bridges=bridges;
+    if(bootstrap||roadsMoved)out.bridges=visualGeometry(W.bridges);else delete out.roads;moved=moved||roadsMoved;}
   out.projects=(W.projects||[]).map(q=>V.project(q));
-  if(bootstrap){out.static={};for(const k of ['h','water','biome','moist','dom','roadCells'])if(W[k])out.static[k]=W[k].slice();out.static.rivStrips=visualGeometry(W.rivStrips);out.static.riverPaths=visualGeometry(W.riverPaths);out.static.treeSpots=visualGeometry(W.treeSpots);out.fields=W.land.F.map(visualField);out.mask=W.land.mask.slice();out.flood=W.land.flood.slice();}
-  else if(G.landDirty?.size)out.fields=[...G.landDirty].map(visualField);
-  // Mask rebuilding is structural, not daily. Transfer the immutable display copy.
-  if(!bootstrap&&G.landMaskDirty)out.mask=W.land.mask.slice();
-  if(bootstrap||G.tracksDirty){out.tracks=workerTrackSegments();out.trackBridgePlan=visualGeometry(W.trackBridgePlan||[]);}
-  if(bootstrap||G.fenceDirty)out.fences=workerFenceSegments();
+  if(bootstrap){out.static={};for(const k of ['h','water','biome','moist','dom','roadCells'])if(W[k])out.static[k]=W[k].slice();out.static.rivStrips=visualGeometry(W.rivStrips);out.static.riverPaths=visualGeometry(W.riverPaths);out.static.treeSpots=visualGeometry(W.treeSpots);out.fields=W.land.F.map(f=>{const m=visualMemo(S.field,f.k),r=visualField(f,m);visualSeal(m,r);return r;});out.mask=W.land.mask.slice();S.mask=W.land.mask.slice();out.flood=W.land.flood.slice();}
+  else if(G.landDirty?.size){const sent=[];for(const f of G.landDirty){const m=visualMemo(S.field,f.k),r=visualField(f,m);if(visualSeal(m,r))sent.push(r);}if(sent.length)out.fields=sent;}
+  // Mask rebuilding is structural, not daily. Transfer the immutable display copy, and only when a cell of it is not as the screen has it.
+  if(!bootstrap&&G.landMaskDirty&&visualMaskChanged(S,W.land.mask))out.mask=W.land.mask.slice();
+  if(bootstrap||G.tracksDirty){const t=workerTrackSegments(),plan=visualGeometry(W.trackBridgePlan||[]),k=visualKey([t,plan]);if(bootstrap||S.tracks!==k){out.tracks=t;out.trackBridgePlan=plan;}S.tracks=k;}
+  if(bootstrap||G.fenceDirty){const f=workerFenceSegments(),k=visualKey(f);if(bootstrap||S.fences!==k)out.fences=f;S.fences=k;}
   if(G.treesDirty?.size)out.trees=[...G.treesDirty].map(t=>({kind:t.k,index:t.i,cut:!!t.cut}));
-  out.dirty={structures,buildings:bootstrap||newBuildings,walls,details,roads,labels:bootstrap||newTowns,herds:bootstrap||G.herdsDirty,orders:bootstrap||G.ordersDirty,armies:bootstrap||G.armyFlagsDirty};
+  out.dirty={structures:bootstrap||structures&&moved,buildings:bootstrap||newBuildings,walls,details:bootstrap||details&&moved,roads:bootstrap||roads&&moved,labels:bootstrap||newTowns,herds:bootstrap||G.herdsDirty,orders:bootstrap||G.ordersDirty,armies:bootstrap||G.armyFlagsDirty};
   P.buildingCount=W.bldList.length;P.towns=W.settlements.length;P.started=true;
   for(const k of ['structuresDirty','roadsDirty','wallsDirty','detDirty','buildingsDirty','tracksDirty','fenceDirty','landMaskDirty','herdsDirty','ordersDirty','armyFlagsDirty'])G[k]=false;G.buildingDirty?.clear();G.landDirty?.clear();G.treesDirty?.clear();return out;
 }
@@ -16820,7 +16904,7 @@ function workerOverlayQuery(mode){
   if(mode==='landuse'){const beasts={sheep:0,cattle:0,swine:0,horses:0};for(const s of W.settlements)for(const k in beasts)beasts[k]+=s.stores[k]||0;return{day:day(),beasts};}
   throw Error('Unknown overlay');
 }
-function reconcileVisualList(old,records,key='id'){const previous=new Map(old.map(o=>[o[key],o]));const live=new Set(records.map(r=>r[key]));for(const o of old)if(!live.has(o[key]))o.gone=true;return records.map(r=>{const match=previous.get(r[key])||{};Object.assign(match,r);return match;});}
+function reconcileVisualList(old,records,key='id'){const previous=new Map(old.map(o=>[o[key],o]));const live=new Set(records.map(r=>r[key]));for(const o of old)if(!live.has(o[key]))o.gone=true;return records.map(r=>{const match=previous.get(r[key])||{};Object.assign(match,r);if(ArrayBuffer.isView(match.poly))match.poly=visualUnpack(match.poly);return match;});}
 function installPresentation(packet){
   if(packet.revision<=(G.workerRevision||0))return;G.workerRevision=packet.revision;WORKER_PRESENTATION.storageStatus=packet.storageStatus;backgroundApplying=true;
   try{
@@ -16828,18 +16912,19 @@ function installPresentation(packet){
     const previousPlayer=W.player;
     Object.assign(W,packet.world);MOD=packet.mod;W.monarch=packet.monarch;W.player=packet.world.player;W.houses=packet.houses;W.petitions=packet.petitions;W._commandCount=packet.commands;entryCount=packet.entries??entryCount;if(packet.static)allLines=['THE ANNALS OF '+W.name.toUpperCase()];
     if(typeof document!=='undefined'){const on=!!W.player?.on;document.body.classList.toggle('sov',on);if(on&&document.body.classList.contains('watch'))toggleWatch();if(previousPlayer&&previousPlayer.on!==on){if(on){markManual();if(document.getElementById('drawer').classList.contains('closed'))toggleDrawer();selectTab('crown');}else if(placeMode)setPlaceMode(null);}}
-    for(const r of packet.settlements){const s=W.settlements[r.si]||(W.settlements[r.si]={buildings:[],streets:[],places:[],furl:[],folk:[],dead:[],fires:[]});const {buildings,fires,furl,...scalar}=r;Object.assign(s,scalar);if(typeof s.takenCircuit==='string')s.takenCircuit=fortCircuitFor(s,s.takenCircuit)??null;s._buildingIds=buildings||s._buildingIds;s._fireIds=fires;s._furlIds=furl||s._furlIds;}
+    const idsMoved=[];for(const r of packet.settlements){const s=W.settlements[r.si]||(W.settlements[r.si]={buildings:[],streets:[],places:[],furl:[],folk:[],dead:[],fires:[]});const {buildings,fires,furl,...scalar}=r;Object.assign(s,scalar);if(typeof s.takenCircuit==='string')s.takenCircuit=fortCircuitFor(s,s.takenCircuit)??null;s._buildingIds=buildings||s._buildingIds;s._fireIds=fires;s._furlIds=furl||s._furlIds;if(buildings||furl)idsMoved.push(s);}
     W.capital=W.settlements[packet.capital];if(packet.static){W.rivHash=makeHash(40);for(const st of W.rivStrips||[])for(let k=0;k<st.pts.length-1;k++){const o={a:st.pts[k],b:st.pts[k+1],hw:st.hw[k],y:st.ys[k],x:st.pts[k].x,z:st.pts[k].z};W.rivHash.add(o,dist2d(o.a.x,o.a.z,o.b.x,o.b.z)+o.hw);}}
     if(packet.fields)for(const f of packet.fields){const o=W.land.F[f.k]||(W.land.F[f.k]={}),oldSap=o.sap||[];Object.assign(o,f);if(f.sap){o.sap=f.sap.map(t=>Object.assign(oldSap.find(p=>p.i===t.i&&p.x===t.x&&p.z===t.z)||{},t));(G.sapDirty||(G.sapDirty=new Set())).add(o);}for(const t of oldSap)if(!o.sap?.includes(t))(G.sapRemoved||(G.sapRemoved=[])).push(t);o.trees=(f.treeRefs||[]).map(t=>W.treeSpots[t.kind]?.[t.index]).filter(Boolean);(G.landDirty||(G.landDirty=new Set())).add(o);}
     if(packet.mask){W.land.mask.set(packet.mask);G.landMaskDirty=true;}
-    if(packet.buildings){for(const b of packet.buildings){const o=W.bldList[b.idx]||(W.bldList[b.idx]={});Object.assign(o,b);o.s=W.settlements[b.si];if(o._graveyard)o._graveyard.churchyardOf=o;(G.buildingDirty||(G.buildingDirty=new Set())).add(o);}for(const s of W.settlements){s.buildings=(s._buildingIds||[]).map(i=>W.bldList[i]);s.furl=(s._furlIds||[]).map(i=>W.land.F[i]);}}
+    if(packet.buildings){for(const b of packet.buildings){const o=W.bldList[b.idx]||(W.bldList[b.idx]={});Object.assign(o,b);o.s=W.settlements[b.si];if(o._graveyard)o._graveyard.churchyardOf=o;(G.buildingDirty||(G.buildingDirty=new Set())).add(o);}}
+    for(const s of idsMoved){s.buildings=(s._buildingIds||[]).map(i=>W.bldList[i]);s.furl=(s._furlIds||[]).map(i=>W.land.F[i]);} // the lists of the places whose lists were sent
     for(const s of W.settlements){s.mill=s.millId===null?null:W.bldList[s.millId];s.fires=(s._fireIds||[]).map(i=>W.bldList[i]).filter(Boolean);}
     for(const k of ['armies','caravans','envoys','travellers','ships','banditCamps'])W[k]=reconcileVisualList(W[k]||[],packet[k]||[],k==='caravans'?'renderKey':k==='travellers'?'renderKey':'id');
     // ids and circuit names back to the displayed hosts and rings: a reinforcement stands behind its host, a besieger before the ring it drew
     {const host=new Map(W.armies.map(a=>[a.id,a])),link=o=>o&&host.get(o.id)||o;
       for(const a of W.armies){a.joined=link(a.joined);a.foe=link(a.foe);if(a.siegeArc?.circuit){const t=W.settlements[a.siegeArc.circuit.si];a.siegeArc.circuit=t?fortCircuitFor(t,a.siegeArc.circuit.key)??null:null;}}
       for(const s of W.settlements)if(s.siegeBy?.army)s.siegeBy.army=link(s.siegeBy.army);}
-    if(packet.dragon){if(!W.dragon||W.dragon.name!==packet.dragon.name){if(W.dragon)W.dragon.gone=true;W.dragon={};}Object.assign(W.dragon,packet.dragon);}else{if(W.dragon)W.dragon.gone=true;W.dragon=null;}W.memorials=packet.memorials;if(packet.roads){W.roads=reconcileVisualList(W.roads||[],packet.roads,'renderKey');W.bridges=packet.bridges;}W.projects=packet.projects;
+    if(packet.dragon){if(!W.dragon||W.dragon.name!==packet.dragon.name){if(W.dragon)W.dragon.gone=true;W.dragon={};}Object.assign(W.dragon,packet.dragon);}else{if(W.dragon)W.dragon.gone=true;W.dragon=null;}if(packet.memorials)W.memorials=packet.memorials;if(packet.roads){W.roads=reconcileVisualList(W.roads||[],packet.roads,'renderKey');W.bridges=packet.bridges;}W.projects=packet.projects;
     if(packet.tracks){W.renderTracks=packet.tracks;W.trackBridgePlan=packet.trackBridgePlan;G.tracksDirty=true;}if(packet.fences){W.renderFences=packet.fences;G.fenceDirty=true;}
     for(const q of packet.trees||[]){const t=W.treeSpots[q.kind]?.[q.index];if(t){t.cut=q.cut;(G.treesDirty||(G.treesDirty=new Set())).add(t);}}
     for(const [k,v]of Object.entries(packet.dirty))if(v)G[{structures:'structuresDirty',buildings:'buildingsDirty',walls:'wallsDirty',details:'detDirty',roads:'roadsDirty',labels:'labelsDirty',herds:'herdsDirty',orders:'ordersDirty',armies:'armyFlagsDirty'}[k]]=true;
@@ -17156,7 +17241,7 @@ class SimulationWorkerHost{
         }else break;
         if(this.now()-start>=this.budget)break; // commands can enter between whole daily transactions
       }
-    }catch(error){this.fail(error);}finally{this.busy=false;if(!this.closed&&(this.queue.length||this.ready&&!this.fault&&(this.advance||this.model.rate()>0)))this.wake(this.queue.length||this.advance||this.model.reeling?.()===true?0:8);}
+    }catch(error){this.fail(error);}finally{this.busy=false;if(!this.closed&&(this.queue.length||this.ready&&!this.fault&&(this.advance||this.model.rate()>0)))this.wake(this.queue.length||this.advance||this.model.reeling?.()===true||this.accum>=1?0:8);}
   }
 }
 // Worker boundary for the six player-command journal records.

@@ -11,7 +11,11 @@ import {inlineGameScript} from './simulation-boundary.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const source=inlineGameScript(fs.readFileSync(path.join(ROOT,'index.html'),'utf8'));
-const SEED=1001,FATE=42,HASH=`#s=${SEED}&f=${FATE}&c=sea&y=850&km=6`,DAILY=30,REEL=30; // a small realm: six places, ~500 buildings
+// A small realm (six places, ~500 buildings), a month of daily packets and a month at the Reel cadence. A longer or larger soak:
+// DRIFT_KM=0 (the default map size) DRIFT_DAILY=150 DRIFT_REEL=90 DRIFT_BYTES=400000 node --test tools/simulation-projection-drift.test.mjs
+const env=(k,d)=>process.env[k]===undefined?d:+process.env[k];
+const BYTES_MEDIAN=env('DRIFT_BYTES',100_000); // JSON bytes of a daily packet in this month (about 600 000 before geometry crossed once)
+const SEED=env('DRIFT_SEED',1001),FATE=env('DRIFT_FATE',42),KM=env('DRIFT_KM',6),HASH=`#s=${SEED}&f=${FATE}&c=sea&y=850${KM?'&km='+KM:''}`,DAILY=env('DRIFT_DAILY',30),REEL=env('DRIFT_REEL',30);
 
 // Names that may lag in the display: each is read only by worker-side queries (inspector, accounts, overlays the worker
 // computes) or differs only as null against absent. Keys are kind.name, or W.name.path for world fields.
@@ -52,16 +56,40 @@ const run=(c,code)=>vm.runInContext(code,c,{timeout:300_000});
 const display=()=>{const c=realm();run(c,'BACKGROUND={options:{startAD:850},closed:true}');return c;}; // the foreground's W, built only by installPresentation
 const install=(c,packet)=>{c.__packet=structuredClone(packet);run(c,'installPresentation(__packet)');};
 
+// What each daily packet carries, against what the foreground already holds from the packets before it. Geometry that has not changed must not cross
+// again, nor a record that has not changed. (The drift test below shows the display is nonetheless whole.)
+function deltaAudit(){
+  const GEOMETRY='ch lot mill millWater dam _graveyard pos keepPos lake motte bailey hillCastle ward burgRing cas citadel tg wallRad wallKind wallDmg wallBuild buildings streets places furl remnants relicWalls poly path drawn bridges field battlePos raft objective berth sap'.split(' ');
+  const bytes=[],again=[],held=new Map(),omitted={poly:0,streets:0},sent={poly:0,streets:0,buildings:0,roads:0,fields:0},flags={structures:0,details:0,roads:0,days:0};
+  let typed=0; // typed arrays cross by transfer: counted at their size, beside the JSON
+  const json=v=>{typed=0;return JSON.stringify(v,(k,x)=>{if(ArrayBuffer.isView(x)){typed+=x.byteLength;return undefined;}return x;});},content=v=>JSON.stringify(v,(k,x)=>ArrayBuffer.isView(x)?Array.from(x):x);
+  const hold=(name,value)=>{const text=content(value);if(held.get(name)===text)again.push(name);held.set(name,text);};
+  const entity=(list,key)=>(p,day)=>{for(const r of p[list]||[]){const k=list+':'+r[key];for(const f of GEOMETRY)if(r[f]!==undefined&&r[f]!==null&&typeof r[f]==='object'){hold(k+'.'+f,r[f]);if(f==='poly')sent.poly++;}}};
+  const seen=new Set(),sees=[entity('armies','id'),entity('caravans','renderKey'),entity('envoys','id'),entity('travellers','renderKey'),entity('ships','id')];
+  return {bytes,again,omitted,sent,flags,
+    see(p){
+      const text=json(p);bytes.push(text.length+typed);flags.days++;if(text.includes('"cands"'))again.push('the layout planner\'s lot candidates (cands) crossed');for(const k of ['structures','details','roads'])if(p.dirty[k])flags[k]++;
+      for(const f of sees)f(p);
+      for(const l of ['caravans','travellers','ships','envoys'])for(const r of p[l]||[]){const k=l+':'+(r.renderKey??r.id);if(r.poly===undefined&&seen.has(k))omitted.poly++;seen.add(k);}
+      for(const r of p.roads||[]){const k='road:'+r.renderKey;for(const f of ['path','drawn','bridges'])if(r[f]!==undefined)hold(k+'.'+f,r[f]);if(r.path!==undefined)sent.roads++;}
+      for(const s of p.settlements)for(const f of GEOMETRY)if(s[f]!==undefined&&s[f]!==null&&typeof s[f]==='object'){hold('settlement:'+s.si+'.'+f,s[f]);if(f==='streets')sent.streets++;}
+      for(const s of p.settlements)if(s.streets===undefined&&seen.has('streets'+s.si))omitted.streets++;else if(s.streets!==undefined)seen.add('streets'+s.si);
+      for(const b of p.buildings||[]){for(const f of GEOMETRY)if(b[f]!==undefined&&b[f]!==null&&typeof b[f]==='object')hold('building:'+b.idx+'.'+f,b[f]);sent.buildings++;}
+      for(const f of p.fields||[]){for(const g of ['poly','sap'])if(f[g]!==undefined&&f[g]!==null)hold('field:'+f.k+'.'+g,f[g]);sent.fields++;}
+    }};
+}
+
 let pending=null;
 function world(){return pending||(pending=(async()=>{
   const M=realm(),D=display();
   await run(M,`WORKER_PRESENTATION.started=true;startSimulation({seed:${SEED},fate:${FATE},coast:'sea',startAD:850,outcomeJournal:new OutcomeJournal(async e=>({chunk:e.chunk,first:e.first,last:e.last}),{maxPendingBytes:64*1024*1024})})`);
   install(D,run(M,'workerPresentation(true)'));
+  const delta=deltaAudit();
   for(let i=1;i<=DAILY+REEL;i++){ // a month of daily packets, then a month at the Reel cadence; dirty marks accumulate between them
     await run(M,'STORAGE_OUTCOMES.wait()');assert.notEqual(run(M,'simTick()'),false);if(i%8===0)await run(M,'STORAGE_OUTCOMES.journal.flush()');
-    if(i<=DAILY||(i-DAILY)%30===0)install(D,run(M,'workerPresentation()'));
+    if(i<=DAILY||(i-DAILY)%30===0){const packet=run(M,'workerPresentation()');if(i<=DAILY)delta.see(packet);install(D,packet);}
   }
-  const out={M,D,day:run(M,'day()')};
+  const out={M,D,day:run(M,'day()'),delta};
   out.completeness=run(M,`(()=>{const V=VISUAL_ENTITY,kinds=[['settlement',W.settlements,s=>visualSettlement(s,true)],['building',W.bldList,b=>visualBuilding(b)],['field',W.land.F,f=>visualField(f)],
     ['army',W.armies,a=>V.army(a)],['caravan',W.caravans,c=>V.caravan(c,0)],['envoy',W.envoys,e=>V.envoy(e)],['traveller',W.travellers,t=>V.traveller(t)],['ship',W.ships,s=>V.ship(s)],
     ['banditCamp',W.banditCamps,c=>V.banditCamp(c)],['dragon',W.dragon?[W.dragon]:[],d=>V.dragon(d)],['road',W.roads,r=>V.road(r)],['project',W.projects,q=>V.project(q)]];
@@ -115,6 +143,16 @@ test('daily and Reel packets keep the display world equal to a fresh projection 
   for(const k of new Set([...Object.keys(A.W),...Object.keys(B.W)]))if(!['settlements','bldList','armies','caravans','travellers','ships','envoys','banditCamps','roads','land'].includes(k)){
     const d=firstDifference(A.canon(A.W[k],true),B.canon(B.W[k],true));if(d)note('W.'+k+d.path,{...d,path:''});}
   assert.deepEqual(drift,{},'display fields that drifted from the world');
+});
+
+test('a daily packet carries only what changed: geometry the foreground already holds does not cross again',{timeout:300_000},async()=>{
+  const {delta}=await world();
+  assert.deepEqual([...new Set(delta.again)].slice(0,10),[],'geometry that crossed again, unchanged');
+  assert.ok(delta.omitted.poly>0&&delta.omitted.streets>0,'the month has records the screen held from an earlier packet: '+JSON.stringify(delta.omitted));
+  assert.ok(delta.sent.poly>0&&delta.sent.buildings>0,'and new ones that crossed whole: '+JSON.stringify(delta.sent));
+  const steady=delta.bytes.slice(1).sort((a,b)=>a-b),median=steady[steady.length>>1];
+  assert.ok(median<BYTES_MEDIAN,`a daily packet's median size is ${median} bytes; ${JSON.stringify(steady.slice(-3))} at most`);
+  assert.ok(delta.flags.structures<delta.flags.days,'the screen is told its structures changed on some days only: '+JSON.stringify(delta.flags));
 });
 
 test('every object-valued name of a drawn thing crosses, or is named here as the worker\'s own',{timeout:300_000},async()=>{

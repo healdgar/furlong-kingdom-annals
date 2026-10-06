@@ -123,6 +123,15 @@ test('speed indices are validated and invalid speeds do not mutate rate',async()
   f.h.receive(msg(3,'speed',{index:6}));f.h.receive(msg(4,'pause'));await settle(f);assert.equal(f.model.r,0);assert.equal(reply(f,3).value.day,0);assert.ok(f.model.log.some(x=>x[0]==='speed'&&x[1]===6));
 });
 
+test('a host that is behind its speed goes straight on to the next day; one that has caught up waits for it to fall due',async()=>{
+  const behind=hostFixture({},{budget:1});await initialize(behind);
+  behind.h.receive(msg(2,'speed',{index:4}));await runOne(behind);behind.c.setNow(behind.c.now()+2000);behind.h.wake(0);await runOne(behind);
+  assert.deepEqual([...behind.c.jobs.values()].map(j=>j.at-behind.c.now()),[0],'days are owed: no pause between them');
+  const ahead=hostFixture({},{budget:1});await initialize(ahead);
+  ahead.h.receive(msg(2,'speed',{index:4}));await runOne(ahead);ahead.c.setNow(ahead.c.now()+40);ahead.h.wake(0);await runOne(ahead);
+  assert.deepEqual([...ahead.c.jobs.values()].map(j=>j.at-ahead.c.now()),[8],'caught up: wait for the next day');
+});
+
 test('Reel advances at a fixed clock without accumulating paced time',async()=>{
   const f=hostFixture({tick(m){m.d++;return true;}}, {budget:0});await initialize(f);f.h.receive(msg(2,'speed',{index:5}));await runOne(f);
   assert.equal(f.model.d,0); // the speed command itself does not depend on elapsed wall time
