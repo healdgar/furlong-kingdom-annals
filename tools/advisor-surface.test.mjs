@@ -43,7 +43,8 @@ function page({tab='crown'}={}){
   const chron=h('div',{id:'chron',class:'min'},h('div',{id:'chronfilters'},h('button',{class:'f on','data-f':'all'},'All'),h('button',{class:'f','data-f':'war'},'War')),h('div',{id:'chronlist'},h('div',{class:'centry',role:'button'},'An entry')));
   const insp=h('div',{id:'insp',style:'flex'},h('button',{id:'inspx'},'Close'),h('div',{id:'inspnav'},h('button',{id:'insporders','data-iview':'orders'},'Orders')),
     h('div',{id:'inspbody',role:'tabpanel'},h('a',{class:'nm','data-nm':'s1'},'Ashby')),
-    h('div',{id:'inspacts',role:'tabpanel',hidden:''},h('button',{class:'cbtn','data-cmd':'s-relief','data-arg':'3'},h('span',{},'Send relief grain',h('small',{},'grain from the crown')),h('span',{class:'cost'},'250 g'))));
+    h('div',{id:'inspacts',role:'tabpanel',hidden:''},h('button',{class:'cbtn','data-cmd':'s-relief','data-arg':'3'},h('span',{},'Send relief grain',h('small',{},'grain from the crown')),h('span',{class:'cost'},'250 g')),
+      h('button',{class:'cbtn','data-cmd':'s-levy','data-arg':'3',disabled:''},h('span',{},'Levy a host here (~40 men)'),h('span',{class:'cost'},'ready in 60 d'))));
   const body=h('body',{},hud,drawer,chron,insp,h('div',{id:'contextpanel',hidden:''}),h('div',{id:'placehint'}),h('div',{id:'savebox',style:'none'}),h('div',{id:'endgame',style:'none'}));
   const byId=id=>{let f=null;const walk=e=>{if(e.id===id)f=e;else for(const c of e.children)if(!f)walk(c);};walk(body);return f;};
   const builds={
@@ -61,7 +62,7 @@ function page({tab='crown'}={}){
     selectTab(t){ctx.build(t);},contextSync(){},refreshCrownPanel(){},setInspectorView(v){g.view=v;},contextExpand(on){g.expanded=on;},contextDismiss(){g.dismissed=true;},Event:class{constructor(type){this.type=type;}},setTimeout};
   Object.defineProperty(g,'drawerTab',{get:()=>ctx.drawerTab,set:v=>{ctx.drawerTab=v;}});
   for(const b of [...document.querySelectorAll('button')])b.matches=b.matches.bind(b);
-  const ADV=vm.runInNewContext(src+';ADV',g);g.window=g;return{ADV,g,dbody,byId,ctx};
+  const ADV=vm.runInNewContext(src+';ADV',g);g.window=g;return{ADV,g,dbody,byId,ctx,builds};
 }
 
 test('the drawer’s controls are found with the drawer closed and inert, and the player’s tab is left as it was',async()=>{
@@ -93,4 +94,37 @@ test('no state is a dead end: the context panel and dialogs can always be closed
 
 test('the in-page chat is never made inert behind a dialog',()=>{
   assert.match(html,/if\(e!==next&&e\.id!=='advchat'&&!e\.matches\('script,style'\)\)\{inertBefore\.set\(e,e\.inert\);e\.inert=true;\}/);
+});
+
+test('controls are named by what they do, and a day’s costs and cooldowns are fields, not names',async()=>{
+  const{ADV,g}=page();g.W.settlements=[{name:'Aldwick'},{name:'Ashby'},{name:'Brigg'},{name:'Colby'}];g.W.houses=[{name:'The Crown'},{name:'House Vane'},{name:'House Orme'},{name:'House Tarr'}];
+  const crown=(await ADV.discover('crown')).tools,card=(await ADV.discover('card')).tools,hud=(await ADV.discover('hud')).tools;
+  const honour=crown.find(t=>t.name==='crown:h-honour:3');assert.ok(honour,crown.map(t=>t.name).join(' '));
+  assert.equal(honour.label,'Honour');assert.equal(honour.cost,500);assert.equal(honour.desc,'a feast for their head');assert.deepEqual({...honour.target},{code:'h3',name:'House Tarr'});
+  const relief=crown.find(t=>t.name==='crown:s-relief:5');assert.equal(relief.disabled,true);assert.equal(relief.why,'ready in 60 d');assert.equal(relief.label,'Send relief grain');
+  const levy=card.find(t=>t.name==='card:s-levy:3');assert.equal(levy.why,'ready in 60 d');assert.deepEqual({...levy.target},{code:'s3',name:'Colby'});
+  assert.ok(hud.some(t=>t.name==='hud:pause')&&hud.some(t=>t.name==='hud:speed'),hud.map(t=>t.name).join(' '));
+  assert.ok((await ADV.discover('annals')).tools.some(t=>t.name==='annals:filter:war'));
+  assert.ok((await ADV.discover('over')).tools.some(t=>t.name==='over:trade'));
+  assert.ok((await ADV.discover('world')).tools.some(t=>t.name==='world:notable:7'));
+  assert.ok((await ADV.discover('acts')).tools.some(t=>t.name==='acts:great-fire'&&t.place));
+});
+
+test('a press answers with the worker’s reply and the annals it wrote; values are checked first',async()=>{
+  const{ADV,g,byId}=page();g.BACKGROUND={};g.workerRefreshCourt=()=>null;
+  const relief=byId('inspacts').children[0];relief.onclick=()=>g.ADV_PENDING.push(Promise.resolve({day:5,news:['[Spring 6, AD 850] Relief grain reaches Colby.']}));
+  const r=await ADV.execute('card:s-relief:3',{});assert.equal(r.ok,true);assert.deepEqual([...r.news],['[Spring 6, AD 850] Relief grain reaches Colby.']);assert.equal(JSON.stringify(r.worker),'[{"day":5}]');
+  relief.onclick=()=>g.ADV_PENDING.push(Promise.resolve({accepted:false,error:'Invalid settlement command'}));
+  const bad=await ADV.execute('card:s-relief:3',{});assert.equal(bad.ok,false);assert.equal(bad.error,'Invalid settlement command');
+  assert.match((await ADV.execute('hud:speed',{value:'99'})).error,/no such choice/);
+  assert.match((await ADV.execute('rates:harvest',{value:9})).error,/from 0\.5 to 1\.5/);
+  assert.match((await ADV.execute('card:s-levy:3',{})).error,/not now/);
+});
+
+test('a press that ends the game needs the player’s word; prompts are answered, never left open',async()=>{
+  const{ADV,g,byId}=page({tab:'world'});
+  const reforge=(await ADV.discover('world')).tools.find(t=>t.name==='world:reforge');assert.match(reforge.risk,/^reload/);
+  const r=await ADV.execute('world:reforge',{});assert.match(r.error,/confirm:true/);
+  const menuexport=byId('menuexport');menuexport.onclick=()=>g.window.prompt('Share this realm:','file:///x#s=1');
+  const x=await ADV.execute('menu:export',{});assert.deepEqual([...x.asked],['Share this realm:']);assert.equal(typeof g.window.prompt,'undefined');
 });

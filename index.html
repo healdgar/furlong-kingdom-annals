@@ -17205,7 +17205,7 @@ class SimulationWorkerHost{
         this.accum=this.part();this.model.speed(0);if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
       case 'command':
         // Validation precedes journal admission; every accepted command runs once.
-        {const prepared=this.model.validate(payload);try{this.model.command(payload,prepared);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day()});return;}
+        {const prepared=this.model.validate(payload);let done;try{done=this.model.command(payload,prepared);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day(),...(done&&typeof done==='object'?done:{})});return;}
       case 'view':this.reply(message,await this.model.view(payload.kind||'summary',{...payload,fraction:this.part()}));return;
       case 'save-record':this.reply(message,await this.model.saveRecord(payload));return;
       case 'watch':
@@ -17410,7 +17410,7 @@ function simulationWorkerModel(){return{
   validate(command){
     const prepared=workerCommandValidate(command);if(prepared.target==='main')throw Error('Command requires the main-thread interface');return prepared;
   },
-  command(command,prepared){return workerCommandApply(command,prepared||workerCommandValidate(command));},
+  command(command,prepared){const n0=allLines.length;workerCommandApply(command,prepared||workerCommandValidate(command));return{news:allLines.slice(n0)};}, // the reply carries the annals the command wrote
   view(kind,payload={}){
     const prior=QUERY_LAND_VALUES;QUERY_LAND_VALUES=['inspect','ui','plan-quote','overlay','actors'].includes(kind)?new Map():prior;
     try{
@@ -17724,10 +17724,38 @@ const ADV={muted:false,
   slug(t){return String(t||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^\w ]+/g,' ').trim().toLowerCase().replace(/\s+/g,'-').slice(0,48)||'x';},
   labelOf(el){const r=el.closest('.slrow,.wrow,label');let t=el.getAttribute('aria-label')||'';
     if(!t&&(el.tagName==='INPUT'||el.tagName==='SELECT')&&r)t=(r.querySelector('label span,span')||r).textContent;
-    if(!t)t=[...el.childNodes].filter(n=>n.nodeType===3||n.tagName==='B'||n.tagName==='SPAN'&&!n.classList.contains('tg')).map(n=>n.textContent).join(' ');
+    if(!t)t=ADV.words(el);
     if(!/\p{L}/u.test(t||''))t=(el.title?el.title.split(/[:(—]/)[0]:'')||(el.dataset.s!=null?'speed '+el.dataset.s:'')||el.id||t; // a button that is only a sign is named by what it says on hover
-    return (t||el.dataset.o||el.dataset.s||el.dataset.t||'').replace(/\s+/g,' ').trim().slice(0,80);},
-  // Where the player's controls live. A part of the screen is read wherever it is, open or shut: a closed drawer, a folded
+    return (t||el.dataset.o||el.dataset.s||el.dataset.t||'').replace(/\s+/g,' ').trim().slice(0,120);},
+  words(el){let t='';for(const n of el.childNodes)t+=n.nodeType===3?n.textContent:n.matches?.('small,.cost,.tg')?' ':ADV.words(n);return t;}, // what a control says, without its price, its reason or its map mark
+  // A control's name is what it does, not what it says today: its command and argument (crown:h-honour:3), else its id, else
+  // what it is for. Costs, cooldowns and dates are fields beside the name, so a name found one day still works the next.
+  ID:{pausebtn:'pause',speedselect:'speed',menubtn:'menu',rulebtn:'rule',goldchip:'ledger',datechip:'timeline',brand:'about',crownchip:'monarch',drawertoggle:'panels',uiback:'controls',
+    chronmin:'fold',btnexport:'export',btnshare:'share',menuexport:'export',menushare:'copy-link',menuaccounts:'accounts',menuannals:'annals',menulegend:'legend',savebtn:'save',advbtn:'advisor',helpbtn:'help',planbtn:'plan',petitionbtn:'petitions',
+    placecancel:'cancel',perfcopy:'copy-report',eventlocate:'locate',eventinspect:'inspect',eventbubbleclose:'dismiss',eventbubbledetails:'details',seedin:'seed',fatein:'fate',erain:'era',emap:'land',ecoast:'coast',
+    btnreforge:'reforge',btnmap:'map',btndaycycle:'day-cycle',btnlabels:'labels',btnwatch:'watch',inspx:'close',inspfollow:'follow',contextorders:'orders',contextdetails:'details',contextaccounts:'accounts',drawerclose:'close-drawer',guideclose:'got-it'},
+  DATA:[['contextTab',''],['rulerRate',''],['o',''],['cview','view:'],['iview','view:'],['info',''],['accountTown','accounts:'],['infoAnnals','annals'],['f','filter:'],['pi','answer:'],['pv','show'],['pb','plan:'],['sv',''],['eg','endgame:'],['s','speed:'],['nm','go:']],
+  NAMED:{'plan:x':'plan:done','plan:go':'plan:commission','plan:no':'plan:discard','endgame:on':'play-on','endgame:close':'close'},
+  keyOf(el){const d=el.dataset||{};
+    if(d.cmd)return d.cmd+(d.arg?':'+d.arg:'');
+    for(const[k,p]of ADV.DATA)if(d[k]!=null){const key=!p||p.endsWith(':')?p+d[k]:p;return ADV.NAMED[key]||key;}
+    if(el.id)return ADV.ID[el.id]||el.id;
+    return ADV.slug(ADV.labelOf(el)||el.tagName);},
+  // What a press may cost beyond the purse: reload means this game ends (it needs {confirm:true}); the rest are said, not barred.
+  RISK:{reforge:'reload: a new realm replaces this game',load:'reload: a saved game replaces this one',shelfload:'reload: a saved game replaces this one',loadcode:'reload: a saved game replaces this one',del:'deletes a saved game',
+    'sov-off':'you stop ruling',export:'downloads a file','copy-link':'clipboard: copies the realm link',share:'clipboard: copies the realm link','copy-report':'clipboard: copies the report',openfile:'opens a file picker the player must answer',
+    'lord:rebel':'war on the crown','lord:declare':'joins the rising against the crown','h-attaint':'attaints a house','a-disband':'disbands a host'},
+  target(el){const d=el.dataset||{},a=String(d.arg??''),n=a.split(':'),c=d.cmd,S=i=>W.settlements[+i]?{code:'s'+(+i),name:W.settlements[+i].name}:null,H=i=>W.houses[+i]?{code:'h'+(+i),name:W.houses[+i].name}:null,
+      A=i=>{const x=(W.armies||[]).find(y=>y.id===+i);return{code:'a'+(+i),...(x?{name:x.name}:{})};};
+    if(!c)return d.accountTown!=null?S(d.accountTown):d.nm?{code:d.nm}:null;
+    if(/^h-|^sov-house$/.test(c))return H(a);
+    if(/^s-|^storage-pick$/.test(c))return S(n[0]);
+    if(c==='storage-commission'){try{return S(JSON.parse(decodeURIComponent(a)).si);}catch(_){return null;}}
+    if(/^a-/.test(c)||c==='army')return A(n[0]);
+    if(c==='notable')return a?{code:'n'+a}:null;
+    if(c==='lord'&&/^(feud|incite|peace)$/.test(n[0]))return H(n[1]);
+    if(c==='lord'&&n[0]==='goto')return S(n[1]);
+    return null;},  // Where the player's controls live. A part of the screen is read wherever it is, open or shut: a closed drawer, a folded
   // menu or the page behind a dialog hides its buttons from the eye, not from the advisor (a press reaches an inert or hidden
   // button as surely as a shown one). The drawer's tabs are scopes of their own: crown, rates, acts, over, world.
   TABS:['crown','rates','acts','over','world'],
@@ -17774,10 +17802,16 @@ const ADV={muted:false,
       if(el.matches(ADV.SKIP)||scope==='hud'&&el.closest('#toolmenu')||!ADV.shown(el,root))continue;
       const d=ADV.describe(el,scope);if(scope==='dialog'&&/^dialog:close/.test(d.name))continue;add(d);}}
     return out;},
-  describe(el,scope){const label=ADV.labelOf(el),sm=el.querySelector&&el.querySelector('small'),tag=el.tagName,
-      d={name:scope+':'+ADV.slug(label||tag),label,scope,kind:tag==='SELECT'?'select':tag==='INPUT'?(el.type==='range'?'slider':el.type==='checkbox'?'checkbox':el.type==='number'?'number':'text'):tag==='TEXTAREA'?'text':'button',disabled:!!el.disabled};
-    if(el.title)d.help=el.title;if(sm&&sm.textContent.trim())d.why=sm.textContent.trim();if(el.querySelector&&el.querySelector('.tg'))d.place=true; // ⌖: then a place on the map
-    if(ADV.VIEWS[el.id])d.view=ADV.VIEWS[el.id];if(/^(btnshare|menushare|perfcopy)$/.test(el.id))d.risk='prompt';
+  describe(el,scope){const label=ADV.labelOf(el),sm=el.querySelector&&el.querySelector('small'),tag=el.tagName,key=ADV.keyOf(el),
+      d={name:scope+':'+key,label,scope,kind:tag==='SELECT'?'select':tag==='INPUT'?(el.type==='range'?'slider':el.type==='checkbox'?'checkbox':el.type==='number'?'number':'text'):tag==='TEXTAREA'?'text':'button',disabled:!!el.disabled};
+    const tag2=el.querySelector?.('.cost')?.textContent.trim(),m=tag2&&tag2.match(/^(\+)?([\d,]+) g$/);
+    if(sm&&sm.textContent.trim())d.desc=sm.textContent.trim();if(m)d.cost=(m[1]?-1:1)*+m[2].replace(/,/g,'');else if(tag2)d.why=tag2; // a cbtn's tag is its price, or why it cannot be given
+    if(d.disabled&&!d.why)d.why=d.cost>0?`costs ${d.cost.toLocaleString()} g, more than the purse holds`:['rates','acts'].includes(scope)&&sovOn()?'sealed while you rule: lay down the crown to use it':d.desc||el.title||'not available now';
+    if(!d.disabled&&tag2&&!m)delete d.why;
+    if(el.title)d.help=el.title;if(el.querySelector&&el.querySelector('.tg'))d.place=true; // ⌖: then a place on the map
+    const tg=ADV.target(el);if(tg)d.target=tg;const risk=ADV.RISK[key]||ADV.RISK[key.split(':')[0]];if(risk)d.risk=risk;
+    if(typeof uiConfirmKey==='function'&&uiConfirmKey(el.dataset?.cmd,el.dataset?.arg))d.confirm='asks twice: the first press arms it for five seconds, a second press gives the order';
+    if(ADV.VIEWS[el.id])d.view=ADV.VIEWS[el.id];
     if(d.kind==='slider'||d.kind==='number'){d.value=+el.value;d.min=+el.min;d.max=+el.max;d.step=+el.step||undefined;}else if(d.kind==='select'){d.value=el.value;d.options=[...el.options].map(o=>({value:o.value,label:o.textContent.trim().slice(0,60)}));}else if(d.kind==='checkbox')d.value=el.checked;else if(d.kind==='text')d.value=el.value;
     d._el=el;return d;},
   // Read or press a drawer tab's controls without disturbing the tab the player has open: the player's own panel is set aside whole
@@ -17844,11 +17878,12 @@ const ADV={muted:false,
       else{el.value=String(args.value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}}
     finally{ADV_PENDING=null;}
     try{const replies=(await Promise.all(P.map(p=>Promise.resolve(p).catch(e=>({accepted:false,error:String(e&&e.message||e)}))))).filter(r=>r&&typeof r==='object');
-      if(t.risk==='prompt')await new Promise(r=>setTimeout(r,400)); // a copy that fails falls back to a prompt a moment later
+      if(/^clipboard/.test(t.risk||''))await new Promise(r=>setTimeout(r,400)); // a copy that fails falls back to a prompt a moment later
       const bad=replies.find(r=>r.accepted===false),r={ok:!bad,did:t.name};if(bad)r.error=bad.error||'the game refused it';
       const news=BACKGROUND?replies.flatMap(x=>x.news||[]):allLines.slice(n0);if(news.length)r.news=news.slice(-12);
       if(replies.length)r.worker=replies.map(({news,...x})=>x);if(asked.length)r.asked=asked;
       if(placeMode)r.needsPlace='call game:place with {at: a place name or {x,z}}: '+(document.getElementById('placetext')?.textContent||'');
+      if(t.confirm&&G.uiConfirm&&performance.now()<G.uiConfirm.until)r.armed='armed: press the same control again within five seconds to give the order';
       return r;}
     finally{Object.assign(window,saved);}},
   async execute(name,args){args=args||{};name=ADV.scopeName(String(name||''));
@@ -17856,7 +17891,9 @@ const ADV={muted:false,
     const sc=name.split(':')[0];if(!ADV.roots(sc))return{error:'no such part of the screen: '+sc,scopes:ADV.scopes()};
     if(!ADV.scopes().includes(sc))return{error:'that part of the screen is not open now',scopes:ADV.scopes()};
     const run=async()=>{const t=ADV.harvest(sc).find(d=>d.name===name);if(!t)return{error:'no such control here now; discover() again',scopes:ADV.scopes()};
-      if(t.disabled)return{error:'not now',why:t.why||t.help||'disabled'};return ADV.press(t,args);};
+      if(t.disabled)return{error:'not now',why:t.why||t.help||'disabled'};
+      if(/^(reload|deletes)/.test(t.risk||'')&&args.confirm!==true)return{error:'this '+t.risk+'; pass {confirm:true} only when the player has asked for exactly this',risk:t.risk};
+      return ADV.press(t,args);};
     return ADV.TABS.includes(sc)?ADV.withTab(sc,run):run();},
   // Reads go to the worker that owns the world, or, in the foreground reference driver, to the same readers here (each read with
   // its own throwaway valuation memo, as the worker does), so both drivers answer alike.
@@ -18018,7 +18055,7 @@ state:'none',ready:null,
       {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
       {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
       {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "menu", "crown", "rates", "acts", "over", "world", "annals", and while open "card", "petition", "plan", "context", "info", "event", "legend", "place", "dialog"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
-      {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
+      {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); answers with the game’s own reply and the annals the press wrote. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   async brief(){let P,st,ch;if(BACKGROUND){[P,st,ch]=await Promise.all([BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}),BACKGROUND.request('view',{kind:'ui',panel:'advisor-state',path:'realm'}),BACKGROUND.request('view',{kind:'ui',panel:'annals',count:6})]);ch=ch.join('\n');}else{P=ADV.persona();st=ADV.state('realm');ch=allLines.slice(-6).join('\n');}
     return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
 Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to. Write in Markdown. Whenever you name a place, house, lord, host or any of the folk, make it a link the player can click to go there: [[Name]] with the name exactly as the tools give it, or [words](game:CODE) with the code the tools give (s… places, h… houses, n… lords and ladies, a… hosts, p… the folk; inspect lists a card's links with their codes).${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
