@@ -23,6 +23,7 @@ function hostFixture(overrides={},options={}){
     validate(x){if(x?.bad)throw Error('invalid command');},command(x){this.log.push(['command',x.name]);overrides.command?.(this,x);},
     view(kind){if(overrides.view) return overrides.view(this,kind);return{day:this.d,kind};},
     async save(name){this.log.push(['save',this.d,name]);return{day:this.d,name};},async flush(){this.log.push(['flush',this.d]);return{day:this.d};}};
+  if(overrides.urgent)model.urgent=()=>overrides.urgent(model);if(overrides.clock)model.clock=()=>overrides.clock(model);
   let h;const send=m=>{out.push(m);options.onSend?.(m,x=>h.receive(x));};
   h=vm.runInNewContext(source+';new Host(model,send,{now:clockNow,schedule:clockSchedule,cancel:clockCancel,budget:budgetValue})',{
     model,out,send,clockNow:c.now,clockSchedule:c.schedule,clockCancel:c.cancel,budgetValue:options.budget??5,Error,Map,Number,String,Promise,performance:{now:c.now},setTimeout,clearTimeout});
@@ -191,4 +192,45 @@ test('client applies a pushed view before acknowledging it, and callback failure
   state.sent.length=0;const errors=[];c.onfault=error=>errors.push(error.message);c.onview=()=>{throw Error('render apply failed');};
   context.worker.onmessage({data:{protocol:1,type:'view',sequence:8,value:{day:60}}});await new Promise(r=>setImmediate(r));
   assert.deepEqual(state.sent,[]);assert.deepEqual(errors,['render apply failed']);
+});
+
+// The worker's own speed changes (a petition with pause-on-petition, the campaign's end, a journal fault) and the date.
+const speedWatch={urgent:m=>m.idx!==m.shown,view(m,kind){m.shown=m.idx;return{day:m.d,kind,speed:m.idx};}};
+test('a pause the worker sets itself is published at once at the thirty-day Reel cadence',async()=>{
+  const f=hostFixture({...speedWatch,tick(m){m.d++;if(m.d===7)m.speed(0);return true;}},{budget:0});await initialize(f);
+  f.h.receive(msg(2,'watch',{kind:'landscape',everyDays:30}));f.h.receive(msg(3,'speed',{index:5}));f.h.receive(msg(4,'view',{kind:'landscape'}));await settle(f);
+  const views=f.out.filter(x=>x.type==='view');
+  assert.deepEqual(views.map(x=>[x.value.day,x.value.speed]),[[7,0]],'the paused day is shown, not day 30');assert.equal(f.model.d,7,'and no day runs after it');
+});
+test('an urgent publication waits for the view in flight, then goes out before the cadence',async()=>{
+  const f=hostFixture({...speedWatch,tick(m){m.d++;if(m.d===33)m.speed(0);return true;}},{budget:0});await initialize(f);
+  f.h.receive(msg(2,'watch',{kind:'landscape',everyDays:30}));f.h.receive(msg(3,'speed',{index:5}));f.h.receive(msg(4,'view',{kind:'landscape'}));await settle(f);
+  const first=f.out.filter(x=>x.type==='view');assert.deepEqual(first.map(x=>x.value.day),[30],'day 30 is in flight, unacknowledged');assert.equal(f.model.d,33);
+  f.h.receive(msg(5,'view-ack',{sequence:first[0].sequence}));await settle(f);
+  assert.deepEqual(f.out.filter(x=>x.type==='view').map(x=>[x.value.day,x.value.speed]),[[30,5],[33,0]],'the pause follows the acknowledgement, thirty days early');
+  f.h.receive(msg(6,'view-ack',{sequence:f.out.filter(x=>x.type==='view')[1].sequence}));await settle(f);
+  assert.equal(f.out.filter(x=>x.type==='view').length,2,'nothing urgent remains');
+});
+test('every simulated day sends a small clock message, at every speed, with its fraction and speed',async()=>{
+  let nextId=3;const f=hostFixture({...speedWatch,clock:m=>({day:m.d,speed:m.idx,treasury:m.d*10}),tick(m){m.d++;f.c.setNow(f.c.now()+25);return true;}},
+    {budget:0,onSend:(packet,receive)=>{if(packet.type==='view')receive(msg(++nextId,'view-ack',{sequence:packet.sequence}));}});await initialize(f);
+  f.h.receive(msg(2,'watch',{kind:'landscape',everyDays:30}));await settle(f);f.model.shown=0;f.h.receive(msg(3,'advance',{days:60}));await settle(f);
+  const clocks=f.out.filter(x=>x.type==='clock'),views=f.out.filter(x=>x.type==='view');
+  assert.deepEqual(views.map(x=>x.value.day),[30,60]);assert.deepEqual(clocks.map(c=>c.value.day),Array.from({length:60},(_,i)=>i+1),'one per day, packet days included');
+  assert.ok(clocks.every(c=>c.value.frac===0&&c.value.speed===0&&c.value.treasury===c.value.day*10));
+  const paced=hostFixture({clock:m=>({day:m.d,speed:m.idx})},{budget:0});await initialize(paced);paced.h.receive(msg(2,'watch',{kind:'landscape',everyDays:1}));await runOne(paced);
+  paced.h.receive(msg(3,'speed',{index:4}));await runOne(paced);paced.c.setNow(50);await runOne(paced);const c=paced.out.filter(x=>x.type==='clock');
+  assert.equal(c.length,1);assert.equal(c[0].value.speed,4);assert.ok(c[0].value.frac>0&&c[0].value.frac<1,'the part of the next day already run: '+c[0].value.frac);
+  paced.h.receive(msg(4,'pause'));await settle(paced);
+  const quiet=hostFixture({clock:m=>({day:m.d})},{budget:0});await initialize(quiet);quiet.h.receive(msg(2,'advance',{days:5}));await settle(quiet);
+  assert.equal(quiet.out.filter(x=>x.type==='clock').length,0,'no watcher, no clock');
+});
+test('the client lays a clock message out in wire order behind a view still being installed',async()=>{
+  const state={sent:[]},context={state,worker:{postMessage:m=>state.sent.push(m),terminate(){}},Map,Error,Promise};
+  const c=vm.runInNewContext(source+';new Client(worker)',context),order=[];let release;const gate=new Promise(r=>release=r);
+  c.onview=async v=>{order.push('view:'+v.day);await gate;order.push('view-done');};c.onclock=v=>order.push('clock:'+v.day);
+  context.worker.onmessage({data:{protocol:1,type:'view',sequence:1,value:{day:30}}});context.worker.onmessage({data:{protocol:1,type:'clock',value:{day:34}}});
+  await new Promise(r=>setImmediate(r));assert.deepEqual(order,['view:30'],'the clock does not overtake the packet');
+  release();await new Promise(r=>setImmediate(r));assert.deepEqual(order,['view:30','view-done','clock:34']);
+  assert.deepEqual(state.sent.filter(m=>m.type==='view-ack').map(m=>m.payload.sequence),[1],'clocks are not acknowledged');
 });

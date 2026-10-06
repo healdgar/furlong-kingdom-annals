@@ -24,6 +24,11 @@ const achievement=extract('function achGet(id){','function achYear()');
 const reignHeader=extract('function reignHeader(n){','function presentReign(');
 const projectEvent=extract('function projectEvent(ev){','function referenceRegex(');
 const storageArchive=extractHTML('const STORAGE_ARCHIVE_DB = (() => {','\nif(!MODEL_ONLY)window.FURLONG_STORAGE_LOG=backgroundStorageLog();');
+const fortSeams=extract('function fortCircuitKey(s,c){','function objectiveBuilding(')+'\n'+extract('function casRing(s){','function casR(s,R){');
+const fortReads=extract('function wallKindAt(s,a){','/* Circuits own their shape');
+const foregroundAdapters=extract('function workerQuery(key,payload,install){','function workerRefreshCourt(');
+const hud=extract('function hudFigures(){','/* =========================================================================\n   PER-FRAME WORLD ANIMATION');
+const chronicle=extract('function chronicleAdd(evs){','function reignHeader(n){');
 const forbidden=new Set(['_owners','_hh','household','households','account','ownerAccount','beneficiary','storage','ledger','holdings','rng','simulationRNG']);
 
 function context(extra={}){
@@ -385,4 +390,110 @@ test('background storage-log facade flushes once for active reads, freezes the b
   assert.equal(vm.runInContext('W.clock.day',c),7);assert.equal(vm.runInContext('JOURNAL.length',c),0);
   assert.ok(reads.every(name=>name==='games'||name==='chunks'));
   assert.equal(vm.runInContext('STORAGE_OUTCOMES.status().records',c),0);
+});
+
+test('geometry copies keep primitive names (a tree\'s size s) and cut only links back into the world',()=>{
+  const c=context();
+  const r=vm.runInContext(`(()=>{const town={name:'Town',buildings:[]},tree={x:1,z:2,s:1.4,v:.2,k:'dec',i:3},sap={i:1,x:1,z:2,s:.3,k:'dec'};
+    const b={idx:0,s:town,p:{id:4},head:{id:5},title:{owner:{id:6}},men:[{id:1}],crew:[{id:2}],riders:[{id:3}],churchyardOf:{arch:'temple'},geometry:{s:2,p:.5,title:'Sign',head:3,men:0}};
+    return {tree:visualGeometry(tree),saplings:visualGeometry([sap]),b:visualGeometry(b),private:visualGeometry({storage:'yard',ledger:3,account:1,holdings:'x',beneficiary:2,ownerAccount:0})};})()`,c);
+  assert.equal(r.tree.s,1.4,'tree size');assert.equal(r.saplings[0].s,.3,'sapling size');
+  for(const k of ['s','p','head','title','men','crew','riders','churchyardOf'])assert.equal(r.b[k],undefined,`${k} link is cut`);
+  assert.deepEqual(JSON.parse(JSON.stringify(r.b.geometry)),{s:2,p:.5,title:'Sign',head:3,men:0},'the same names holding numbers or words cross');
+  assert.deepEqual(Object.keys(r.private),[],'private account names never cross, whatever they hold');auditDTO(r);
+});
+
+test('walls, castle rings, sieges and castle lots cross; circuits and hosts relink to what was installed beside them',()=>{
+  const c=context();new vm.Script(fortSeams+'\nfunction musterPos(){return{x:0,z:0,dir:0}}').runInContext(c);
+  vm.runInContext(`
+    const N=8,ring=r=>({x:5,z:6,r,wallRad:new Float32Array(N).fill(r),wallKind:new Uint8Array(N),gateA:1.5});
+    const s={name:'Fort',kind:'town',owner:1,pos:{x:0,y:0,z:0},radius:10,extentR:20,buildings:[],fires:[],furl:[],streets:[],places:[],folk:[],
+      wallRad:new Float32Array(N).fill(60),wallKind:Uint8Array.from([0,1,1,0,2,0,3,0]),hillCastle:{...ring(30),timber:true},burgRing:{x:1,z:2,r:38},relicWalls:[[{x:1,z:1},{x:2,z:2}]],_gateTrafficVersion:4};
+    const keep={idx:0,arch:'keep',state:'sound',x:5,z:6,w:8,d:8,rot:0,s,_inCastle:true,lot:[{x:1,z:1},{x:2,z:1},{x:2,z:2}]};s.buildings.push(keep);
+    const host={id:7,house:2,state:'siege',at:0,strength:900,men:[]},column={id:8,house:2,state:'battle',at:0,strength:300,men:[],joined:host,foe:null},rams={id:9,house:2,state:'siege',at:0,strength:200,men:[]};
+    host.siegeArc={c:.4,w:.9,R:70,circuit:s.hillCastle};rams.siegeArc={c:2,w:.5,R:60,circuit:s};s.siegeBy={houseName:'House Black',army:host};s.takenCircuit=s.hillCastle;
+    W.settlements=[s];W.capital=s;W.bldList=[keep];W.armies=[host,column,rams];W.houses=[{name:'Crown'},{name:'A'},{name:'House Black'}];W.petitions=[];W.projects=[];
+    globalThis.fort=s;globalThis.keep=keep;
+  `,c);
+  const packet=vm.runInContext('workerPresentation(true)',c);auditDTO(packet);
+  const r=packet.settlements[0],arc=id=>JSON.parse(JSON.stringify(packet.armies.find(x=>x.id===id).siegeArc));
+  assert.deepEqual(Array.from(r.wallKind),[0,1,1,0,2,0,3,0]);assert.notEqual(r.wallKind,vm.runInContext('fort.wallKind',c),'a packet-owned copy');
+  assert.deepEqual(JSON.parse(JSON.stringify(r.siegeBy)),{houseName:'House Black',army:{id:7}});
+  assert.equal(r.takenCircuit,'hill');assert.deepEqual(arc(7),{c:.4,w:.9,R:70,circuit:{si:0,key:'hill'}});assert.deepEqual(arc(9).circuit,{si:0,key:'town'});
+  assert.ok(JSON.stringify(packet.armies).length<1500,'the besiegers carry circuit names, not copies of the town');
+  assert.equal(r.hillCastle.timber,true);assert.equal(r.hillCastle.wallRad.length,8);assert.deepEqual(JSON.parse(JSON.stringify(r.burgRing)),{x:1,z:2,r:38});
+  assert.deepEqual(JSON.parse(JSON.stringify(r.relicWalls)),[[{x:1,z:1},{x:2,z:2}]]);assert.equal(r._gateTrafficVersion,4);
+  assert.equal(packet.buildings[0]._inCastle,true);assert.equal(packet.armies.find(x=>x.id===8).joined.strength,900);
+  for(const k of ['roofPlan','wheel','waterwheel'])assert.ok(!(k in packet.buildings[0]));for(const k of ['gateAngles','wallGates','ramparts','breaches'])assert.ok(!(k in r));
+
+  const main=context();new vm.Script(fortSeams+'\n'+fortReads).runInContext(main);
+  const day=n=>{vm.runInContext(`W.clock.day=${n};G.buildingDirty.add(keep);G.structuresDirty=true`,c);main.wire=structuredClone(vm.runInContext('workerPresentation(false)',c));vm.runInContext('installPresentation(wire)',main);
+    return vm.runInContext(`(()=>{const s=W.settlements[0],host=W.armies.find(a=>a.id===7),col=W.armies.find(a=>a.id===8),rams=W.armies.find(a=>a.id===9);globalThis.lastRing=globalThis.ring;globalThis.ring=s.hillCastle;
+      return {ring:host.siegeArc?.circuit===s.hillCastle,town:rams.siegeArc?.circuit===s,taken:s.takenCircuit===s.hillCastle,army:s.siegeBy?.army===host,joined:col.joined===host,strength:col.joined.strength,
+        fresh:globalThis.lastRing!==globalThis.ring,kinds:[0,1,2,3,4,5,6,7].map(k=>wallKindAt(s,k/8*Math.PI*2)),inCastle:W.bldList[0]._inCastle,bldS:W.bldList[0].s===s,gates:s._gateTrafficVersion}})()`,main);};
+  const dayOf=n=>JSON.parse(JSON.stringify(day(n)));
+  for(const n of [8,9]){const got=dayOf(n);
+    assert.deepEqual({...got,fresh:undefined},{ring:true,town:true,taken:true,army:true,joined:true,strength:900,fresh:undefined,kinds:[0,1,1,0,2,0,3,0],inCastle:true,bldS:true,gates:4},`day ${n}`);
+    if(n===9)assert.equal(got.fresh,true,'each packet brings a new ring and the circuits follow it');}
+  vm.runInContext('fort.siegeBy=null;fort.takenCircuit=null',c);day(10);
+  assert.deepEqual(Array.from(vm.runInContext('[W.settlements[0].siegeBy,W.settlements[0].takenCircuit]',main)),[null,null],'a lifted siege clears');
+});
+
+test('the worker\'s speed reply is authoritative: a stale pull cannot put back the speed it replaced',async()=>{
+  const c=context();new vm.Script(workerNotice+'\n'+foregroundAdapters).runInContext(c);
+  vm.runInContext(`const SPEEDS=[0,.5,2,8,30,360,1/1800];let hudCalls=0;function updateHUD(){hudCalls++}function storageFaultNotice(){}
+    const calls=[],pulls=[];BACKGROUND={closed:false,request(type,payload){calls.push(type);if(type==='view'){let resolve;const p=new Promise(r=>resolve=r);pulls.push(resolve);return p;}
+      if(type==='pause'||type==='speed')return Promise.resolve({day:7,speed:type==='pause'?0:payload.index,revision:4});return Promise.resolve({day:7});}};
+    const packet=(revision,speed,day)=>({protocol:1,revision,day,speed,mod:{},world:{clock:{day}},monarch:{},houses:[],petitions:[],commands:0,settlements:[],capital:0,
+      armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],dragon:null,memorials:[],projects:[],events:[],dirty:{}});
+    G.workerRevision=3;globalThis.first=workerRefreshLandscape();globalThis.paused=workerSetSpeed(0);`,c);
+  await new Promise(r=>setImmediate(r));
+  assert.deepEqual(Array.from(vm.runInContext('speedChanges',c)),[0],'the pause reply sets the speed at once');
+  assert.equal(vm.runInContext('pulls.length',c),1,'the refresh waits behind the pull already on the wire');
+  vm.runInContext('pulls[0](packet(4,5,6))',c);await new Promise(r=>setImmediate(r));
+  assert.deepEqual(Array.from(vm.runInContext('speedChanges',c)),[0],'a packet cut before the pause keeps its geometry but not its speed');
+  assert.equal(vm.runInContext('W.clock.day',c),6);assert.equal(vm.runInContext('pulls.length',c),2,'a fresh pull follows');
+  vm.runInContext('pulls[1](packet(5,0,7))',c);await vm.runInContext('paused',c);
+  assert.deepEqual(Array.from(vm.runInContext('speedChanges',c)),[0,0]);assert.equal(vm.runInContext('W.clock.day',c),7);
+  vm.runInContext('installPresentation(packet(6,2,8))',c);assert.deepEqual(Array.from(vm.runInContext('speedChanges',c)),[0,0,2],'a later revision speaks for a speed the worker chose itself');
+  assert.deepEqual(Array.from(vm.runInContext('calls',c)),['view','pause','watch','view']);
+});
+
+test('a worker clock moves the HUD\'s date, treasury and people between landscape packets, never backwards',()=>{
+  const els=new Map(),document={getElementById:id=>els.get(id)||els.set(id,{textContent:'',setAttribute(){}}).get(id)};
+  const c=context({document});new vm.Script(foregroundAdapters+'\n'+hud).runInContext(c);
+  vm.runInContext(`const SEASONGLYPH=['❀','☀','❦','❄'];
+    W.clock={day:30};W.treasury=100;W.legitimacy=50;W.weather={state:'clear'};W.monarch=null;W.player=null;W.settlements=[{pop:40},{pop:60}];`,c);
+  vm.runInContext(`installClock({day:34,frac:.25,speed:5,at:1e12,treasury:180.4,legitimacy:52,pop:123,weather:'rain',drought:0,plagueActive:false})`,c);
+  assert.equal(els.get('treasury').textContent,'180');assert.equal(els.get('realmpop').textContent,'123');assert.equal(String(els.get('legit').textContent),'52');
+  assert.equal(vm.runInContext('W.clock.day',c),34);assert.equal(els.get('wxchip').textContent,'🌧');
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('[G.workerClock.day,G.workerClock.frac,G.workerClock.speed,G.workerClock.at]',c))),[34,.25,5,1e12],'the latest worker clock is kept for a screen clock');
+  vm.runInContext(`installClock({day:35,treasury:190,legitimacy:52,pop:124,weather:'rain'})`,c);
+  assert.equal(vm.runInContext('W.clock.day',c),35);assert.equal(els.get('treasury').textContent,'180','repaints at most ten times a second; the frame loop paints the rest');
+  vm.runInContext('updateHUD()',c);assert.equal(els.get('treasury').textContent,'190');assert.equal(els.get('realmpop').textContent,'124');
+  vm.runInContext(`installClock({day:33,treasury:1,legitimacy:1,pop:1,weather:'snow'})`,c);vm.runInContext('updateHUD()',c);
+  assert.equal(els.get('treasury').textContent,'190','an older clock is ignored');assert.equal(vm.runInContext('W.clock.day',c),35);
+  vm.runInContext('W.clock={day:36};updateHUD()',c);assert.equal(els.get('realmpop').textContent,'100','a newer packet\'s own towns count again');
+});
+
+test('a packet\'s events are laid out once, and only fresh ones fly the camera or light the map',()=>{
+  const c=context({document:{}});
+  vm.runInContext(`const calls=[];function chronicleAdd(list){calls.push(['annals',list.map(e=>e.day)])}function presentReign(t){calls.push(['reign',t])}
+    const director={push(ev){calls.push(['director',ev.day])}};function fxEvent(ev){calls.push(['fx',ev.day])}W.clock.day=60;`,c);
+  new vm.Script(projectEvent).runInContext(c);
+  vm.runInContext(`const evs=[];for(let d=31;d<=60;d++){evs.push({day:d,cat:'trade',pri:4,pos:{x:0,z:0},text:'e'+d});if(d===45)evs.push({day:45,reign:true,text:'R'});}projectEvents(evs)`,c);
+  const calls=JSON.parse(JSON.stringify(vm.runInContext('calls',c))),range=(a,b)=>Array.from({length:b-a+1},(_,i)=>a+i);
+  assert.deepEqual(calls.slice(0,3),[['annals',range(31,45)],['reign','R'],['annals',range(46,60)]]);
+  assert.deepEqual(calls.slice(3),range(57,60).flatMap(d=>[['director',d],['fx',d]]),'a month-old event is in the annals only');
+
+  const counts={append:0,measure:0};const kid=()=>({dataset:{},style:{},setAttribute(){},addEventListener(){}});
+  const list={children:[],get scrollTop(){counts.measure++;return 0},set scrollTop(v){},get clientHeight(){return 100},get scrollHeight(){counts.measure++;return 120},
+    appendChild(f){counts.append++;this.children.push(...f.kids)},removeChild(){this.children.shift()},get firstChild(){return this.children[0]}};
+  const dom={createElement:kid,createDocumentFragment:()=>({kids:[],appendChild(el){this.kids.push(el)}}),getElementById:()=>({classList:{contains:()=>true}})};
+  const d=context({document:dom});
+  vm.runInContext(`function chronList(){return list}const contextUI={kind:null};let chronFilter='all';const linkNames=x=>x,esc=x=>x;function decorateControls(){}`,Object.assign(d,{list}));
+  new vm.Script(chronicle).runInContext(d);
+  vm.runInContext(`chronicleAdd(Array.from({length:30},(_,i)=>({day:i,cat:'trade',text:'e'+i})))`,d);
+  assert.equal(counts.append,1,'one append for the run');assert.ok(counts.measure<=3,`layout read ${counts.measure} times, not thirty`);assert.equal(list.children.length,30);
+  vm.runInContext(`chronicleAdd({day:31,cat:'trade',text:'one'})`,d);assert.equal(list.children.length,31,'a single entry still works');
 });

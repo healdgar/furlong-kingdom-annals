@@ -135,6 +135,34 @@ test('settleParcels computes b.lot and b._inCastle independently of rendering co
   assert.equal(marked.length,1,'unchanged neighboring parcels must not rescan the land mask');
 });
 
+test('settleParcels marks each building whose lot or castle yard changed, and only those, for the next presentation packet',()=>{
+  const makeHashSrc=source.slice(source.indexOf('let HASH_STAMP=0;'),source.indexOf('\nfunction groundBuilding(b){'));
+  const parcelsSrc=source.slice(source.indexOf('function ensureBldList(){'),source.indexOf('\n/* ---------------- end parcel settlement',source.indexOf('function ensureBldList(){')));
+  const s={kind:'town',pos:{x:0,z:0},streets:[],places:[],buildings:[]};
+  const b1={x:10,z:10,w:8,d:6,rot:0,s,state:'sound',arch:'house'},b2={x:22,z:10,w:8,d:6,rot:0,s,state:'sound',arch:'house'},far={x:300,z:300,w:8,d:6,rot:0,s,state:'sound',arch:'house'};
+  s.buildings.push(b1,b2,far);
+  const c=run(makeHashSrc+'\n'+parcelsSrc,{W:{settlements:[s],roads:[],land:{mask:new Uint8Array(4)}},G:{rivStrips:[]},clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
+    dist2d:(x1,z1,x2,z2)=>Math.hypot(x1-x2,z1-z2),castleKeepOut:()=>[],markLot:()=>{},Math,Set,Map});
+  c.settleParcels();
+  assert.deepEqual(new Set(c.G.buildingDirty),new Set([b1,b2,far]),'a full survey publishes every lot');
+  c.G.buildingDirty.clear();const before=b2.lot.map(p=>[p.x,p.z]);
+  b1.w=14;c.settleParcels([b1]); // the house widens: its own lot and its neighbour's shared edge move
+  assert.notDeepEqual(b2.lot.map(p=>[p.x,p.z]),before);
+  assert.ok(c.G.buildingDirty.has(b1)&&c.G.buildingDirty.has(b2),'the widened house and the neighbour whose lot it took');
+  assert.equal(c.G.buildingDirty.has(far),false,'a lot out of reach is not republished');
+  c.G.buildingDirty.clear();c.settleParcels([b1]);assert.equal(c.G.buildingDirty.size,0,'settling again to the same outlines publishes nothing');
+});
+test('a mill founded, moved or burned after boot gets its wheel and race rebuilt, once',()=>{
+  const keySrc=source.slice(source.indexOf('function millWheelKey(){'),source.indexOf('\nfunction rebuildMillWheels(){'));
+  const c=run(keySrc+'\n'+region('function projectStructures(){','function houseTints(){')+'\nfunction rebuildMillWheels(){G.millKey=millWheelKey();G.rebuilt++;}function bldRoom(){}function projectBuildingInstance(){}',
+    {W:{settlements:[{mill:null},{mill:null}],bldList:[]},G:{bodies:{},roofs:{},wheels:[],rebuilt:0,buildingDirty:new Set()}});
+  c.rebuildMillWheels();c.G.rebuilt=0; // boot
+  const mill={idx:4,state:'sound',x:1,z:2,rot:0,millWater:{kind:'river',side:1,offset:5,y:3}};
+  c.projectStructures();assert.equal(c.G.rebuilt,0,'nothing dirty, nothing read');
+  c.W.settlements[1].mill=mill;c.G.buildingsDirty=true;c.projectStructures();assert.equal(c.G.rebuilt,1,'a new mill');
+  c.G.buildingDirty.add({idx:9});c.projectStructures();assert.equal(c.G.rebuilt,1,'another building changed: the wheels stand');
+  mill.state='burnt';c.G.buildingDirty.add(mill);c.projectStructures();assert.equal(c.G.rebuilt,2,'the mill burned');
+});
 test('rebuildDetails runs real featLots without stubbing and never mutates authoritative land mask',()=>{
   const rebuildDetailsSrc=region('function rebuildDetails(){','/* ---------------- town walls:');
   const featLotsSrc=region('function featLots(){','function featBuilding(b){');

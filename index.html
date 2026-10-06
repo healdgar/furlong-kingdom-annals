@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-06 15:41 UTC · after 7c78bc5</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-06 17:23 UTC · after 749b205</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -6080,7 +6080,9 @@ function millRaceRibbon(points,width,vertices,indices,uvs){
     if(i){const a=base-2,b=base-1,c=base,d=base+1;indices.push(a,c,b,b,c,d);}
   }
 }
+function millWheelKey(){return W.settlements.map(s=>{const b=s.mill,w=b?.millWater;return b?[b.idx,b.state,!!b.removed,b.x,b.z,b.rot,w?.kind,w?.side,w?.offset,w?.y].join(','):'';}).join('|');}
 function rebuildMillWheels(){
+  G.millKey=millWheelKey();
   for(const wh of G.wheels||[])scene.remove(wh.userData.pivot);
   if(G.millRaceWood){scene.remove(G.millRaceWood);G.millRaceWood.geometry.dispose();G.millRaceWood=null;}
   if(G.millRaceWater){scene.remove(G.millRaceWater);G.millRaceWater.geometry.dispose();G.millRaceWater=null;}
@@ -7924,7 +7926,7 @@ function markChurchyardBuilt(s,yard){ // reserve intersected 15 m land cells and
     const x=cellX(cx),z=cellZ(cz);if(!hit(cx,cz))continue;
     const i=cIdx(cx,cz);if(mask[i*4+2]!==255){mask[i*4+2]=255;const f=furlongAt(x,z);if(f)affected.add(f);}
   }
-  for(const f of affected)refreshArea(f);if(affected.size&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;
+  for(const f of affected){refreshArea(f);writeFurlong(f);}if(affected.size&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;
   const R=Math.max(x1-x0,z1-z0)/2+3;if(W.treeHash)for(const t of W.treeHash.near((x0+x1)/2,(z0+z1)/2,R))if(!t.cut&&inPolyXZ(P,t.x,t.z)){t.cut=true;queueTree(t);}
 }
 function finishChurchyard(s,b,addStreet){const yard=b?._graveyard;if(!yard||yard.removed||!W.land?._surveyed||!b.lot?.length)return;
@@ -8575,6 +8577,8 @@ function syncArmyFlags(){
 function armyDisplayPos(a){return G.armyPositions?.get(a)||armySimPos(a);}
 function projectStructures(){
   if(!G.bodies||!G.roofs)return;
+  const mills=G.buildingsDirty||G.structuresDirty||G.buildingDirty?.size>0;
+  if(mills&&G.wheels&&millWheelKey()!==G.millKey)rebuildMillWheels(); // a mill founded, moved, burned or pulled down since: its wheel and race follow
   if(G.labelsDirty){buildLabels();G.labelsDirty=false;}
   if(G.buildingsDirty){bldRoom(0);G.bodies.count=G.roofs.count=W.bldList.length;G.buildingsDirty=false;}
   if(G.buildingDirty){for(const b of G.buildingDirty)projectBuildingInstance(b);G.buildingDirty.clear();}
@@ -10660,7 +10664,7 @@ function tickLand(){ // monthly: the countryside follows the people
 
   if(W.land.pathsDirty){W.land.pathsDirty=false;settleTracks();prepareFences();G.fenceDirty=true;}
   const now=day(),spring=Math.ceil((now+1)/360)*360+20,F=W.land.F,ph=W.land.perHead;
-  {let nd=0;for(const f of F)if(f.dirt&&nd<14){f.dirt=0;refreshArea(f);nd++;}}
+  {let nd=0;for(const f of F)if(f.dirt&&nd<14){f.dirt=0;refreshArea(f);writeFurlong(f);nd++;}} // the new area is published (the territory legend reads it)
   W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]);
     let tilled=0,bearing=0;
     for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
@@ -12923,7 +12927,9 @@ function settleParcels(targets=null){
   }
   const settled=[...(list||W.bldList)];
   const solve=(B,all=false)=>{const changed=[];for(const b of B){const old=b.lot,wasCastle=b._inCastle;settleBuildingLot(b,bh,sh);const P=b.lot;
-    if(all||wasCastle!==b._inCastle||old?.length!==P?.length||P?.some((p,i)=>p.x!==old[i].x||p.z!==old[i].z))changed.push(b);}return changed;};
+    if(all||wasCastle!==b._inCastle||old?.length!==P?.length||P?.some((p,i)=>p.x!==old[i].x||p.z!==old[i].z))changed.push(b);}
+    for(const b of changed)(G.buildingDirty||(G.buildingDirty=new Set())).add(b); // a new outline is published with its building (garden fences, the lot features, the value map)
+    return changed;};
   const mark=B=>{if(typeof markLot==='function'&&W.land?.mask)for(const b of B)if(b.lot?.length>2&&!b.removed&&b.state!=='gone'&&!b._inCastle)markLot(b.lot);};
   mark(solve(settled,!targetList)); // full survey marks every lot; structural batches skip unchanged outlines
   /* Churchyards follow the settled church parcels: a yard is clipped to its church's lot, or moved to an adjunct plot
@@ -13143,7 +13149,7 @@ function tickTenure(){
   W.settlements.forEach((s,si)=>{if(!due[si])return;s._ltY=s._lt||0;s._lt=0;chooseLandUse(s,si); // what the lord drew from it these twelve months; and each strip to corn or hay
     const heads=headsOf(s),size=new Map();for(const p of s.folk||[]){const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
     for(const h of heads){h._strips=0;h._crop=0;h._ha=0;h._owned=0;if(h.w===undefined)h.w=0;}
-    const T=tilledOf(s,si);
+    const T=tilledOf(s,si),held=T.map(f=>f.ten+'|'+f.own+'|'+f.wk);
     for(const f of T){if(!f.ten)continue; // the dead and the gone: an heir takes their place, or the strip falls back to the lord
       if(f.own>=0){const p=PM.get(f.own);if(!p||p.dead){const h=heirOf(f.own,f,kids,spouse,si);f.own=h?h.id:-1;}}
       if(f.wk>=0){const p=PM.get(f.wk);if(!p||p.dead||p.si!==si){const h=heirOf(f.wk,f,kids,spouse,si);f.wk=h&&h.si===si?h.id:-1;}}
@@ -13173,6 +13179,7 @@ function tickTenure(){
     if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){h.w=(h.w||0)-price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;}} // the lords sell off their home farms
     for(const h of heads){const mine=T.filter(f=>f.wk===h.id&&f.own===h.id),can=Math.max(2,Math.ceil((size.get(h)||1)*0.8));if(mine.length<=can)continue; // more strips than the household can work: let to sharecroppers
       const ll=heads.filter(o=>tills(o,s)&&!(o._strips>0));for(const f of mine.slice(can)){const t=ll.shift();if(!t)break;f.wk=t.id;f.ten='crop';t._strips=1;}}
+    T.forEach((f,k)=>{if(held[k]!==f.ten+'|'+f.own+'|'+f.wk)writeFurlong(f);}); // a strip that changed hands is drawn so (the land-use map hatches the home farms)
   });
   if(!W.prehistory&&bigBuyer&&bigBuyer.n>=4&&frand()<0.3)emit('trade',2,bigBuyer.s.pos,vary('yeoman',[()=>`${folkName(bigBuyer.h)} of ${bigBuyer.s.name} buys another strip from a neighbour in debt; he holds ${bigBuyer.n} now, and lets them to sharecroppers.`,
     ()=>`In a hard year at ${bigBuyer.s.name} the indebted sell their strips; ${folkName(bigBuyer.h)} buys, and they plough them still, for half the crop.`]));}
@@ -13767,6 +13774,15 @@ function projectEvent(ev){ // one event record feeds every visible projection; s
   director.push(ev);
   fxEvent(ev);
 }
+// A packet's events: the annals laid out once, and only what is still news (a Reel packet carries a month) flies the
+// camera or lights the map.
+const EVENT_NEWS_DAYS=3;
+function projectEvents(list){
+  if(MODEL_ONLY||typeof document==='undefined'){for(const ev of list)projectEvent(ev);return;}
+  let run=[];const flush=()=>{if(run.length)chronicleAdd(run);run=[];};
+  for(const ev of list){if(ev.reign){flush();presentReign(ev.text);}else run.push(ev);}flush();
+  const today=day();for(const ev of list)if(!ev.reign&&!(ev.day<today-EVENT_NEWS_DAYS)){director.push(ev);fxEvent(ev);}
+}
 function referenceRegex(map){const names=[...map.keys()].sort((a,b)=>b.length-a.length).map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));return names.length?new RegExp('(?<![\\p{L}\\p{N}_])('+names.join('|')+')(?![\\p{L}\\p{N}_])','gu'):null;}
 function referenceAdd(map,name,code){if(!name)return;const key=esc(name),old=map.get(key);if(!old)map.set(key,code);else if(old!==code){const choices=old.startsWith('choose:')?JSON.parse(decodeURIComponent(old.slice(7))):[old];if(!choices.includes(code))choices.push(code);map.set(key,'choose:'+encodeURIComponent(JSON.stringify(choices)));}}
 function nameLinker(){ // the small existing annals cache; full household/property resolution is render-only
@@ -13901,15 +13917,18 @@ if(!MODEL_ONLY)document.addEventListener('click',e=>{if(e.target.closest&&e.targ
   const tq=e.target.closest&&e.target.closest('a.tr');if(tq){e.stopPropagation();e.preventDefault();if(BACKGROUND){workerGoName('tree:'+tq.dataset.tree);return;}const x=TREE.get(tq.dataset.tree);if(x)showInspect({type:'tree',x});return;}
   const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();if(BACKGROUND){workerGoName('p'+q.dataset.pid);return;}const f=findPerson(+q.dataset.pid);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}return;}
   const a=e.target.closest&&e.target.closest('a.nm');if(!a)return;e.stopPropagation();e.preventDefault();goName(a.dataset.nm);},true);
-function chronicleAdd(ev){
-  const el=document.createElement('div');
-  el.className='centry';el.dataset.cat=ev.cat;el._annalEvent=ev;
-  el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(esc(ev.text)); // names in the entry fly to what they name
-  if(ev.pos){el.setAttribute('role','button');el.tabIndex=0;el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();showEventDialog(ev);});}decorateControls(el);
-  if(chronFilter!=='all'&&ev.cat!==chronFilter)el.style.display='none';
-  const list=chronList();
+function chronicleAdd(evs){ // one entry, or a packet's run of them: measured once, appended once, scrolled once
+  const list=chronList(),frag=document.createDocumentFragment(),all=Array.isArray(evs)?evs:[evs];
+  for(const ev of all.length>260?all.slice(-260):all){
+    const el=document.createElement('div');
+    el.className='centry';el.dataset.cat=ev.cat;el._annalEvent=ev;
+    el.innerHTML='<span class="cd">'+dateStr(ev.day)+'.</span> '+linkNames(esc(ev.text)); // names in the entry fly to what they name
+    if(ev.pos){el.setAttribute('role','button');el.tabIndex=0;el.addEventListener('click',()=>{flyTo(ev.pos.x,ev.pos.z,420);markManual();showEventDialog(ev);});}decorateControls(el);
+    if(chronFilter!=='all'&&ev.cat!==chronFilter)el.style.display='none';
+    frag.appendChild(el);
+  }
   const stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
-  list.appendChild(el);
+  list.appendChild(frag);
   if(contextUI.kind==='chron'&&!document.getElementById('chron').classList.contains('min'))linkAnnals();
   while(list.children.length>260)list.removeChild(list.firstChild);
   if(stick)list.scrollTop=list.scrollHeight;
@@ -15469,17 +15488,21 @@ function toggleMap(){
   });
   document.body.appendChild(el);
 }
+// The HUD's figures, read in one place: the display world as packets and worker clocks (installClock) left it.
+function hudFigures(){return{day:day(),treasury:W.treasury,legitimacy:W.legitimacy,weather:W.weather.state,drought:W.drought,plague:W.plagueActive,
+  pop:G.hudPop?.day===day()?G.hudPop.pop:W.settlements.reduce((t,s)=>t+s.pop,0)};}
 function updateHUD(){
   if(MODEL_ONLY)return;
-  document.getElementById('datechip').textContent=SEASONGLYPH[seasonIdx()]+' '+dateStr();
-  document.getElementById('datechip').setAttribute('aria-label',dateStr()+'. View timeline');
-  document.getElementById('goldchip').setAttribute('aria-label',Math.round(W.treasury).toLocaleString()+' gold in the royal treasury. View kingdom ledger');
-  document.getElementById('watchdate').textContent=dateStr();
+  const H=hudFigures(),date=dateStr(H.day);
+  document.getElementById('datechip').textContent=SEASONGLYPH[Math.floor((H.day%360)/90)]+' '+date;
+  document.getElementById('datechip').setAttribute('aria-label',date+'. View timeline');
+  document.getElementById('goldchip').setAttribute('aria-label',Math.round(H.treasury).toLocaleString()+' gold in the royal treasury. View kingdom ledger');
+  document.getElementById('watchdate').textContent=date;
   const wx={clear:'☀',overcast:'☁',rain:'🌧',storm:'⛈',snow:'❄'};
-  document.getElementById('wxchip').textContent=(wx[W.weather.state]||'☀')+(W.drought?' drought':'')+(W.plagueActive?' ☠':'');
-  document.getElementById('treasury').textContent=Math.round(W.treasury).toLocaleString();
-  document.getElementById('realmpop').textContent=Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString();
-  document.getElementById('legit').textContent=Math.round(W.legitimacy);
+  document.getElementById('wxchip').textContent=(wx[H.weather]||'☀')+(H.drought?' drought':'')+(H.plague?' ☠':'');
+  document.getElementById('treasury').textContent=Math.round(H.treasury).toLocaleString();
+  document.getElementById('realmpop').textContent=Math.round(H.pop).toLocaleString();
+  document.getElementById('legit').textContent=Math.round(H.legitimacy);
   if(W.monarch)document.getElementById('crownname').textContent=fullTitle(W.monarch);
   const P=W.player;
   if(P){
@@ -16604,40 +16627,60 @@ function beginChronicle(){
 let BACKGROUND=null,backgroundApplying=false;
 const WORKER_PRESENTATION={events:[],camera:null,started:false,revision:0,buildingCount:0,towns:0,profile:null,profileDirty:false,endgame:null};
 function visualScalars(o){const out={};for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(o||{})))if(!k.startsWith('_')&&Object.hasOwn(d,'value')&&(d.value===null||['number','string','boolean'].includes(typeof d.value)))out[k]=d.value;return out;}
+// Names that always hold private accounts, and names that hold a link back into the world graph (a building's
+// town, a churchyard's church, a person or a crew). A link is cut; the same name holding a number (a tree's size
+// s, say) is plain geometry and crosses.
+const VISUAL_PRIVATE=new Set(['storage','ledger','holdings','account','ownerAccount','beneficiary']),VISUAL_LINKS=new Set(['s','churchyardOf','title','head','p','men','riders','crew']);
 function visualGeometry(value,seen=new Set()){
   if(value===null||['number','string','boolean'].includes(typeof value))return value;
   if(!value||typeof value!=='object'||value instanceof Map||value instanceof Set||value.household||value._hh||seen.has(value))return undefined;
   if(ArrayBuffer.isView(value))return value.slice();
   seen.add(value);const out=Array.isArray(value)?[]:{};
-  for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(value))){if(!Object.hasOwn(d,'value')||['s','churchyardOf','title','storage','ledger','holdings','account','ownerAccount','beneficiary','head','p','men','riders','crew'].includes(k)||k.startsWith('_'))continue;const v=visualGeometry(d.value,seen);if(v!==undefined)out[k]=v;}
+  for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(value))){if(!Object.hasOwn(d,'value')||k.startsWith('_')||VISUAL_PRIVATE.has(k)||d.value!==null&&typeof d.value==='object'&&VISUAL_LINKS.has(k))continue;const v=visualGeometry(d.value,seen);if(v!==undefined)out[k]=v;}
   seen.delete(value);return out;
 }
 function visualRecord(o,fields){const out=visualScalars(o);for(const k of fields.split(' '))if(o?.[k]!==undefined)out[k]=visualGeometry(o[k]);return out;}
 function visualPerson(p){return p?{id:p.id,si:p.si,sx:p.sx,dead:!!p.dead}:null;}
-function visualBuilding(b){const out=visualRecord(b,'ch lot roofPlan wheel mill waterwheel millWater dam _graveyard');if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
-function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey castle cas citadel tg wallRad wallDmg wallBuild gateAngles wallGates ramparts breaches takenCircuit');out.millId=s.mill?.idx??null;out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);}return out;}
+function visualBuilding(b){const out=visualRecord(b,'ch lot mill millWater dam _graveyard');out._inCastle=!!b._inCastle;if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
+// A wall circuit crosses as its town and its name in that town (fortCircuitKey), never as a copy: the foreground
+// finds the same ring it drew, so c===s and the gates of that ring hold.
+function visualCircuit(c,near){if(!c)return null;for(const t of near?[near,...W.settlements]:W.settlements){const key=fortCircuitKey(t,c);if(key)return{si:W.settlements.indexOf(t),key};}return null;}
+function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey hillCastle ward burgRing cas citadel tg wallRad wallKind wallDmg wallBuild');out.millId=s.mill?.idx??null;out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);out._gateTrafficVersion=s._gateTrafficVersion||0;
+  out.siegeBy=s.siegeBy?{houseName:s.siegeBy.houseName,army:s.siegeBy.army?{id:s.siegeBy.army.id}:null}:null;
+  // the circuit stormed: by name while it is still one of the town's rings, else only the dates the streets fighting reads
+  out.takenCircuit=s.takenCircuit?fortCircuitKey(s,s.takenCircuit)??{breachUntil:s.takenCircuit.breachUntil,breachA:s.takenCircuit.breachA}:null;
+  if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);out.relicWalls=visualGeometry(s.relicWalls||[]);}return out;}
 function visualField(f){const out=visualRecord(f,'poly sap');for(const k of ['own','wk'])if(typeof f[k]==='number'||typeof f[k]==='string')out[k]=f[k];out.treeRefs=f.trees.map(t=>({kind:t.k,index:t.i}));return out;}
+// One projector for each kind of moving or built thing the foreground draws. tools/simulation-projection-drift.test.mjs
+// holds each to the whole of its record: every object-valued name crosses, or is named there as the worker's alone.
+const VISUAL_ENTITY={
+  army(a){const b=visualRecord(a,'field poly battlePos raft objective');b.men=[];b.foe=a.foe?{id:a.foe.id}:null;b.joined=a.joined?{id:a.joined.id,strength:a.joined.strength,foe:a.joined.foe?{id:a.joined.foe.id}:null}:null;b.siegeArc=a.siegeArc?{...visualScalars(a.siegeArc),circuit:visualCircuit(a.siegeArc.circuit,W.settlements[a.at])}:null;const s=W.settlements[a.at];if(s)b.renderMuster=musterPos(s,a);return b;},
+  caravan:(c,i)=>({...visualRecord(c,'poly'),qty:c.qty,renderKey:c.storageCargo?.id||[c.origin,c.dest,c.departDay,c.good,!!c.sea,!!c.river].join(':'),renderIndex:i}),
+  envoy:e=>visualRecord(e,'poly'),
+  traveller:t=>({...visualRecord(t,'poly'),renderKey:t.p.id+':'+t.depart,p:visualPerson(t.p)}),
+  ship:s=>visualRecord(s,'poly berth'),
+  banditCamp:c=>({...visualRecord(c,''),men:(c.men||[]).slice(0,12).map(visualPerson)}),
+  dragon:d=>visualRecord(d,'path pos lair'),
+  road:r=>({...visualRecord(r,'path drawn bridges'),renderKey:r.a+':'+r.b}),
+  project:q=>({...visualRecord(q,'cut st sts rad place'),P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null})};
 function workerTrackSegments(){return [...(W.trackSet||[])].map(k=>{const e=W.tg.E.get(k);return{a:{x:W.tg.pts[e.a].x,z:W.tg.pts[e.a].z},b:{x:W.tg.pts[e.b].x,z:W.tg.pts[e.b].z},L:e.L};});}
 function workerFenceSegments(){const out=[];for(const f of W.land.F){if(!fenceWorked(f))continue;const P=f.poly||computeFurlongPoly(f),stone=fenceStoneView(W.settlements[f.dom]);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?W.land.F[a.nb]:null,ta=W.tg?.V.get(tgKey(a)),tb=W.tg?.V.get(tgKey(b)),lane=W.trackSet&&ta!==undefined&&tb!==undefined&&W.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);if(!lane){if(g&&fenceWorked(g)&&g.dom===f.dom&&(g.state===LS.PASTURE)===(f.state===LS.PASTURE))continue;if(g&&fenceWorked(g)&&g.k<f.k)continue;}out.push({a:{x:a.x,z:a.z},b:{x:b.x,z:b.z},x:f.x,z:f.z,lane:!!lane,stone});}}return out;}
 function workerPresentation(bootstrap=false){
   const P=WORKER_PRESENTATION,newBuildings=P.buildingCount!==W.bldList.length,newTowns=P.towns!==W.settlements.length;
   const structures=bootstrap||G.structuresDirty||G.roadsDirty||G.wallsDirty||newBuildings||newTowns;
   const details=bootstrap||G.detDirty,walls=bootstrap||G.wallsDirty,roads=bootstrap||G.roadsDirty;
+  P.speed=speedIdx;P.petitions=W.petitions.length;
   const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map(s=>visualSettlement(s,structures)),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.length,entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
   if(P.endgame){out.endgame=P.endgame;P.endgame=null;}if(P.profileDirty){out.profile=visualGeometry(P.profile);P.profileDirty=false;}
   out.petitions=W.petitions.map(p=>({key:p.key,title:p.title,pos:visualGeometry(p.pos),due:p.due}));
-  out.armies=W.armies.map(a=>{const b=visualRecord(a,'field poly battlePos siegeArc seaLeg raft campaign supplyPath objective');b.men=[];b.foe=a.foe?{id:a.foe.id}:null;b.joined=a.joined?{id:a.joined.id,foe:a.joined.foe?{id:a.joined.foe.id}:null}:null;const s=W.settlements[a.at];if(s)b.renderMuster=musterPos(s,a);return b;});
-  out.caravans=(W.caravans||[]).map((c,i)=>({...visualRecord(c,'poly'),qty:c.qty,renderKey:c.storageCargo?.id||[c.origin,c.dest,c.departDay,c.good,!!c.sea,!!c.river].join(':'),renderIndex:i}));
-  out.envoys=(W.envoys||[]).map(e=>visualRecord(e,'poly'));
-  out.travellers=(W.travellers||[]).map(t=>({...visualRecord(t,'poly'),renderKey:t.p.id+':'+t.depart,p:visualPerson(t.p)}));
-  out.ships=(W.ships||[]).map(s=>visualRecord(s,'poly berth'));
-  out.banditCamps=(W.banditCamps||[]).map(c=>({...visualRecord(c,''),men:(c.men||[]).slice(0,12).map(visualPerson)}));
-  out.dragon=W.dragon?visualRecord(W.dragon,'path pos lair'):null;out.memorials=visualGeometry(W.memorials||[]);
+  const V=VISUAL_ENTITY;out.armies=W.armies.map(a=>V.army(a));out.caravans=(W.caravans||[]).map((c,i)=>V.caravan(c,i));out.envoys=(W.envoys||[]).map(e=>V.envoy(e));
+  out.travellers=(W.travellers||[]).map(t=>V.traveller(t));out.ships=(W.ships||[]).map(s=>V.ship(s));out.banditCamps=(W.banditCamps||[]).map(c=>V.banditCamp(c));
+  out.dragon=W.dragon?V.dragon(W.dragon):null;out.memorials=visualGeometry(W.memorials||[]);
   const changedBuildings=bootstrap?W.bldList:new Set([...(G.buildingDirty||[]),...W.bldList.slice(P.buildingCount)]);
   if(!bootstrap&&details)for(const b of W.bldList)if(b.arch==='temple')changedBuildings.add(b);
   if(bootstrap||changedBuildings.size)out.buildings=[...changedBuildings].map(visualBuilding);
-  if(roads){out.roads=W.roads.map(r=>({...visualRecord(r,'path drawn bridges'),renderKey:r.a+':'+r.b}));out.bridges=visualGeometry(W.bridges);}
-  out.projects=(W.projects||[]).map(q=>({...visualRecord(q,'cut st sts rad place'),P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null}));
+  if(roads){out.roads=W.roads.map(r=>V.road(r));out.bridges=visualGeometry(W.bridges);}
+  out.projects=(W.projects||[]).map(q=>V.project(q));
   if(bootstrap){out.static={};for(const k of ['h','water','biome','moist','dom','roadCells'])if(W[k])out.static[k]=W[k].slice();out.static.rivStrips=visualGeometry(W.rivStrips);out.static.riverPaths=visualGeometry(W.riverPaths);out.static.treeSpots=visualGeometry(W.treeSpots);out.fields=W.land.F.map(visualField);out.mask=W.land.mask.slice();out.flood=W.land.flood.slice();}
   else if(G.landDirty?.size)out.fields=[...G.landDirty].map(visualField);
   // Mask rebuilding is structural, not daily. Transfer the immutable display copy.
@@ -16649,6 +16692,10 @@ function workerPresentation(bootstrap=false){
   P.buildingCount=W.bldList.length;P.towns=W.settlements.length;P.started=true;
   for(const k of ['structuresDirty','roadsDirty','wallsDirty','detDirty','buildingsDirty','tracksDirty','fenceDirty','landMaskDirty','herdsDirty','ordersDirty','armyFlagsDirty'])G[k]=false;G.buildingDirty?.clear();G.landDirty?.clear();G.treesDirty?.clear();return out;
 }
+// What the screen must learn at once, whatever the cadence: a speed it did not ask for, a petition, the campaign's end.
+function workerPresentationUrgent(){const P=WORKER_PRESENTATION;return P.started&&(speedIdx!==P.speed||(W.petitions?.length||0)!==P.petitions||!!P.endgame);}
+// day, speed index and the send time in epoch milliseconds (performance.timeOrigin+now, comparable across threads); the host adds frac
+function workerClock(){return{day:day(),speed:speedIdx,at:performance.timeOrigin+performance.now(),treasury:W.treasury,legitimacy:W.legitimacy,pop:W.settlements.reduce((t,s)=>t+detailPopulation(s),0),weather:W.weather?.state??null,drought:W.drought,plagueActive:W.plagueActive};}
 function presentationTransfers(value,out=[],seen=new Set()){if(!value||typeof value!=='object'||seen.has(value))return out;seen.add(value);if(ArrayBuffer.isView(value)){if(!seen.has(value.buffer)){seen.add(value.buffer);out.push(value.buffer);}return out;}for(const v of Object.values(value))presentationTransfers(v,out,seen);return out;}
 function workerOverlayQuery(mode){
   if(mode==='trade')return{day:day(),traffic:[...roadTraffic()],seaRoutes:visualGeometry(W.seaRoutes||{})};
@@ -16665,21 +16712,26 @@ function installPresentation(packet){
     const previousPlayer=W.player;
     Object.assign(W,packet.world);MOD=packet.mod;W.monarch=packet.monarch;W.player=packet.world.player;W.houses=packet.houses;W.petitions=packet.petitions;W._commandCount=packet.commands;entryCount=packet.entries??entryCount;if(packet.static)allLines=['THE ANNALS OF '+W.name.toUpperCase()];
     if(typeof document!=='undefined'){const on=!!W.player?.on;document.body.classList.toggle('sov',on);if(on&&document.body.classList.contains('watch'))toggleWatch();if(previousPlayer&&previousPlayer.on!==on){if(on){markManual();if(document.getElementById('drawer').classList.contains('closed'))toggleDrawer();selectTab('crown');}else if(placeMode)setPlaceMode(null);}}
-    for(const r of packet.settlements){const s=W.settlements[r.si]||(W.settlements[r.si]={buildings:[],streets:[],places:[],furl:[],folk:[],dead:[],fires:[]});const {buildings,fires,furl,...scalar}=r;Object.assign(s,scalar);s._buildingIds=buildings||s._buildingIds;s._fireIds=fires;s._furlIds=furl||s._furlIds;}
+    for(const r of packet.settlements){const s=W.settlements[r.si]||(W.settlements[r.si]={buildings:[],streets:[],places:[],furl:[],folk:[],dead:[],fires:[]});const {buildings,fires,furl,...scalar}=r;Object.assign(s,scalar);if(typeof s.takenCircuit==='string')s.takenCircuit=fortCircuitFor(s,s.takenCircuit)??null;s._buildingIds=buildings||s._buildingIds;s._fireIds=fires;s._furlIds=furl||s._furlIds;}
     W.capital=W.settlements[packet.capital];if(packet.static){W.rivHash=makeHash(40);for(const st of W.rivStrips||[])for(let k=0;k<st.pts.length-1;k++){const o={a:st.pts[k],b:st.pts[k+1],hw:st.hw[k],y:st.ys[k],x:st.pts[k].x,z:st.pts[k].z};W.rivHash.add(o,dist2d(o.a.x,o.a.z,o.b.x,o.b.z)+o.hw);}}
     if(packet.fields)for(const f of packet.fields){const o=W.land.F[f.k]||(W.land.F[f.k]={}),oldSap=o.sap||[];Object.assign(o,f);if(f.sap){o.sap=f.sap.map(t=>Object.assign(oldSap.find(p=>p.i===t.i&&p.x===t.x&&p.z===t.z)||{},t));(G.sapDirty||(G.sapDirty=new Set())).add(o);}for(const t of oldSap)if(!o.sap?.includes(t))(G.sapRemoved||(G.sapRemoved=[])).push(t);o.trees=(f.treeRefs||[]).map(t=>W.treeSpots[t.kind]?.[t.index]).filter(Boolean);(G.landDirty||(G.landDirty=new Set())).add(o);}
     if(packet.mask){W.land.mask.set(packet.mask);G.landMaskDirty=true;}
     if(packet.buildings){for(const b of packet.buildings){const o=W.bldList[b.idx]||(W.bldList[b.idx]={});Object.assign(o,b);o.s=W.settlements[b.si];if(o._graveyard)o._graveyard.churchyardOf=o;(G.buildingDirty||(G.buildingDirty=new Set())).add(o);}for(const s of W.settlements){s.buildings=(s._buildingIds||[]).map(i=>W.bldList[i]);s.furl=(s._furlIds||[]).map(i=>W.land.F[i]);}}
     for(const s of W.settlements){s.mill=s.millId===null?null:W.bldList[s.millId];s.fires=(s._fireIds||[]).map(i=>W.bldList[i]).filter(Boolean);}
     for(const k of ['armies','caravans','envoys','travellers','ships','banditCamps'])W[k]=reconcileVisualList(W[k]||[],packet[k]||[],k==='caravans'?'renderKey':k==='travellers'?'renderKey':'id');
+    // ids and circuit names back to the displayed hosts and rings: a reinforcement stands behind its host, a besieger before the ring it drew
+    {const host=new Map(W.armies.map(a=>[a.id,a])),link=o=>o&&host.get(o.id)||o;
+      for(const a of W.armies){a.joined=link(a.joined);a.foe=link(a.foe);if(a.siegeArc?.circuit){const t=W.settlements[a.siegeArc.circuit.si];a.siegeArc.circuit=t?fortCircuitFor(t,a.siegeArc.circuit.key)??null:null;}}
+      for(const s of W.settlements)if(s.siegeBy?.army)s.siegeBy.army=link(s.siegeBy.army);}
     if(packet.dragon){if(!W.dragon||W.dragon.name!==packet.dragon.name){if(W.dragon)W.dragon.gone=true;W.dragon={};}Object.assign(W.dragon,packet.dragon);}else{if(W.dragon)W.dragon.gone=true;W.dragon=null;}W.memorials=packet.memorials;if(packet.roads){W.roads=reconcileVisualList(W.roads||[],packet.roads,'renderKey');W.bridges=packet.bridges;}W.projects=packet.projects;
     if(packet.tracks){W.renderTracks=packet.tracks;W.trackBridgePlan=packet.trackBridgePlan;G.tracksDirty=true;}if(packet.fences){W.renderFences=packet.fences;G.fenceDirty=true;}
     for(const q of packet.trees||[]){const t=W.treeSpots[q.kind]?.[q.index];if(t){t.cut=q.cut;(G.treesDirty||(G.treesDirty=new Set())).add(t);}}
     for(const [k,v]of Object.entries(packet.dirty))if(v)G[{structures:'structuresDirty',buildings:'buildingsDirty',walls:'wallsDirty',details:'detDirty',roads:'roadsDirty',labels:'labelsDirty',herds:'herdsDirty',orders:'ordersDirty',armies:'armyFlagsDirty'}[k]]=true;
-    G.campMeshesDirty=true;G.cairnDirty=true;G.clockFrac=W.clock.frac||0;setSpeed(packet.speed);
+    G.campMeshesDirty=true;G.cairnDirty=true;G.clockFrac=W.clock.frac||0;if(packet.revision>(G.speedRevision||0))setSpeed(packet.speed);
     if(packet.endgame)presentEndgame(workerHTML(packet.endgame));
     if(packet.profile)try{const key='annals-best-'+SEED;if(packet.profile.best>(+localStorage.getItem(key)||0))localStorage.setItem(key,String(packet.profile.best));const earned=JSON.parse(localStorage.getItem('furlong-ach')||'{}');for(const [id,date]of Object.entries(packet.profile.achievements))if(!earned[id])earned[id]=date;localStorage.setItem('furlong-ach',JSON.stringify(earned));}catch(_){}
-    for(const ev of packet.events){allLines.push(ev.reign?'\n=== '+ev.text+' ===\n':'['+dateStr(ev.day)+'] '+ev.text);if(scene)projectEvent(ev);else(G.bootEvents||(G.bootEvents=[])).push(ev);}
+    for(const ev of packet.events)allLines.push(ev.reign?'\n=== '+ev.text+' ===\n':'['+dateStr(ev.day)+'] '+ev.text);
+    if(scene)projectEvents(packet.events);else(G.bootEvents||(G.bootEvents=[])).push(...packet.events);
   }finally{backgroundApplying=false;}
 }
 
@@ -16797,7 +16849,7 @@ function workerRenderCampActors(center,range=1500){
 }
 
 /* Foreground adapters submit intent; they never execute a daily transaction. */
-function workerNotice(error){backgroundApplying=true;try{setSpeed(0);}finally{backgroundApplying=false;}if(BACKGROUND&&!BACKGROUND.closed)BACKGROUND.request('pause').catch(()=>{});console.error('Background simulation:',error);storageFaultNotice('The simulation is paused: '+String(error.message||error)+'. Save or reload the last committed game.');}
+function workerNotice(error){backgroundApplying=true;try{setSpeed(0);}finally{backgroundApplying=false;}if(BACKGROUND&&!BACKGROUND.closed)BACKGROUND.request('pause').then(reply=>workerSpeedReply(reply)).catch(()=>{});console.error('Background simulation:',error);storageFaultNotice('The simulation is paused: '+String(error.message||error)+'. Save or reload the last committed game.');}
 function workerHTML(html){return String(html||'').replace(/worker-sigil:(\d+)/g,(_,hi)=>sigURL(+hi));}
 function workerQuery(key,payload,install){
   const pending=BACKGROUND.reads||(BACKGROUND.reads=new Map());if(pending.has(key))return pending.get(key);
@@ -16809,11 +16861,26 @@ async function workerSubmitCommand(entry){
 }
 async function workerSetSpeed(index){
   index=Math.round(+index);if(index<0||index>=SPEEDS.length)return;
-  try{await BACKGROUND.request(index===0?'pause':'speed',{index});await BACKGROUND.request('watch',{kind:'landscape',everyDays:index===5?30:1});await workerRefreshLandscape();}
+  try{workerSpeedReply(await BACKGROUND.request(index===0?'pause':'speed',{index}));await BACKGROUND.request('watch',{kind:'landscape',everyDays:index===5?30:1});await workerRefreshLandscape();}
   catch(error){workerNotice(error);}
 }
+// The worker's reply is the speed now. A packet cut before it (an older pull, a pushed view still being laid out) keeps its
+// geometry but cannot put the old speed back; only a packet of a later revision speaks for the speed (installPresentation).
+function workerSpeedReply(reply){if(!reply||!Number.isInteger(reply.speed))return;G.speedRevision=Math.max(G.speedRevision||0,reply.revision||0);backgroundApplying=true;try{setSpeed(reply.speed);}finally{backgroundApplying=false;}}
 async function workerRefreshLandscapeBootstrap(){installPresentation(await BACKGROUND.request('view',{kind:'bootstrap'}));}
-function workerRefreshLandscape(){return workerQuery('landscape',{kind:'landscape'},packet=>{installPresentation(packet);updateHUD();});}
+// Every caller gets a packet cut after its own request: one already on the wire is followed by (at most) one more.
+function workerRefreshLandscape(){
+  const R=BACKGROUND.landscapePull||(BACKGROUND.landscapePull={busy:null,again:null});
+  if(!R.busy)return R.busy=workerQuery('landscape',{kind:'landscape'},packet=>{installPresentation(packet);updateHUD();}).finally(()=>{R.busy=null;});
+  return R.again||(R.again=R.busy.then(()=>{R.again=null;return workerRefreshLandscape();}));
+}
+// A worker clock between landscape packets: the HUD's date, treasury and people keep pace; geometry waits for its packet.
+// G.workerClock keeps the latest {day,frac,speed,at} for a screen clock that runs on between messages.
+function installClock(c){
+  if(!c||!W?.clock||c.day<W.clock.day)return;G.workerClock=c;if(c.day===W.clock.day)return;
+  W.clock.day=c.day;W.treasury=c.treasury;W.legitimacy=c.legitimacy;W.drought=c.drought;W.plagueActive=c.plagueActive;if(W.weather&&c.weather)W.weather.state=c.weather;
+  G.hudPop={day:c.day,pop:c.pop};const now=performance.now();if(now-(G.hudPaintAt??-Infinity)>=100){G.hudPaintAt=now;updateHUD();} // at most ten repaints a second; the frame loop paints the rest
+}
 function workerRefreshCourt(force=false){if(drawerTab!=='crown'||!force&&(!drawerVisible()||uiBusy()))return;return workerQuery('court',{kind:'ui',panel:'crown',expanded:contextUI.expanded,section:crownSection,ledgerOpen:G.ledgerOpen},view=>{if(drawerTab==='crown')setHTML(document.getElementById('dbody'),workerHTML(view.html));});}
 function workerRefreshHousePanel(force=false){if(drawerTab!=='world'||!force&&!drawerVisible())return;return workerQuery('houses',{kind:'ui',panel:'house-panel'},view=>{if(drawerTab!=='world')return;setHTML(document.getElementById('housepanel'),workerHTML(view.houses));setHTML(document.getElementById('succpanel'),workerHTML(view.succession));});}
 function workerOpenInfo(kind,town=null,reference=null){
@@ -16903,7 +16970,12 @@ class SimulationWorkerHost{
       default:throw Error('Unknown simulation request');
     }
   }
-  async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next)return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view(p.kind)});}
+  // A speed the worker set itself (a petition, the campaign's end, a fault) or a campaign verdict cannot wait for the cadence.
+  urgent(){return this.model.urgent?.()===true;}
+  async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next&&!this.urgent())return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view(p.kind)});}
+  // Every simulated day, at every speed, a few bytes without geometry: the day, the fraction of the next already run, the speed,
+  // when it was sent, and the HUD's figures. The screen keeps its date (and later its motion) on these between landscape packets.
+  clock(){if(!this.publication||!this.model.clock||this.model.day()<=(this.clockDay??-1))return;this.clockDay=this.model.day();this.send({protocol:1,type:'clock',value:{...this.model.clock(),frac:Math.max(0,Math.min(.999,this.accum))}});}
   async pump(){
     if(this.busy||this.closed)return;this.busy=true;const start=this.now();
     try{
@@ -16915,10 +16987,11 @@ class SimulationWorkerHost{
           if(!this.advance&&!reeling&&this.accum<1)break;
           await this.model.wait();if(this.queue.length)continue;
           try{if(await this.model.tick()===false)break;}catch(error){this.fail(error);break;}
-          if(this.publication&&this.publication.inflight===null&&this.model.day()>=this.publication.next)await this.publish(); // at most one unacknowledged, replaceable display batch
+          if(this.publication&&this.publication.inflight===null&&(this.model.day()>=this.publication.next||this.urgent()))await this.publish(); // at most one unacknowledged, replaceable display batch
           if(this.advance){if(this.model.day()>=this.advance.target){this.reply(this.advance,{day:this.model.day(),complete:true});this.advance=null;}}
           else this.accum=Math.max(0,this.accum-1);
           if(!this.model.rate())this.accum=0;
+          this.clock();
         }else break;
         if(this.now()-start>=this.budget)break; // commands can enter between whole daily transactions
       }
@@ -17080,7 +17153,9 @@ function simulationWorkerModel(){return{
     await startSimulation({...options,outcomeJournal:STORAGE_OUTCOMES.journal,progress});
     if(options.resume){const save=await unpackSave(options.resume);if(save.hash!==worldHash())throw Error('Save belongs to another realm');await replaySave(save,progress);}
   },
-  day:()=>day(),rate:()=>SPEEDS[speedIdx]||0,reeling:()=>speedIdx===5,speed:index=>setSpeed(index),tick:()=>simTick(),wait:()=>STORAGE_OUTCOMES.wait(),
+  day:()=>day(),rate:()=>SPEEDS[speedIdx]||0,reeling:()=>speedIdx===5,speed:index=>{setSpeed(index);WORKER_PRESENTATION.speed=speedIdx;}, // the requester learns this speed from the reply
+  tick:()=>simTick(),wait:()=>STORAGE_OUTCOMES.wait(),
+  urgent:()=>workerPresentationUrgent(),clock:()=>workerClock(),
   validate(command){
     const prepared=workerCommandValidate(command);if(prepared.target==='main')throw Error('Command requires the main-thread interface');return prepared;
   },
@@ -17096,7 +17171,7 @@ function simulationWorkerModel(){return{
     if(kind==='storage-preview')return workerCommandStoragePreview(payload);
     if(kind==='overlay')return workerOverlayQuery(payload.mode);
     if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
-    if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
+    if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,revision:WORKER_PRESENTATION.revision,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
     if(kind==='household'){const h=W.households.get(payload.id);if(!h)throw Error('Unknown household');return{id:h.id,head:h.head?.id??null,members:[...h.members].map(p=>p.id),purse:h.assets.w,debt:h.assets._debt,hunger:h.hunger,pantry:W.settlements.flatMap((s,si)=>{const held=s._owners?.get(h)?.held;return held?[{si,goods:{...held}}]:[];})};}
     if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT(payload);
     throw Error('This view has not migrated to the worker');
@@ -17115,9 +17190,9 @@ function simulationWorkerRuntime(){
   const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message,presentationTransfers(message)),{schedule,cancel});onmessage=event=>host.receive(event.data);return host;
 }
 class SimulationWorkerClient{
-  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;this.displayDelivery=Promise.resolve();
+  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;this.onclock=null;this.displayDelivery=Promise.resolve();
     const deliver=fn=>{const next=this.displayDelivery.then(fn);this.displayDelivery=next.catch(()=>{});return next;};
-    worker.onmessage=({data})=>{if(this.closed||!data||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='view'){deliver(()=>this.closed?undefined:this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);if(data.error)request.reject(Error(data.error));else if(data.value?.revision&&data.value?.settlements)deliver(()=>request.resolve(data.value));else request.resolve(data.value);};
+    worker.onmessage=({data})=>{if(this.closed||!data||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='clock'){deliver(()=>this.closed?undefined:this.onclock?.(data.value)).catch(error=>this.onfault?.(error));return;}if(data.type==='view'){deliver(()=>this.closed?undefined:this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);if(data.error)request.reject(Error(data.error));else if(data.value?.revision&&data.value?.settlements)deliver(()=>request.resolve(data.value));else request.resolve(data.value);};
     const fail=error=>{this.closed=true;for(const request of this.pending.values())request.reject(error);this.pending.clear();worker.terminate();this.onfault?.(error);};worker.onerror=event=>fail(Error(event.message||'Simulation worker failed'));worker.onmessageerror=()=>fail(Error('Simulation worker reply could not be read'));
   }
   request(type,payload={}){if(this.closed)return Promise.reject(Error('Simulation worker is closed'));if(this.pending.size>=64)return Promise.reject(Error('Simulation request queue is full'));const id=++this.requestSequence;return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.worker.postMessage({protocol:1,id,type,payload});}catch(error){this.pending.delete(id);reject(error);}});}
@@ -17165,7 +17240,7 @@ async function boot(){
   if(!foreground){
     let profile={best:0,achievements:{}};try{profile={best:+localStorage.getItem('annals-best-'+seed)||0,achievements:JSON.parse(localStorage.getItem('furlong-ach')||'{}')};}catch(_){}
     const options={seed,fate:FATE,coast:COAST_PREF,startAD:START_AD,hash:location.hash,resume:RESUME_CODE,profile};
-    BACKGROUND=createSimulationWorker(options);BACKGROUND.options=options;BACKGROUND.onprogress=m=>progress(m.text,m.fraction,0);BACKGROUND.onfault=workerNotice;BACKGROUND.onview=packet=>{installPresentation(packet);if(G.workerSaveYear!==year()){G.workerSaveYear=year();if(G.workerSaveYear>1)autosave();}};
+    BACKGROUND=createSimulationWorker(options);BACKGROUND.options=options;BACKGROUND.onprogress=m=>progress(m.text,m.fraction,0);BACKGROUND.onfault=workerNotice;BACKGROUND.onview=packet=>{installPresentation(packet);if(G.workerSaveYear!==year()){G.workerSaveYear=year();if(G.workerSaveYear>1)autosave();}};BACKGROUND.onclock=installClock;
     await BACKGROUND.ready;RESUMED=!!RESUME_CODE;await workerRefreshLandscapeBootstrap();
   }else{await generateWorld(seed,progress);await STORAGE_OUTCOMES.begin();}
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
@@ -17180,7 +17255,7 @@ async function boot(){
     await advancePrehistory(progress);
     buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
   }
-  initUI();initInput();for(const ev of G.bootEvents||[])projectEvent(ev);G.bootEvents=[];
+  initUI();initInput();projectEvents(G.bootEvents||[]);G.bootEvents=[];
   if(!BACKGROUND)beginChronicle();
   // camera opening: establish over capital
   cam.focus.set(W.capital.pos.x,W.capital.pos.y,W.capital.pos.z);
@@ -17797,18 +17872,23 @@ voice of a medieval annalist, and a cinematic **auto-director** flies the
 camera to the story as it unfolds.
 
 **The whole app is one file: [`index.html`](index.html).**
-Vanilla JS + Three.js r128 from CDN. No build step, no framework, no backend,
-no assets — everything is procedural (terrain, buildings, heraldry, names).
+Vanilla JS + Three.js r128 from CDN. No build step, no framework, no backend;
+the terrain, buildings, heraldry and names are procedural, and three small
+textures live in `assets/`.
 
 ## Run it
 
-Open `index.html` in a browser, or drop it on any static host (Netlify, GitHub
-Pages). That's it. In a small container:
+Open `index.html` in a browser with `assets/` beside it, or put both on any
+static host. Every push to `main` deploys
+[GitHub Pages](https://healdgar.github.io/furlong-kingdom-annals/) and publishes
+a container image:
 
 ```sh
-docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
+docker run --rm -p 8080:80 ghcr.io/healdgar/furlong-kingdom-annals
 # then open http://localhost:8080  (the browser fetches three.js from cdnjs)
 ```
+
+From a checkout: `docker build -t furlong . && docker run --rm -p 8080:80 furlong`.
 
 - **Map size**: 9 km of ground by default, standing for a realm about 360 km
   across. `&km=4` to `&km=15` in the link sets another size (`&km=6` is the
@@ -18266,7 +18346,7 @@ itself; you rule one lord's domain:
 ## The economy drives it
 
 What happens is decided by quantities the economy produces, not by numbers crossing hand-picked lines
-(the register of what was replaced, and what remains, is [docs/SIM_DEBT.md](docs/SIM_DEBT.md)):
+(what remains to fix is listed in [docs/ISSUES.md](docs/ISSUES.md)):
 
 - **Prosperity** is a town's measured surplus: what its land, trade and crafts keep beyond its people's
   needs, less hunger, disorder and danger. Shocks knock it down; it returns to what the economy supports.
@@ -18971,13 +19051,10 @@ Source and measurements are recorded with each local run under `.git/deferral/20
 node --test tools/source.test.mjs tools/life-history.test.mjs tools/history.test.mjs \
   tools/provision.test.mjs tools/ownership.test.mjs tools/advisor-api.test.mjs \
   tools/routing.test.mjs tools/deferral.test.mjs
-node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
-  --years 2 --variants baseline,candidate,off --out /tmp/furlong-deferral
-node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
-  --era 855 --years 0 --out /tmp/furlong-deferral-era
 ```
 
-The deferral harness retains authoritative geographic records as well as world/household/land,
+The one-off parent/candidate harness for this validation (`tools/deferral-check.mjs`) is removed
+(see git history); it retained authoritative geographic records as well as world/household/land,
 full life and annal history, ownership and account state. It compares every annual graph hash,
 final state and next 16 draws from each RNG stream at matched daily/mixed-builder boundaries.
 Only existing derived caches/graphics and spatial scratch stamps are omitted. Pause geometry
@@ -19827,10 +19904,10 @@ losses, tiny balances, migration, remote inheritance and corrupt claims.
 `node --test tools/*.test.mjs` includes existing ownership, provisioning, life,
 history, routing, advisor and script syntax checks.
 
-`node tools/inventory-trace.mjs OUT candidate|GIT_REF YEARS SEED sea|land` runs
-fresh isolated hardware-GPU Chrome and records source identity, annual statistics
-and the first non-finite or over-physical combined animal title claim at herd/ownership
-boundaries. The floating-point error bound is 32 × machine epsilon × the
+The independent audit (`tools/inventory-audit.mjs`, run daily by
+`node tools/soak.mjs --inventory 1`; the one-off `tools/inventory-trace.mjs` that first
+traced it is removed) records the first non-finite or over-physical combined animal
+title claim at herd/ownership boundaries. The floating-point error bound is 32 × machine epsilon × the
 largest observed quantity for that community/good × owner count. Using the
 ending quantity alone incorrectly rejects cancellation: moving
 4.477105034977209 physical sheep against a claim one ULP larger leaves a
@@ -19897,6 +19974,60 @@ Event replay and explicit transaction fixtures address different questions.
 The first inventory failure appears in annual JSON and fails `inventoryMatched`;
 the audit preserves it through later years. Waiting between days uses the sticky
 fault-aware outcome `wait()`, including the independent storage-event harness.
+
+<<<FILE docs/ISSUES.md>>>
+# Issues
+
+The one list of known bugs, simulation debt and planned work. Update it when an issue is found, assigned or fixed; remove fixed items once their release is out (the commit history keeps them, including the retired simulation-debt register, `docs/SIM_DEBT.md`, removed October 2026).
+
+The simulation's rule: things happen because a quantity (surplus, rent against cost, threat against value) makes them worth doing, not because a number crossed a hand-picked line.
+
+Status: **open**, **investigating**, **in progress**, **queued** (waiting on another item).
+
+## Seen by the player
+
+| # | Issue | Status | Notes |
+|---|---|---|---|
+| 1 | Garden lots and fences break into long spokes across the fields after play | in progress | `settleParcels` changes `b.lot` but never republishes the building; the screen joins stale outlines. Boundary fix. |
+| 2 | Animation is blocky at every speed since the worker move | investigating | The screen's clock only advances when a packet arrives. Fix after #1: continuous screen clock plus interpolation. |
+| 3 | Streets built through houses | queued (after #1) | Verified simulation bug: back lanes (`branch` → `walk`) never test standing houses, so lane mouths cut through frontage houses; 10–19 overlaps per world at start, 34–45 by year 2 as reserved lanes open. Display is fine. Tested fix rejects blocked lanes (overlaps → 0, ~10% fewer houses at start); try moving blocked mouths to frontage gaps first to keep density. Changes generated towns for every seed. |
+| 4 | Loading pauses at "Raising timber and stone" | investigating | All settlement layouts run in one synchronous loop with no progress updates. Measuring which part is slow. |
+| 5 | Refresh restarts the game at AD 850 | queued (after #1) | Boot rewrites the link without the save. Resume the session's save on reload; autosave on `pagehide`. |
+| 6 | Resuming a save replays every day (minutes for late games) | queued (after #8) | Snapshots of worker state in IndexedDB; the journal save stays the permanent format. |
+| 7 | Reel years: a self-pause (petition, campaign end, fault) never reaches the screen; date lags 17 days and jumps 30 | in progress | Boundary fix: publish immediately on pause; small per-day clock message. |
+| 8 | Saved games replay differently (278 of 919 households differ by day 360, seed 688673834) | investigating | Only with the commodity ledger; legacy ledger replays identically. Blocks #6. |
+| 9 | All trees one size; saplings appear full-grown | in progress | Projection drops primitive `s`. Boundary fix. |
+| 10 | Walls drawn over cliffs, water and razed stretches; sieges invisible; hill castles, wards and close rings missing | in progress | `wallKind`, `siegeBy`, castle rings not projected. Boundary fix. |
+| 11 | Mills founded after load have no waterwheel | in progress | `rebuildMillWheels` runs only at boot. Boundary fix. |
+| 12 | Famine in most towns most years | open | Pre-existing (original build: 581 famine lines before AD 870 on seed 688673834). Calibration. |
+| 13 | The famine annals line repeats every month | open | Hunger crosses the 0.15–0.4 band monthly. |
+| 14 | Daughter villages stack names ("Nether New Villeneuve-Port-Neuf-la-Neuve") | open | Polish. |
+
+## Performance
+
+| # | Issue | Status | Notes |
+|---|---|---|---|
+| 15 | A game day costs ~50–150 ms late in a game; Reel reaches ~27 days/s, not 360 | open | After the boundary fix. Cost grows with the number of places (hamlets multiply: #22). |
+| 16 | Fastest reaches 45% of its 30 days/s | in progress | Each daily packet carries 8–11 MB of mostly unchanged structure; siege arcs clone whole towns (24 MB). Boundary fix removes the clones; send structures only when changed after. |
+
+## Simulation and calibration
+
+| # | Issue | Status | Notes |
+|---|---|---|---|
+| 19 | Money made or lost without a named payer or recipient | open | Still open from the money sweep (M23–M30): bandit loot, metro pooling, toll houses. Also check the lord-gold initialisation and prepaid wages booked as minted. Verify with `tools/soak.mjs --audit`; a 1-year soak on 2026-10-06 reported residual 0. |
+| 20 | Two population models (C12) | open, partly fixed | Prosperity now follows what families live by, but a town's population ceiling is still reckoned from land, trade and workshops, not from its households' own living, so the two can part. |
+| 21 | Meadow on dry ground (C17) | open | Any strip may go to hay when hay pays: up to half the ploughland turns to meadow and ploughmen go short of bread. Meadow should come from wet bottomland. Likely feeds #12. |
+| 22 | Hamlets multiply (C16) | open | Strips stay with holders and heirs, new households are landless and found hamlets: a 400-year history spreads ~1,300 souls over ~85 hamlets. Holdings should be let or shared first, pioneer parties gather over years. Also drives #15. |
+| 23 | Calibration pass not yet done | open | The economic replacements changed many interlocking rates at once: growth pace, prosperity levels, castle and church tempo, rebellion frequency, prices, rents, wages and army sizes, to be checked across several worlds and centuries with `tools/soak.mjs`. |
+
+Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190, bastions 1500, mills, siege engines), the logistic birth curve, army-supply and watch top-up hysteresis, courtyard-house gates, the house-tongue dice.
+
+## Tooling
+
+| # | Item | Status |
+|---|---|---|
+| 17 | The full history recorder (`history=full`) is off by default and lost its harness; is it dead code? | open: review |
+| 24 | `game-write-*` prototype (5 tests) and `long-run-check` (overlaps soak) | proposed for deletion |
 
 <<<FILE docs/LEDGER-REDUNDANT-WORK.md>>>
 # Ledger redundant-work batch
@@ -20686,12 +20817,12 @@ The default game now has one worker-owned simulation: `W`, household accounts, p
 - [x] Economic overlays query worker calculations; foreground overlays draw returned values.
 - [x] Rendering bootstrap transfers copied terrain buffers and public geometry. Later packets contain existing dirty fields/buildings and structural changes, rather than daily copies of the economy or complete geometry.
 - [x] Citizens and livestock use numeric worker plans. Renderer objects and walking interpolation remain disposable; simulation RNG does not drive display animation.
-- [x] Stable display identities preserve camera following, army markers, roads, dragons and saplings. Accessor-backed population and title IDs have explicit scalar projections.
+- [x] Stable display identities preserve camera following, army markers, roads, dragons and saplings. Wall circuits cross by name (`fortCircuitKey`) and relink to the installed rings; besiegers and reinforcements relink to the displayed hosts. Accessor-backed population and title IDs have explicit scalar projections.
 - [x] Annals and reign headings, ruler transitions, campaign-end dialogs and local achievement/best-score persistence cross explicit presentation boundaries.
 - [x] Worker-owned save capture, existing save format, replay and continuation. Browser camera/preferences and save shelf remain local UI data.
 - [x] Journal backpressure precedes each daily transaction. Save/close await settlement. Page hiding requests a worker flush.
 - [x] Faults pause mutation and retain read/save access where possible. Client transport failures reject pending work; recovery explicitly reloads a committed save, without creating a second authority.
-- [x] Uncapped Reel driver; actual landscape publications every 30 days, immediate refresh on pause/orders, one unacknowledged publication with coalescing. Pushed and requested display packets install in transport order, preserving every dirty delta. Camera/input do not execute simulation ticks.
+- [x] Uncapped Reel driver; actual landscape publications every 30 days, immediate refresh on pause/orders, one unacknowledged publication with coalescing. A speed the worker sets itself (petition pause, campaign end, fault), a petition or a verdict publishes at once; every simulated day a small clock message (`{day,frac,speed,at,treasury,legitimacy,pop,…}`, no geometry) carries the date and HUD figures between packets. A speed reply outranks any packet cut before it. Pushed and requested display packets install in transport order, preserving every dirty delta. Camera/input do not execute simulation ticks.
 - [x] Awaitable complete-day barrier in the worker driver, prehistory and replay. Future asynchronous GPU phases must finish inside that barrier before commands, saves or subsequent days run.
 
 Read helpers can warm the existing derived `s._sg` street graph. Valuation reads use a disposable memo for the current request and cannot prime the annual simulation-owned `s._lvf` grid. Early UI priming previously changed later rents and demographics, breaking save replay. Queries reuse an already valid model valuation but leave model valuation admission to simulation. No additional maintained economic index or journal record is introduced.
@@ -20713,6 +20844,7 @@ The existing annual land-value WebGPU probe uses real Apple Metal hardware. Seed
 Validation records are frozen local source snapshots, with SHA-256 identities. The repository harnesses are reusable:
 
 - `tools/simulation-worker-host.test.mjs`: FIFO ordering, asynchronous daily barriers, pacing, publication acknowledgements, queue limits, journal backpressure, save and fault behavior.
+- `tools/simulation-projection-drift.test.mjs`: the real model's daily and Reel packets keep the display equal to a fresh projection; every object-valued name of a drawn thing crosses or is listed as worker-only; geometry copies keep primitives and never copy an entity; a real siege relinks to the displayed rings.
 - `tools/simulation-worker-boundaries.test.mjs`: private-graph exclusion, packet-owned transfer buffers, deterministic actor planning, dirty projections, population/title accessors, ruler UI, army flags, campaign-end/profile delivery and foreground tick rejection.
 - `tools/simulation-worker-check.mjs --days 8 --views true`: full native source, worker/reference canonical graph and RNG parity, eight-day save/replay plus eight-day continuation, inspectors/accounts/actors/economic overlay output parity.
 - `tools/simulation-worker-play-check.mjs`: owned Chrome profile and local frozen source; drawn boot, ruler/tax controls, inspectors, nine overlays, Reel/pause/normal/life transitions, delayed publication acknowledgement, save/reload/camera/continuation, campaign end and local profile persistence. Console errors and worker faults fail the check.
@@ -20726,139 +20858,6 @@ Validated production HTML SHA-256: `9b8cc31045e0be212430d9f06e71df0695d1a2612b96
 - Independent 128-day no-UI versus UI-read comparison matched RNG, population, people and buildings after fixing valuation cache admission.
 
 Worker ownership establishes independent execution and ordering. Native timings show no tick CPU reduction; drawn frame timing under concurrent test load is not a performance measure. Century throughput and production GPU kernels remain to be validated.
-
-<<<FILE docs/SIM_DEBT.md>>>
-# Simulation debt
-
-Arbitrary thresholds, step gates and dice rolls standing in for economic decisions, found by a sweep of the
-simulation ticks (October 2026). The aim is an emergent, economically grounded simulation: things happen
-because a quantity (surplus, rent against cost, threat against value, opportunity) makes them worth doing,
-not because a number crossed a hand-picked line.
-
-Status (after the first repair pass, October 2026): items 1–31 and 33–35 replaced; 32, 36, 37 kept. Statuses: **open**, **fixed** (replaced by the mechanism in the right-hand column), **kept** (defensible).
-Line numbers are as of the sweep and will drift.
-
-Recalibration note: these fixes change many interlocking rates at once. Expect a calibration pass after
-the whole list is done (growth pace, prosperity levels, castle/church tempo, rebellion frequency).
-
-## High impact
-
-| # | Where | Debt | Replacement | Status |
-|---|---|---|---|---|
-| 1 | `tickPopulation` prosperity step | +0.06/day whenever not hungry: every town ratchets to 100 in peace, so ~30 `prosperity>N` gates are always on, and shocks make cliffs | prosperity relaxes toward a measured surplus per head (livelihood margin, trade, household means, rent burden) | fixed |
-| 2 | `carryingCap` | `max(fed+market, pop*1.35)` while any land is free, flipping with `landShort` | continuous: food from tilled land + reachable waste land at clearing cost | fixed |
-| 3 | `carryingCap` market term; town charter | market by kind (1200 / 450 / 0), hinterland cliff at 1600 m; charter on pop>420, prosperity>50, roads≥2, dice | market from trade passing (road traffic, caravan arrivals) and craft jobs, hinterland decays with distance; charter when market trade warrants it | fixed |
-| 4 | ruin rebuild | timer + prosperity>40 + 30% dice, free; burned ruins never refilled by growth | rebuild when the plot's rent over years beats the cost and the town has the people | fixed |
-| 5 | `tickGrowth` new houses | pop > housing×1.1 and prosperity>35, free, 1 or 3 per 6 days | build while unhoused people exist and the best plot's rent covers the building cost; pace from the shortfall | fixed |
-| 6 | lanes / extension | lanes only when <15 free plots, 2/4 at a time, one civic event a year; extend every 2 years | open lanes when the town's housing shortfall outruns its free plots, outside the civic-event lottery; extension on demand | fixed |
-| 7 | burgher walls | first wall pop>850 & prosperity>48 & dice; stone pop>600 & prosperity>55 & dice; new circuit by fixed ratios; free | a wall when threat × property protected exceeds the cost, paid from the town's purse (a murage) | fixed |
-| 8 | wall repairs | lord's purse ≥1.5× cost or nothing; breach permanent | murage: the town pays toward repairs by property protected and threat; partial repair each year | fixed |
-| 9 | `tickSettlers` | settlers made from nothing (+4 per plot) | planned streets add cheap room; migration brings the families | fixed |
-| 10 | `opportunity` inputs | inherits 2, 3, 6; ignores rent | livelihood and room per head (now honest), minus rent burden from land value | fixed |
-| 11 | daughter villages | landShort>360 d, prosperity>45, pop>90, dice, day 195, hard cap, 45 people | found when waste land within reach could feed more than the parent's crowding allows; pioneers in proportion to the shortfall; cap only the render buffer | fixed |
-| 12 | land claims | only the nearest place may claim a furlong | places bid: need for land against distance; a needier place farther off can take it | fixed |
-| 13 | rebellion | loyalty<30 & 0.45%/day dice; random slights; join at loyalty<32 & 40% | rise when grievance × chance of winning (its might and allies against the crown's) beats the cost; slights only from real events | fixed |
-
-## Medium impact
-
-| # | Where | Debt | Replacement | Status |
-|---|---|---|---|---|
-| 14 | siege | raid if strength < 2× defence; garrison>20 cliff for siege vs quick fall | raid vs siege by expected prize against expected loss; siege length continuous in garrison, walls, stores | fixed |
-| 15 | material upgrade | prosperity>62 & dice on random buildings | upgrade when the rise in property value beats the cost | fixed |
-| 16 | desertion | only below pop<room×0.5 | houses empty in proportion to the vacancy (more houses than households). Repaired again (Oct 2026): the yearly check read a year-old occupancy, never reset a house's empty years, and ruined every failing house the same day, silently; restored ruins were given no household. Now households take empty houses before anyone builds, the check counts who lives where that day, lets go ceil(E²/H) houses (least worth keeping first), says so in the annals, and they fall in through the year | fixed |
-| 17 | castle works | dice + purse multiples, ambition by kind, 25-year retry lock | invest when threat × value protected beats the cost against the lord's income | fixed |
-| 18 | church gifts | lord gold >3000 / crown >15000 cliffs; parish pop>900 & dice | gifts in proportion to surplus; parish when the churches cannot seat the people | fixed |
-| 19 | lord investments | gold ≥2500 / 12000; projects by pop thresholds | rank by return (rents/tolls gained) against cost and purse | fixed |
-| 20 | fief sales | price pop×1.6+300; crown buys/grants at 40% | price = rents capitalised; crown keeps what it can administer | fixed |
-| 21 | distant fiefs | rent halves beyond 1500 m | continuous decay with distance | fixed |
-| 22 | new towns / forts | dice, fixed costs, caps | expected traffic/rent at the site against the cost | fixed |
-| 23 | tenure | demesne sale from AD 1349; fixed freehold price | demesne leased/sold when labour is dear (people per arable area); price by land value | fixed |
-| 24 | caravans | fixed stock thresholds, 30 cap, random ambient trade, flat prosperity bumps | trade when margin beats carriage; prosperity effect via the surplus measure (value carried) | fixed |
-| 25 | render buffer | growth stops when the building instance buffer is full | buffer grows on demand | fixed |
-| 26 | infill | villages / pop<300 / before 1100 excluded; demand ≥0.92 | rent against garden value decides everywhere | fixed |
-| 27 | migration constants | 0.12 gap, 2%/month, <25 pop never leaves, immigrants from nothing anywhere | moving cost by distance; outside immigration through ports and border roads | fixed |
-| 28 | town revolt | only crown towns, unrest>90 & dice | any town, by unrest against its garrison's hold | fixed |
-| 29 | war/army | war drawn at 1400 days; disband below 40/10; fit at 0.45×target | wars end by exhaustion (purse, losses, war-weariness); disband when unpaid | fixed |
-
-## Low impact
-
-| # | Where | Debt | Status |
-|---|---|---|---|
-| 30 | treasury >15000 drained 0.12%/day | court spends in proportion to income | fixed |
-| 31 | tools only in towns; free cloth and wine for the capital | crafts where workshops are | fixed |
-| 32 | watch top-up hysteresis, call-to-arms radii | reasonable hysteresis | kept |
-| 33 | ships ≤8, random arrivals | mesh-limited; arrivals random | fixed |
-| 34 | trade closed at 15% infected | cliff | fixed |
-| 35 | street-cutting limits | benefit should be time saved × wages | fixed |
-| 36 | courtyard houses gates | mostly economic | kept |
-| 37 | house tongue switch on dice | cosmetic | kept |
-
-## Kept (defensible)
-
-Historical era gates (stone keeps 1070, gothic 1190, round towers, barbicans, bastions 1500, `tierCap`,
-`siegeEngines`, mills); the logistic birth curve; wharf and quarry (already demand-driven); army supply
-hysteresis (18/35).
-
-## Ownership and money (second sweep, October 2026)
-
-Property not tied to a person or institution, and money created from nothing or destroyed. Goal: every asset has
-an owner (a household, a lord's house, the crown, a church, the town), every income has a payer, every cost a
-recipient. Status (after the repair pass, October 2026): all fixed but M19 and part of M23–M30. Not yet recalibrated.
-
-| # | Where | Debt | Replacement | Status |
-|---|---|---|---|---|
-| M1 | household necessaries | 55% of what families spend on bread, fuel and cloth vanishes; no grower or fisher is paid | pay the holders of the stores (tillers, the lord's demesne, fishers); only the crafts' margin goes to the craft pool | fixed |
-| M2 | harvest (tickTenure) | crops paid as cash from nothing; the lord's share (`lordTake`: demesne crop, villein and lease rents, sharecrop cut) summed and never paid | grain is goods until sold into the stores; `lordTake` paid to the lord (or crown) as rents in kind | fixed |
-| M3 | lords' `rentOf` | dues from `pop×0.06` created monthly, paid by no one; duplicates M2 | replace with the real flows: rents in kind, town rents, dues from household purses | fixed |
-| M4 | town stores | goods appear, are converted and eaten with no owner | a market: stores held by households and the lord; producers paid when goods are drawn | fixed |
-| M5 | caravans, barges, cogs | goods taken without payment, delivered free; profit, tolls, taxes notional; no carter or merchant earns | a merchant household buys at the origin price and sells at the destination; tolls from his margin; carter paid a wage | fixed |
-| M6 | craft incomes | pool never drawn down; tier/skill multipliers pay more or less than the pool; "odd jobs" and no-trade income from nothing | split the actual pool among its households by tier and skill; odd jobs are wages with an employer | fixed |
-| M7 | town buildings | no owner; occupants pay rent of which half vanishes; shops, mills, inns, warehouses, wharves, quarries earn nothing for anyone; compensation paid to occupants as if owners | every building has an owner (household, lord, church, town); tenant pays the owner; business income to the household that works it | fixed |
-| M8 | soldiers' pay | crown and lords' hosts, garrisons, castellans paid into nothing | paid to the levied men's households, the castellan's house, mercenaries (who carry it out of the realm) | fixed |
-| M9 | building and works costs | castle, church, road, plan, wall, repair, works costs vanish; stone taken unpaid | wages to mason, carpenter and carter households; stone paid to its holder | fixed |
-| M10 | death and marriage | purses and herds lost at death; a wife's purse hidden | purse and herd pass to the heir or spouse; purses merge at marriage | fixed |
-| M11 | crown production tax | created from nothing | taken from household purses, or as an aid from lords' rents | fixed |
-| M12 | murage | created from town worth; spent into nothing | levied from burgher purses and market tolls; paid to builders | fixed |
-| M13 | church fabric | offerings created; surplus clipped away | a tithe on the harvest; surplus as alms to the poorest | fixed |
-| M14 | far-port ships | imports free; exports paid to no one; customs created | merchants pay and are paid; customs out of their margin | fixed |
-| M15 | tolls and lords' works | market toll created; mill and granary earn nothing | the mill takes its multure (to the lord or a miller who leases it); tolls from the merchant | fixed |
-| M16 | land sale with no buyer | seller paid from nothing; land ownerless | the lord buys, or there is no sale | fixed |
-| M17 | herds | drives, raids, requisitions charged to families unpaid; beast cash double-counts produce; hay never charged | drives from the lord's herd first or paid; cash only from selling produce; hay paid | fixed |
-| M18 | crown furlongs | rent from nothing | paid by the household working the land | fixed |
-| M19 | debt floors and write-offs | purses floored at −30, lords at −5000 with write-offs, treasury at −500 | debts owed to a lender; settled by forced sales | fixed: no one pays out what he has not got (rent and dues unpaid are arrears); bread on the slate is lent by a named lender (the best-off neighbour, else the parish, else the lord) from his own purse, repaid from what is left after the month's bread, the oldest debt first, and passed with the purse at death; a debtor sells beasts, then land |
-| M20 | court spending | vanishes | paid to the capital's crafts | fixed |
-| M21 | clearance compensation | paid to no one; occupants get nothing | paid to the owners and occupants | fixed |
-| M22 | luxuries | wine and cloth taken from stores unpaid | the vintner, weaver or merchant paid | fixed |
-| M23–M30 | infill, trade changes, farmsteads, free new houses and rebuilds, bandit loot, new-house treasuries, player decrees, metro pooling, roads and toll houses | small leaks and sources (see the sweep) | route each to a named payer and recipient | partly: infill, trade changes, farmsteads, new houses and rebuilds, decrees now paid to named recipients; bandit loot, metro pooling and toll houses still open |
-
-## Circulation (third sweep, October 2026)
-
-Money that was conserved but did not circulate, and signals that misled choices. Found by tracing each account's
-inflows and outflows year by year from AD 850.
-
-| # | Where | Debt | Replacement | Status |
-|---|---|---|---|---|
-| C1 | lords' halls | spent 3% of the coffer a month whatever came in: rents piled up in the coffers, purses below emptied, towns starved with full barns | the hall lives on the month's surplus and draws down what lies beyond a quarter's revenue (rents came at the quarter days) | fixed |
-| C2 | the court | spent only what lay beyond a war chest, at 0.08% a day | as a hall: the month's surplus, and what lies beyond a war chest and a quarter's revenue | fixed |
-| C3 | the hall's purchases | bought a budget's worth of bread at any price (a glut swept whole barns into the larder); unbought wine and silk left the silver unspent | the hall buys what its people eat and wear; what the market cannot sell it goes on hands and crafts | fixed |
-| C4 | households' food | bought a month's bread every month over what was still in the crock: demand double-counted, prices spiralled | top up to a month's need | fixed |
-| C5 | trade | one load every two days for the whole realm; a route with no one to serve it blocked every other | every place looks over its spare goods every few days and sends the best load a dealer and carter of either market will take | fixed |
-| C6 | the want of merchants | every failed candidate noted at a tenth of the load's value, every market day: merchants seemed wanted at a thousand years' bread, and everyone became one | the best missed load only, at the profit it would have made, each unit of unsold surplus once a year | fixed |
-| C7 | trades at the founding | taken from the buildings (a smithy, a smith): towns full of smiths and brewers with no custom | families take the opening that keeps a household best | fixed |
-| C8 | country custom | a want with no craftsman in the village was done at home: country money never reached the town's workshops | bought at the nearest market town that has the trade, the more of it the nearer | fixed |
-| C9 | grazing | a hay meadow counted as 1.4 beasts of summer grass: flocks bred meadows bred flocks (25,000 sheep for 1,500 souls) | its hay is the winter's keep; in summer a mown meadow gives its aftermath | fixed |
-| C10 | freight, castellans' fees | fixed coin while prices moved: carters took 37 years' bread a year after a deflation | at the day's prices | fixed |
-| C14 | household credit | bread bought on credit paid the seller in coin while the buyer's purse went below nothing (money from nothing), and the credit grew with the price of bread: inflation fed itself (a millionfold by AD 885) | a lender advances it from his own purse (M19) | fixed |
-| C15 | founding | a new hamlet got at least 30 souls (a fort 60, a planned town 220) while its mother lost fewer or none | the settlers leave the mother place | fixed |
-| C13 | debt with no lender | a coffer paying from a debt (the reeve buying beasts and land, recruits, forts, new towns) created the silver it paid; a treasury in debt raised a negative host, which added millions to the capital | every outlay within the purse; a host is never fewer than none | fixed |
-| C11 | the place's own increase | households set up to fill the count brought 2–4 years' bread in silver from nowhere, priced at the day's level: more people, more money, dearer bread, richer newcomers | they come with their hands | fixed |
-| C12 | two population models | the count follows a capacity reckoned from building slots and trade tallies; the named households live by what they earn; the two part (towns empty with prosperity at 100, or swell past their folk) | measure capacity from the households' own living | partly: prosperity is now the margin families live by (whether they buy their bread, what they have put by); the count's ceiling is still reckoned from land, trade and workshops |
-| C16 | assarting pace | strips stay with their holders and heirs; new households are landless and found hamlets with a chance each quarter: a 400-year history spreads ~1,300 souls over ~85 hamlets | holdings let or shared before the young leave; a pioneer party gathers over years | open (calibration) |
-| C17 | meadow on dry ground | any strip may go to hay when hay pays: half the ploughland can turn to meadow, and the ploughmen go short of bread | meadow on wet bottomland; dry ground mown for little | open (calibration) |
-
-## Household ownership follow-up — October 2026
-
-Stable household accounts now own purses, debts, local inventories, animals and property rights; community population and hunger aggregate household cohorts. Named parish people remain a reconciled projection of continuous population (the C12 caveat), rather than an independent economic population. Food consumption, craft inputs/output, spoilage, relief, marriage, migration and customary inheritance preserve owner claims. See [HOUSEHOLDS.md](HOUSEHOLDS.md) for abstractions, historical sources and verification. Global money-flow defects and long-run calibration remain open.
 
 <<<FILE docs/SOAK.md>>>
 # Soak and profile
@@ -20997,8 +20996,10 @@ The harness passes syntax and whitespace checks. The completed cohort intentiona
 <<<FILE docs/STORAGE-EVENTS.md>>>
 # Independent storage event replay
 
-`node tools/storage-event-check.mjs OUT SOURCE_HTML DAYS SEED sea|land` copies
-and hashes the selected source, boots isolated hardware-GPU Chrome, and steps
+The former `node tools/storage-event-check.mjs OUT SOURCE_HTML DAYS SEED sea|land`
+(removed with the v2 lot ledger it replayed; for the v3 ledger see
+`node tools/replay-check.mjs --commodity` and `node tools/storage-check.mjs`) copied
+and hashed the selected source, booted isolated hardware-GPU Chrome, and stepped
 whole days. Accepted storage events alone reconstruct all lots and locations
 from empty ledgers. Each day compares every own data field against a separate
 live-descriptor walk, including metadata and property presence. It never calls
@@ -21121,8 +21122,8 @@ BigInt, holes, mutable metadata ownership, immediate protocol faults, backpressu
 injected transaction failure, uncertain acknowledgement and prefix/tail export.
 The fixtures establish pipeline semantics, not browser IndexedDB reliability.
 
-`node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
-matched owned-handle events in fresh processes. Synthetic measurements diagnose
+The one-off `tools/storage-worker-bench.mjs` (removed) ran matched owned-handle
+events in fresh processes. Synthetic measurements diagnose
 capture, transport and persistence separately; they do not establish browser
 throughput or device memory limits. Earlier Worker codec experiments regressed
 native timing and were not shipped. Native v3 removes that codec work and retains
@@ -21172,11 +21173,10 @@ Tested index.html SHA256:
 
 ```sh
 node --test tools/*.test.mjs
-node tools/storage-title-check.mjs --baseline 40492fc --seeds 1001:sea,2002:land \
-  --days 270 --out /tmp/furlong-title270
 ```
 
-The native Metal Chrome harness commissions a grange on a fresh map and retains the real compressed
+The native Metal Chrome harness (`tools/storage-title-check.mjs`, removed with the legacy ledger;
+`tools/performance-check.mjs` is its successor) commissioned a grange on a fresh map and retains the real compressed
 IndexedDB journal. It uses identical explicit 15-day yields, 30-day flushes and 1,024-record chunks
 in both sources, replacing the automatic flush timer only in test snapshots. It compares every
 chunk's SHA256, all 30-day world/land/geography/history graph hashes, final state and subsequent RNG
