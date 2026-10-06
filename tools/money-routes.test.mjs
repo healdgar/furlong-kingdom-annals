@@ -73,6 +73,14 @@ test('a name struck out or a place given to another passes the house\'s balance 
   near(r.W.treasury,1090);assert.deepEqual(r.W.houses.slice(1).map(h=>h.gold),[0,0,0]);r.audit();
 });
 
+test('the last of a line dying strikes the house out: its balance (10.867 here) passes to the crown, not into thin air',()=>{
+  const r=world({gold:[10.867]});const S=r.W.settlements;S.push({name:'Fief',pos:{x:100,z:0},owner:1});S[0].owner=0;
+  const n={id:1,alive:true,role:'head',house:1,heirs:[],name:'Last Head',epithet:null};r.W.notables=[n];r.W.monarch={};
+  Object.assign(r.C,{notableSetAlive:(m,a)=>{m.alive=a;},nameUse:()=>{},houseOf:m=>r.W.houses[m.house],notableById:()=>null,ageOf:()=>40,syncOwner:()=>{},refreshOverlay:()=>{},emit:()=>{},dropPerson:()=>{},removeAt:()=>{}});
+  r.eval(fn('killNotable'));r.eval("killNotable(W.notables[0],'of a sudden fever',true)");
+  const h=r.W.houses[1];assert.equal(h.extinct,true);assert.equal(h.gold,0);near(r.W.treasury,1000+10.867);assert.equal(S[1].owner,0);r.audit();
+});
+
 // the cadet branch of a great house takes a share of its strongroom
 function partitionWorld(houses,fill=false){
   const r=world({gold:houses});
