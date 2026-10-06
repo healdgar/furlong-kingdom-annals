@@ -2049,11 +2049,30 @@ function layoutSettlement(s){
   const nearStreet=(x,z,pad,skip)=>{let best=null,bd=1e9;
     for(const g of segH.near(x,z,pad+8)){if(g.st===skip||g.st.gone)continue; /* a burned-out lane frees its ground *//* hidden (future) lanes stay reserved too */const d=segDist(x,z,g.a,g.b)-g.hw;if(d<pad&&d<bd){bd=d;best=g;}}return best;};
   const inPlace=(x,z,pad)=>s.places.some(p=>placeHit(p,x,z,pad));
+  /* a street never runs through a standing building: its surface keeps 0.3 m clear of every footprint and churchyard. A new way
+     goes round them, opens through a gap in the frontage, or (where the town pays for it) the house is bought and pulled down */
+  const laneBlockers=(a,b,hw)=>placed.near((a.x+b.x)/2,(a.z+b.z)/2,dist2d(a.x,a.z,b.x,b.z)/2+hw+2).filter(o=>!o.removed&&o.state!=='gone'&&streetFootprintOverlap(o,{a,b,hw},0.3));
+  const laneHitsBldg=(a,b,hw)=>laneBlockers(a,b,hw).length>0;
+  const pathHitsBldg=(P,hw)=>P.some((q,k)=>k>0&&laneHitsBldg(P[k-1],q,hw));
+  const STANDS=new Set(['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse','court']),stands=o=>!!o.inst||o.arch==='churchyard'||STANDS.has(o.arch); // never pulled down for a street
+  const skirtBldg=(E,X,B,hw)=>{ // the shortest way from E to X round a footprint, by its corners set out a street's half-width clear
+    const K=obbCorners(B.x,B.z,B.w+2*(hw+0.6),B.d+2*(hw+0.6),B.rot);let best=null,bl=1e18;
+    for(let i=0;i<4;i++)for(const dir of[1,-1])for(let n=1;n<=3;n++){const P=[E];for(let j=0;j<n;j++)P.push(K[((i+dir*j)%4+4)%4]);P.push(X);
+      if(P.some((q,k)=>k&&(streetFootprintOverlap(B,{a:P[k-1],b:q,hw},0.3)||!cellOK(q.x,q.z))))continue;const L=polyLen(P);if(L<bl){bl=L;best=P.slice(1,-1).map(q=>({x:q.x,z:q.z}));}}
+    return best;};
+  const MOUTH=[0,3,-3,6,-6,9,-9,12,-12]; // a lane opens through a gap in the frontage: the nearest within a plot or two of where it was wanted
+  const mouths=(p,A,B,hd,off,st,hw)=>{const out=[]; // p on the street, A and B its points either side; the lane leaves at heading hd, its mouth off from the centre
+    for(const t of MOUTH){const E=t<0?A:B,L=E?dist2d(p.x,p.z,E.x,E.z):0;if(t&&(!E||Math.abs(t)>L))continue;
+      const q=t?{x:p.x+(E.x-p.x)/L*Math.abs(t),z:p.z+(E.z-p.z)/L*Math.abs(t)}:{x:p.x,z:p.z},m={x:q.x+Math.cos(hd)*off,z:q.z+Math.sin(hd)*off};
+      if(!buildable(m.x,m.z)||nearStreet(m.x,m.z,0.5,st)||laneHitsBldg(q,m,hw))continue;
+      out.push({p:q,m});if(out.length>=3)break;} // three tries at most, nearest first
+    return out;};
   const wallSide=(x,z)=>s.wallRad?dist2d(x,z,C.x,C.z)-wallRadAt(s,Math.atan2(z-C.z,x-C.x)):-1e9;
   const probe=(f)=>{const c=obbCorners(f.x,f.z,f.w,f.d,f.rot),o=[...c,{x:f.x,z:f.z}];
     for(let i=0;i<4;i++)o.push({x:(c[i].x+c[(i+1)%4].x)/2,z:(c[i].z+c[(i+1)%4].z)/2});return o;};
+  const onStreet=f=>segH.near(f.x,f.z,Math.hypot(f.w,f.d)/2+2).some(g=>!g.st.gone&&streetFootprintOverlap(f,g)); // (hidden lanes are reserved too)
   const fits=(f,gap,soft)=>{
-    if(segH.near(f.x,f.z,Math.hypot(f.w,f.d)/2+2).some(g=>!g.st.gone&&streetFootprintOverlap(f,g)))return false;
+    if(onStreet(f))return false;
     let inside=0,outside=0;
     for(const c of probe(f)){
       if(!(soft==='mill'?hAt(c.x,c.z)>SEA+0.8&&!riverAt(c.x,c.z,0)&&!lakeAt(s,c.x,c.z,0):soft?cellOK(c.x,c.z):buildable(c.x,c.z)))return false;
@@ -2524,13 +2543,18 @@ function layoutSettlement(s){
       return b;
   };
   /* ---- back lanes: branch where there is room, bend with the land, stop at water and walls, join old streets ---- */
-  const walk=(x,z,hd,maxLen,skip)=>{
+  const joinAt=(x,z,g,hw)=>{ // where a lane meets street segment g: square to it, else through the nearest gap in its frontage a few metres along
+    const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L=Math.hypot(dx,dz)||1,t0=clamp(((x-g.a.x)*dx+(z-g.a.z)*dz)/(L*L),0,1)*L,P={x,z};
+    for(const d of MOUTH){const t=t0+d;if(t<0||t>L)continue;const J={x:g.a.x+dx/L*t,z:g.a.z+dz/L*t};
+      if(dist2d(x,z,J.x,J.z)<=18&&!laneHitsBldg(P,J,hw)&&(!d||roadAccessClear(s,P,J)))return J;}
+    return null;};
+  const walk=(x,z,hd,maxLen,skip,hw=HW*0.85)=>{
     const pts=[];let L=0;
     while(L<maxLen){
       let best=null,bc=1e9;
       for(const d of[-0.3,-0.15,0,0.15,0.3]){
         const h2=hd+d,nx=x+Math.cos(h2)*8,nz=z+Math.sin(h2)*8;
-        if(!buildable(nx,nz)||inPlace(nx,nz,3)||fortRoadBlocked(s,nx,nz,HW+2)||!roadAccessClear(s,{x,z},{x:nx,z:nz}))continue;
+        if(!buildable(nx,nz)||inPlace(nx,nz,3)||fortRoadBlocked(s,nx,nz,HW+2)||!roadAccessClear(s,{x,z},{x:nx,z:nz})||laneHitsBldg({x,z},{x:nx,z:nz},hw))continue;
         if(s.wallRad&&(Math.sign(wallSide(nx,nz))!==Math.sign(wallSide(x,z))||Math.abs(wallSide(nx,nz))<8))continue;
         if(dist2d(nx,nz,C.x,C.z)>Rmax)continue;
         const cost=Math.abs(d)*0.6+Math.abs(hAt(nx,nz)-hAt(x,z))*0.5+rr()*0.15;
@@ -2540,8 +2564,8 @@ function layoutSettlement(s){
       x=best.x;z=best.z;hd=best.h;L+=8;pts.push({x,z});
       if(L>16){
         const g=nearStreet(x,z,9,skip);
-        if(g){const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,t=clamp(((x-g.a.x)*dx+(z-g.a.z)*dz)/L2,0,1);
-          pts.push({x:g.a.x+dx*t,z:g.a.z+dz*t});return{pts,joined:true};}
+        const J=g&&joinAt(x,z,g,hw);
+        if(J){pts.push(J);return{pts,joined:true};}
         const g2=nearStreet(x,z,22,skip); // running alongside another street: turn in and meet it
         if(g2){const cx=(g2.a.x+g2.b.x)/2,cz=(g2.a.z+g2.b.z)/2;hd=Math.atan2(cz-z,cx-x);}
       }
@@ -2555,19 +2579,18 @@ function layoutSettlement(s){
       if(st.hidden||st.kind==='edge'||st.kind==='quay')continue;
       const pts=resample(st.pts,20);
       for(let i=1;i<pts.length-1;i++){const d=dist2d(pts[i].x,pts[i].z,C.x,C.z);
-        if(d>18&&d<ext*1.25+30){const a=pts[i-1],b=pts[i+1],L=dist2d(a.x,a.z,b.x,b.z)||1;starts.push({p:pts[i],st,tx:(b.x-a.x)/L,tz:(b.z-a.z)/L,d});}}
+        if(d>18&&d<ext*1.25+30){const a=pts[i-1],b=pts[i+1],L=dist2d(a.x,a.z,b.x,b.z)||1;starts.push({p:pts[i],a,b,st,tx:(b.x-a.x)/L,tz:(b.z-a.z)/L,d});}}
     }
     starts.sort((a,b)=>a.d+rr()*60-(b.d+rr()*60));
     let made=0;
     for(const o of starts){
       if(made>=n)break;
       if(s.streets.some(t=>t.kind==='lane'&&(dist2d(t.pts[0].x,t.pts[0].z,o.p.x,o.p.z)<40||dist2d(t.pts[t.pts.length-1].x,t.pts[t.pts.length-1].z,o.p.x,o.p.z)<25)))continue;
-      const side=rr()<0.5?1:-1,hd=Math.atan2(o.tz,o.tx)+side*Math.PI/2+(rr()-0.5)*0.5;
-      const sx=o.p.x+Math.cos(hd)*(o.st.hw+2),sz=o.p.z+Math.sin(hd)*(o.st.hw+2);
-      if(!buildable(sx,sz)||nearStreet(sx,sz,0.5,o.st))continue;
-      const r=walk(sx,sz,hd,40+rr()*120,o.st);
-      if(r.pts.length<4&&!r.joined)continue;
-      addStreet([{x:o.p.x,z:o.p.z},{x:sx,z:sz},...r.pts],HW*0.78,'lane',{hidden});made++;
+      const side=rr()<0.5?1:-1,hd=Math.atan2(o.tz,o.tx)+side*Math.PI/2+(rr()-0.5)*0.5,len=40+rr()*120,hw=HW*0.78;
+      let lane=null;
+      for(const M of mouths(o.p,o.a,o.b,hd,o.st.hw+2,o.st,hw)){const r=walk(M.m.x,M.m.z,hd,len,o.st,hw);if(r.pts.length>=4||r.joined){lane=[M.p,M.m,...r.pts];break;}}
+      if(!lane)continue;
+      addStreet(lane,hw,'lane',{hidden});made++;
     }
     return made;
   };
@@ -2588,7 +2611,7 @@ function layoutSettlement(s){
     let street=0,houses=0,kept=0;for(let k=0;k<WALLN;k++)kept+=s.wallKept[k];
     for(const r of runs){
       const cross=s.streets.filter(st=>!st.hidden&&!st.gone&&st.kind!=='edge'&&st.pts.some((u,i)=>i>0&&r.some((p,j)=>j>0&&segSegDist(r[j-1],p,st.pts[i-1],u)<1))).length;
-      if(cross>=3||rr()<0.4){if(addStreet(smoothPath(r,1),HW*1.1,'wallst'))street++;continue;}
+      if((cross>=3||rr()<0.4)&&!pathHitsBldg(smoothPath(r,1),HW*1.1)){if(addStreet(smoothPath(r,1),HW*1.1,'wallst'))street++;continue;}
       s.relicWalls.push(r.map(p=>({x:p.x,z:p.z})));
       const q=resample(r,10.5);
       for(let i=1;i<q.length-1;i++){const p=q[i],dx=q[i+1].x-q[i-1].x,dz=q[i+1].z-q[i-1].z,L=Math.hypot(dx,dz)||1,ix=C.x-p.x,iz=C.z-p.z,il=Math.hypot(ix,iz)||1;
@@ -2622,7 +2645,7 @@ function layoutSettlement(s){
       const g1=nearStreet(p1.x,p1.z,12),g2=nearStreet(p2.x,p2.z,12);
       if(!g1||!g2||g1.st===g2.st||drop.includes(g1.st)||drop.includes(g2.st))continue;
       const line=resample([p1,p2],8),L=line.length;
-      if(!line.every(q=>buildable(q.x,q.z)&&!inPlace(q.x,q.z,2)&&(!s.wallRad||wallSide(q.x,q.z)<-8)))continue;
+      if(!line.every(q=>buildable(q.x,q.z)&&!inPlace(q.x,q.z,2)&&(!s.wallRad||wallSide(q.x,q.z)<-8))||pathHitsBldg(line,HW*0.95))continue;
       // its length must run clear of other streets: it joins them at its ends, it does not slice through them
       if(line.slice(2,L-2).some(q=>{const g=nearStreet(q.x,q.z,9);return g&&!drop.includes(g.st);}))continue;
       best=line;
@@ -2645,7 +2668,7 @@ function layoutSettlement(s){
     const f={x:b.x,z:b.z,w,d,rot:b.rot};
     unplace(b);
     for(const o of liveB().filter(o=>!o.inst&&obbOverlap({...f,w:w+4,d:d+4},o)))unplace(o);
-    const clear=probe(f).every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.5)&&!inPlace(q.x,q.z,0.5));
+    const clear=probe(f).every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.5)&&!inPlace(q.x,q.z,0.5))&&!onStreet(f);
     const nb=place(b.arch,2,clear?f:{x:b.x,z:b.z,w:b.w,d:b.d,rot:b.rot},b.district,hm,{inst:true,cathedral:b.cathedral,friary:b.friary,hill:b.hill,_graveyard:oldYard});
     if(nb&&oldCh)nb.ch=oldCh;
     built=s.buildings.length;
@@ -2683,8 +2706,8 @@ function layoutSettlement(s){
         let j=i;while(j<P.length&&riverAt(P[j].x,P[j].z,3))j++;
         let k=j,acc=0;while(k<P.length-1&&acc<45){acc+=dist2d(P[k].x,P[k].z,P[k+1].x,P[k+1].z);k++;}
         if(k>=P.length-1)break;
-        const q=P[k],[tx,tz]=roadTan(rd,k),nx=-tz,nz=tx,ok=t=>{const x=q.x+nx*t,z=q.z+nz*t;return buildable(x,z)&&!riverAt(x,z,4)&&(Math.abs(t)<10||!nearStreet(x,z,3,rd));};
-        let t1=0,t0=0;while(t1<70&&ok(t1+8))t1+=8;while(t0>-70&&ok(t0-8))t0-=8;
+        const q=P[k],[tx,tz]=roadTan(rd,k),nx=-tz,nz=tx,at=t=>({x:q.x+nx*t,z:q.z+nz*t}),ok=(t,u)=>{const x=q.x+nx*t,z=q.z+nz*t;return buildable(x,z)&&!riverAt(x,z,4)&&(Math.abs(t)<10||!nearStreet(x,z,3,rd))&&!laneHitsBldg(at(u),at(t),HW);};
+        let t1=0,t0=0;while(t1<70&&ok(t1+8,t1))t1+=8;while(t0>-70&&ok(t0-8,t0))t0-=8;
         if(t1-t0<64)break;
         const pts=[];for(let t=t0;t<=t1;t+=8)pts.push({x:q.x+nx*t,z:q.z+nz*t});
         addStreet(pts,HW,'lane',{straight:true,neu:true});neuDone=true;
@@ -2776,7 +2799,7 @@ function layoutSettlement(s){
       cand.push([e,A,B,Math.min(dist2d(A.x,A.z,C.x,C.z),dist2d(B.x,B.z,C.x,C.z))]);}
     cand.sort((x,y)=>x[3]-y[3]);
     for(const[e,A,B]of cand){if(made>=n)break;const pts=resample([{x:A.x,z:A.z},{x:B.x,z:B.z}],8);if(pts.length<2||!pts.every(q=>cellOK(q.x,q.z)))continue;
-      if(liveB().some(o=>!o.removed&&o.state!=='gone'&&pts.some(q=>dist2d(o.x,o.z,q.x,q.z)<HW+Math.max(o.w,o.d)*0.5)))continue;
+      if(pathHitsBldg(pts,HW*0.78))continue;
       if(addStreet(pts,HW*0.78,'lane',{hidden:true,track:true})){made++;W.trackSet.delete(e.k);}}
     if(made){G.fenceDirty=true;G.roadsDirty=true;}return made;};
   const extend=()=>{ // the town outgrows its reach: the highways are built up further out and new lanes are laid off them
@@ -2789,7 +2812,7 @@ function layoutSettlement(s){
       const path=r.a===idx?r.open||r.path:[...(r.open||r.path)].reverse(),last=sp[sp.length-1];
       let k0=0,bd=1e9;path.forEach((p,k)=>{const d=dist2d(p.x,p.z,last.x,last.z);if(d<bd){bd=d;k0=k;}});
       const ext=[{x:last.x,z:last.z}];
-      for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;if(liveB().some(o=>!o.removed&&o.state!=='gone'&&dist2d(o.x,o.z,p.x,p.z)<RHW+Math.max(o.w,o.d)*0.55))break;ext.push({x:p.x,z:p.z});} // stops short of a house standing in its way
+      for(let k=k0+1;k<path.length;k++){const p=path[k];if(dist2d(p.x,p.z,C.x,C.z)>Rmax||!cellOK(p.x,p.z))break;if(laneHitsBldg(ext[ext.length-1],p,RHW))break;ext.push({x:p.x,z:p.z});} // stops short of a house standing in its way
       if(ext.length>=3&&addStreet(ext,RHW,'road',{ri})){sp.push(...ext.slice(1));for(const q of ext)clearLandAt(q.x,q.z,RHW+3);}
     });
     {const n=isCap?8:isTown?5:2,t=fromTracks(n);if(n>t)branch(n-t,true,Rmax*0.8);}
@@ -2876,13 +2899,13 @@ function layoutSettlement(s){
       s._outerCleared=hit.length;live=false;return true;},
     chapel(){const R=s.bailey||s.hillCastle||s.ward;if(!R)return false; // a chapel in the castle yard
       for(let k=0;k<16;k++){const a=k/16*6.2832+0.3,d0=(R.courtR||R.r)*0.5,x=R.x+Math.cos(a)*d0,z=R.z+Math.sin(a)*d0,f={x,z,w:6,d:10,rot:-a};
-        if(!probe(f).every(q=>cellOK(q.x,q.z)&&dist2d(q.x,q.z,R.x,R.z)<R.r-2.5&&!nearStreet(q.x,q.z,0.5)))continue;
+        if(!probe(f).every(q=>cellOK(q.x,q.z)&&dist2d(q.x,q.z,R.x,R.z)<R.r-2.5&&!nearStreet(q.x,q.z,0.5))||onStreet(f))continue;
         const F={...f,w:8,d:12};if([...new Set(placed.near(x,z,12))].some(o=>!o.removed&&obbOverlap(F,o)))continue;
         live=true;curE=E;place('temple',2,f,'keep',0.75,{inst:true,castle:true});live=false;return true;}
       return false;},
     grow(b,w,d,shift){ // rebuilt larger on its own ground, keeping its name and fabric: the houses in the way are bought out and pulled down
       for(const sh of shift?[shift,0]:[0]){const[x,z]=sh?locW(b,0,sh):[b.x,b.z],f={x,z,w,d,rot:b.rot},P=probe(f);
-        if(!P.every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.6)&&!inPlace(q.x,q.z,0.8)&&!(s.wallRad&&Math.abs(wallSide(q.x,q.z))<7)))continue;
+        if(!P.every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.6)&&!inPlace(q.x,q.z,0.8)&&!(s.wallRad&&Math.abs(wallSide(q.x,q.z))<7))||onStreet(f))continue;
         if(castleKeepOut(s).some(C=>dist2d(b.x,b.z,C.x,C.z)>C.r&&P.some(q=>dist2d(q.x,q.z,C.x,C.z)<C.r+1)))continue;
         if(s.citadel&&P.some(q=>dist2d(q.x,q.z,s.citadel.x,s.citadel.z)<s.citadel.S*0.85))continue;
         const F={x,z,w:w+2,d:d+2,rot:b.rot},hit=[...new Set(placed.near(x,z,Math.hypot(w,d)/2+3))].filter(o=>o!==b&&!o.removed&&obbOverlap(F,o));
@@ -2892,8 +2915,8 @@ function layoutSettlement(s){
     cut(a,b,dry){ // a new street cut straight through: what stands in its line comes down (never a church, castle, hall or the walls)
       const pts=resample([{x:a.x,z:a.z},{x:b.x,z:b.z}],5);
       for(const q of pts){if(!cellOK(q.x,q.z)||fortRoadBlocked(s,q.x,q.z,HW+2))return null;if(s.wallRad&&Math.abs(wallSide(q.x,q.z))<8)return null;}
-      const hit=[];for(const o of liveB())if(!o.removed){for(let k=1;k<pts.length;k++)if(segDist(o.x,o.z,pts[k-1],pts[k])<HW+Math.max(o.w,o.d)*0.45){hit.push(o);break;}}
-      if(hit.some(o=>o.inst||['temple','keep','hall','guildhall','wall','tower','mill','windmill','granary','warehouse','court'].includes(o.arch)))return null;
+      const hit=[];for(const o of liveB())if(!o.removed){for(let k=1;k<pts.length;k++)if(streetFootprintOverlap(o,{a:pts[k-1],b:pts[k],hw:HW},0.3)){hit.push(o);break;}}
+      if(hit.some(stands)||pts.some((q,k)=>k&&laneBlockers(pts[k-1],q,HW).some(stands)))return null;
       if(dry)return {pts,hit};
       live=true;curE=E;hit.forEach(unplace);const st=addStreet(pts,HW,'lane',{cut:AD()});live=false;return {pts,hit,st};},
     stopUp(st,keep){live=true;curE=E;st.gone=true;st.hidden=true;for(const K of keep)addStreet(K.map(p=>({x:p.x,z:p.z})),st.hw||HW,st.kind,{name:st.name,planned:st.planned,straight:st.straight});G.roadsDirty=true;s._sg=null;live=false;},
@@ -2916,9 +2939,10 @@ function layoutSettlement(s){
           const v=lvAt(s,x,z);if(v>bs){bs=v;best={x,z,g};}}
         if(best&&bs<0.35)break; // not worth a lane: the ground is poor
         if(!best||!best.g)break;const g=best.g,dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L2=dx*dx+dz*dz||1,u=clamp(((best.x-g.a.x)*dx+(best.z-g.a.z)*dz)/L2,0,1),p={x:g.a.x+dx*u,z:g.a.z+dz*u};
-        const hd=Math.atan2(best.z-p.z,best.x-p.x),sx=p.x+Math.cos(hd)*(g.hw+2),sz=p.z+Math.sin(hd)*(g.hw+2);
-        const w=walk(sx,sz,hd,dist2d(sx,sz,best.x,best.z)+40+rr()*60,g.st);if(w.pts.length<3&&!w.joined)break;
-        live=true;curE=E;addStreet([{x:p.x,z:p.z},{x:sx,z:sz},...w.pts],HW*0.85,'lane',{inner:true});live=false;made++;}
+        const hd=Math.atan2(best.z-p.z,best.x-p.x),len=Math.max(0,dist2d(p.x,p.z,best.x,best.z)-g.hw-2)+40+rr()*60,hw=HW*0.85;
+        let lane=null;for(const M of mouths(p,g.a,g.b,hd,g.hw+2,g.st,hw)){const w=walk(M.m.x,M.m.z,hd,len,g.st,hw);if(w.pts.length>=3||w.joined){lane=[M.p,M.m,...w.pts];break;}}
+        if(!lane)break;
+        live=true;curE=E;addStreet(lane,hw,'lane',{inner:true});live=false;made++;}
       return made;},
     infill(b,bx,bz){ // into the yard behind b (bx,bz: the way out of the back door): a cottage at the foot of the toft, else the house lengthened back
       const c=Math.cos(b.rot),sn=Math.sin(b.rot),lx=bx*c-bz*sn,lz=bx*sn+bz*c,alongZ=Math.abs(lz)>=Math.abs(lx),half=alongZ?b.d/2:b.w/2;
@@ -2930,7 +2954,7 @@ function layoutSettlement(s){
         if(!fits(f,0.6))continue;live=true;curE=E;const nb=place(b.tier>=1?'house':'cot',Math.min(1,b.tier),f,'residential',0.85,{backOf:true});live=false;return nb;}
       const add=3.5,f={x:b.x+bx*add/2,z:b.z+bz*add/2,w:alongZ?b.w:b.w+add,d:alongZ?b.d+add:b.d,rot:b.rot},F={...f,w:f.w+0.6,d:f.d+0.6}; // no room for a cottage: the house goes back
       if([...new Set(placed.near(f.x,f.z,Math.hypot(f.w,f.d)/2+3))].some(o=>o!==b&&!o.removed&&obbOverlap(F,o)))return null;
-      if(!probe(f).every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.5)&&!inPlace(q.x,q.z,0.8)))return null;
+      if(!probe(f).every(q=>cellOK(q.x,q.z)&&!nearStreet(q.x,q.z,0.5)&&!inPlace(q.x,q.z,0.8))||onStreet(f))return null;
       b.x=f.x;b.z=f.z;b.w=f.w;b.d=f.d;groundBuilding(b);b._r=Math.hypot(b.w,b.d)/2;placed.add(b,b._r+1);if(b.idx!==undefined)updateBuildingInstance(b);return b;},
     court(take,f){ // a run of plots rebuilt as one house about a courtyard
       take.forEach(o=>o.removed=true);const ok=fits(f,0.3,true);take.forEach(o=>o.removed=false);if(!ok)return null;
@@ -2998,8 +3022,14 @@ function layoutSettlement(s){
     }
     if(inPts.length<2)return false;
     {const sk=skirtCastles(inPts);inPts.length=0;inPts.push(...sk);} // round the castle, not through it
-    for(const b of [...liveB()])if(!b.inst&&b.arch!=='temple'&&b.arch!=='keep'){ // the road is cut through: houses in its line come down
-      for(let k=1;k<inPts.length;k++)if(segDist(b.x,b.z,inPts[k-1],inPts[k])<RHW+Math.max(b.w,b.d)*0.45){unplace(b);break;}}
+    for(let k=1,n=0;k<inPts.length&&n<8;){const B=laneBlockers(inPts[k-1],inPts[k],RHW).find(stands);if(!B){k++;continue;}n++; // round a church, a castle, a hall or a mill, never through it
+      let j=k;while(j<inPts.length&&streetFootprintOverlap(B,{a:inPts[j-1],b:inPts[j],hw:RHW},0.3))j++;
+      const P=j<inPts.length&&skirtBldg(inPts[k-1],inPts[j],B,RHW);
+      if(P)inPts.splice(k,j-k,...P);else{inPts.length=k;joined=false;break;}} // no way round: the street stops short of it
+    if(inPts.length<2||inPts.some((q,k)=>k&&laneBlockers(inPts[k-1],q,RHW).some(stands)))return false;
+    const payer=r.by>0&&W.houses[r.by]?W.houses[r.by]:r.byCrown?'crown':lordAcct(s);
+    for(const b of [...liveB()])if(!b.removed&&!stands(b)){ // the road is cut through: houses in its line are bought from their owners, as for a street cut, and pulled down
+      for(let k=1;k<inPts.length;k++)if(streetFootprintOverlap(b,{a:inPts[k-1],b:inPts[k],hw:RHW},0.3)){if(b.state==='sound')transfer(payer,ownerAcct(b,s),propValue(b)*20,'street works');unplace(b);break;}}
     const outward=inPts.reverse(),via=townPath(C,outward[0])||[];
     live=true;addStreet(outward,RHW,'road',{ri});live=false;
     s.roadSpoke[ri]=[...via,...outward];(s.joinOut||(s.joinOut={}))[ri]=outward;s._joinVer=(s._joinVer||{});s._joinVer[ri]=streetVer();
@@ -3007,7 +3037,7 @@ function layoutSettlement(s){
   };
   for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
     if(!b.inst&&Math.abs(dist2d(b.x,b.z,R.x,R.z)-wallRadAt(R,Math.atan2(b.z-R.z,b.x-R.x)))<Math.hypot(b.w,b.d)/2+2)unplace(b);
-  s._lay={fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,churchAccess,serviceAccess,quayAccess,finishYards:()=>{for(const b of s.buildings)if(b.arch==='temple'&&!b.removed&&!b.castle&&!b.friary){reserveChurchyard(b);finishChurchyard(s,b,addStreet);}},live:liveOps};
+  s._lay={laneClear:st=>!pathHitsBldg(st.pts,st.hw),fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,churchAccess,serviceAccess,quayAccess,finishYards:()=>{for(const b of s.buildings)if(b.arch==='temple'&&!b.removed&&!b.castle&&!b.friary){reserveChurchyard(b);finishChurchyard(s,b,addStreet);}},live:liveOps};
   // History owns a stable context object; observing it never advances a random stream.
   const context={};s._lay.historyState=()=>Object.assign(context,{idx,role,C,count,HW,RHW,era,early,motteAge,E,FRAC,roads,t0x,t0z,rAng,mode,ux,uz,vx,vz,quay,vilName,HOME,TRADES,wallAges,bastioned,
     isCap,isTown,isVil,R0,Rmax,curE,live,foundLine,oldVil,plazaC,church,keep,focus,built,parishes,friaryDone,neuDone});
@@ -10656,7 +10686,8 @@ function addBuildingLive(s,settle=true){ // growth: empty houses fill first, the
       if(poor&&frand()<0.5||ownsLand&&near>300&&frand()<0.5||!s.growSlots.length&&ownsLand){const b=fieldHome(bid,poor?'cot':'house');if(b)return b;}}
     const lvPool=()=>{const P=s.growSlots.slice(0,240).map(q=>[q,lvAt(s,q.mx,q.mz)]).sort((a,b)=>b[1]-a[1]);return P.slice(0,40);}; // the open lots worth most go first
     if(bid){const wk=workOf(bid,s),pool=lvPool().map(x=>x[0]);let c=null,bs=-1e9;for(const q of pool){const v=homeScore(bid,s,q.mx,q.mz,q.st,wk)+frand()*0.25;if(v>bs){bs=v;c=q;}}
-      if(c){s.growSlots.splice(s.growSlots.indexOf(c),1);const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));
+      if(c){s.growSlots.splice(s.growSlots.indexOf(c),1);if(c.st.hidden&&!L.laneClear(c.st))continue; // a reserved lane that would now run through a house is not opened
+        const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));
         if(b){b.grown=day();b.hh=[bid];bid.bh=b;if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);}
           b.idx=W.bldList.length;W.bldList.push(b);G.buildingsDirty=true;updateBuildingInstance(b);if(settle)settleParcels([b]);clearLandUnder(b);G.structuresDirty=true;return b;}
         continue;}}
@@ -10664,6 +10695,7 @@ function addBuildingLive(s,settle=true){ // growth: empty houses fill first, the
     const pool=lvPool(),top=pool[0][1]||1;
     const c=wpick(pool,q=>q[1]/top*4,1)[0]; // the town builds where its ground is worth most
     s.growSlots.splice(s.growSlots.indexOf(c),1);
+    if(c.st.hidden&&!L.laneClear(c.st))continue; // (as above)
     const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));if(!b)continue;b.grown=day();
     if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);} // the first house on a new lane: the lane appears
     b.idx=W.bldList.length;W.bldList.push(b);G.buildingsDirty=true;
