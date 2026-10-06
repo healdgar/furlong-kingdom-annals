@@ -47,7 +47,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Exact balance addresses, membership-only updates and unchanged facility
  // refresh bypasses preserve arithmetic, preflight and journal order. Frozen
  // 450d2b6 differential fixtures and two native years renew this bounded review.
- assert.equal(digest(source.slice(a,b)),"0c62df3ca9b8ab8c582f65b8f7dad4cfa2e82211af84b333867d13bb66c1fc28");
+ // commoditySettleAll alone changed since: a settlement before the day's end (a save, a flush) is now journaled
+ // ({k:'settle'}) and replayed at the same point; the daily settlement passes daily=true. Settle calls, their order and
+ // every quantity/title writer are unchanged; save-session.test.mjs covers the journaling.
+ assert.equal(digest(source.slice(a,b)),"57da279b1bf6b15a25e23ffd438e7f226c204bf33b02ab3544544f91bd9f8467");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

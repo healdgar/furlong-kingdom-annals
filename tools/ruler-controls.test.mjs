@@ -6,7 +6,7 @@ const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))[0];
 function realm(house=0){
   const C=vm.createContext({MODEL_ONLY:false,BACKGROUND:null,backgroundUserRequest:()=>false,G:{ledgerOpen:false},W:{player:{on:true,house},houses:[{name:'Crown'},{name:'Lord',dues:1},{name:'Rival',dues:1}],settlements:[{name:'Royal town',owner:0},{name:'Our town',owner:1},{name:'Rival town',owner:2}]},MOD:{tax:12},document:{body:{classList:{contains:()=>false}}},day:()=>10,esc:s=>String(s),clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),houseDetailHTML:()=>'<p>House ledger</p>',contextUI:{expanded:true},cbtn:(c,a,l)=>`<button data-cmd="${c}" data-arg="${a}">${l}</button>`});
-  vm.runInContext('let JOURNAL=[],REPLAYING=false;'+['sovOn','plyH','crownOn','lordOn','jot','applySetting','setRulerRate','rulerRateInput','rulerRevenueHTML','rulerGovernanceHTML','crownSections'].map(fn).join('\n'),C);
+  vm.runInContext('let JOURNAL=[],REPLAYING=false,JOURNAL_WATCH=null;'+['sovOn','plyH','crownOn','lordOn','jot','applySetting','setRulerRate','rulerRateInput','rulerRevenueHTML','rulerGovernanceHTML','crownSections'].map(fn).join('\n'),C);
   return C;
 }
 test('Crown tax adjustments are immediate, bounded and coalesced, with no household mutation',()=>{
@@ -42,7 +42,7 @@ test('fiscal controls precede every court view; governance contains only the rul
 });
 test('opening town orders enforces ownership and play mode without writing a save command',()=>{
   const C=realm(1),opened=[];Object.assign(C,{showInspect:pk=>opened.push(pk.s.name),setInspectorView:v=>assert.equal(v,'orders'),contextExpand:v=>assert.equal(v,true),refreshCrownPanel(){},refreshInspect(){},updateHUD(){},renderPetition(){}});
-  vm.runInContext(fn('runCmd')+'\n'+source.match(/const cmdClick=e=>\{.*?\};/)[0],C);
+  vm.runInContext(['runCmd','uiConfirmKey','uiConfirmed'].map(fn).join('\n')+'\n'+source.match(/const cmdClick=e=>\{.*?\};/)[0],C);
   const click=si=>{C.e={target:{closest:()=>({dataset:{cmd:'s-manage',arg:String(si)}})}};vm.runInContext('cmdClick(e)',C);};
   click(0);click(2);assert.deepEqual(opened,[]);click(1);assert.deepEqual(opened,['Our town']);assert.equal(vm.runInContext('JOURNAL.length',C),0);
   C.W.player.on=false;click(1);assert.deepEqual(opened,['Our town']);

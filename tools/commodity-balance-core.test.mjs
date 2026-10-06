@@ -295,7 +295,7 @@ test('save construction flushes active commodity settlements before returning th
     cam: { focus: { x: 0, z: 0 }, dist: 1, yaw: 0 }, Date,
   });
   vm.runInContext(coreSource, context);
-  vm.runInContext(fn('commodityActive') + '\n' + fn('commoditySettleAll') + '\n' + fn('workerSaveNameValid') + '\n' + fn('makeSave'), context);
+  vm.runInContext(fn('commodityActive') + '\n' + fn('commoditySettleAll') + '\n' + fn('workerSaveNameValid') + '\n' + fn('saveDocument') + '\n' + fn('saveCamera') + '\n' + fn('makeSave'), context);
   vm.runInContext("const s={storage:new CommodityBalanceLedger({realmId:0,day:7}),pos:{x:0,z:0}};s.storage.location('yard',{capacity:Infinity});s.storage.adjust('yard','grain','house','held',3,'harvest');W.settlements.push(s);globalThis.saved=makeSave('checkpoint')", context);
   assert.equal(context.saved.name, 'checkpoint');
   assert.equal(context.events.length, 1);

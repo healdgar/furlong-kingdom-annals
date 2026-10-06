@@ -4052,7 +4052,8 @@ function commodityMove(s,d,fields,q,cause='settlement-transfer'){
   const A=s.storage,B=storageInit(d),rows=[...A.entries(fields)].filter(r=>!A.locations.get(r.location).transit),have=rows.reduce((n,r)=>n+r.qty,0),bound=Number.EPSILON*Math.max(q,have)*(rows.length+1)*8;if(q>have+bound)storageInvariantFault('Unbacked commodity transfer '+s.name+': requested '+q+' '+fields.good+', available '+have+', owner '+storageOwnerId(fields.owner)+', availability '+(fields.availability||'*')+', cause '+cause+'; sources '+rows.map(r=>r.location+'='+r.qty).join(','));const amount=Math.min(q,have);let left=amount;
   for(const r of rows){const v=Math.min(left,r.qty);if(v>0){stockOf(d,r.owner);A.consume(r,v,cause);B.adjust('yard',r.good,r.owner,r.availability,v,cause);storageBindGood(d,commodityPhysical(r.good));left-=v;}if(!(left>0))break;}return amount-left;
 }
-function commoditySettleAll(){if(typeof W==='undefined'||!W)return;for(const s of W.settlements||[])if(commodityActive(s)){s.storage.settle(day(),storageOutcome);}}
+// A settlement before the day's end (a save, a flush) is journaled, so a replay settles at the same point (#25).
+function commoditySettleAll(daily=false){if(typeof W==='undefined'||!W)return;let early=false;for(const s of W.settlements||[])if(commodityActive(s)){if(s.storage.settle(day(),storageOutcome)&&!daily)early=true;}if(early&&typeof jot==='function')jot({k:'settle'});}
 function commodityFacilities(s){const K=s.storage,seen=new Set();for(const b of s.buildings||[]){const t=STORAGE_TYPES[b.arch];if(!t)continue;if(!b.storageId)b.storageId='building:'+K.next++;const id=b.storageId;seen.add(id);const owner=b.title?.owner??b.ownerId,ownerId=storageRegisterOwner(owner);const active=!b.removed&&b.state==='sound',capacity=t.capacity*(1+.5*(b.tier||0)),prior=K.locations.get(id),sameGoods=(a,b)=>a===b||Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((g,i)=>g===b[i]);
     if(active&&prior&&(prior.capacity!==capacity||!sameGoods(prior.goods,t.goods))){const rows=[...K.entries({location:id,includeTransit:true})],allowed=g=>!t.goods||t.goods.includes(g)||(g==='char'&&t.goods.includes('timber'));let remainUsed=0,remainMagnitude=0,remainTerms=0;const move=new Map(rows.filter(r=>!allowed(r.good)).map(r=>[r,r.qty]));
       for(const r of rows)if(!move.has(r)){const amount=r.qty*K._volume(prior,r.good);remainUsed+=amount;remainMagnitude+=Math.abs(amount);remainTerms++;}
@@ -11058,7 +11059,7 @@ function simInit(){
       }
     }
   }
-  W.player={on:false,started:false,legacy:0,since:0,startPop:0,peaceSince:0,amb:{},cd:{},pause:true,confirm:null};
+  W.player={on:false,started:false,legacy:0,since:0,startPop:0,peaceSince:0,amb:{},cd:{},pause:true};
   W.petitions=[];W.dynasty=1;
   // the river is a road that flows: barge routes between river-linked towns
   W.riverPairs=[];
@@ -13790,7 +13791,7 @@ function simTick(){
   tickSovereign();
   tickEnvoys();
   routingPrepare();
-  commoditySettleAll();
+  commoditySettleAll(true);
 }
 /* =========================================================================
    CHRONICLE — the product. Dated entries in annalist voice; click to fly.
@@ -14527,9 +14528,7 @@ function houseCmd(cmd,hi){
     h.loyalty=clamp(h.loyalty+15,0,100);W.capital.festivalUntil=day()+3;
     emit('crown',6,W.capital.pos,`A royal match: ${fullTitle(a)} weds ${fullTitle(b)} of ${h.name}. The match binds the houses in friendship.`,{festival:true});}
   else if(cmd==='attaint'){
-    if(W.war)return;
-    if(W.player.confirm!=='att'+hi){W.player.confirm='att'+hi;W.player.confirmUntil=performance.now()+5000;return;}
-    W.player.confirm=null;
+    if(W.war)return; // given only once confirmed in the interface (uiConfirmed)
     W.legitimacy=clamp(W.legitimacy-6,0,100);
     if(chance('sim',attaintOdds(hi))){
       h.exiled=true;h.exiledDay=day();
@@ -14803,8 +14802,7 @@ function lordPanelHTML(){
   x+=`<div class="dhead">The throne</div>`;
   {const ord=electionOrder(),rk=ord.indexOf(hi)+1;x+=`<div class="note">${h.claim?'Royal blood runs in your line: you have a claim.':'Your line has no claim of royal blood.'} Were the great houses to choose a monarch now, you would stand ${rk>0?ordinal(rk)+' of '+ord.length:'nowhere'}.</div>`;}
   {const rs=royalSingle(),mine=rs&&houseSingle(hi,rs.sex);x+=cbtn('lord','royalmatch','Seek a royal match',500,h.claim?'your line has royal blood':!mine?'no pair unwed':cd('l_rmatch'),mine?`${rs.name} and ${mine.name}; the crown decides by your standing (${Math.round(h.loyalty)})`:'');}
-  const conf=P.confirm==='rebel'&&performance.now()<P.confirmUntil;
-  x+=cbtn('lord','rebel',conf?'Confirm: raise your banners!':'Raise your banners against the crown',0,W.war?'the realm is already at war':'',`claim the throne; the royal host will come for you (${Math.round(W.legitimacy)} legitimacy)`);
+  x+=cbtn('lord','rebel','Raise your banners against the crown',0,W.war?'the realm is already at war':'',`claim the throne; the royal host will come for you (${Math.round(W.legitimacy)} legitimacy)`);
   x+=`<div class="dhead">Ambitions</div>`;
   for(const a of LORD_AMB)x+=`<div class="amb${P.amb[a[0]]?' done':''}">${a[1]} <span class="tag">+${a[2]}</span></div>`;
   x+=`<button class="wbtn" data-cmd="sov-off" style="margin-top:10px">Lay down the banner</button>`;
@@ -14812,7 +14810,6 @@ function lordPanelHTML(){
 }
 function lordCmd(cmd,arg){
   const hi=plyH();if(!(hi>0))return;const{h,own,seat,si}=lordHouse();if(!seat||h.exiled)return;
-  const P=W.player;
   switch(cmd){
     case 'ledger':G.ledgerOpen=!G.ledgerOpen;break;
     case 'royalmatch':{if(h.claim||cdLeft('l_rmatch'))return;const a=royalSingle(),b=a&&houseSingle(hi,a.sex);if(!a||!b||!spend(hi,500))return;setCd('l_rmatch',360);book(h,'dowry',-500);W.treasury+=500;
@@ -14846,9 +14843,8 @@ function lordCmd(cmd,arg){
     case 'incite':{const j=+arg;if(cdLeft('l_inc'+j)||!spend(hi,300))return;setCd('l_inc'+j,120);book(h,'intrigue',-300);{const T=W.settlements[W.houses[j]&&W.houses[j].seat];payAmong(T?heads_(T,()=>true).slice(0,6):[],300,null,'intrigue');}incite(hi,j);break;}
     case 'peace':{const j=+arg,fd=(W.feuds||[]).find(f=>(f.a===hi&&f.b===j)||(f.b===hi&&f.a===j));
       if(fd){fd.until=day();emit('war',5,seat.pos,`${h.name} sends heralds to ${W.houses[j].name} to treat for peace.`);}break;}
-    case 'rebel':{if(W.war)return;
-      if(!(P.confirm==='rebel'&&performance.now()<P.confirmUntil)){P.confirm='rebel';P.confirmUntil=performance.now()+5000;return;}
-      P.confirm=null;W.truceUntil=0;startWar(hi,'renounces its oaths and claims the throne');break;}
+    case 'rebel':{if(W.war)return; // given only once confirmed in the interface (uiConfirmed)
+      W.truceUntil=0;startWar(hi,'renounces its oaths and claims the throne');break;}
   }
 }
 function lordPlace(mode,p,arg){ // map clicks for a lord's works
@@ -14943,8 +14939,7 @@ function crownPanelHTML(){
     h+=b('h-hostage','Take a hostage',rev||house.hostageUntil>day(),'−6 loyalty, but they will not rise for two years');
     const match=rs&&houseSingle(hi,rs.sex);
     h+=b('h-match','Royal match',rev||mt||!match,match?`${rs.name} to wed ${match.name} · +15 loyalty`:'no suitable pair unwed');
-    const conf=W.player.confirm==='att'+hi&&performance.now()<W.player.confirmUntil;
-    h+=b('h-attaint',conf?'Confirm attainder!':'Attaint · '+Math.round(attaintOdds(hi)*100)+'%',!!W.war,
+    h+=b('h-attaint','Attaint · '+Math.round(attaintOdds(hi)*100)+'%',!!W.war,
       'Seize their lands. Legitimacy −6; on failure they rise in arms');
     h+=`</div></div>`;
   });
@@ -14962,6 +14957,23 @@ function refreshCrownPanel(force=false){
   if(BACKGROUND)return workerRefreshCourt(force);
   setHTML(document.getElementById('dbody'),crownPanelHTML());
 }
+// Rebellion and attainder ask twice. The asking belongs to the interface: the first click arms the button for five
+// seconds of the player's time and touches neither the world nor the journal; only the confirmed click is journaled and
+// given, so a replay never meets a half-given order (#26).
+const UI_CONFIRM_LABELS={'lord:rebel':'Confirm: raise your banners!','h-attaint':'Confirm attainder!'};
+function uiConfirmKey(cmd,arg){return cmd==='lord'&&arg==='rebel'?'lord:rebel':cmd==='h-attaint'?'h-attaint:'+arg:null;}
+function uiConfirmed(t,now){
+  const key=uiConfirmKey(t.dataset.cmd,t.dataset.arg);if(!key)return true;now??=performance.now();
+  if(G.uiConfirm?.key===key&&now<G.uiConfirm.until){G.uiConfirm=null;uiConfirmShow(t.parentNode);return true;}
+  G.uiConfirm={key,until:now+5000};uiConfirmShow(t.parentNode);
+  if(typeof setTimeout==='function')setTimeout(()=>{if(G.uiConfirm?.key===key&&performance.now()>=G.uiConfirm.until)G.uiConfirm=null;if(typeof document!=='undefined')uiConfirmShow(document);},5050);
+  return false;}
+function uiConfirmShow(root){ // an armed button says so; the rest say what they do
+  if(!root?.querySelectorAll)return;const C=G.uiConfirm,live=!!C&&performance.now()<C.until;
+  for(const b of root.querySelectorAll('[data-cmd="lord"][data-arg="rebel"],[data-cmd="h-attaint"]')){
+    const key=uiConfirmKey(b.dataset.cmd,b.dataset.arg),on=live&&C.key===key,host=b.querySelector('span')||b,text=[...host.childNodes].find(n=>n.nodeType===3&&n.textContent.trim());if(!text)continue;
+    if(on&&b.dataset.unconfirmed===undefined){b.dataset.unconfirmed=text.textContent;text.textContent=UI_CONFIRM_LABELS[key.startsWith('h-attaint')?'h-attaint':key];}
+    else if(!on&&b.dataset.unconfirmed!==undefined){text.textContent=b.dataset.unconfirmed;delete b.dataset.unconfirmed;}}}
 function runCmd(cmd,arg){
   if(backgroundUserRequest()&&!workerCommandIsLocal(cmd,arg))return workerSubmitCommand({k:'c',c:cmd,a:arg});
   switch(cmd){
@@ -15104,6 +15116,7 @@ function updateUILayout(){
 function decorateControls(root){
   for(const e of root.querySelectorAll('[data-cmd],a.nm,a.pp,a.tr,[data-pk],[data-pv],#terrlegend [data-nm]'))if(!e.matches('button,input,select,textarea')){if(e.matches('a.nm,a.pp,a.tr')){e.setAttribute('href','#ref='+encodeURIComponent(e.dataset.nm||(e.dataset.pid?'p'+e.dataset.pid:e.dataset.tree)));e.removeAttribute('role');}else e.setAttribute('role','button');e.tabIndex=0;}
   for(const e of root.querySelectorAll('input,select,textarea'))if(!e.hasAttribute('aria-label')&&!e.labels?.length){const label=e.closest('.wrow,.slrow')?.querySelector('label')?.textContent||e.closest('.wrow')?.firstChild?.textContent||e.placeholder||e.id;e.setAttribute('aria-label',label.trim());}
+  uiConfirmShow(root);
 }
 function closeToolMenu(){document.getElementById('menubtn').setAttribute('aria-expanded','false');document.getElementById('toolmenu').hidden=true;}
 function helpUI(){
@@ -15221,7 +15234,7 @@ function buildDrawer(tab){
       const cp=document.getElementById('ecoast').value;
       const fv=parseInt(document.getElementById('fatein').value,10); // blank: the same land lives a new history
       location.hash='#s='+((isNaN(v)?Math.floor(Math.random()*1e9):v)>>>0)+'&f='+((isNaN(fv)?1+Math.floor(Math.random()*1e9):fv)>>>0)+'&y='+document.getElementById('erain').value+(cp?'&c='+cp:'')+(MAPKM!==9?'&km='+MAPKM:'')+(document.getElementById('emap').value?'&map='+document.getElementById('emap').value:'');
-      location.reload();
+      tabSessionEnd();location.reload(); // a new game, deliberately: a refresh must not bring the old one back
     });
     document.getElementById('btnmap').addEventListener('click',toggleMap);
     document.getElementById('btndaycycle').addEventListener('click',e=>{
@@ -15273,7 +15286,7 @@ function initUI(){
   buildDrawer('crown');
   document.getElementById('drawertoggle').addEventListener('click',toggleDrawer);
   // one delegated handler for every data-cmd control (crown panel, inspector, house & succession rows)
-  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled)return;if(t.dataset.cmd!=='storage-pick'&&t.dataset.cmd!=='s-manage')jot({k:'c',c:t.dataset.cmd,a:t.dataset.arg});runCmd(t.dataset.cmd,t.dataset.arg);}; // committed choices include their arguments; surveys and opening town orders are only UI state
+  const cmdClick=e=>{const t=e.target.closest('[data-cmd]');if(!t||t.disabled||!uiConfirmed(t))return;if(t.dataset.cmd!=='storage-pick'&&t.dataset.cmd!=='s-manage')jot({k:'c',c:t.dataset.cmd,a:t.dataset.arg});runCmd(t.dataset.cmd,t.dataset.arg);}; // committed choices include their arguments; surveys and opening town orders are only UI state
   document.getElementById('dbody').addEventListener('click',cmdClick);
   document.getElementById('dbody').addEventListener('pointerover',e=>{uiHover=!!(e.target.closest&&e.target.closest('button,select,input'));});
   document.getElementById('dbody').addEventListener('pointerleave',()=>{uiHover=false;});
@@ -15296,7 +15309,7 @@ function initUI(){
   document.getElementById('rulebtn').addEventListener('click',()=>{jot({k:'sov',on:!sovOn()});setSovereign(!sovOn());});
   document.getElementById('savebtn').addEventListener('click',saveUI);
   document.getElementById('advbtn').addEventListener('click',()=>ADV.dialog());
-  addEventListener('pagehide',autosave);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosave();}); // leaving the page keeps the game
+  addEventListener('pagehide',autosaveOnPagehide);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosave();}); // leaving the page keeps the game
   document.getElementById('planbtn').addEventListener('click',planToggle);
   document.getElementById('perfbox').addEventListener('click',e=>{if(e.target.id!=='perfcopy')return;const t=perfReport(false);
     (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{e.target.textContent='Copied!';},()=>prompt('Performance report:',t));});
@@ -16731,7 +16744,7 @@ function workerPresentation(bootstrap=false){
   const structures=bootstrap||G.structuresDirty||G.roadsDirty||G.wallsDirty||newBuildings||newTowns;
   const details=bootstrap||G.detDirty,walls=bootstrap||G.wallsDirty,roads=bootstrap||G.roadsDirty;
   P.speed=speedIdx;P.petitions=W.petitions.length;
-  const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map(s=>visualSettlement(s,structures)),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.length,entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
+  const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map(s=>visualSettlement(s,structures)),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.reduce((n,e)=>e.k==='settle'?n:n+1,0),entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
   if(P.endgame){out.endgame=P.endgame;P.endgame=null;}if(P.profileDirty){out.profile=visualGeometry(P.profile);P.profileDirty=false;}
   out.petitions=W.petitions.map(p=>({key:p.key,title:p.title,pos:visualGeometry(p.pos),due:p.due}));
   const V=VISUAL_ENTITY;out.armies=W.armies.map(a=>V.army(a));out.caravans=(W.caravans||[]).map((c,i)=>V.caravan(c,i));out.envoys=(W.envoys||[]).map(e=>V.envoy(e));
@@ -16993,13 +17006,17 @@ class SimulationWorkerHost{
     this.queue.push(message);this.wake(0);
   }
   wake(delay){if(this.closed||this.busy)return;if(this.timer!==null){if(delay)return;this.cancel(this.timer);}this.timer=this.schedule(()=>{this.timer=null;this.pump();},delay);}
+  // The game's save document for the tab's session (#5): after init and whenever the journal changes (a command, or a
+  // settlement before the day's end), once per task. Nothing in the world moves.
+  journal(){if(!this.model.session||this.closed||this.journalPending)return;this.journalPending=true;
+    this.schedule(()=>{this.journalPending=false;if(this.closed||!this.ready)return;let value;try{value=this.model.session();}catch(error){return;}this.send({protocol:1,type:'session',value});},0);}
   fail(error){this.fault=error;this.accum=0;this.model.speed(0);if(this.advance){this.reply(this.advance,null,error);this.advance=null;}this.send({protocol:1,type:'fault',error:String(error.message||error)});}
   async control(message){
     const {type,payload={}}=message;
     if(type==='init'){
       if(this.ready||this.fault)throw Error('Simulation worker already initialized');
       await this.model.init(payload,(text,fraction)=>this.send({protocol:1,type:'progress',text,fraction}));
-      this.ready=true;this.model.speed(0);this.lastTime=this.now();this.reply(message,this.model.view('summary'));return;
+      this.ready=true;this.model.speed(0);this.lastTime=this.now();this.reply(message,this.model.view('summary'));this.journal();return;
     }
     if(!this.ready)throw Error('Simulation worker is not initialized');
     if(this.fault&&!['view','save','save-record','flush','close'].includes(type))throw this.fault;
@@ -17212,7 +17229,7 @@ function simulationWorkerModel(){return{
     WORKER_PRESENTATION.started=true;
     if(options.profile){WORKER_PRESENTATION.profile={best:Number.isFinite(options.profile.best)?Math.max(0,options.profile.best):0,achievements:{...options.profile.achievements}};}
     await startSimulation({...options,outcomeJournal:STORAGE_OUTCOMES.journal,progress});
-    if(options.resume){const save=await unpackSave(options.resume);if(save.hash!==worldHash())throw Error('Save belongs to another realm');await replaySave(save,progress);}
+    if(options.resume){const save=await unpackSave(options.resume);if(save.hash!==worldHash())throw Error('Save belongs to another realm');saveToDay(save,options.resumeDay??null);await replaySave(save,progress);}
   },
   day:()=>day(),rate:()=>SPEEDS[speedIdx]||0,reeling:()=>speedIdx===5,speed:index=>{setSpeed(index);WORKER_PRESENTATION.speed=speedIdx;}, // the requester learns this speed from the reply
   tick:()=>simTick(),wait:()=>STORAGE_OUTCOMES.wait(),
@@ -17240,6 +17257,7 @@ function simulationWorkerModel(){return{
   },
   async saveRecord(payload){if(!payload||!workerSaveNameValid(payload.name)||payload.cam!=null&&!workerSaveCameraValid(payload.cam))throw Error('Invalid save record');await STORAGE_OUTCOMES.flush();const o=makeSave(payload.name);if(payload.cam)o.cam={x:payload.cam.x,z:payload.cam.z,d:payload.cam.d,yaw:payload.cam.yaw};return o;},
   async save(name){return packSave(makeSave(name));},
+  session(){return saveDocument('');},
   async flush(){await STORAGE_OUTCOMES.flush();return STORAGE_OUTCOMES.status();}
 };}
 function simulationWorkerRuntime(){
@@ -17248,12 +17266,12 @@ function simulationWorkerRuntime(){
   channel.port1.onmessage=({data})=>{const task=tasks.get(data);if(!task)return;tasks.delete(data);task.fn();};
   const schedule=(fn,ms)=>{const id=++next,task={fn,timer:null};tasks.set(id,task);if(ms)task.timer=setTimeout(()=>channel.port2.postMessage(id),ms);else channel.port2.postMessage(id);return id;};
   const cancel=id=>{const task=tasks.get(id);if(task?.timer!==null)clearTimeout(task?.timer);tasks.delete(id);};
-  const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message,presentationTransfers(message)),{schedule,cancel});onmessage=event=>host.receive(event.data);return host;
+  const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message,presentationTransfers(message)),{schedule,cancel});onmessage=event=>host.receive(event.data);JOURNAL_WATCH=()=>host.journal();return host;
 }
 class SimulationWorkerClient{
-  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;this.onclock=null;this.displayDelivery=Promise.resolve();
+  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;this.onclock=null;this.onsession=null;this.displayDelivery=Promise.resolve();
     const deliver=fn=>{const next=this.displayDelivery.then(fn);this.displayDelivery=next.catch(()=>{});return next;};
-    worker.onmessage=({data})=>{if(this.closed||!data||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='clock'){deliver(()=>this.closed?undefined:this.onclock?.(data.value)).catch(error=>this.onfault?.(error));return;}if(data.type==='view'){deliver(()=>this.closed?undefined:this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);if(data.error)request.reject(Error(data.error));else if(data.value?.revision&&data.value?.settlements)deliver(()=>request.resolve(data.value));else request.resolve(data.value);};
+    worker.onmessage=({data})=>{if(this.closed||!data||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='clock'){deliver(()=>this.closed?undefined:this.onclock?.(data.value)).catch(error=>this.onfault?.(error));return;}if(data.type==='view'){deliver(()=>this.closed?undefined:this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='session'){this.onsession?.(data.value);return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);if(data.error)request.reject(Error(data.error));else if(data.value?.revision&&data.value?.settlements)deliver(()=>request.resolve(data.value));else request.resolve(data.value);};
     const fail=error=>{this.closed=true;for(const request of this.pending.values())request.reject(error);this.pending.clear();worker.terminate();this.onfault?.(error);};worker.onerror=event=>fail(Error(event.message||'Simulation worker failed'));worker.onmessageerror=()=>fail(Error('Simulation worker reply could not be read'));
   }
   request(type,payload={}){if(this.closed)return Promise.reject(Error('Simulation worker is closed'));if(this.pending.size>=64)return Promise.reject(Error('Simulation request queue is full'));const id=++this.requestSequence;return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.worker.postMessage({protocol:1,id,type,payload});}catch(error){this.pending.delete(id);reject(error);}});}
@@ -17298,11 +17316,18 @@ async function boot(){
   const progress=(txt,f,delay=30)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
     return new Promise(r=>setTimeout(r,delay));};
   await progress('Forging the realm…',0.02);
+  // #5: a refresh takes up this tab's own game; a save, another realm or a fresh link begins the tab's next one
+  let tabGame=null;{const o=await tabSessionBoot(location.hash,RESUME_CODE);tabGame=o.resumed;RESUME_CODE=o.code;RESUME_DAY=o.day;}
   if(!foreground){
     let profile={best:0,achievements:{}};try{profile={best:+localStorage.getItem('annals-best-'+seed)||0,achievements:JSON.parse(localStorage.getItem('furlong-ach')||'{}')};}catch(_){}
-    const options={seed,fate:FATE,coast:COAST_PREF,startAD:START_AD,hash:location.hash,resume:RESUME_CODE,profile};
-    BACKGROUND=createSimulationWorker(options);BACKGROUND.options=options;BACKGROUND.onprogress=m=>progress(m.text,m.fraction,0);BACKGROUND.onfault=workerNotice;BACKGROUND.onview=packet=>{installPresentation(packet);if(G.workerSaveYear!==year()){G.workerSaveYear=year();if(G.workerSaveYear>1)autosave();}};BACKGROUND.onclock=installClock;
-    await BACKGROUND.ready;RESUMED=!!RESUME_CODE;await workerRefreshLandscapeBootstrap();
+    const options={seed,fate:FATE,coast:COAST_PREF,startAD:START_AD,hash:location.hash,resume:RESUME_CODE,resumeDay:RESUME_DAY,profile};
+    const start=opts=>{const B=createSimulationWorker(opts);B.options=opts;B.onprogress=m=>progress(m.text,m.fraction,0);B.onfault=tabGame?null:workerNotice;B.onsession=record=>tabSessionCapture(record);
+      B.onview=packet=>{installPresentation(packet);tabSessionDay(day(),saveCamera());if(G.workerSaveYear!==year()){G.workerSaveYear=year();if(G.workerSaveYear>1)autosave();}};B.onclock=c=>{installClock(c);tabSessionDay(c.day,saveCamera());};return B;};
+    BACKGROUND=start(options);
+    try{await BACKGROUND.ready;}catch(error){if(!tabGame)throw error; // the tab's game would not replay: begin afresh rather than fail on every refresh
+      console.warn('annals: this tab’s game could not be taken up again; a fresh chronicle begins',error);BACKGROUND.close().catch(()=>{});
+      tabGame=null;RESUME_CODE=RESUME_DAY=null;tabSessionStart(null,null);BACKGROUND=start({...options,resume:null,resumeDay:null});await BACKGROUND.ready;}
+    BACKGROUND.onfault=workerNotice;RESUMED=!!RESUME_CODE;await workerRefreshLandscapeBootstrap();
   }else{await generateWorld(seed,progress);await STORAGE_OUTCOMES.begin();}
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
@@ -17329,8 +17354,9 @@ async function boot(){
   cam.cur.focus.copy(cam.focus);
   cam.dist=3200*MAPK;cam.cur.dist=4200*MAPK;cam.yaw=W.openingYaw;cam.cur.yaw=cam.yaw-0.4;
   cam.mode=matchMedia('(prefers-reduced-motion:reduce)').matches?'free':'director';
-  if(RESUME_CODE&&BACKGROUND){try{const saved=await unpackSave(RESUME_CODE);if(saved.cam)restoreSavedCamera(saved.cam);}catch(e){console.warn('annals: could not restore the saved camera',e);}}
-  if(RESUME_CODE&&!BACKGROUND){try{const o=await unpackSave(RESUME_CODE);await replaySave(o,progress);setSpeed(0);}catch(e){console.error(e);emit('crown',4,W.capital.pos,'The save could not be read; a fresh chronicle begins from the same seed.');}}
+  if(RESUME_CODE&&BACKGROUND){try{const c=tabGame?tabGame.cam:(await unpackSave(RESUME_CODE)).cam;if(c)restoreSavedCamera(c);}catch(e){console.warn('annals: could not restore the saved camera',e);}}
+  if(RESUME_CODE&&!BACKGROUND){try{const o=saveToDay(await unpackSave(RESUME_CODE),RESUME_DAY);if(tabGame?.cam)o.cam=tabGame.cam;await replaySave(o,progress);setSpeed(0);}catch(e){console.error(e);emit('crown',4,W.capital.pos,'The save could not be read; a fresh chronicle begins from the same seed.');}}
+  if(!BACKGROUND){JOURNAL_WATCH=tabSessionSoon;tabSessionCapture(saveDocument(''));setInterval(()=>tabSessionDay(day(),saveCamera()),500);} // the worker sends its own
   if(!RESUMED){const L=savesList();if(L.length){const o=L[0];emit('crown',3,W.capital.pos,`💾 Your last game, ${o.realm} in AD ${o.ad} (${o.who}), can be resumed from the 💾 menu.`);}}
   document.getElementById('loading').style.opacity='0';
   setTimeout(()=>document.getElementById('loading').remove(),900);
@@ -17344,10 +17370,13 @@ async function boot(){
    The world is grown again from the seed and the days run forward, each command given again on its
    day: the same realm, to the man. Small enough to share as a code or a link.
    ========================================================================= */
-let JOURNAL=[],REPLAYING=false,RESUME_CODE=null,RESUMED=false;
+let JOURNAL=[],REPLAYING=false,RESUME_CODE=null,RESUME_DAY=null,RESUMED=false,JOURNAL_WATCH=null;
+// Every journal change passes here; JOURNAL_WATCH (the worker host, or the foreground tab session) learns of it.
 function jot(e){if(!MODEL_ONLY&&typeof BACKGROUND!=='undefined'&&BACKGROUND||REPLAYING||!W||W.prehistory)return;e.d=day();const L=JOURNAL[JOURNAL.length-1];
-  if(e.k==='set'&&L&&L.k==='set'&&L.n===e.n&&L.d===e.d){L.v=e.v;return;} // a slider dragged: only where it came to rest that day
-  JOURNAL.push(e);}
+  if(e.k==='set'&&L&&L.k==='set'&&L.n===e.n&&L.d===e.d)L.v=e.v; // a slider dragged: only where it came to rest that day
+  else JOURNAL.push(e);
+  JOURNAL_WATCH?.();}
+function journalCommands(J){let n=0;for(const e of J||[])if(e.k!=='settle')n++;return n;} // the player's own orders, not the ledger's settlements
 function applySetting(n,v){if(backgroundUserRequest()&&!REPLAYING)return workerSubmitCommand({k:'set',n,v});if(n==='tax')MOD.tax=v;else if(n==='dues'){const h=W.houses[plyH()];if(h)h.dues=v;}else if(n.startsWith('mod:'))MOD[n.slice(4)]=v;}
 function replayEntry(e){try{switch(e.k){
   case 'c':runCmd(e.c,e.a);break;
@@ -17355,12 +17384,19 @@ function replayEntry(e){try{switch(e.k){
   case 'pet':answerPetition(e.i);break;
   case 'set':applySetting(e.n,e.v);break;
   case 'place':{const m=e.m,arg=Object.hasOwn(e,'a')?workerCommandRestorePlaceArg(m,e.a):placeArg;setPlaceMode(null);doPlace(m,arg,{x:e.x,z:e.z},e.pk);break;}
-  case 'plan':{const D=planDraft(e.kind,e.st,e.p);if(D.ok)planCommit(D,e.p);break;}}}
+  case 'plan':{const D=planDraft(e.kind,e.st,e.p);if(D.ok)planCommit(D,e.p);break;}
+  case 'settle':commoditySettleAll();break;}}
   catch(err){console.warn('annals: a command could not be given again',e,err);}}
-function worldHash(){return (MODEL_ONLY?WORLD_PARAMS:location.hash).replace(/^#/,'').split('&').filter(p=>p&&!/^(h|save|perf|foreground)(=|$)/.test(p)).join('&');}
+function worldIdentity(hash){return String(hash||'').replace(/^#/,'').split('&').filter(p=>p&&!/^(h|save|perf|foreground)(=|$)/.test(p)).join('&');} // the realm a link names: seed, fate, coast, size, map, first year
+function worldHash(){return worldIdentity(MODEL_ONLY?WORLD_PARAMS:location.hash);}
 function buildId(){if(MODEL_ONLY)return globalThis.FURLONG_OPTIONS?.build??'dev';const el=document.getElementById('buildstamp');return el?el.textContent.trim():'dev';}
-function makeSave(name){if(!workerSaveNameValid(name))throw Error('Invalid save name');commoditySettleAll();return{v:1,name:name||'',hash:worldHash(),build:buildId(),day:day(),ad:AD(),realm:W.name,saved:Date.now(),
-  who:sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle',cam:MODEL_ONLY?null:{x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)},j:JOURNAL};}
+// The game as it stands, as a save, moving nothing in the world. v2: a confirmed command is journaled once (#26).
+function saveDocument(name){return{v:2,name:name||'',hash:worldHash(),build:buildId(),day:day(),ad:AD(),realm:W.name,saved:Date.now(),
+  who:sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle',cam:MODEL_ONLY?null:saveCamera(),j:JOURNAL};}
+function makeSave(name){if(!workerSaveNameValid(name))throw Error('Invalid save name');commoditySettleAll();return saveDocument(name);} // a save settles the day's goods so far (journaled)
+function saveCamera(){return{x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)};}
+// A save carried on to a later day with no command between: the tab's game, refreshed after the day its journal last changed.
+function saveToDay(o,d){if(d==null||d<=o.day)return o;if(!Number.isSafeInteger(d)||d-o.day>360*5000)throw Error('Invalid resume day');o.ad=(o.ad|0)+Math.floor(d/360)-Math.floor(o.day/360);o.day=d;return o;}
 const b64u=s=>btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),unb64u=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');return atob(s+'==='.slice((s.length+3)%4));};
 function workerSaveNameValid(name){return name==null||typeof name==='string'&&name.length<=60;}
 function workerSaveCameraValid(c){return !!c&&typeof c==='object'&&!Array.isArray(c)&&Number.isFinite(c.x)&&Number.isFinite(c.z)&&Number.isFinite(c.d)&&c.d>0&&c.d<=1e7&&Number.isFinite(c.yaw);}
@@ -17375,21 +17411,76 @@ async function unpackSave(code){code=String(code||'').trim().replace(/^[\s\S]*[#
 const SAVEK='furlong-saves';
 function savesList(){try{return JSON.parse(localStorage.getItem(SAVEK)||'[]');}catch(e){return[];}}
 function savesPut(L){try{localStorage.setItem(SAVEK,JSON.stringify(L));return true;}catch(e){return false;}}
-async function workerCaptureSave(name){const camera={x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)};return BACKGROUND.request('save-record',{name:name||'',cam:camera});}
-async function saveNow(name,auto){const o=backgroundUserRequest()?await workerCaptureSave(name):makeSave(name);o.auto=!!auto;o.id=auto?'auto:'+o.hash:'s'+Date.now();
+async function workerCaptureSave(name){return BACKGROUND.request('save-record',{name:name||'',cam:saveCamera()});}
+async function saveNow(name,auto){return savesShelve(backgroundUserRequest()?await workerCaptureSave(name):makeSave(name),auto);}
+function savesShelve(o,auto){o.auto=!!auto;o.id=auto?'auto:'+o.hash:'s'+Date.now();
   const L=savesList().filter(x=>x.id!==o.id);L.unshift(o);while(L.length>14){let k=-1;for(let i=L.length-1;i>=0;i--)if(!L[i].auto){k=i;break;}L.splice(k>=0?k:L.length-1,1);}
   return savesPut(L)?o:null;}
-async function resumeSave(o){const code=await packSave(o);location.hash='#'+o.hash+'&save='+code;location.reload();}
+async function resumeSave(o){const code=await packSave(o);tabSessionEnd();location.hash='#'+o.hash+'&save='+code;location.reload();}
 let autosaveInFlight=null,autosaveAgain=false;
 function autosave(){if(REPLAYING||!W||W.prehistory)return Promise.resolve();if(autosaveInFlight){autosaveAgain=true;return autosaveInFlight;}
   autosaveInFlight=(async()=>{do{autosaveAgain=false;try{await saveNow('',true);}catch(e){console.warn('annals: autosave failed',e);}}while(autosaveAgain&&!REPLAYING&&W&&!W.prehistory);})().finally(()=>{autosaveInFlight=null;});return autosaveInFlight;}
+// Leaving the page: whatever is kept must be kept now. The worker's reply to a save would come too late, so the tab's
+// session (journal and day, already here) is written to the shelf as the autosave; the foreground saves at once as ever.
+function autosaveOnPagehide(){if(!W?.clock||W.prehistory||REPLAYING)return;const camera=saveCamera();
+  if(!BACKGROUND){autosave();tabSessionCapture(saveDocument(''));} // the foreground holds the journal: both are written at once
+  tabSessionDay(day(),camera,true);const r=TAB_SESSION.record;if(!BACKGROUND||!r)return;
+  try{savesShelve({...saveToDay({...r},Math.max(r.day,TAB_SESSION.day)),saved:Date.now(),cam:camera},true);}catch(e){console.warn('annals: autosave failed',e);}}
+/* TAB SESSION BEGIN — a refresh of a tab takes up the game that tab was playing (#5).
+   sessionStorage belongs to one tab and outlives its reloads (not its closing); a sandboxed frame or a private window may
+   refuse it, so every touch is guarded and the game boots as before without it. The entry is the game's save document
+   (its journal), written whenever the journal changes; beside it, the day reached and the camera, written as days pass.
+   tabSessionCapture keeps the current game for this tab; tabSessionResume finds it again on boot when the link names the
+   same realm and no save. A boot that asks for a save, another realm or a fresh one begins a new entry; Reforge and
+   loading a save end this one. Resuming replays the journal to that day (a later snapshot may make it instant). */
+const TAB_SESSION={key:'furlong-session',dayKey:'furlong-session-day',n:null,record:null,day:-1,cam:null,writtenAt:-Infinity,timer:null,pending:false,closed:false};
+function tabSessionStorage(){try{return globalThis.sessionStorage||null;}catch(e){return null;}}
+function tabSessionRecordValid(o){return !!o&&typeof o==='object'&&!Array.isArray(o)&&typeof o.hash==='string'&&Array.isArray(o.j)&&Number.isSafeInteger(o.day)&&o.day>=0;}
+function tabSessionRead(store=tabSessionStorage()){
+  try{const e=store&&JSON.parse(store.getItem(TAB_SESSION.key)||'null');if(!e||e.v!==1||typeof e.n!=='string'||!tabSessionRecordValid(e.record))return null;
+    let d=null;try{d=JSON.parse(store.getItem(TAB_SESSION.dayKey)||'null');}catch(_){}
+    const ours=d&&d.n===e.n,day=ours&&Number.isSafeInteger(d.day)&&d.day>e.record.day&&d.day-e.record.day<=360*5000?d.day:e.record.day;
+    return{n:e.n,world:worldIdentity(e.record.hash),record:e.record,day,cam:ours&&workerSaveCameraValid(d.cam)?d.cam:null};}
+  catch(e){return null;}}
+// On boot: the tab's own game, if this link asks for nothing else — the same realm and no save of its own.
+function tabSessionResume(hash,store=tabSessionStorage()){if(/[#&]save=/.test(String(hash||'')))return null;const s=tabSessionRead(store);return s&&s.world===worldIdentity(hash)?s:null;}
+// On boot, what this tab plays: the save its link opens; else its own game, if the link names that realm; else a new game.
+async function tabSessionBoot(hash,code,store=tabSessionStorage()){
+  const resumed=code?null:tabSessionResume(hash,store),saved=code?await unpackSave(code).catch(()=>null):null;
+  tabSessionStart(resumed,saved,store);
+  return resumed?{resumed,code:await packSave(resumed.record),day:resumed.day}:{resumed:null,code:code||null,day:null};}
+// Keep the resumed entry, or begin this tab's next game (from an opened save, or from nothing yet).
+function tabSessionStart(resumed,saved,store=tabSessionStorage()){
+  clearTimeout(TAB_SESSION.timer);Object.assign(TAB_SESSION,{n:null,record:null,day:-1,cam:null,writtenAt:-Infinity,timer:null,closed:false});
+  if(resumed){Object.assign(TAB_SESSION,{n:resumed.n,record:resumed.record,day:resumed.day,cam:resumed.cam});return;}
+  try{store?.removeItem(TAB_SESSION.key);store?.removeItem(TAB_SESSION.dayKey);}catch(e){}
+  if(tabSessionRecordValid(saved))tabSessionCapture(saved,store);}
+// The current game for this tab: its save document whenever the journal changes (the worker sends one; the foreground makes one).
+function tabSessionCapture(record,store=tabSessionStorage()){
+  if(TAB_SESSION.closed||!tabSessionRecordValid(record))return false;
+  const n=TAB_SESSION.n||Math.random().toString(36).slice(2,12);
+  try{if(!store)return false;store.setItem(TAB_SESSION.key,JSON.stringify({v:1,n,record}));}
+  catch(e){TAB_SESSION.n=null;TAB_SESSION.record=null;try{store.removeItem(TAB_SESSION.key);store.removeItem(TAB_SESSION.dayKey);}catch(_){}return false;} // full: a refresh starts afresh rather than resume an older journal
+  TAB_SESSION.n=n;TAB_SESSION.record=record;tabSessionDay(record.day,TAB_SESSION.cam,true,store);return true;}
+// The day reached (and the camera), cheaply: at most four writes a second, the last one always written.
+function tabSessionDay(d,camera=null,force=false,store=tabSessionStorage()){
+  if(TAB_SESSION.closed||!TAB_SESSION.n||!TAB_SESSION.record)return;
+  if(Number.isSafeInteger(d)&&d>TAB_SESSION.day)TAB_SESSION.day=d;if(camera)TAB_SESSION.cam=camera;
+  const now=typeof performance!=='undefined'?performance.now():Date.now();
+  if(!force&&now-TAB_SESSION.writtenAt<250){if(!TAB_SESSION.timer&&typeof setTimeout==='function')TAB_SESSION.timer=setTimeout(()=>{TAB_SESSION.timer=null;tabSessionDay(null,null,true);},250);return;}
+  TAB_SESSION.writtenAt=now;try{store?.setItem(TAB_SESSION.dayKey,JSON.stringify({n:TAB_SESSION.n,day:Math.max(TAB_SESSION.day,TAB_SESSION.record.day),cam:TAB_SESSION.cam}));}catch(e){}}
+// The foreground's journal changed: capture once the current task is done.
+function tabSessionSoon(){if(TAB_SESSION.pending)return;TAB_SESSION.pending=true;setTimeout(()=>{TAB_SESSION.pending=false;if(W&&!REPLAYING&&!W.prehistory)tabSessionCapture(saveDocument(''));},0);}
+// Reforge, or a save opened: this tab's game ends here and its entry with it.
+function tabSessionEnd(store=tabSessionStorage()){TAB_SESSION.closed=true;clearTimeout(TAB_SESSION.timer);try{store?.removeItem(TAB_SESSION.key);store?.removeItem(TAB_SESSION.dayKey);}catch(e){}}
+// TAB SESSION END
 async function shelf(){try{if(!window.claude||!claude.use)return null;return await claude.use('db');}catch(e){return null;}}
 function saveUI(){const el=document.getElementById('savebox');if(el.style.display==='flex'){el.style.display='none';return;}el.style.display='flex';saveUIRender();}
 function saveUIRender(msg){const el=document.getElementById('savebox'),L=savesList(),when=t=>new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
-  const row=(o,i)=>`<div class="sv"><div class="sn"><b>${esc(o.auto?'Autosave':o.name||o.realm)}</b> · AD ${o.ad} · ${esc(o.who)}<br><small>${esc(o.realm)} · ${when(o.saved)} · ${o.j.length} command${o.j.length===1?'':'s'}${o.build!==buildId()?' · older build':''}</small></div>
+  const row=(o,i)=>`<div class="sv"><div class="sn"><b>${esc(o.auto?'Autosave':o.name||o.realm)}</b> · AD ${o.ad} · ${esc(o.who)}<br><small>${esc(o.realm)} · ${when(o.saved)} · ${journalCommands(o.j)} command${journalCommands(o.j)===1?'':'s'}${o.build!==buildId()?' · older build':''}</small></div>
     <button class="pbb" data-sv="load:${i}">Resume</button><button class="pbb" data-sv="code:${i}">Share</button><button class="pbb" data-sv="file:${i}" aria-label="Download ${esc(o.auto?'Autosave':o.name||o.realm)}">⇩</button><button class="pbb" data-sv="del:${i}" aria-label="Delete ${esc(o.auto?'Autosave':o.name||o.realm)}" title="Delete">✕</button></div>`;
   el.innerHTML=`<div class="egbox"><h2>Save · Resume · Share</h2>
-    <div class="note">${esc(W.name)}, AD ${AD()} · ${esc(sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle')} · ${BACKGROUND?W._commandCount:JOURNAL.length} command${(BACKGROUND?W._commandCount:JOURNAL.length)===1?'':'s'} given</div>
+    <div class="note">${esc(W.name)}, AD ${AD()} · ${esc(sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle')} · ${BACKGROUND?W._commandCount:journalCommands(JOURNAL)} command${(BACKGROUND?W._commandCount:journalCommands(JOURNAL))===1?'':'s'} given</div>
     <div class="row"><input type="text" id="svname" aria-label="Save name" placeholder="Name this save" style="flex:1" maxlength="60"><button class="pbb" data-sv="save">Save</button><button class="pbb" data-sv="sharenow">Share this game</button></div>
     ${msg?`<div class="note" style="opacity:1;color:#e0c070;margin:4px 0">${msg}</div>`:''}
     <div>${L.length?L.map(row).join(''):'<div class="note">No saves kept in this browser yet. The game saves itself each year.</div>'}</div>
@@ -17421,9 +17512,17 @@ async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=docum
     catch(e){box.innerHTML='<div class="note">The shelf could not be read ('+esc(e.code||e.message||'')+').</div>';}return;}
   if(k==='shelfload'){const s=(window._shelf||[])[+i];if(s)try{await resumeSave(await unpackSave(s.code));}catch(e){saveUIRender('That shared save could not be read.');}return;}}
 if(!MODEL_ONLY)document.addEventListener('click',e=>{const b=e.target.closest('[data-sv]');if(b){e.stopPropagation();saveAct(b.dataset.sv);}});
+// A v1 save journaled both clicks of a rebellion or an attainder and the world kept the first as an armed confirmation;
+// played back to back, the first armed it and the second gave it. Keep that reading for old saves: the first is not given.
+function replayLegacyConfirm(e,L){
+  const key=e.k==='c'&&e.c==='lord'&&e.a==='rebel'?'rebel':e.k==='c'&&e.c==='h-attaint'?'att'+e.a:null;if(!key)return false;
+  if(L.armed===key){L.armed=null;return false;}
+  if(key==='rebel'){const hi=plyH();if(!(hi>0)||W.war)return false;const{h,seat}=lordHouse();if(!seat||h.exiled)return false;}
+  else{const h=W.houses[+e.a];if(!h||h.exiled||W.war)return false;}
+  L.armed=key;return true;}
 async function replaySave(o,progress){ // grow the days again, giving each command on the day it was given
-  REPLAYING=true;const J=o.j||[],d0=day(),tgt=o.day;let i=0,n=0;
-  try{while(true){await STORAGE_OUTCOMES.wait();while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;await simTick();
+  REPLAYING=true;const J=o.j||[],d0=day(),tgt=o.day,legacy=(o.v|0)<2?{armed:null}:null;let i=0,n=0;
+  try{while(true){await STORAGE_OUTCOMES.wait();while(i<J.length&&J[i].d<=day()){const e=J[i++];if(!(legacy&&replayLegacyConfirm(e,legacy)))replayEntry(e);}if(day()>=tgt)break;await simTick();
     if(++n%60===0&&progress)await progress(`Reading the annals again… AD ${AD()} of ${o.ad}`,clamp((day()-d0)/Math.max(1,tgt-d0),0,1));}
   }finally{REPLAYING=false;}
   JOURNAL=J.slice();RESUMED=true;setPlaceMode(null);
