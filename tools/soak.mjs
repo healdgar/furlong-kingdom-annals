@@ -15,7 +15,7 @@
    Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
             --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year (0: none)  --profile-interval µs (1000)  --hotlist file (0: none)  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
-            that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path
+            that makes or loses it, for the first N days of each year in --audit-years)  --audit-years 1,19 | all (default 1)  --audit-fns a,b (also attribute these global functions, nested inside the ticks)  --inventory 1 (independent daily matching)  --out dir  --chrome path
    Drives the main-thread reference simulation (foreground=1); --render frame costs are the reference driver's, not the worker's. */
 import {spawn,execFileSync} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
@@ -35,7 +35,7 @@ if(A.help){console.log(fs.readFileSync(fileURLToPath(import.meta.url),'utf8').sp
 const seeds=(A.seeds||'688673834').split(',').map(Number),coasts=A.coast?A.coast.split(','):[null];
 const YEARS=+(A.years||50),PAR=+(A.par||Math.max(1,Math.min(6,os.cpus().length>>1))),KM=A.km?+A.km:null,Y0=A.y?+A.y:null;
 const RENDER=A.render!==undefined?new Set(A.render.split(',').map(Number)):null,DEVICES=(A.devices||'laptop,phone').split(','),CPUS=(A.cpu||'1,4').split(',').map(Number),SPEEDS_=(A.speeds||'1,4,5').split(',').map(Number),BOOTCPU=+(A['boot-cpu']||1);
-const AUDIT=+(A.audit||0),PROFILE=new Set((A.profile||[1,Math.ceil(YEARS/2),YEARS].join(',')).split(',').map(Number)),PROFILE_US=+(A['profile-interval']||1000);
+const AUDIT=+(A.audit||0),AUDITY=A['audit-years']==='all'?null:new Set((A['audit-years']||'1').split(',').map(Number)),AUDITFNS=(A['audit-fns']||'').split(',').filter(Boolean),PROFILE=new Set((A.profile||[1,Math.ceil(YEARS/2),YEARS].join(',')).split(',').map(Number)),PROFILE_US=+(A['profile-interval']||1000);
 const OUT=path.resolve(A.out||path.join(os.tmpdir(),'furlong-soak-'+new Date().toISOString().replace(/[:.]/g,'-')));
 const CHROME=A.chrome||['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/Applications/Chromium.app/Contents/MacOS/Chromium','/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser'].find(p=>fs.existsSync(p));
 if(!CHROME){console.error('no Chrome found: pass --chrome <path>');process.exit(2);}
@@ -93,12 +93,12 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
       if(s.hunger>0.4&&s.pop>100){const need=Math.max(0,s.pop*(NEED.grain+NEED.fish)-(s._homeDay||0));
         if(s.stores.fish+s.stores.grain>=need)S.F.hungryWithFoodDays++;
         if(s.stores.fish>=need){S.F.hungryWithFishDays++;if(S.foodExamples.length<8&&!S.foodExamples.some(x=>x.name===s.name))S.foodExamples.push({name:s.name,ad:AD(),day:day(),pop:Math.round(s.pop),hunger:s.hunger,fish:s.stores.fish,grain:s.stores.grain,larderFish:s._lard?.fish||0,larderGrain:s._lard?.grain||0});}}});return r;};
-  const TICKS=${JSON.stringify(DAY_PARTS)};
+  const TICKS=${JSON.stringify(DAY_PARTS.concat(AUDITFNS.filter(f=>!DAY_PARTS.includes(f))))};
   for(const n of TICKS){const f=window[n];if(typeof f!=='function')continue;window[n]=function(){
     const m0=S.audit?money().t:0,f0=S.audit?flows():null,t=performance.now(); // the purse census is not the part's own time
     try{return f.apply(this,arguments);}finally{S.T[n]=(S.T[n]||0)+performance.now()-t;
-      if(S.audit){const r=money().t-m0-gap(f0,flows()).expect;if(Math.abs(r)>1e-6){const L=S.L[n]||(S.L[n]={r:0,days:0});L.r+=r;L.days++;}}}};}
-  S.L={};
+      if(S.audit){const r=money().t-m0-gap(f0,flows()).expect;if(Math.abs(r)>1e-6){const L=S.L[n]||(S.L[n]={r:0,days:0,first:[]});L.r+=r;L.days++;if(L.first.length<4)L.first.push([day(),+r.toFixed(6)]);}}}};}
+  S.L={};S.D=[]; // S.D: the days whose census change the flow book did not explain (whole days, every year)
   S.inventory={enabled:${Number(A.inventory||0)>0},first:null,checks:0};const checkInventory=${inventoryAudit.toString()};
   const auditInventory=()=>{if(!S.inventory.enabled||S.inventory.first)return;const issue=checkInventory(W.settlements,S.inventory,BEASTS,typeof STORAGE_GOODS==='undefined'?{}:STORAGE_GOODS);if(issue)S.inventory.first={day:day(),...issue};};
   const gap=${moneyFlowGap.toString()};
@@ -121,9 +121,9 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     return {n,fps:+(1000/a('dt')).toFixed(1),frame:+a('dt').toFixed(1),p95:+d[Math.floor(n*0.95)].toFixed(1),worst:Math.round(d[n-1]),busy:Math.round(a('total')/a('dt')*100),sim:+a('sim').toFixed(1),days:+a('ticks').toFixed(2),
       world:+a('world').toFixed(1),rebuild:+a('rebuild').toFixed(1),render:+a('render').toFixed(1),gpu:g.length?+(g.reduce((t,v)=>t+v,0)/g.length).toFixed(1):null,calls:inf.render.calls,tris:inf.render.triangles,buildings:W.bldList.length};};
   S.info=()=>({land,places:W.settlements.length,pop:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),realm:W.name,startAD:AD(),startDay:day(),gpu:(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()});
-  S.year=async(aud=0)=>{const Fd0={...S.F},R0={...S.R},T0=Object.assign({},S.T),t0=performance.now(),was=new Map();let famDays=0,onsets=0,famPop=0,hung=0,popDays=0,placeDays=0,tickMs=0;
+  S.year=async(aud=0)=>{S.L={};const Fd0={...S.F},R0={...S.R},T0=Object.assign({},S.T),t0=performance.now(),was=new Map();let famDays=0,onsets=0,famPop=0,hung=0,popDays=0,placeDays=0,tickMs=0;
     for(const s of W.settlements)was.set(s,!!s.famineFlag);
-    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{auditInventory();if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}auditInventory();}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&(STORAGE_OUTCOMES.journal?.fault||STORAGE_OUTCOMES.modelFault))throw e;simErr(e);}tickMs+=performance.now()-tickStart;
+    for(let i=0;i<360;i++){S.audit=i<aud;const tickStart=performance.now();try{auditInventory();const dm0=money().t,df0=flows(),dd=day();if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}{const r=money().t-dm0-gap(df0,flows()).expect;if(Math.abs(r)>1e-6&&S.D.length<40)S.D.push([dd,+r.toFixed(6)]);}auditInventory();}catch(e){if(typeof STORAGE_OUTCOMES!=='undefined'&&(STORAGE_OUTCOMES.journal?.fault||STORAGE_OUTCOMES.modelFault))throw e;simErr(e);}tickMs+=performance.now()-tickStart;
       if(day()%30===15||day()%360===0)await new Promise(resolve=>setTimeout(resolve,0)); // finish deferred tracks/fences before later days use them, and flush the yearly autosave
       placeDays+=W.settlements.length;for(const s of W.settlements){const f=!!s.famineFlag;if(f){famDays++;famPop+=s.pop;if(!was.get(s))onsets++;}was.set(s,f);hung+=(s.hunger||0)*s.pop;popDays+=s.pop;}}
     const ms=performance.now()-t0,M=money(),F=flows();Y++;
@@ -138,7 +138,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
             journal:typeof STORAGE_OUTCOMES==='undefined'?null:STORAGE_OUTCOMES.status(),inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots,commodityRows:S.inventory.commodityRows}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
       prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
-      badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,faults:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.list.slice(FL0),firstFault:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.first,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
+      badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,faults:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.list.slice(FL0),firstFault:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.first,badDays:S.D.splice(0),leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:+v.r.toFixed(3),days:v.days,first:v.first}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
     M0=M;F0=F;E0=errN;FL0=typeof SIM_FAULTS==='undefined'?0:SIM_FAULTS.list.length;return out;};
   window.__soak=S;return new Promise(resolve=>RAF(()=>resolve('ok')));})()`;
 
@@ -189,7 +189,7 @@ async function runWorld(w){
     if(RENDER&&RENDER.has(0))await measure(0);
     for(let y=1;y<=YEARS;y++){
       const profile=PROFILE.has(y);if(profile){await c.send('Profiler.setSamplingInterval',{interval:PROFILE_US});await c.send('Profiler.start');}
-      const stepStart=Date.now(),r=await ev(c,`__soak.year(${y===1?AUDIT:0})`);r.driverMs=Date.now()-stepStart;years.push(r);fs.appendFileSync(file,JSON.stringify(r)+'\n');
+      const stepStart=Date.now(),r=await ev(c,`__soak.year(${AUDIT&&(!AUDITY||AUDITY.has(y))?AUDIT:0})`);r.driverMs=Date.now()-stepStart;years.push(r);fs.appendFileSync(file,JSON.stringify(r)+'\n');
       if(profile){const p=(await c.send('Profiler.stop')).profile;fs.writeFileSync(path.join(OUT,id+'-y'+y+'.cpuprofile'),JSON.stringify(p));prof[y]={...topFunctions(p),score:compactScore(scoreProfile(p,{days:360}))};}
       fs.writeFileSync(path.join(OUT,id+'.summary.json'),JSON.stringify(summarize(w,id,info,bootMs,phases,years,prof,errs),null,1));
       if(RENDER&&RENDER.has(y))await measure(y);
@@ -226,7 +226,7 @@ function summarize(w,id,info,bootMs,phases,Y,prof,errs){
     routes:Object.fromEntries(['calls','cold','unreachable'].map(k=>[k,Y.reduce((t,y)=>t+(y.routes?.[k]||0),0)])),
     perf:{tickMsDayFirst10:+avg(first,y=>y.tickMsDay).toFixed(2),tickMsDayLast10:+avg(lastY,y=>y.tickMsDay).toFixed(2),msDayFirst10:+avg(first,y=>y.msDay).toFixed(2),msDayLast10:+avg(lastY,y=>y.msDay).toFixed(2),msDayByYear:Y.map(y=>y.msDay),heapMBEnd:L.heapMB,
       ticks:Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>[k,+(v/tt*100).toFixed(1)]),profile:prof},
-    leaks:Y[0]&&Y[0].leaks,errN,errs:errs.slice(0,10),firstFault:Y.find(y=>y.firstFault)?.firstFault||null,faults:Y.flatMap(y=>y.faults||[]).slice(0,40),checks,pass:Object.values(checks).every(Boolean)};}
+        leaks:(()=>{const m={};for(const y of Y)for(const k in y.leaks||{}){const e=m[k]||(m[k]={r:0,days:0,first:[]});e.r+=y.leaks[k].r;e.days+=y.leaks[k].days;for(const f of y.leaks[k].first||[])if(e.first.length<6)e.first.push([y.y,...f]);}return Object.keys(m).length?m:undefined;})(),badDays:Y.flatMap(y=>(y.badDays||[]).map(d=>[y.y,...d])),errN,errs:errs.slice(0,10),firstFault:Y.find(y=>y.firstFault)?.firstFault||null,faults:Y.flatMap(y=>y.faults||[]).slice(0,40),checks,pass:Object.values(checks).every(Boolean)};}
 
 function report(R){
   const ok=R.filter(r=>!r.failed),pct=x=>(x*100).toFixed(1)+'%';
