@@ -1,7 +1,7 @@
 # Furlong: Kingdom Annals — working rules
 
 ## Repository and release
-- One branch: `main`. No long-lived branches; an experimental build may get a short-lived one, deleted after. Parallel agents work in their own scratch clones (remote removed) and hand back patches; only one agent edits the main checkout's `index.html` at a time.
+- One branch: `main`. No long-lived branches; an experimental build may get a short-lived one, deleted after. Parallel agents work in their own clones under `~/dev/.furlong-work/<name>` (remote removed; never under `/tmp`, which a reboot wipes) and hand back patches; only one agent edits the main checkout's `index.html` at a time.
 - One build, three targets. Every push to `main` deploys GitHub Pages and the container image `ghcr.io/healdgar/furlong-kingdom-annals` (`.github/workflows/pages.yml`); the claude.ai artifact is published from the same build.
 - Release: `node --test --test-concurrency=8 tools/*.test.mjs` → `./tools/stamp.sh` (embeds the advisor bridge and the docs, stamps the build) → commit → `git push origin main` → publish `index.html` to the artifact with `assets/` and `LICENSE` as files.
 - `docs/ISSUES.md` is the one list of bugs, simulation debt and planned work. Update it when an issue is found, assigned or fixed.
@@ -16,6 +16,12 @@
 - Every coin moves from a named payer to a named recipient through `flow`/`transfer`/`acct`; `tools/soak.mjs --audit` finds the exceptions.
 - A save is the seed plus a journal of commands, replayed day by day. Nothing the simulation decides may depend on wall-clock time, frame timing, event-loop yields, rendering or UI reads; keep `Math.random`, `Date.now` and `performance.now` out of simulation state.
 - Performance and display changes must leave the simulation byte-identical: prove the world graph and every RNG stream are equal to the previous build over at least 150 days (seed 1001, fate 42, sea). Changes that alter generated worlds or history are allowed when intended; say so and re-baseline the affected tests.
+
+## Agents and machine load
+- At most five agents run at once (they may start their own subagents for reading and exploration). Too many heavy test runs at the same time have crashed this machine.
+- One agent, the test runner, runs everything heavy: the full suite, Chrome, soaks, long simulation runs, identity proofs and measurements. It runs one job at a time, checks the load first, and keeps at most one Chrome open. Other agents send it requests and act on its results.
+- Other agents may run only light checks themselves: `node --check`, and a single focused test file with `--test-concurrency=1`.
+- Report timings as CPU time or instruction counts, with the load average beside them.
 
 ## Tools
 - Tests: `node --test --test-concurrency=8 tools/*.test.mjs`.
