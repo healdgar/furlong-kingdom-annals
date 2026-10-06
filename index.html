@@ -3734,7 +3734,7 @@ globalThis.CommodityBalanceLedger = (() => {
       return Math.max(0, facility.capacity - this.used(location)) / this._volume(facility, good);
     }
     _quantityAt(facility, good, owner, availability) {
-      if (availability !== undefined) return nestedGet(facility.balances, [good, owner, availability]) || 0;
+      if (availability !== undefined) return facility.balances.get(good)?.get(owner)?.get(availability) || 0;
       let total = 0; const byOwner = facility.balances.get(good)?.get(owner);
       if (byOwner) for (const q of byOwner.values()) total += q;
       return total;
@@ -3748,11 +3748,13 @@ globalThis.CommodityBalanceLedger = (() => {
       state.usedCache.delete(location);
       state.totalCache.delete(good);
       invalidateQuantity(state, owner, good);
-      const ids = ownerFacilitySet(state, owner, good, after > 0);
-      if (after > 0) ids.add(location);
-      else if (ids && !facility.balances.get(good)?.has(owner)) {
-        ids.delete(location);
-        if (!ids.size) { state.ownerFacilities.get(owner)?.delete(good); if (!state.ownerFacilities.get(owner)?.size) state.ownerFacilities.delete(owner); }
+      if (before === 0 && after > 0) ownerFacilitySet(state, owner, good, true).add(location);
+      else if (after === 0) {
+        const ids = ownerFacilitySet(state, owner, good);
+        if (ids && !facility.balances.get(good)?.has(owner)) {
+          ids.delete(location);
+          if (!ids.size) { state.ownerFacilities.get(owner)?.delete(good); if (!state.ownerFacilities.get(owner)?.size) state.ownerFacilities.delete(owner); }
+        }
       }
       // Priority changes only with cell membership, never on ordinary quantity updates.
       if (before === 0 && after > 0) nestedSet(state.orderRanks, [location, good, owner, availability], state.nextOrderRank++);
@@ -3862,7 +3864,17 @@ globalThis.CommodityBalanceLedger = (() => {
     _plan(fields, quantity) {
       finiteNonnegative(quantity, 'quantity');
       const includeTransit = !!fields.includeTransit || fields.location !== undefined || fields.availability === 'transit';
-      const available = [...this.entries({ ...fields, includeTransit })];
+      const selector = { ...fields, includeTransit };
+      // A complete balance address selects one cell; there is no ordering to recover.
+      if (own(selector, 'location') && own(selector, 'good') && own(selector, 'owner') && own(selector, 'availability')) {
+        const facility = this._facility(selector.location), stored = facility.balances.get(selector.good)?.get(selector.owner)?.get(selector.availability);
+        const sum = stored > 0 && AVAILABILITY.has(selector.availability) ? stored : 0;
+        const tolerance = Number.EPSILON * Math.max(sum, quantity) * 8;
+        if (quantity > sum + tolerance) fail('insufficient balance');
+        const qty = Math.min(quantity, sum);
+        return { plan: qty > 0 ? [{ location: selector.location, good: selector.good, owner: selector.owner, availability: selector.availability, qty }] : [], quantity: qty > 0 ? qty : 0, available: sum };
+      }
+      const available = [...this.entries(selector)];
       const sum = available.reduce((n, row) => n + row.qty, 0), tolerance = Number.EPSILON * Math.max(sum, quantity) * 8;
       if (quantity > sum + tolerance) fail('insufficient balance');
       let left = Math.min(quantity, sum); const plan = [];
@@ -3998,17 +4010,20 @@ function commodityMove(s,d,fields,q,cause='settlement-transfer'){
   for(const r of rows){const v=Math.min(left,r.qty);if(v>0){stockOf(d,r.owner);A.consume(r,v,cause);B.adjust('yard',r.good,r.owner,r.availability,v,cause);storageBindGood(d,commodityPhysical(r.good));left-=v;}if(!(left>0))break;}return amount-left;
 }
 function commoditySettleAll(){if(typeof W==='undefined'||!W)return;for(const s of W.settlements||[])if(commodityActive(s)){s.storage.settle(day(),storageOutcome);}}
-function commodityFacilities(s){const K=s.storage,seen=new Set();for(const b of s.buildings||[]){const t=STORAGE_TYPES[b.arch];if(!t)continue;if(!b.storageId)b.storageId='building:'+K.next++;const id=b.storageId;seen.add(id);const owner=b.title?.owner??b.ownerId;storageRegisterOwner(owner);const active=!b.removed&&b.state==='sound',capacity=t.capacity*(1+.5*(b.tier||0)),prior=K.locations.get(id),sameGoods=(a,b)=>a===b||Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((g,i)=>g===b[i]);
+function commodityFacilities(s){const K=s.storage,seen=new Set();for(const b of s.buildings||[]){const t=STORAGE_TYPES[b.arch];if(!t)continue;if(!b.storageId)b.storageId='building:'+K.next++;const id=b.storageId;seen.add(id);const owner=b.title?.owner??b.ownerId,ownerId=storageRegisterOwner(owner);const active=!b.removed&&b.state==='sound',capacity=t.capacity*(1+.5*(b.tier||0)),prior=K.locations.get(id),sameGoods=(a,b)=>a===b||Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((g,i)=>g===b[i]);
     if(active&&prior&&(prior.capacity!==capacity||!sameGoods(prior.goods,t.goods))){const rows=[...K.entries({location:id,includeTransit:true})],allowed=g=>!t.goods||t.goods.includes(g)||(g==='char'&&t.goods.includes('timber'));let remainUsed=0,remainMagnitude=0,remainTerms=0;const move=new Map(rows.filter(r=>!allowed(r.good)).map(r=>[r,r.qty]));
       for(const r of rows)if(!move.has(r)){const amount=r.qty*K._volume(prior,r.good);remainUsed+=amount;remainMagnitude+=Math.abs(amount);remainTerms++;}
       for(const r of rows)if(!move.has(r)&&remainUsed>capacity+K._roundoff(remainMagnitude,remainTerms,capacity)){const volume=K._volume(prior,r.good),q=Math.min(r.qty,Math.max(0,remainUsed-capacity)/volume);if(!(q>0))continue;move.set(r,q);const amount=q*volume;remainUsed-=amount;remainMagnitude-=Math.abs(amount);if(q===r.qty)remainTerms--;}
       if(move.size){const yardId='exposed:'+id;K.location(yardId,{x:prior.x,z:prior.z,capacity:Infinity,exposed:true,protection:4});for(const r of rows)if(move.has(r))K.transfer(r,move.get(r),r.owner,{location:yardId,availability:r.availability,cause:'facility-refit'});}
     }
-    K.location(id,{building:b,x:b.x,z:b.z,...t,capacity,owner,public:b.storagePublic!==false,active});if(!active)commodityDestroy(K,id);}for(const n of K.locations.values())if(n.building&&!seen.has(n.id))commodityDestroy(K,n.id);return K;}
+    let unchanged=prior&&prior.building===b&&prior.x===b.x&&prior.z===b.z&&prior.capacity===capacity&&prior.owner===owner&&prior.public===(b.storagePublic!==false)&&prior.active===active&&prior.volume===1&&prior.metadata?.ownerId===ownerId&&prior.metadata?.storageId===b.storageId;
+    if(unchanged)for(const key in prior.volumes){unchanged=false;break;}
+    if(unchanged)for(const key in t)if(key!=='capacity'&&(key==='goods'?!sameGoods(prior.goods,t.goods):prior[key]!==t[key])){unchanged=false;break;}
+    if(!unchanged)K.location(id,{building:b,x:b.x,z:b.z,...t,capacity,owner,public:b.storagePublic!==false,active});if(!active)commodityDestroy(K,id);}for(const n of K.locations.values())if(n.building&&!seen.has(n.id))commodityDestroy(K,n.id);return K;}
 function commodityDestroy(K,id){const n=K.locations.get(id);if(!n)return;K.location(id,{active:false});const rows=[...K.entries({location:id})];if(!rows.length)return;const yard=K.location('exposed:'+id,{x:n.x,z:n.z,capacity:Infinity,exposed:true,protection:4});for(const r of rows)K.transfer(r,r.qty,r.owner,{location:yard.id,availability:r.availability,cause:'facility-destroyed'});}
 function commodityExposed(K){return [...K.entries()].filter(r=>K.locations.get(r.location)?.exposed);}
-function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};for(const row of commodityExposed(K)){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}s.storageReport={day:day(),moved,handlingCost:cost,exposed:commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0)};}
-function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);let unassigned=0;for(const good of g==='timber'?['timber','char']:[g])for(const r of [...K.entries({good})]){if(K.locations.get(r.location).transit)continue;const n=K.locations.get(r.location),q=r.qty*Math.min(1,rate*(n?.protection??4));K.consume(r,q,n?.exposed?'exposure-loss':'stored-spoilage');if(r.owner===null)unassigned+=q;}if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
+function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+(K.locations.get(r.location).balances.get(r.good)?.get(r.owner)?.get(r.availability)||0)*K.volume(r.good),0)};}
+function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);let unassigned=0;for(const good of g==='timber'?['timber','char']:[g])for(const r of K.entries({good})){const n=K.locations.get(r.location);if(n.transit)continue;const q=r.qty*Math.min(1,rate*(n?.protection??4));K.consume(r,q,n?.exposed?'exposure-loss':'stored-spoilage');if(r.owner===null)unassigned+=q;}if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
 function commodityBuildingReport(s,b){const K=s.storage,n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const r of K.entries({location:n.id})){const g=commodityPhysical(r.good);goods[g]=(goods[g]||0)+r.qty;const id=storageOwnerId(r.owner);owners.set(id,(owners.get(id)||0)+r.qty*K.volume(r.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
 function commodityCargoOut(c,s){const K=s.storage,id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});K.transfer({owner:accountOwner(c.m),good:c.good,availability:'held'},c.qty,accountOwner(c.m),{location:id,availability:'transit',cause:'dispatch'});c.storageCargo={origin:s,id};Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){return [...K.entries({location:id})].reduce((n,r)=>n+r.qty,0);}});}
 function commodityCargoArrive(c,d){const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);for(const r of [...A.entries({location:cargo.id})]){stockOf(d,r.owner);A.consume(r,r.qty,'cargo-departure');B.adjust('yard',r.good,r.owner,'sale',r.qty,'arrival');}storageBindGood(d,c.good);}
@@ -11193,7 +11208,7 @@ function topUpFood(s,need,PM,prepared=false){const H=householdsOf(s),plans=[];le
   const cut={grain:0.3,fish:0.25},take=(pl,g,q)=>{const gift=accountOwner(pl.buyer)!==accountOwner(pl.owner);if(gift)storageGiftTitle(s,pl.buyer,pl.owner,g,q);commodityCreditPurchase(s,pl.owner,g,q,gift);pl.q=Math.max(0,pl.q-q);craftWork(s,pl.buyer,MARGIN[g],Math.min(Math.max(0,means(pl.buyer)),q*price(s,g)*cut[g]/(1-cut[g])));};
   for(const pl of plans)for(const g of ['grain','fish']){const q=Math.min(pl.q,mkt(s,g).get(pl.buyer)||0);if(q>0){purchase(s,g,pl.buyer,q);take(pl,g,purchase.got);}}
   for(const g of ['grain','fish'].sort((a,b)=>price(s,a)/(1-cut[a])-price(s,b)/(1-cut[b]))){const got=clearMarket(s,g,plans.map(pl=>[pl.buyer,pl.q]));plans.forEach((pl,i)=>take(pl,g,got[i]));}}
-function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s);shareOutput(s,W.settlements.indexOf(s),PM,heads_(s,()=>true),true);reconcile(s,headsOf(s),['grain','fish']);topUpFood(s,0,PM,true);let hungry=0,total=0,homeDay=0;
+function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s),heads=[],producers=[];for(const h of H){const p=h.head;if(p&&!p.dead){heads.push(p);if(s.folk&&!p.role)producers.push(p);}}shareOutput(s,W.settlements.indexOf(s),PM,producers,true);reconcile(s,heads,['grain','fish']);topUpFood(s,0,PM,true);let hungry=0,total=0,homeDay=0;
   for(const h of H){const n=h.population.get(s)||0,Hd=h.assets.herd||{},home=0,need=Math.max(0,n*(NEED.grain+NEED.fish)-home);
     let got=consumeOwned(s,h,'grain',need*0.75);got+=consumeOwned(s,h,'fish',need-got);got+=consumeOwned(s,h,'grain',need-got);
     h.hunger=need>0?clamp(1-got/need,0,1):0;h.assets._fill=1-h.hunger;hungry+=h.hunger*n;total+=n;homeDay+=home;}
@@ -13166,7 +13181,7 @@ const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&W.hous
 function flow(k,v){const F=W._flow||(W._flow={});F[k]=(F[k]||0)+v;} // money that came into the realm or left it, by cause
 function transfer(from,to,v,why){if(!(v>0))return 0;if(from&&from!=='out'){const m=means(from);if(!(m>0))return 0;if(v>m)v=m;} /* no one pays out what he has not got: what he owes stays owed (arrears), it is not coined */if(to==='out')flow('>'+(why||'?'),v);else if(from==='out')flow('<'+(why||'?'),v);else if(!from)flow('<'+(why||'paid')+'*',v);acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
 function borrow(s,h,amt){ // a household short of its bread borrows from whoever there has the silver to lend: the best-off neighbour, else the parish, else the lord; the debt is theirs to collect
-  if(!(amt>0.01)||!s)return 0;const fy=foodYr();let L=null,best=fy*HOUSEHOLD;for(const q of heads_(s,q=>q!==h&&(q.w||0)>amt+fy*HOUSEHOLD))if(q.w>best){best=q.w;L=q;}
+  if(!(amt>0.01)||!s)return 0;const fy=foodYr();let L=null,best=fy*HOUSEHOLD;for(const household of s.folk?householdsOf(s):[]){const q=household.head;if(q&&!q.dead&&!q.role&&q!==h&&(q.w||0)>amt+fy*HOUSEHOLD&&q.w>best){best=q.w;L=q;}}
   if(!L){const c=parishOf(s);if(c&&means(c)>amt*3)L=c;}if(!L){const l=lordAcct(s);if(means(l)>amt*3)L=l;}if(!L)return 0;
   const v=transfer(L,h,amt,'loans');if(v>0){h._debt=(h._debt||0)+v;(h._owe||(h._owe=[])).push([L,v]);}return v;}
 function repay(h,v){ // a debtor pays back what he can, the oldest debt first
@@ -13354,7 +13369,7 @@ function tickHouseholds(){
           const g2=val(o)-here-foodYr()*(0.3+d/1000*0.15);if(g2>bg){bg=g2;best=j;}}
         if(best>=0&&frand()<clamp(bg/Math.max(1,here)*0.8,0,0.7)){const o=Ss[best],i=s.folk.indexOf(p);if(i>=0){removeAt(s,i);journey(p,si,best,'migrant');life(p,`Left ${s.name} for ${o.name}, to make a living as a ${p.tr||'labourer'}`);s.pop=Math.max(5,s.pop-1);o.pop+=1;s.migOut=(s.migOut||0)+1;o.migIn=(o.migIn||0)+1;
           if(!W.prehistory&&frand()<0.02)emit('trade',1,s.pos,`${folkName(p)} leaves ${s.name} for ${o.name}, to seek work and a ${p.sx==='f'?'husband':'wife'}.`);}}}}
-    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;marketTradeIndexInvalidate();herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=[...(s._owners||new Map()).values()].reduce((t2,o)=>t2+(o.animals[k]||0),0); // the families' beasts, counted once
+    jobYear(s);const heads=headsOf(s),tc=tradeCounts(s);s._tcY=-1;marketTradeIndexInvalidate();herdInit(s,heads);const famHerd={};for(const k of BEASTS)famHerd[k]=0;for(const o of (s._owners||new Map()).values())for(const k of BEASTS)famHerd[k]+=o.animals[k]||0; // the families' beasts, counted once
     for(const h of heads){if(h.role)continue;const mem=hhMembers(s,h),n=Math.max(1,mem.length);if(h.w===undefined)h.w=0;
       // the necessaries at the town's prices (the plough's own grain counted in its income, so bought here too)
       // (the necessaries are bought month by month: tickMarket)
@@ -16186,17 +16201,37 @@ class HistoryArchive{
 // HISTORY CORE END
 async function historyZip(value){const text=JSON.stringify(value);return new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));}
 async function historyUnzip(blob){return JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());}
+class HistoryDatabase{
+  constructor(name){this.name=name;this.db=null;this.pending=null;this.opened=false;}
+  invalidate(db){if(this.db===db)this.db=null;db.close();}
+  open(){
+    if(this.db)return Promise.resolve(this.db);if(this.pending)return this.pending;
+    this.pending=new Promise((resolve,reject)=>{let settled=false;const r=indexedDB.open(this.name,1);
+      r.onupgradeneeded=()=>{if(this.opened){r.transaction.abort();fail(Error('History database was removed; pending records are retained'));return;}for(const store of ['games','chunks'])if(!r.result.objectStoreNames.contains(store))r.result.createObjectStore(store);};
+      const fail=error=>{settled=true;reject(error);};r.onerror=()=>fail(r.error||Error('History database could not open'));r.onblocked=()=>fail(Error('History database is blocked by another tab'));
+      r.onsuccess=()=>{const db=r.result;if(settled){db.close();return;}settled=true;this.db=db;this.opened=true;db.onclose=()=>{if(this.db===db)this.db=null;};db.onversionchange=()=>this.invalidate(db);resolve(db);};
+    }).finally(()=>{this.pending=null;});return this.pending;
+  }
+  async transaction(stores,mode,run){
+    for(let attempt=0;attempt<2;attempt++){
+      const db=await this.open();let tx;
+      // A closing connection rejects before a transaction exists: retry only here.
+      try{tx=db.transaction(stores,mode);}catch(error){if(error.name==='InvalidStateError'){this.invalidate(db);if(attempt===0)continue;}throw error;}
+      return new Promise((resolve,reject)=>{let request,failure;tx.oncomplete=()=>resolve(request?.result);tx.onabort=()=>reject(failure||tx.error||Error('History transaction aborted'));
+        try{request=run(tx);}catch(error){failure=error;try{tx.abort();}catch(_){reject(error);}}
+      });
+    }
+  }
+}
 class HistoryStore{
   constructor(){this.chain=Promise.resolve();this.pendingBytes=0;this.pending=new Map();this.chunk=0;this.stats={serializeMs:0,compressMs:0,commitMs:0,commits:0,bytes:0};}
-  async open(id,meta){this.id=id;this.db=await new Promise((resolve,reject)=>{
-    const r=indexedDB.open('furlong-history',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('History database is blocked by another tab'));r.onsuccess=()=>resolve(r.result);
-  });await this.write('games',id,meta);}
-  write(store,key,value){const start=performance.now();return new Promise((resolve,reject)=>{const t=this.db.transaction(store,'readwrite');t.objectStore(store).put(value,key);t.oncomplete=()=>{this.stats.commitMs+=performance.now()-start;this.stats.commits++;resolve();};t.onabort=t.onerror=()=>reject(t.error||new Error('History storage failed'));});}
+  async open(id,meta){this.id=id;this.database=new HistoryDatabase('furlong-history');this.db=await this.database.open();await this.write('games',id,meta);}
+  async write(store,key,value){const start=performance.now();await this.database.transaction(store,'readwrite',t=>t.objectStore(store).put(value,key));this.stats.commitMs+=performance.now()-start;this.stats.commits++;}
   append(steps){const start=performance.now(),key=[this.id,this.chunk++],text=JSON.stringify(steps);this.pending.set(key[1],text);this.stats.serializeMs+=performance.now()-start;this.stats.bytes+=text.length;this.pendingBytes+=text.length*2;
     this.chain=this.chain.then(async()=>{const start=performance.now(),blob=await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob();this.stats.compressMs+=performance.now()-start;await this.write('chunks',key,blob);this.pending.delete(key[1]);this.pendingBytes-=text.length*2;});
     this.chain.catch(e=>HISTORY.fail(e));
   }
-  async export(meta){await this.chain.catch(()=>{});const blobs=await new Promise((resolve,reject)=>{const r=this.db.transaction('chunks').objectStore('chunks').getAll(IDBKeyRange.bound([this.id,0],[this.id,Number.MAX_SAFE_INTEGER]));r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  async export(meta){await this.chain.catch(()=>{});const blobs=await this.database.transaction('chunks','readonly',t=>t.objectStore('chunks').getAll(IDBKeyRange.bound([this.id,0],[this.id,Number.MAX_SAFE_INTEGER])));
     const steps=[];for(const b of blobs)steps.push(...await historyUnzip(b));for(const[,text]of [...this.pending].sort((a,b)=>a[0]-b[0]))steps.push(...JSON.parse(text));return {...meta,steps};}
 }
 const HISTORY={requested:/(?:^|[&#])history=full(?:&|$)/.test(WORLD_PARAMS),active:false,depth:0,fault:null,seq:0,batch:[],events:[],layouts:new Map(),root:{},globals:{},playback:{},rng:{},store:null,stats:{captureMs:0,captures:0,workMs:0},
@@ -16398,13 +16433,12 @@ class OutcomeWorkerPipeline{
   }
 }
 function outcomeWorkerRuntime(){
-  let db,meta,pipeline,persist,queue=Promise.resolve(),fault=null;
+  const database=new HistoryDatabase('furlong-storage-outcomes');let meta,pipeline,persist,queue=Promise.resolve(),fault=null;
   const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
-  const transaction=(stores,write)=>new Promise((resolve,reject)=>{const tx=db.transaction(stores,'readwrite');tx.oncomplete=()=>resolve();tx.onabort=tx.onerror=()=>reject(tx.error||Error('Storage history write failed'));try{write(tx);}catch(error){tx.abort();reject(error);}});
+  const transaction=(stores,write)=>database.transaction(stores,'readwrite',write);
   self.onmessage=message=>{const data=message.data;queue=queue.then(async()=>{try{if(fault)throw fault;
     if(data.type==='init'){
       if(pipeline)throw Error('Storage worker already initialized');if(typeof CompressionStream==='undefined'||typeof crypto==='undefined'||!crypto.subtle)throw Error('Worker compression or hashing unavailable');meta={...data.meta,...(data.mode==='native-storage-v3'?{version:3,encoding:'native-storage-v3'}:{})};
-      db=await new Promise((resolve,reject)=>{const request=indexedDB.open('furlong-storage-outcomes',1);request.onupgradeneeded=()=>{request.result.createObjectStore('games');request.result.createObjectStore('chunks');};request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('Storage history database is blocked'));request.onsuccess=()=>resolve(request.result);});
       await transaction('games',tx=>tx.objectStore('games').put(meta,meta.id));
       persist=async entry=>{const binary=entry.text===undefined?entry.binary:null,bytes=binary?new Uint8Array(binary):new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=meta.lastHash;
         const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),next={...meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:meta.storedBytes+blob.size,encodedBytes:meta.encodedBytes+bytes.byteLength};
@@ -16415,7 +16449,7 @@ function outcomeWorkerRuntime(){
     }else throw Error('Unknown storage worker message');
   }catch(error){fault=error instanceof Error?error:Error(String(error));self.postMessage({request:data.request,type:'error',message:fault.message});}});};
 }
-function outcomeWorkerSource(){return 'const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_CAPTURE_DATA=new WeakSet();const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeOwnedCopy.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+outcomeBinaryValidate.toString()+'\n'+outcomeBinaryDecode.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
+function outcomeWorkerSource(){return 'const STORAGE_CAPTURE_HANDLES=new WeakMap(),STORAGE_CAPTURE_DATA=new WeakSet();const OUTCOME_LOT_FIELDS='+JSON.stringify(OUTCOME_LOT_FIELDS)+';const OUTCOME_LOT_REF='+JSON.stringify(OUTCOME_LOT_REF)+';\n'+outcomeJSON.toString()+'\n'+outcomeParse.toString()+'\n'+OutcomeCodec.toString()+'\n'+outcomeOwnedCopy.toString()+'\n'+outcomeTransportRestore.toString()+'\n'+outcomeBinaryValidate.toString()+'\n'+outcomeBinaryDecode.toString()+'\n'+OutcomeWorkerPipeline.toString()+'\n'+HistoryDatabase.toString()+'\n('+outcomeWorkerRuntime.toString()+')();';}
 class OutcomeWorkerClient{
   constructor(worker,{timeout=60000}={}){this.worker=worker;this.timeout=timeout;this.next=0;this.requests=new Map();this.fault=null;worker.onmessage=e=>{try{const data=e.data;if(!data||typeof data!=='object'||!Number.isInteger(data.request)||!['ready','committed','error'].includes(data.type))throw Error('Invalid storage worker acknowledgement');const request=this.requests.get(data.request);if(!request)throw Error('Unexpected storage worker acknowledgement');if(data.type!=='error'&&data.type!==request.expected)throw Error('Storage worker acknowledgement type differs');clearTimeout(request.timer);this.requests.delete(data.request);if(data.type==='error'){const error=Error(String(data.message));request.reject(error);this.fail(error);}else request.resolve(data);}catch(error){this.fail(error);}};worker.onerror=e=>{e.preventDefault?.();this.fail(Error(e.message||'Storage worker failed'));};worker.onmessageerror=()=>this.fail(Error('Storage worker message could not be decoded'));}
   fail(error){if(this.fault)return;this.fault=error;for(const request of this.requests.values()){clearTimeout(request.timer);request.reject(error);}this.requests.clear();this.onFault?.(error);}
@@ -16431,7 +16465,7 @@ const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-
     if(typeof code!=='string'||!code.length)throw Error('Storage history requires its source identity');
     const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
     this.meta={format:'furlong-storage-outcomes',version:STORAGE_LEGACY_AUDIT?1:2,encoding:STORAGE_LEGACY_AUDIT?'tagged-json-v1':'compact-storage-v2',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
-    this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
+    this.database=new HistoryDatabase('furlong-storage-outcomes');this.db=await this.database.open();
     const onFault=e=>{setSpeed(0);console.error('Storage history paused:',e);storageFaultNotice('Storage history could not be saved. The game is paused; pending records remain in this tab.');};
     let client=null,fallbackReason=null;
     try{
@@ -16442,10 +16476,10 @@ const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-
     const mode=STORAGE_LEGACY_AUDIT?'legacy':'compact';let write;
     if(client){this.workerClient=client;write=async entry=>{const ack=await client.request({type:'chunk',entry:{chunk:entry.chunk,first:entry.first,last:entry.last,binary:entry.binary},mode:STORAGE_LEGACY_AUDIT?mode:'native-storage-v3'});if(ack.type!=='committed'||ack.chunk!==entry.chunk||ack.first!==entry.first||ack.last!==entry.last||ack.meta?.id!==this.meta.id||ack.meta.lastSeq!==entry.last||ack.meta.lastChunk!==entry.chunk)throw Error('Storage worker commit acknowledgement differs');this.meta=ack.meta;this.lastHash=ack.meta.lastHash;this.lastChunk=ack.chunk;return ack;};}
     else{
-      await new Promise((resolve,reject)=>{const t=this.db.transaction('games','readwrite');t.objectStore('games').put(this.meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history could not begin'));});
+      await this.database.transaction('games','readwrite',t=>t.objectStore('games').put(this.meta,this.meta.id));
       write=async entry=>{const bytes=new TextEncoder().encode(entry.text),hash=hex(await crypto.subtle.digest('SHA-256',bytes)),previous=this.lastHash;
       const blob=await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).blob(),meta={...this.meta,lastChunk:entry.chunk,lastSeq:entry.last,lastHash:hash,storedBytes:this.meta.storedBytes+blob.size,encodedBytes:this.meta.encodedBytes+bytes.byteLength};
-      await new Promise((resolve,reject)=>{const t=this.db.transaction(['games','chunks'],'readwrite');t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);t.oncomplete=resolve;t.onabort=t.onerror=()=>reject(t.error||new Error('Storage history write failed'));});
+      await this.database.transaction(['games','chunks'],'readwrite',t=>{t.objectStore('chunks').put({first:entry.first,last:entry.last,hash,previous,blob},[this.meta.id,entry.chunk]);t.objectStore('games').put(meta,this.meta.id);});
         this.lastHash=hash;this.lastChunk=entry.chunk;this.meta=meta;return {meta};
       };
     }
@@ -16457,12 +16491,12 @@ const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-
   async flush(){commoditySettleAll();if(this.timer){clearTimeout(this.timer);this.timer=null;}if(this.journal)return this.journal.flush();},
   async wait(){if(this.modelFault)throw this.modelFault;if(this.journal&&!this.journal.ready)await this.flush();},
   status(){return {id:this.meta?.id,...this.journal?.status(),processingMode:this.journal?.processingMode,fallbackReason:this.fallbackReason||null,modelFault:this.modelFault?.message||null,storedBytes:this.meta?.storedBytes||0,encodedBytes:this.meta?.encodedBytes||0,continuation:false};},
-  async saved(){if(!this.db)throw new Error('Storage history has not begun');return new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
-  async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await new Promise((resolve,reject)=>{const r=this.db.transaction('games').objectStore('games').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});if(!meta)throw new Error('Unknown storage history');return {db:this.db,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,storageRecords:this.storageRecords,stream:this.stream};},
+  async saved(){if(!this.db)throw new Error('Storage history has not begun');return this.database.transaction('games','readonly',t=>t.objectStore('games').getAll());},
+  async open(id){if(!this.db)throw new Error('Storage history has not begun');const meta=await this.database.transaction('games','readonly',t=>t.objectStore('games').get(id));if(!meta)throw new Error('Unknown storage history');return {db:this.db,database:this.database,meta,lastChunk:meta.lastChunk,journal:null,records:this.records,storageRecords:this.storageRecords,stream:this.stream};},
   async *records(endSeq){commoditySettleAll();if(endSeq===undefined)endSeq=this.journal?this.journal.seq-1:this.meta?.lastSeq;
     // Capture a boundary before yielding; later records belong to a subsequent export.
     if(!this.meta)return;this.journal?.seal();await this.journal?.chain;const end=this.lastChunk,tail=this.journal?[...this.journal.uncommitted()]:[];let expected=0,previous=null;
-    for(let k=0;k<=end;k++){const entry=await new Promise((resolve,reject)=>{const r=this.db.transaction('chunks').objectStore('chunks').get([this.meta.id,k]);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    for(let k=0;k<=end;k++){const entry=await this.database.transaction('chunks','readonly',t=>t.objectStore('chunks').get([this.meta.id,k]));
       if(!entry||entry.first!==expected||entry.previous!==previous)throw new Error('Storage outcome chunk gap');
       const buffer=await new Response(entry.blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(),digest=await crypto.subtle.digest('SHA-256',buffer),hash=[...new Uint8Array(digest)].map(n=>n.toString(16).padStart(2,'0')).join('');if(hash!==entry.hash)throw new Error('Storage outcome checksum differs');
       const binary=entry.encoding==='native-storage-v3';if(binary)outcomeBinaryValidate(buffer,entry.first,entry.last);const records=binary?outcomeBinaryDecode(buffer).map(row=>({seq:row.seq,event:outcomeTransportRestore(row.event)})):outcomeRecords(new TextDecoder().decode(buffer));
@@ -16479,7 +16513,7 @@ function storageFaultNotice(message){if(MODEL_ONLY)return;const el=document.getE
 function storageModelFault(error){if(STORAGE_OUTCOMES.modelFault)return;const e=error instanceof Error?error:new Error(String(error));STORAGE_OUTCOMES.modelFault=e;if(STORAGE_OUTCOMES.journal&&!STORAGE_OUTCOMES.journal.fault){STORAGE_OUTCOMES.journal.append({kind:'storage-model-fault',day:day(),message:e.message});STORAGE_OUTCOMES.schedule();}setSpeed(0);storageFaultNotice('Storage accounting failed. The game is paused and its recorded history is retained.');console.error('Storage accounting paused:',e);}
 // Read-only archive facade; the worker alone owns the live journal.
 const STORAGE_ARCHIVE_DB = (() => {
-  let pending;
+  let pending,cached;
   return async function storageArchiveDB(){
     if(!pending){
       pending=(async()=>{
@@ -16493,7 +16527,7 @@ const STORAGE_ARCHIVE_DB = (() => {
           r.onsuccess=()=>resolve(r.result);
         });
         if(!db.objectStoreNames.contains('games')||!db.objectStoreNames.contains('chunks')){db.close();throw Error('Storage history schema is incomplete');}
-        db.onversionchange=()=>db.close();return db;
+        cached=db;const invalidate=()=>{if(cached===db){cached=null;pending=null;}};db.onclose=invalidate;db.onversionchange=()=>{invalidate();db.close();};return db;
       })().catch(e=>{pending=null;throw e;});
     }
     return pending;

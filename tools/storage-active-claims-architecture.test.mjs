@@ -43,7 +43,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // 48c2b35 changes only storage site surveys and prevents repeat construction
  // labour charges after the work is done; storage-placement/project fixtures cover
  // those reviewed changes. The worker host does not modify this region.
- assert.equal(digest(source.slice(a,b)),"46cfeb3c6f21980c901cff01e4db09e538356b5cb5180f4195e014bf5b27c782");
+ // Exact balance addresses, membership-only updates and unchanged facility
+ // refresh bypasses preserve arithmetic, preflight and journal order. Frozen
+ // 450d2b6 differential fixtures and two native years renew this bounded review.
+ assert.equal(digest(source.slice(a,b)),"0c62df3ca9b8ab8c582f65b8f7dad4cfa2e82211af84b333867d13bb66c1fc28");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
@@ -51,8 +54,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  const outside=(source.slice(0,a)+source.slice(b)).split('\n')
    .filter(l=>l!==inspectorLine).filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)&&!l.includes('const inc=tradeIncome(s,hh.tr,counts),herd=s._owners?.get('))
    .map(l=>l.trim().replace(/(?:G\.land&&G\.land\.lordTex|W\.land&&G\.landView\?\.lordTex)/g,'LAND_VIEW_GUARD')).sort().join('\n');
+ // The herd reader now accumulates four species in one owner pass, preserving
+ // each species owner order; no external ownership writer changed.
  // Sort to tolerate declaration moves; exclude the added read-only herd inspector,
  // and normalize the land-uniform guard. Canonical claim and balance writes match HEAD.
- assert.equal(digest(outside),"d7c01a595c8ecd7099b699aacce8c853035c6e7bbf23a0f7075bb24fd24c39b7");
+ assert.equal(digest(outside),"bda74fd996d3927188b732f4a7a5c3c54b7d3a62e65e89f9eadb2d5bcf100f1c");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

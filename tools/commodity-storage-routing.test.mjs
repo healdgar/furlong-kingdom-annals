@@ -11,7 +11,8 @@ test('commodity carriage partitions candidates across many owners and spoilage r
   const nodes=Array.from({length:12},(_,i)=>({id:'f'+i,building:{},active:true,public:true,owner:null,x:i+1,z:0,capacity:100,used:0,protection:4}));
   nodes.push({id:'f12',building:{},active:true,public:false,owner:rows[17].owner,x:13,z:0,capacity:100,used:0,protection:4});
   const calls={sync:0,route:0,free:0};
-  const K={locations:new Map([['yard',{id:'yard',exposed:true,x:0,z:0,protection:4}],...nodes.map(n=>[n.id,n])]),facilityOrder(id){return Number(id.slice(1));},free(id){calls.free++;const n=this.locations.get(id);return n.capacity-n.used;},volume(){return 1;},entries({good}={}){return rows.filter(r=>r.qty>0&&(!good||r.good===good));},transfer(r,q,owner,{location}){r.qty-=q;this.locations.get(location).used+=q;},consume(r,q){r.qty-=q;}};
+  const balances=new Map([['grain',new Map(rows.map(r=>[r.owner,new Map([['held',r.qty]])]))]]);
+  const K={locations:new Map([['yard',{id:'yard',exposed:true,x:0,z:0,protection:4,balances}],...nodes.map(n=>[n.id,n])]),facilityOrder(id){return Number(id.slice(1));},free(id){calls.free++;const n=this.locations.get(id);return n.capacity-n.used;},volume(){return 1;},entries({good}={}){return rows.filter(r=>r.qty>0&&(!good||r.good===good));},transfer(r,q,owner,{location}){r.qty-=q;balances.get(r.good).get(r.owner).set(r.availability,r.qty);this.locations.get(location).used+=q;},consume(r,q){r.qty-=q;balances.get(r.good).get(r.owner).set(r.availability,r.qty);}};
   const s={pop:100,buildings:nodes.map(n=>({arch:'warehouse',storageId:n.id})),storage:K};
   const context=vm.createContext({s,K,W:{},STORAGE_TYPES:{warehouse:{}},commodityActive:()=>true,day:()=>1,means:()=>1000,lordAcct:()=>({}),acct:()=>{},wages:()=>{},calls,
     commodityFacilities(){calls.sync++;return K;},commodityExposed(){return rows.filter(r=>r.qty>0);},storageOwnerId(o){return o?.id||'unassigned';},storageRoute(){calls.route++;return 1;}});

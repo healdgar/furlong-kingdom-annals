@@ -22,6 +22,8 @@ Read helpers can warm the existing derived `s._sg` street graph. Valuation reads
 
 ## Remaining GPU/performance work
 
+GPU optimization is deferred at the user's request. The next CPU batch removes redundant ledger lookups and no-op writes; see [its checklist and native comparison](LEDGER-REDUNDANT-WORK.md).
+
 These are acceleration experiments, not unfinished ownership boundaries:
 
 - Adopt a production GPU kernel only after matched whole-year timing includes upload, readback and CPU finishing costs. No production GPU economy kernel is enabled by this cutover.
