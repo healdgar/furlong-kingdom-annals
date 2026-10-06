@@ -48,6 +48,5 @@ Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190
 
 | # | Item | Status |
 |---|---|---|
-| 17 | Delete `tools/history-check.mjs` (fails on any ledger; tests the off-by-default full history recorder) | in progress; then review whether the recorder is dead code |
-| 18 | Delete frozen baseline modules (`*-baseline.mjs`) and their old-versus-new comparison tests | in progress |
+| 17 | The full history recorder (`history=full`) is off by default and lost its harness; is it dead code? | open: review |
 | 24 | `game-write-*` prototype (5 tests) and `long-run-check` (overlaps soak) | proposed for deletion |
