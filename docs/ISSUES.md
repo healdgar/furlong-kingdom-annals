@@ -49,4 +49,3 @@ Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190
 | # | Item | Status |
 |---|---|---|
 | 17 | The full history recorder (`history=full`) is off by default and lost its harness; is it dead code? | open: review |
-| 24 | `game-write-*` prototype (5 tests) and `long-run-check` (overlaps soak) | in progress: deleting |
