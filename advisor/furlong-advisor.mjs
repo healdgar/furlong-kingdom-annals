@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* furlong-advisor: a stateless MCP server (stdio) that lets any agent app, on any model, see and play the game of
    Furlong the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
-   pairs with it from its 🗣 dialog, with a code this bridge gives in its answers; the bridge speaks to the page over
+   pairs with it from its Advisor dialog (Menu → Advisor), with a code this bridge gives in its answers; the bridge speaks to the page over
    a WebSocket on 127.0.0.1 only. The game's rules (its README and its guide to the screen, bundled) are searchable before pairing.
    No dependencies:  npx -y furlong-advisor   (FURLONG_PORT to change the port, default 7357) */
 import http from 'node:http';
@@ -94,7 +94,7 @@ function attach(s) {
   s.on('close', () => { if (sock === s) { sock = null; log('the game closed the connection'); } });
   s.on('error', () => { });
 }
-const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s 🗣 dialog.'); });
+const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s Advisor dialog (Menu → Advisor).'); });
 server.on('upgrade', (req, s) => {
   const u = new URL(req.url, 'http://x');
   if (!req.headers['sec-websocket-key']) { s.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
@@ -110,7 +110,7 @@ server.on('listening', () => { CODE = BASE + (port - PORT); log(`listening on 12
 server.listen(port, '127.0.0.1');
 
 function ask(op, args) {
-  if (!sock) return Promise.resolve({ error: `Not paired with a game yet. Ask the player to open the game, click 🗣 (An advisor) in the top bar, and enter the pairing code ${CODE}.` });
+  if (!sock) return Promise.resolve({ error: `Not paired with a game yet. Ask the player to open the game, choose Menu → Advisor, and enter the pairing code ${CODE}.` });
   const id = nextId++;
   return new Promise(res => {
     const t = setTimeout(() => { waiting.delete(id); res({ error: 'the game did not answer (is its tab asleep?)' }); }, 20000);

@@ -7,7 +7,7 @@ game master. It changes the game only when you ask, and keeps quiet when you tel
 
 ## Use
 
-The easy way: in the game, click 🗣 and copy the prompt into your agent app (Claude Code, Claude Cowork, Cursor,
+The easy way: in the game, open Menu → Advisor and copy the prompt into your agent app (Claude Code, Claude Cowork, Cursor,
 or any app that can run local MCP servers). It sets itself up.
 
 By hand, register it as a local MCP server:
