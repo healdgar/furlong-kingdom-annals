@@ -15,7 +15,7 @@ function context(extra={}){
     streetAccessAt:()=>true,armyObstacle:()=>null,armyBridgeAt:()=>false,armyRaftAt:()=>false,fortGround:()=>0,
     lerp:(a,b,t)=>a+(b-a)*t,...extra});
 }
-function planRuntime(extra={}){const C=context(extra);vm.runInContext(fn('armySegmentClear')+'\n'+fn('armyDetour')+'\n'+fn('armyLandPath')+'\n'+fn('serviceRoadPlan')+'\n'+fn('serviceDoor'),C);if(extra.armyLandPath)C.armyLandPath=extra.armyLandPath;return C;}
+function planRuntime(extra={}){const C=context(extra);vm.runInContext(['armySegmentClear','armyDetour','armyLandPath','armyReach','armyReaches','serviceRoadPlan','serviceDoor'].map(fn).join('\n'),C);if(extra.armyLandPath)C.armyLandPath=extra.armyLandPath;return C;}
 function footprintRuntime(){const C=context();vm.runInContext(fn('streetFootprintOverlap'),C);return C.streetFootprintOverlap;}
 function storagePlanRuntime(extra={}){const C=context({armyObstacle:()=>null,armySegmentClear:()=>true,...extra});vm.runInContext(fn('streetFootprintOverlap')+'\n'+fn('serviceDoor')+'\n'+fn('storageRoadPlan'),C);return C;}
 const street=(kind,pts,extra={})=>({kind,pts,hw:2,...extra});

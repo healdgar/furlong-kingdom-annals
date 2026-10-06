@@ -1374,7 +1374,10 @@ async function generateWorld(seed,progress){
   buildRoads();
 
   await progress('Raising timber and stone…',0.75);
-  for(const s of W.settlements)layoutSettlement(s);
+  { // one place at a time, so the bar moves: each post is a plain message the page receives while the next layout runs (not awaited, so no event-loop turn is taken in the worker)
+    const n=W.settlements.length;let total=0;for(const s of W.settlements)total+=Math.max(1,s.pop||0);let done=0;
+    for(let i=0;i<W.settlements.length;i++){const s=W.settlements[i];progress(`Raising timber and stone… ${s.name} (${i+1} of ${n})`,0.75+0.13*(done/total),0);done+=Math.max(1,s.pop||0);layoutSettlement(s);}
+  }
   stitchRoads();
 
   await progress('Blazoning the great houses…',0.88);
@@ -1688,14 +1691,21 @@ function roadAccessClear(s,a,b){
   }return true;
 }
 // A service lane is planned once when its building or quay is laid out.
-function serviceRoadPlan(s,p,placed,skip,hw=1.3){
+// `memo` caches lattice edge tests for one world state and one clearance (see armyDetour); a caller may share it between calls only while nothing is built, razed or roaded between them.
+function serviceRoadPlan(s,p,placed,skip,hw=1.3,memo){
   const candidates=[];
   for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&(st.kind!=='quay'||st.serviceLinked)&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
     const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L,0,1),x=a.x+dx*t,z=a.z+dz*t;
     if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
-  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,waterClearance:hw+1};
+  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,waterClearance:hw+1,_em:memo||new Map()};
   if(armyObstacle(walker,p.x,p.z))return null;
-  const attempted=[];for(const q of candidates){if(armyObstacle(walker,q.x,q.z)||attempted.some(a=>a.st===q.st))continue;attempted.push(q);const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};if(attempted.length===12)break;}
+  const attempted=[];let reach;
+  for(let ci=0;ci<candidates.length;ci++){const q=candidates[ci];if(armyObstacle(walker,q.x,q.z)||attempted.some(a=>a.st===q.st))continue;attempted.push(q);
+    if(reach&&!armyReaches(reach,q)&&!armySegmentClear(walker,p,q)){if(attempted.length===12)break;continue;} // blocked straight on, and no lattice route can reach it
+    const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};
+    if(reach===undefined){const pts=[],seen=new Set(attempted.map(a=>a.st));for(let cj=ci+1;cj<candidates.length&&pts.length+attempted.length<12;cj++){const c=candidates[cj];if(seen.has(c.st)||armyObstacle(walker,c.x,c.z))continue;seen.add(c.st);pts.push(c);}
+      reach=pts.length>0?armyReach(walker,p,pts,150,60000):null;}
+    if(attempted.length===12)break;}
   return null;
 }
 // Survey waterfront streets once. Smoothing must not cut a river bend or cross a shore.
@@ -2178,9 +2188,12 @@ function layoutSettlement(s){
   };
   const churchAccess=b=>{if(b.removed||b.state==='gone')return false;const ch=chOf(b),door=ch.door==='W'?locW(b,0,(ch.W||1)*(b.d/2+1.2)):locW(b,ch.door*(b.w/2+1.2),0),p={x:door[0],z:door[1]},candidates=[];
     for(const st of s.streets)if(!st.hidden&&!st.gone&&st.kind!=='edge'&&!st.churchAccess&&(!st.castlePath||b.castle))for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],q=st.pts[k],dx=q.x-a.x,dz=q.z-a.z,L2=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L2,0,1),x=a.x+dx*t,z=a.z+dz*t; if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),hw:st.hw||2});}
-    candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
+    candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,_em:new Map()};
     if(s.streets.some(st=>st.churchAccess&&!st.hidden&&!st.gone&&st.pts.length>2&&dist2d(st.pts[1].x,st.pts[1].z,p.x,p.z)<2&&st.pts.slice(2).every((q,k)=>armySegmentClear(walker,st.pts[k+1],q))&&candidates.some(q=>dist2d(q.x,q.z,st.pts[st.pts.length-1].x,st.pts[st.pts.length-1].z)<q.hw+1.5))){finishChurchyard(s,b,addStreet);return true;}
-    for(const q of candidates.slice(0,24)){if(q.d<q.hw+1.5&&armySegmentClear(walker,p,q))return true;const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(!path)continue;
+    const cs=candidates.slice(0,24);let reach;
+    for(let ci=0;ci<cs.length;ci++){const q=cs[ci];if(q.d<q.hw+1.5&&armySegmentClear(walker,p,q))return true;
+      if(reach&&!armyReaches(reach,q)&&!armySegmentClear(walker,p,q))continue; // blocked straight on, and no lattice route can reach it
+      const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(!path){if(reach===undefined)reach=ci+1<cs.length?armyReach(walker,p,cs.slice(ci+1),150,60000):null;continue;}
       const face=ch.door==='W'?locW(b,0,(ch.W||1)*b.d/2):locW(b,ch.door*b.w/2,0);path.unshift({x:face[0],z:face[1]});addStreet(path,1.3,'lane',{straight:true,churchAccess:true,castlePath:!!b.castle});finishChurchyard(s,b,addStreet);return true;}
     return false;};
   const serviceAccess=(b,survey)=>{if(b.removed||b.state==='gone')return false;
@@ -2191,7 +2204,7 @@ function layoutSettlement(s){
   const quayAccess=st=>{if(st.gone||st.hidden)return false;if(st.serviceLinked)return true;
     const points=[...st.pts];for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((C.x-a.x)*dx+(C.z-a.z)*dz)/L,0,1);points.push({x:a.x+dx*t,z:a.z+dz*t});}
     points.sort((a,b)=>dist2d(a.x,a.z,C.x,C.z)-dist2d(b.x,b.z,C.x,C.z));
-    for(const p of points.slice(0,12)){const plan=serviceRoadPlan(s,p,placed,st,1.6);if(!plan)continue;
+    const memo=new Map();for(const p of points.slice(0,12)){const plan=serviceRoadPlan(s,p,placed,st,1.6,memo);if(!plan)continue;
       if(dist2d(p.x,p.z,plan.path.at(-1).x,plan.path.at(-1).z)>1)addStreet(plan.path,1.6,'alley',{straight:true,serviceAccess:'quay'});
       st.serviceLinked=true;G.roadsDirty=true;return true;}return false;};
   const ux=Math.cos(rAng),uz=Math.sin(rAng),vx=-uz,vz=ux;
@@ -5222,8 +5235,10 @@ function riverJoinPolygon(P){ // one convex join between channel arms, without a
 function clipGroundFootprints(acc,footprints){ // remove channel coverage from the outer land apron
   const original=acc.i.slice(),indices=[],arrays=[['p',3],['n',3],['c',3],['uv',2],['tangent',2],['bank',1]];
   for(const [name,size]of arrays)while(acc[name].length<acc.p.length/3*size)acc[name].push(0);acc.blends=[];
+  const box=footprints.map(F=>{let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const p of F){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);z0=Math.min(z0,p.z);z1=Math.max(z1,p.z);}return[x0,x1,z0,z1];}); // each footprint's extent, once
   for(let k=0;k<original.length;k+=3){const ids=original.slice(k,k+3),points=ids.map((id,j)=>({id,x:acc.p[id*3],y:acc.p[id*3+1],z:acc.p[id*3+2],w:[0,1,2].map(i=>Number(i===j))}));let pieces=[points];
-    for(const F of footprints){const xs=points.map(p=>p.x),zs=points.map(p=>p.z),fx=F.map(p=>p.x),fz=F.map(p=>p.z);if(Math.max(...xs)<Math.min(...fx)||Math.min(...xs)>Math.max(...fx)||Math.max(...zs)<Math.min(...fz)||Math.min(...zs)>Math.max(...fz))continue;pieces=pieces.flatMap(P=>riverPolygonDifference(P,F));}
+    const xa=Math.min(points[0].x,points[1].x,points[2].x),xb=Math.max(points[0].x,points[1].x,points[2].x),za=Math.min(points[0].z,points[1].z,points[2].z),zb=Math.max(points[0].z,points[1].z,points[2].z);
+    for(let f=0;f<footprints.length;f++){const B=box[f];if(xb<B[0]||xa>B[1]||zb<B[2]||za>B[3])continue;pieces=pieces.flatMap(P=>riverPolygonDifference(P,footprints[f]));}
     for(const P of pieces){const verts=P.map(q=>{if(q.id!==undefined)return q.id;const id=acc.p.length/3;for(const [name,size]of arrays)for(let c=0;c<size;c++)acc[name].push(ids.reduce((n,j,i)=>n+(acc[name][j*size+c]||0)*q.w[i],0));acc.blends.push({id,ids,w:q.w});return id;});for(let j=1;j<P.length-1;j++)indices.push(verts[0],verts[j],verts[j+1]);}}
   acc.i=indices;
 }
@@ -11982,13 +11997,14 @@ function armyObstacle(a,x,z){
 function armySegmentClear(a,p,q){const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));let prev=p;
   for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(prev.x,prev.z,x,z);if(L&&Math.abs(fortGround(x,z,a.settlement)-fortGround(prev.x,prev.z,a.settlement))/L>0.65&&!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z))return false;prev={x,z};}return true;}
 function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stretch; no smoothing across obstacles
+  // A walker that carries `_em` (a Map) remembers each lattice edge's clearance. The lattice is the even integers, so every box shares its edges; the first and last edges (off the lattice) are never stored. Armies carry none.
   const step=2,x0=Math.floor((Math.min(p.x,q.x)-pad)/step)*step,z0=Math.floor((Math.min(p.z,q.z)-pad)/step)*step,
     nx=Math.ceil((Math.abs(q.x-p.x)+pad*2)/step)+1,nz=Math.ceil((Math.abs(q.z-p.z)+pad*2)/step)+1,N=nx*nz;if(N>50000)return null;
   const point=k=>({x:x0+(k%nx)*step,z:z0+Math.floor(k/nx)*step}),idx=v=>Math.round((v.z-z0)/step)*nx+Math.round((v.x-x0)/step),start=idx(p),end=idx(q),g=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1),closed=new Uint8Array(N),heap=[];
   const score=k=>dist2d(point(k).x,point(k).z,q.x,q.z),push=(k,f)=>{heap.push([k,f]);let n=heap.length-1;while(n){const j=(n-1)>>1;if(heap[j][1]<=f)break;[heap[n],heap[j]]=[heap[j],heap[n]];n=j;}},pop=()=>{const out=heap[0],v=heap.pop();if(heap.length){heap[0]=v;let n=0;for(;;){let j=n,l=n*2+1,r=l+1;if(l<heap.length&&heap[l][1]<heap[j][1])j=l;if(r<heap.length&&heap[r][1]<heap[j][1])j=r;if(j===n)break;[heap[n],heap[j]]=[heap[j],heap[n]];n=j;}}return out[0];};
   g[start]=0;push(start,score(start));let visited=0;
   while(heap.length&&visited++<30000){const k=pop();if(closed[k])continue;closed[k]=1;if(k===end)break;const P=k===start?p:point(k),ix=k%nx,iz=Math.floor(k/nx);
-    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz||ix+dx<0||ix+dx>=nx||iz+dz<0||iz+dz>=nz)continue;const j=k+dz*nx+dx;if(closed[j])continue;const Q=j===end?q:point(j);if(!armySegmentClear(a,P,Q))continue;const cost=g[k]+dist2d(P.x,P.z,Q.x,Q.z);if(cost<g[j]){g[j]=cost;prev[j]=k;push(j,cost+score(j));}}
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz||ix+dx<0||ix+dx>=nx||iz+dz<0||iz+dz>=nz)continue;const j=k+dz*nx+dx;if(closed[j])continue;const Q=j===end?q:point(j);if(a._em&&k!==start&&j!==end){const ek=(((P.x>>1)+8192)*16384+((P.z>>1)+8192))*9+((dz+1)*3+dx+1);let ok=a._em.get(ek);if(ok===undefined){ok=armySegmentClear(a,P,Q);a._em.set(ek,ok);}if(!ok)continue;}else if(!armySegmentClear(a,P,Q))continue;const cost=g[k]+dist2d(P.x,P.z,Q.x,Q.z);if(cost<g[j]){g[j]=cost;prev[j]=k;push(j,cost+score(j));}}
   }
   if(start!==end&&prev[end]<0)return null;const out=[q];for(let k=prev[end];k>=0&&k!==start;k=prev[k])out.push(point(k));out.push(p);out.reverse();return out;
 }
@@ -11999,6 +12015,19 @@ function armyLandPath(a,P){ // validate an existing road or field route; repair 
     let detour=null;for(const pad of[24,64,144]){detour=armyDetour(a,p,q,pad);if(detour)break;}if(!detour)return null;out.push(...detour.slice(1));}
   return out;
 }
+function armyReach(a,p,pts,pad,cap){ // every lattice node a walker can reach from p inside the union of the detour boxes of pts (null if too large to say)
+  // Sound by construction: pad exceeds every detour pad (144), so the box holds each armyDetour box for p→pts[i]; the edge test and neighbourhood are armyDetour's; so any node its search settles is marked here.
+  const step=2;let lx=p.x,hx=p.x,lz=p.z,hz=p.z;for(const q of pts){lx=Math.min(lx,q.x);hx=Math.max(hx,q.x);lz=Math.min(lz,q.z);hz=Math.max(hz,q.z);}
+  const x0=Math.floor((lx-pad)/step)*step,z0=Math.floor((lz-pad)/step)*step,nx=Math.ceil((hx-lx+pad*2)/step)+1,nz=Math.ceil((hz-lz+pad*2)/step)+1,N=nx*nz;if(N>cap*4)return null;
+  const start=Math.round((p.z-z0)/step)*nx+Math.round((p.x-x0)/step),seen=new Uint8Array(N),stack=[start];seen[start]=1;let n=0;
+  while(stack.length){const k=stack.pop();if(++n>cap)return null;const ix=k%nx,iz=Math.floor(k/nx),P=k===start?p:{x:x0+ix*step,z:z0+iz*step};
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz||ix+dx<0||ix+dx>=nx||iz+dz<0||iz+dz>=nz)continue;const j=k+dz*nx+dx;if(seen[j])continue;const Q={x:x0+(ix+dx)*step,z:z0+(iz+dz)*step};
+      let ok;if(a._em&&k!==start){const ek=(((P.x>>1)+8192)*16384+((P.z>>1)+8192))*9+((dz+1)*3+dx+1);ok=a._em.get(ek);if(ok===undefined){ok=armySegmentClear(a,P,Q);a._em.set(ek,ok);}}else ok=armySegmentClear(a,P,Q);
+      if(ok){seen[j]=1;stack.push(j);}}}
+  return{seen,x0,z0,nx,nz,start};
+}
+function armyReaches(R,q){const i=Math.round((q.x-R.x0)/2),j=Math.round((q.z-R.z0)/2);if(i<0||j<0||i>=R.nx||j>=R.nz||j*R.nx+i===R.start)return true;
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const ii=i+dx,jj=j+dz;if(ii>=0&&jj>=0&&ii<R.nx&&jj<R.nz&&R.seen[jj*R.nx+ii])return true;}return false;}
 function armyDestination(a,s,p){const c=hostileTo(a,s)&&activeFort(s);if(c){const C=fortCenter(c),an=Math.atan2(p.z-C.z,p.x-C.x),r=wallRadAt(c,an)+28;return{x:C.x+Math.cos(an)*r,z:C.z+Math.sin(an)*r};}
   const goal={x:s.pos.x,z:s.pos.z};if(!armyObstacle(a,goal.x,goal.z))return goal;for(let r=3;r<=30;r+=3)for(let k=0;k<16;k++){const an=k/16*Math.PI*2,q={x:goal.x+Math.cos(an)*r,z:goal.z+Math.sin(an)*r};if(!armyObstacle(a,q.x,q.z))return q;}return null;}
 function armyRouteBlocked(a){const p=armySimPos(a);a.field={x:p.x,z:p.z};a.fieldTo=null;a.chase=null;a.state='idle';a.why='no passable route: a bridge, ford, or breach is needed';return false;}
@@ -17247,7 +17276,13 @@ async function boot(){
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
   if(!BACKGROUND)initializeSimulation();
   initGraphics();VISUAL.reset();
-  buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
+  // the page is busy for each of these runs (the ground, with its river cuts, is most of it), so each is named first and the line is painted before it starts
+  await progress('Opening the annals… shaping the ground and the rivers',0.97);
+  buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);
+  await progress('Opening the annals… planting woods, raising houses',0.985);
+  buildTrees();buildBuildings();
+  await progress('Opening the annals… hanging the banners',0.995);
+  buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   // The exhaustive recorder is still too costly for normal fast-forward.
   // Life ledgers are always complete; opt in locally to audit the archive.
   if(HISTORY.requested&&!BACKGROUND)try{await HISTORY.begin();}catch(e){HISTORY.fail(e);throw e;}
