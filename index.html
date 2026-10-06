@@ -9262,6 +9262,7 @@ function contextTitle(){
   if(k==='petition')return esc(W.petitions[0]?.title||'Petitions');
   return k==='plan'?'Plan works':k==='legend'?esc(document.querySelector('#terrlegend .lh')?.textContent||'Map legend'):'The realm';
 }
+function contextTown(){const c=inspTarget?.workerCode;return inspTarget?.type==='settlement'?inspTarget.s:/^s\d+$/.test(c||'')?W.settlements[+c.slice(1)]||null:null;} // a town's card, opened by a click or by name
 function contextSync(){
   if(!contextUI.ready||!contextUI.kind)return;
   const el=document.getElementById('contextpanel');setHTML(document.getElementById('contexttitle'),contextTitle());
@@ -9269,7 +9270,7 @@ function contextSync(){
   if(contextUI.kind==='insp'){
     const source=document.getElementById('inspbody'),rows=[...source.querySelectorAll(':scope > .row')];
     const selected=inspTarget?.type==='settlement'?rows.filter(r=>['Population','Unrest'].includes(r.firstElementChild?.textContent)):rows.slice(0,2);
-    document.getElementById('contextaccounts').hidden=inspTarget?.type!=='settlement';
+    document.getElementById('contextaccounts').hidden=!contextTown();
     document.getElementById('contextorders').hidden=!document.getElementById('inspacts').innerHTML.trim();
     setHTML(document.getElementById('contextsummary'),selected.length?selected.map(r=>r.outerHTML).join(''):'<div class="note">Open details</div>');
   }
@@ -9339,7 +9340,7 @@ function initContextUI(){
   document.getElementById('contexttitle').onclick=()=>contextExpand(!contextUI.expanded);
   document.getElementById('contextclose').onclick=contextDismiss;
   document.getElementById('contextdetails').onclick=()=>{setInspectorView('details');contextExpand(true);};
-  document.getElementById('contextaccounts').onclick=()=>{if(inspTarget?.type==='settlement')openInfo('accounts',inspTarget.s);};
+  document.getElementById('contextaccounts').onclick=()=>{const s=contextTown();if(s)openInfo('accounts',s);};
   document.getElementById('contextorders').onclick=()=>{setInspectorView('orders');contextExpand(true);};
   panel.addEventListener('click',e=>{const info=e.target.closest('[data-info]');if(info){openInfo(info.dataset.info);return;}const account=e.target.closest('[data-account-town]');if(account){const s=W.settlements[+account.dataset.accountTown];if(s)openInfo('accounts',s);return;}const annals=e.target.closest('[data-info-annals]');if(annals){setChronMin(false);contextShow('chron');contextExpand(true);return;}const jump=e.target.closest('[data-detail-jump]');if(jump){document.getElementById(jump.dataset.detailJump)?.scrollIntoView({block:'start'});return;}const place=e.target.closest('[data-detail-settlement]');if(place){const s=W.settlements[+place.dataset.detailSettlement];if(s){showInspect({type:'settlement',s});document.getElementById('contextsize').focus();}return;}const building=e.target.closest('[data-detail-building]');if(building){const [si,bi]=building.dataset.detailBuilding.split(':').map(Number),b=W.settlements[si]?.buildings[bi];if(b){showInspect({type:'building',b});document.getElementById('contextsize').focus();}return;}if(!contextUI.expanded&&!e.target.closest('button,a,input,select,textarea,summary,[data-cmd],[role=tab]'))contextExpand(true);});
   document.getElementById('contextsummary').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();contextExpand(true);}};
@@ -15182,7 +15183,7 @@ function initAccessibleUI(){
   const focusable=el=>[...el.querySelectorAll('button,input:not([type=hidden]),select,textarea,summary,a[href],[tabindex="0"]')].filter(e=>!e.disabled&&!e.closest('[hidden],[inert]')&&e.getClientRects().length);
   const syncDialog=()=>{const next=['savebox','endgame','mapview'].map(id=>document.getElementById(id)).find(e=>e&&e.style.display==='flex')||(contextUI.expanded&&!document.getElementById('contextpanel').hidden?document.getElementById('contextpanel'):null);
     if(next!==activeUIDialog){if(activeUIDialog){for(const[e,v]of inertBefore)e.inert=v;inertBefore.clear();if(activeUIDialog.id==='contextpanel'){activeUIDialog.setAttribute('role','region');activeUIDialog.removeAttribute('aria-modal');}}const old=activeUIDialog;activeUIDialog=next;
-      if(next){if(!old)returnFocus=document.activeElement;for(const e of document.body.children)if(e!==next&&!e.matches('script,style')){inertBefore.set(e,e.inert);e.inert=true;}next.setAttribute('role','dialog');next.setAttribute('aria-modal','true');}
+      if(next){if(!old)returnFocus=document.activeElement;for(const e of document.body.children)if(e!==next&&e.id!=='advchat'&&!e.matches('script,style')){inertBefore.set(e,e.inert);e.inert=true;}next.setAttribute('role','dialog');next.setAttribute('aria-modal','true');}
       else{const target=returnFocus&&returnFocus.isConnected&&returnFocus.getClientRects().length?returnFocus:document.getElementById(uiLayout()==='desktop'?'savebtn':'menubtn');target?.focus();returnFocus=null;}}
     if(next&&next.id==='contextpanel'){next.setAttribute('aria-labelledby','contexttitle');decorateControls(next);if(!next.contains(document.activeElement))document.getElementById('contextsize').focus();return;}
     if(next){const h=next.querySelector('h2');if(h){h.id=next.id+'-title';next.setAttribute('aria-labelledby',h.id);if(!h.parentElement.classList.contains('dialoghead')){const head=document.createElement('div');head.className='dialoghead';h.before(head);head.append(h);const close=document.createElement('button');close.type='button';close.className='pbb';close.textContent='Close';close.setAttribute('aria-label','Close dialog');close.onclick=()=>next.id==='mapview'?next.remove():next.style.display='none';head.append(close);}}decorateControls(next);if(!next.contains(document.activeElement))(focusable(next)[0]||next).focus();}
@@ -17056,14 +17057,18 @@ function workerRenderCampActors(center,range=1500){
 function workerNotice(error){backgroundApplying=true;try{setSpeed(0);}finally{backgroundApplying=false;}if(BACKGROUND&&!BACKGROUND.closed)BACKGROUND.request('pause').then(reply=>workerSpeedReply(reply)).catch(()=>{});console.error('Background simulation:',error);storageFaultNotice('The simulation is paused: '+String(error.message||error)+'. Save or reload the last committed game.');}
 function workerHTML(html){return String(html||'').replace(/worker-sigil:(\d+)/g,(_,hi)=>sigURL(+hi));}
 function workerQuery(key,payload,install){
-  const pending=BACKGROUND.reads||(BACKGROUND.reads=new Map());if(pending.has(key))return pending.get(key);
-  const query=BACKGROUND.request('view',payload).then(install).catch(error=>{console.error('Game query:',error);return null;}).finally(()=>pending.delete(key));pending.set(key,query);return query;
+  const pending=BACKGROUND.reads||(BACKGROUND.reads=new Map());if(pending.has(key)){ADV_PENDING?.push(pending.get(key));return pending.get(key);}
+  const query=BACKGROUND.request('view',payload).then(install).catch(error=>{console.error('Game query:',error);return null;}).finally(()=>pending.delete(key));pending.set(key,query);ADV_PENDING?.push(query);return query;
 }
-async function workerSubmitCommand(entry){
+// An advisor's press gathers what it sent (ADV_PENDING), so it can answer with the worker's own reply instead of a guess.
+let ADV_PENDING=null;
+function workerSubmitCommand(entry){const run=workerSubmitNow(entry);ADV_PENDING?.push(run);return run;}
+async function workerSubmitNow(entry){
   try{const reply=await BACKGROUND.request('command',entry);await workerRefreshLandscape();refreshCrownPanel(true);refreshInspect();renderPetition();return reply;}
   catch(error){storageFaultNotice(String(error.message||error));return{accepted:false,error:String(error.message||error)};}
 }
-async function workerSetSpeed(index){
+function workerSetSpeed(index){const run=workerSetSpeedNow(index);ADV_PENDING?.push(run);return run;}
+async function workerSetSpeedNow(index){
   index=Math.round(+index);if(index<0||index>=SPEEDS.length)return;
   try{workerSpeedReply(await BACKGROUND.request(index===0?'pause':'speed',{index}));await BACKGROUND.request('watch',{kind:'landscape',everyDays:index===5?30:1});await workerRefreshLandscape();}
   catch(error){workerNotice(error);}
@@ -17722,20 +17727,68 @@ const ADV={muted:false,
     if(!t)t=[...el.childNodes].filter(n=>n.nodeType===3||n.tagName==='B'||n.tagName==='SPAN'&&!n.classList.contains('tg')).map(n=>n.textContent).join(' ');
     if(!/\p{L}/u.test(t||''))t=(el.title?el.title.split(/[:(—]/)[0]:'')||(el.dataset.s!=null?'speed '+el.dataset.s:'')||el.id||t; // a button that is only a sign is named by what it says on hover
     return (t||el.dataset.o||el.dataset.s||el.dataset.t||'').replace(/\s+/g,' ').trim().slice(0,80);},
-  scopes(){const S=['hud'];for(const t of document.querySelectorAll('#dtabs .t'))S.push('drawer:'+t.dataset.t);
-    if(document.getElementById('insp').classList.contains('on')||getComputedStyle(document.getElementById('insp')).display!=='none')S.push('card');
-    const pb=document.getElementById('petition');if(pb&&pb.style.display==='block')S.push('petition');
-    const pl=document.getElementById('planbar');if(pl&&pl.offsetParent)S.push('plan');return S;},
-  root(scope){if(scope==='hud')return document.getElementById('hud');if(scope==='card')return document.getElementById('insp');if(scope==='petition')return document.getElementById('petition');if(scope==='plan')return document.getElementById('planbar');
-    if(scope.startsWith('drawer:')){const t=scope.slice(7);if(drawerTab!==t)selectTab(t);return document.getElementById('dbody');}return null;},
-  harvest(scope){const R=ADV.root(scope);if(!R)return[];const out=[],seen={};
-    for(const el of R.querySelectorAll('button,input,select,textarea')){if(el.type==='hidden'||el.closest('[hidden],[inert],[style*="display:none"]'))continue;
-      const label=ADV.labelOf(el);let name=scope+':'+ADV.slug(label||el.tagName);if(seen[name])name+='#'+(++seen[name]);else seen[name]=1;
-      const sm=el.querySelector&&el.querySelector('small'),d={name,label,scope,kind:el.tagName==='BUTTON'?'button':el.tagName==='SELECT'?'select':el.type==='range'?'slider':el.type==='checkbox'?'checkbox':'text',disabled:!!el.disabled};
-      if(el.title)d.help=el.title;if(sm&&sm.textContent.trim())d.why=sm.textContent.trim();if(el.querySelector&&el.querySelector('.tg'))d.place=true; // ⌖: then a place on the map
-      if(d.kind==='slider'){d.value=+el.value;d.min=+el.min;d.max=+el.max;d.step=+el.step||undefined;}else if(d.kind==='select'){d.value=el.value;d.options=[...el.options].map(o=>({value:o.value,label:o.textContent.trim().slice(0,60)}));}else if(d.kind==='checkbox')d.value=el.checked;else if(d.kind==='text')d.value=el.value;
-      d._el=el;out.push(d);}
+  // Where the player's controls live. A part of the screen is read wherever it is, open or shut: a closed drawer, a folded
+  // menu or the page behind a dialog hides its buttons from the eye, not from the advisor (a press reaches an inert or hidden
+  // button as surely as a shown one). The drawer's tabs are scopes of their own: crown, rates, acts, over, world.
+  TABS:['crown','rates','acts','over','world'],
+  scopeName(s){s=String(s||'');return s.startsWith('drawer:')?s.slice(7):s;},
+  modal(){return ['savebox','endgame','mapview'].map(id=>document.getElementById(id)).find(e=>e&&e.style.display==='flex')||null;},
+  scopes(){const $=id=>document.getElementById(id),S=['hud','menu',...ADV.TABS,'annals'];
+    if(inspTarget&&$('insp').style.display==='flex')S.push('card');
+    if($('petition')?.style.display==='block')S.push('petition');
+    if(planUI)S.push('plan');
+    if(contextUI.ready&&!$('contextpanel').hidden)S.push('context');
+    if(contextUI.kind==='info')S.push('info');
+    if(contextUI.kind==='event'||$('eventbubble')&&!$('eventbubble').hidden)S.push('event');
+    if($('terrlegend'))S.push('legend');
+    if(placeMode)S.push('place');
+    if(ADV.modal())S.push('dialog');
+    return S;},
+  roots(scope){const $=id=>document.getElementById(id);
+    if(scope==='hud')return [$('hud'),$('drawertoggle'),document.body.matches('.watch,.hideui')?$('uiback'):null,$('perfbox')?.style.display==='block'?$('perfbox'):null];
+    if(scope==='menu')return [$('toolmenu')];
+    if(ADV.TABS.includes(scope))return [$('dbody')];
+    const one={card:'insp',annals:'chron',petition:'petition',plan:'planbar',info:'infopanel',legend:'terrlegend',place:'placehint'}[scope];
+    if(one)return [$(one)];
+    if(scope==='event')return [$('eventpanel'),$('eventbubble')];
+    if(scope==='dialog')return [ADV.modal()];
+    if(scope==='context')return [];
+    return null;},
+  // Shown to the advisor: the scope's own folds above its root do not hide a control; a control hidden in its own right, or in a
+  // part of its scope that is not there just now, does, except a tab's panel (the card's orders, the court's other views).
+  shown(el,root){if(el.type==='hidden'||el.type==='password')return false; // a key is the player's to type, never the advisor's
+    for(let e=el;e&&e!==root;e=e.parentElement)if(e.hasAttribute('hidden')&&e.getAttribute('role')!=='tabpanel'||e.style?.display==='none')return false;
+    return true;},
+  // What a press means where no element says it: the card's two views (a press never expands the card), the panel's frame, the dialog.
+  synthetic(scope){const f=(key,label,act)=>({name:scope+':'+key,label,scope,kind:'button',disabled:false,_act:act});
+    if(scope==='context')return [f('close','Close the open card or panel',()=>contextDismiss()),contextUI.expanded?f('minimize','Minimize the panel to its compact card',()=>contextExpand(false)):f('expand','Expand the panel to its full sheet',()=>contextExpand(true))];
+    if(scope==='dialog')return [f('close','Close the dialog',()=>{const m=ADV.modal();if(m){if(m.id==='mapview')m.remove();else m.style.display='none';}})];
+    return [];},
+  VIEWS:{inspdetails:'details',insporders:'orders',contextdetails:'details',contextorders:'orders'},
+  SEL:'button,input,select,textarea,[data-cmd],[role=button]',
+  SKIP:'a,.centry,#contextsummary,[data-detail-building],[data-detail-settlement],[data-detail-jump]',
+  harvest(scope){const R=ADV.roots(scope);if(!R)return[];const out=[],seen={};
+    const add=d=>{if(seen[d.name])d.name+='#'+(++seen[d.name]);else seen[d.name]=1;out.push(d);};
+    for(const d of ADV.synthetic(scope))add(d);
+    for(const root of R){if(!root)continue;for(const el of root.querySelectorAll(ADV.SEL)){
+      if(el.matches(ADV.SKIP)||scope==='hud'&&el.closest('#toolmenu')||!ADV.shown(el,root))continue;
+      const d=ADV.describe(el,scope);if(scope==='dialog'&&/^dialog:close/.test(d.name))continue;add(d);}}
     return out;},
+  describe(el,scope){const label=ADV.labelOf(el),sm=el.querySelector&&el.querySelector('small'),tag=el.tagName,
+      d={name:scope+':'+ADV.slug(label||tag),label,scope,kind:tag==='SELECT'?'select':tag==='INPUT'?(el.type==='range'?'slider':el.type==='checkbox'?'checkbox':el.type==='number'?'number':'text'):tag==='TEXTAREA'?'text':'button',disabled:!!el.disabled};
+    if(el.title)d.help=el.title;if(sm&&sm.textContent.trim())d.why=sm.textContent.trim();if(el.querySelector&&el.querySelector('.tg'))d.place=true; // ⌖: then a place on the map
+    if(ADV.VIEWS[el.id])d.view=ADV.VIEWS[el.id];if(/^(btnshare|menushare|perfcopy)$/.test(el.id))d.risk='prompt';
+    if(d.kind==='slider'||d.kind==='number'){d.value=+el.value;d.min=+el.min;d.max=+el.max;d.step=+el.step||undefined;}else if(d.kind==='select'){d.value=el.value;d.options=[...el.options].map(o=>({value:o.value,label:o.textContent.trim().slice(0,60)}));}else if(d.kind==='checkbox')d.value=el.checked;else if(d.kind==='text')d.value=el.value;
+    d._el=el;return d;},
+  // Read or press a drawer tab's controls without disturbing the tab the player has open: the player's own panel is set aside whole
+  // (its nodes keep their listeners) and put back after, so nothing is rebuilt and nothing flickers; the court is awaited from the worker.
+  async withTab(t,fn){const body=document.getElementById('dbody'),was=drawerTab,wait=()=>BACKGROUND&&(t==='crown'?workerRefreshCourt(true):t==='world'?workerRefreshHousePanel(true):null);
+    if(was===t){if(BACKGROUND&&t==='crown'&&!body.children.length)await wait();return fn();}
+    const keep=[...body.childNodes],h=body._h;selectTab(t);
+    try{await wait();return await fn();}
+    finally{if(drawerTab===t){document.querySelectorAll('#dtabs .t').forEach(x=>{const on=x.dataset.t===was;x.classList.toggle('on',on);x.setAttribute('aria-selected',String(on));x.tabIndex=on?0:-1;});
+      body.setAttribute('aria-labelledby','tab-'+was);drawerTab=was;body.replaceChildren(...keep);body._h=h;contextSync();if(was==='crown')refreshCrownPanel();}}},
+  async controls(scope){return ADV.TABS.includes(scope)?ADV.withTab(scope,()=>ADV.harvest(scope)):ADV.harvest(scope);},
   verbs:[
     {name:'game:state',kind:'verb',label:'Read the state of the realm, or a part of it',args:{path:'optional: "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>", "rates"'}},
     {name:'game:find',kind:'verb',label:'Find places, houses and notable people by name',args:{name:'text'}},
@@ -17744,13 +17797,6 @@ const ADV={muted:false,
     {name:'game:persona',kind:'verb',label:'Who the advisor is in this game: the ruler’s closest confidant when the player rules, else the game master'},
     {name:'game:place',kind:'verb',label:'Finish a tool that asked for a place on the map (marked place:true)',args:{at:'a place name, or {x,z}'}},
     {name:'game:advise',kind:'verb',label:'Whether the player wants counsel unasked (the player can silence the advisor in the Advisor dialog)'}],
-  discover(scope){const S=scope?[scope]:ADV.scopes(),was=drawerTab,out={scopes:ADV.scopes(),tools:[]};
-    try{for(const sc of S)for(const d of ADV.harvest(sc)){const{_el,...x}=d;out.tools.push(x);}}finally{if(drawerTab!==was)selectTab(was);}
-    if(!scope)out.tools.push(...ADV.verbs);out.muted=ADV.muted;return out;},
-  search(q){const Q=String(q||'').toLowerCase().split(/\s+/).filter(Boolean),hit=t=>Q.every(w=>t.toLowerCase().includes(w)),out=[];
-    const all=ADV.discover();for(const t of all.tools)if(hit([t.name,t.label,t.help||'',t.why||''].join(' ')))out.push({tool:t.name,label:t.label,disabled:t.disabled||undefined});
-    for(const e of ADV.entities())if(hit(e.name))out.push({thing:e.name,kind:e.kind,code:e.code});
-    return out.slice(0,60);},
   entities(){const E=[];W.settlements.forEach((s,i)=>E.push({name:s.name,kind:s.kind,code:'s'+i}));W.houses.forEach((h,i)=>{if(!h.extinct)E.push({name:h.name,kind:'house',code:'h'+i});});
     for(const n of W.notables||[])if(n.alive)E.push({name:fullTitle(n),kind:'person',code:'n'+n.id});
     for(const a of W.armies)if(!a.gone)E.push({name:a.name,kind:'host',code:'a'+a.id});return E;},
@@ -17784,67 +17830,71 @@ const ADV={muted:false,
     const c=sp&&sp.alive&&ageOf(sp)>=18?sp:kin[0];if(!c)return{role:'steward',name:'your steward',speak:'As the ruler’s steward: loyal, plain-spoken, careful of the purse.'};
     return{role:c===sp?'spouse and closest confidant':'closest confidant',name:fullTitle(c),of:head&&fullTitle(head),house:h.name,traits:c.traits,age:ageOf(c),
       speak:`Speak as ${fullTitle(c)}, ${c===sp?'the ruler’s spouse':'kin and counsellor'} of ${h.name}: in character, in the first person, with the realm’s own names; counsel the ruler, never command.`};},
-  execute(name,args){args=args||{};
-    if(name.startsWith('game:')){const v=name.slice(5);
-      if(v==='state')return ADV.state(args.path);
-      if(v==='find')return ADV.entities().filter(e=>e.name.toLowerCase().includes(String(args.name||'').toLowerCase())).slice(0,30);
-      if(v==='inspect'){const e=ADV.byName(args.name);if(!e)return{error:'nothing by that name'};goName(e.code);const B=document.getElementById('inspbody'),lk=[];for(const x of B.querySelectorAll('a.nm,a.pp'))if(lk.length<60&&x.textContent.trim()!=='Open the card')lk.push({name:x.textContent.trim(),code:x.dataset.nm||'p'+x.dataset.pid});
-        return{code:e.code,card:(document.getElementById('insptitle').textContent+' — '+document.getElementById('inspsub').textContent+'\n'+B.innerText).slice(0,4000),links:lk,tools:ADV.discover('card').tools};}
-      if(v==='chronicle')return allLines.slice(-(+args.n||20));
-      if(v==='persona')return ADV.persona();
-      if(v==='advise')return{muted:ADV.muted};
-      if(v==='place'){if(!placeMode)return{error:'nothing is waiting for a place'};let p=args.at;if(typeof p==='string'){const e=ADV.byName(p);if(!e||e.code[0]!=='s')return{error:'no such place: '+p};const s=W.settlements[+e.code.slice(1)];p={x:s.pos.x,z:s.pos.z};}
-        const mode=placeMode,arg=placeArg;setPlaceMode(null);jot({k:'place',m:mode,x:+(+p.x).toFixed(2),z:+(+p.z).toFixed(2),pk:null});doPlace(mode,arg,{x:+p.x,y:0,z:+p.z},null);return{ok:true,done:mode,news:allLines.slice(-3)};}
-      return{error:'unknown verb'};}
-    const sc=name.slice(0,name.lastIndexOf(':')),was=drawerTab;
-    try{const t=ADV.harvest(sc).find(d=>d.name===name);if(!t)return{error:'no such tool here now; discover() again',scopes:ADV.scopes()};
-      if(t.disabled)return{error:'not now',why:t.why||t.help||'disabled'};const el=t._el,n0=allLines.length;
-      if(t.kind==='button')el.click();
-      else if(t.kind==='checkbox'){el.checked=!!args.value;el.dispatchEvent(new Event('change',{bubbles:true}));el.dispatchEvent(new Event('input',{bubbles:true}));}
-      else{if(args.value===undefined)return{error:'give a value',tool:(({_el,...x})=>x)(t)};el.value=args.value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
-      const r={ok:true,news:allLines.slice(n0).slice(-5)};if(placeMode)r.needsPlace='call game:place with {at: a place name or {x,z}}: '+(document.getElementById('placehint').textContent||'');return r;}
-    finally{if(sc.startsWith('drawer:')&&drawerTab!==was&&!name.startsWith('drawer:'+drawerTab))selectTab(was);}},
-  call(op,args){
-    if(BACKGROUND)return ADV.workerCall(op,args||{});
-    try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):op==='rules'?(document.getElementById('advrules')||{}).textContent||'':{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}
-  },
-  async workerCall(op,args){
-    try{
-      if(!W)return{error:'the realm is still being made'};
-      const view=(panel,payload={})=>BACKGROUND.request('view',{kind:'ui',panel,...payload});
-      let result;
-      if(op==='search'){
-        const q=String(args.q||'').toLowerCase(),Q=q.split(/\s+/).filter(Boolean),hit=t=>Q.every(w=>t.toLowerCase().includes(w));
-        const local=ADV.discover().tools.filter(t=>hit([t.name,t.label,t.help||'',t.why||''].join(' '))).map(t=>({tool:t.name,label:t.label,disabled:t.disabled||undefined}));
-        const entities=await view('advisor-find',{name:q});
-        result=[...local,...entities.filter(e=>!q||e.name.toLowerCase().includes(q)).map(e=>({thing:e.name,kind:e.kind,code:e.code}))].slice(0,60);
-      }else if(op==='discover')result=ADV.discover(args.scope);
+  // A press, as the player would make it, and what came of it. Prompts and confirmations a press raises are answered "no" and
+  // reported, never left blocking the page; commands it sends to the worker are awaited and their replies returned.
+  async press(t,args){const el=t._el,P=[],n0=allLines.length,asked=[],saved={prompt:window.prompt,confirm:window.confirm,alert:window.alert};
+    if(t.kind==='select'&&args.value!==undefined&&!t.options.some(o=>o.value===String(args.value)))return{error:'no such choice',options:t.options};
+    if((t.kind==='slider'||t.kind==='number')&&args.value!==undefined&&!(Number.isFinite(+args.value)&&+args.value>=t.min&&+args.value<=t.max))return{error:`give a number from ${t.min} to ${t.max}`};
+    if(!['button','checkbox'].includes(t.kind)&&args.value===undefined)return{error:'give a value',tool:(({_el,_act,...x})=>x)(t)};
+    window.prompt=m=>{asked.push(String(m||''));return null;};window.confirm=m=>{asked.push(String(m||''));return false;};window.alert=m=>{asked.push(String(m||''));};ADV_PENDING=P;
+    try{if(t._act)t._act();
+      else if(t.view)setInspectorView(t.view); // the card's own two views: never a reason to expand it
+      else if(t.kind==='button')el.click();
+      else if(t.kind==='checkbox'){if(el.checked!==!!args.value)el.click();}
+      else{el.value=String(args.value);el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}}
+    finally{ADV_PENDING=null;}
+    try{const replies=(await Promise.all(P.map(p=>Promise.resolve(p).catch(e=>({accepted:false,error:String(e&&e.message||e)}))))).filter(r=>r&&typeof r==='object');
+      if(t.risk==='prompt')await new Promise(r=>setTimeout(r,400)); // a copy that fails falls back to a prompt a moment later
+      const bad=replies.find(r=>r.accepted===false),r={ok:!bad,did:t.name};if(bad)r.error=bad.error||'the game refused it';
+      const news=BACKGROUND?replies.flatMap(x=>x.news||[]):allLines.slice(n0);if(news.length)r.news=news.slice(-12);
+      if(replies.length)r.worker=replies.map(({news,...x})=>x);if(asked.length)r.asked=asked;
+      if(placeMode)r.needsPlace='call game:place with {at: a place name or {x,z}}: '+(document.getElementById('placetext')?.textContent||'');
+      return r;}
+    finally{Object.assign(window,saved);}},
+  async execute(name,args){args=args||{};name=ADV.scopeName(String(name||''));
+    if(name.startsWith('game:'))return ADV.verb(name.slice(5),args);
+    const sc=name.split(':')[0];if(!ADV.roots(sc))return{error:'no such part of the screen: '+sc,scopes:ADV.scopes()};
+    if(!ADV.scopes().includes(sc))return{error:'that part of the screen is not open now',scopes:ADV.scopes()};
+    const run=async()=>{const t=ADV.harvest(sc).find(d=>d.name===name);if(!t)return{error:'no such control here now; discover() again',scopes:ADV.scopes()};
+      if(t.disabled)return{error:'not now',why:t.why||t.help||'disabled'};return ADV.press(t,args);};
+    return ADV.TABS.includes(sc)?ADV.withTab(sc,run):run();},
+  // Reads go to the worker that owns the world, or, in the foreground reference driver, to the same readers here (each read with
+  // its own throwaway valuation memo, as the worker does), so both drivers answer alike.
+  view(panel,payload={}){return BACKGROUND?BACKGROUND.request('view',{kind:'ui',panel,...payload}):Promise.resolve().then(()=>simulationWorkerModel().view('ui',{...payload,panel}));},
+  async verb(v,a){
+    if(v==='state')return ADV.view('advisor-state',{path:a.path});
+    if(v==='find')return ADV.view('advisor-find',{name:a.name});
+    if(v==='persona')return ADV.view('advisor-persona');
+    if(v==='chronicle')return ADV.view('annals',{count:a.n});
+    if(v==='advise')return{muted:ADV.muted};
+    if(v==='inspect'){const r=await ADV.view('advisor-inspect',{name:a.name});if(r&&!r.error){await goName(r.code);r.tools=(await ADV.discover('card')).tools;}return r;}
+    if(v==='place'){
+      if(!placeMode)return{error:'nothing is waiting for a place'};
+      let at=a.at;
+      if(typeof at==='string'){const matches=await ADV.view('advisor-find',{name:at}),q=at.toLowerCase(),e=matches.find(x=>x.name.toLowerCase()===q)||matches.find(x=>x.name.toLowerCase().includes(q));
+        if(!e||e.code[0]!=='s')return{error:'no such place: '+at};const s=W.settlements[+e.code.slice(1)];if(!s)return{error:'that place has no current map position'};at={x:s.pos.x,z:s.pos.z};}
+      if(!at||!Number.isFinite(+at.x)||!Number.isFinite(+at.z))return{error:'give a place name or finite {x,z} coordinates'};
+      const mode=placeMode,arg=placeArg,p={x:+at.x,y:0,z:+at.z},P=[],n0=allLines.length;setPlaceMode(null); // as a click on the map: the mode is spent
+      ADV_PENDING=P;try{if(mode!=='storage')jot({k:'place',m:mode,a:serializePlaceArg(mode,arg),x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:null});doPlace(mode,arg,p,null);}finally{ADV_PENDING=null;}
+      const replies=(await Promise.all(P)).filter(r=>r&&typeof r==='object'),bad=replies.find(r=>r.accepted===false);
+      return bad?{error:bad.error||'the place could not be made'}:{ok:true,done:mode,news:BACKGROUND?replies.flatMap(x=>x.news||[]):allLines.slice(n0)};}
+    return{error:'unknown verb'};},
+  async discover(scope){const S=scope?[ADV.scopeName(scope)]:ADV.scopes(),out={scopes:ADV.scopes(),tools:[]};
+    for(const sc of S)for(const d of await ADV.controls(sc)){const{_el,_act,...x}=d;out.tools.push(x);}
+    if(!scope)out.tools.push(...ADV.verbs);out.muted=ADV.muted;return out;},
+  async search(q){const Q=String(q||'').toLowerCase().split(/\s+/).filter(Boolean),hit=t=>Q.every(w=>t.toLowerCase().includes(w));
+    const local=(await ADV.discover()).tools.filter(t=>hit([t.name,t.label,t.help||'',t.why||''].join(' '))).map(t=>({tool:t.name,label:t.label,disabled:t.disabled||undefined}));
+    const things=(await ADV.view('advisor-find',{name:Q.join(' ')})).map(e=>({thing:e.name,kind:e.kind,code:e.code}));
+    return[...local,...things].slice(0,60);},
+  async call(op,args){args=args||{};
+    try{if(!W)return{error:'the realm is still being made'};let result;
+      if(op==='search')result=await ADV.search(args.q);
+      else if(op==='discover')result=await ADV.discover(args.scope);
+      else if(op==='execute')result=await ADV.execute(args.tool,args.args);
       else if(op==='rules')result=(document.getElementById('advrules')||{}).textContent||'';
-      else if(op==='execute'){
-        const name=args.tool,a=args.args||{};
-        if(name==='game:state')result=await view('advisor-state',{path:a.path});
-        else if(name==='game:find')result=await view('advisor-find',{name:a.name});
-        else if(name==='game:persona')result=await view('advisor-persona');
-        else if(name==='game:chronicle')result=await view('annals',{count:a.n});
-        else if(name==='game:inspect'){
-          result=await view('advisor-inspect',{name:a.name});
-          if(result&&!result.error){await workerGoName(result.code);result.tools=ADV.discover('card').tools;}
-        }else if(name==='game:place'){
-          if(!placeMode)return{error:'nothing is waiting for a place'};
-          let at=a.at;
-          if(typeof at==='string'){
-            const matches=await view('advisor-find',{name:at}),q=at.toLowerCase(),e=matches.find(x=>x.name.toLowerCase()===q)||matches.find(x=>x.name.toLowerCase().includes(q));
-            if(!e||e.code[0]!=='s')return{error:'no such place: '+at};
-            const s=W.settlements[+e.code.slice(1)];if(!s)return{error:'that place has no current map position'};at={x:s.pos.x,z:s.pos.z};
-          }
-          if(!at||!Number.isFinite(+at.x)||!Number.isFinite(+at.z))return{error:'give a place name or finite {x,z} coordinates'};
-          const mode=placeMode,arg=serializePlaceArg(mode,placeArg),reply=await workerSubmitCommand({k:'place',m:mode,a:arg,x:+at.x,z:+at.z,pk:null});
-          result=reply?.accepted===false?{error:reply.error||'the place could not be made'}:{ok:true,done:mode,news:reply?.news||[]};
-        }else result=ADV.execute(name,a);
-      }else return{error:'unknown op'};
-      return{result};
-    }catch(e){return{error:String(e&&e.message||e)}}
-  },
+      else return{error:'unknown op'};
+      return{result};}
+    catch(e){return{error:String(e&&e.message||e)};}},
   ws:null,
   connect(code){code=String(code||'').trim().toUpperCase();const m=code.match(/^[A-Z]{5}(\d)$/);if(!m){ADV.status('A pairing code is five letters and a digit, as your agent gave it.');return;}
     if(ADV.ws)try{ADV.ws.onclose=null;ADV.ws.close();}catch(_){}ADV.status('Connecting…');const ws=new WebSocket(`ws://127.0.0.1:${7357+ +m[1]}/?code=${code}`);ADV.ws=ws;let opened=false; // the code's last digit is the bridge's port: one try, straight to it
@@ -17967,7 +18017,7 @@ state:'none',ready:null,
       {name:'state',description:'Read the realm: path "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>" or "rates". Returns JSON.',inputSchema:{type:'object',properties:{path:{type:'string'}}},execute:i=>run('execute',{tool:'game:state',args:{path:String(i.path||'realm')}})},
       {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
       {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
-      {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "drawer:crown", "drawer:rates", "drawer:acts", "drawer:over", "drawer:world", "card", "petition", "plan"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
+      {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "menu", "crown", "rates", "acts", "over", "world", "annals", and while open "card", "petition", "plan", "context", "info", "event", "legend", "place", "dialog"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
       {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   async brief(){let P,st,ch;if(BACKGROUND){[P,st,ch]=await Promise.all([BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}),BACKGROUND.request('view',{kind:'ui',panel:'advisor-state',path:'realm'}),BACKGROUND.request('view',{kind:'ui',panel:'annals',count:6})]);ch=ch.join('\n');}else{P=ADV.persona();st=ADV.state('realm');ch=allLines.slice(-6).join('\n');}
     return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
