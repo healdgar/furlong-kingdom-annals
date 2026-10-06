@@ -12,18 +12,23 @@ voice of a medieval annalist, and a cinematic **auto-director** flies the
 camera to the story as it unfolds.
 
 **The whole app is one file: [`index.html`](index.html).**
-Vanilla JS + Three.js r128 from CDN. No build step, no framework, no backend,
-no assets — everything is procedural (terrain, buildings, heraldry, names).
+Vanilla JS + Three.js r128 from CDN. No build step, no framework, no backend;
+the terrain, buildings, heraldry and names are procedural, and three small
+textures live in `assets/`.
 
 ## Run it
 
-Open `index.html` in a browser, or drop it on any static host (Netlify, GitHub
-Pages). That's it. In a small container:
+Open `index.html` in a browser with `assets/` beside it, or put both on any
+static host. Every push to `main` deploys
+[GitHub Pages](https://healdgar.github.io/furlong-kingdom-annals/) and publishes
+a container image:
 
 ```sh
-docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
+docker run --rm -p 8080:80 ghcr.io/healdgar/furlong-kingdom-annals
 # then open http://localhost:8080  (the browser fetches three.js from cdnjs)
 ```
+
+From a checkout: `docker build -t furlong . && docker run --rm -p 8080:80 furlong`.
 
 - **Map size**: 9 km of ground by default, standing for a realm about 360 km
   across. `&km=4` to `&km=15` in the link sets another size (`&km=6` is the
