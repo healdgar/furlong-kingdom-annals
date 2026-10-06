@@ -22,6 +22,8 @@ Status: **open**, **investigating**, **in progress**, **queued** (waiting on ano
 | 27 | Inspecting things may change the simulation | open | The worker play check sometimes fails with "Inspection target is no longer recorded": with inspections, person p1 drops out near day 114; a replay of the same commands keeps p1 to day 132. Same on the previous build. |
 | 29 | Quays and mills sited on river banks no street can reach | in progress | Stop siting them there (decided 2026-10-06; changes generated worlds). Reuse the reachability flood (`armyReach`) added for loading. |
 | 30 | Mill wheels are the wrong size and don't reliably touch the water | in progress (with #29) | Possibly from the renderer's river-level changes that improved river looks; the axle also sits 0.25 m into the mill wall (fixed 9 m footprint, 6.8 m offset). |
+| 31 | The advisor's conversation lasts only for the browser session | queued (after #5) | It survives closing and reopening the panel, but not a refresh or a saved game. Keep it with the tab's session game (#5) and consider saving it with the game, as data outside the replayed command journal so it can never change the simulation. |
+| 32 | Advisor context and tools may have gaps since the worker move | investigating | Intended: an every-button API (`discover`/`execute` reach every control) and an all-data view (everything the UI can show is readable). Knowledge partition (what the advisor may know) is not implemented yet. |
 | 28 | Some back-garden lots reach far from their house | open | 126 of the worker's own lots extend over 60 m from the house: real simulation geometry, not the display. |
 
 ## Performance
