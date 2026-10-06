@@ -9758,6 +9758,40 @@ function workerInspectorQuery(code,full=false){
   return{...card,sub:linkNames(card.sub,scope),body:linkNames(card.body,scope),actions:linkNames(card.actions,scope),targetType:target.type,
     anchor:p&&Number.isFinite(p.x)&&Number.isFinite(p.z)?{x:p.x,z:p.z}:null};
 }
+/* The advisor's reads of the panels: a panel's words as an agent reads them (rows on their own lines, cells apart, no markup)
+   and the things it names with their codes. Each is the panel the player would open, rendered in the worker and never kept. */
+function advisorText(html){
+  return String(html||'').replace(/<(script|style)\b[\s\S]*?<\/\1>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|li|tr|h\d|section|summary|details|header|nav|table|ul|ol|label|button|dt|dd)\s*>/gi,'\n')
+    .replace(/<\/t[dh]\s*>/gi,' | ').replace(/<(p|div|li|tr|h\d|section|summary|details|table|ul|ol)\b[^>]*>/gi,'\n').replace(/<[^>]*>/g,' ')
+    .replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/&amp;/g,'&')
+    .split('\n').map(l=>l.replace(/[ \t]+/g,' ').replace(/^ ?\| ?| ?\| ?$/g,'').trim()).filter(Boolean).join('\n');}
+function advisorLinks(html,max=60){const out=[],seen=new Set(),rx=/<a\b([^>]*)>([\s\S]*?)<\/a>/gi;let m;
+  while((m=rx.exec(String(html||'')))&&out.length<max){const at=m[1],code=(at.match(/\bdata-nm="([^"]*)"/)||[])[1]||((at.match(/\bdata-pid="([^"]*)"/)||[])[1]?'p'+at.match(/\bdata-pid="([^"]*)"/)[1]:null)||((at.match(/\bdata-tree="([^"]*)"/)||[])[1]?'tree:'+at.match(/\bdata-tree="([^"]*)"/)[1]:null);
+    const name=advisorText(m[2]);if(code&&name&&name!=='Open the card'&&!seen.has(code+name)){seen.add(code+name);out.push({name,code});}}
+  return out;}
+function advisorTownIndex(t){if(Number.isInteger(t)&&t>=0&&t<W.settlements.length)return t;if(typeof t!=='string'||!t)return null;if(/^s\d+$/.test(t))return +t.slice(1)<W.settlements.length?+t.slice(1):null;const e=ADV.byName(t);return e&&e.code[0]==='s'?+e.code.slice(1):null;}
+function advisorPanel(p){
+  const kind=String(p.kind||''),T=(html,extra)=>({kind,...extra,text:advisorText(html),links:advisorLinks(html,200)});
+  if(kind==='crown')return T(workerUIQuery({kind:'crown',expanded:true,ledgerOpen:true}).html,{note:'all four court views: overview, governance, orders, houses'});
+  if(kind==='accounts'){const si=p.town!=null?advisorTownIndex(p.town):null;if(p.town!=null&&si==null)return{error:'no such town: '+p.town};return T(workerUIQuery({kind:'info',infoKind:'accounts',town:si}).html,si!=null?{town:W.settlements[si].name}:{});}
+  if(kind==='timeline'||kind==='about')return T(workerUIQuery({kind:'info',infoKind:kind}).html);
+  if(kind==='petitions'){const P=W.petitions||[];return{kind,petitions:ADV.petitions(),sheet:P[0]?advisorText(petitionHTML(P[0],P.length-1,true)):'',note:P.length?undefined:'no petition waits on you'+(sovOn()?'':' (petitions come only to a ruler)')};}
+  if(kind==='houses'){const v=workerUIQuery({kind:'house-panel'});return{kind,houses:advisorText(v.houses),succession:advisorText(v.succession),links:advisorLinks(v.houses+v.succession,200)};}
+  if(kind==='house'){const e=/^h\d+$/.test(String(p.house||''))?{code:p.house}:ADV.byName(p.house);const hi=e&&e.code[0]==='h'?+e.code.slice(1):-1;if(!(hi>=0&&W.houses[hi]))return{error:'no such house: '+p.house};return T(linkNames(houseDetailHTML(hi,true)),{house:W.houses[hi].name});}
+  if(kind==='storage'){const si=advisorTownIndex(p.town);if(si==null)return{error:'give town: a name or code'};const s=W.settlements[si];return T(linkNames(storageWorksHTML(s),s),{town:s.name,report:s.storageReport?ADV.safe(s.storageReport,2):undefined});}
+  if(kind==='plan')return{kind,projects:ADV.state('projects'),brushes:Object.keys(PLANB),note:'a plan is quoted and commissioned with game:plan {kind, points, commit}'};
+  if(kind==='victory')return T(victoryHTML());
+  return{error:'kinds: crown, accounts (town optional), timeline, about, petitions, houses, house (house), storage (town), plan, victory'};
+}
+// The annals with their categories and days, newest last: by category (crown, war, trade, fates, house), a day range, words.
+const ANNAL_META=[];
+function advisorAnnals(p){
+  const n=Math.max(1,Math.min(400,Math.round(+p.n)||20)),cat=typeof p.cat==='string'&&p.cat&&p.cat!=='all'?p.cat:null,q=typeof p.q==='string'&&p.q?p.q.toLowerCase():null,
+    num=v=>v!=null&&v!==''&&Number.isFinite(+v),from=num(p.fromAD)?(+p.fromAD-W.startAD)*360:num(p.from)?+p.from:-Infinity,to=num(p.toAD)?(+p.toAD-W.startAD+1)*360-1:num(p.to)?+p.to:Infinity,out=[];
+  for(let i=allLines.length-1;i>=0&&out.length<n;i--){const m=ANNAL_META[i],t=allLines[i];if(!m)continue;if(m.d<from)break;
+    if(m.d>to||cat&&m.c!==cat||q&&!t.toLowerCase().includes(q))continue;out.push({day:m.d,date:dateStr(m.d),cat:m.c,text:m.r?t.replace(/^\s*=+\s*|\s*=+\s*$/g,''):t.replace(/^\[[^\]]*\]\s*/,'')});}
+  return out.reverse();
+}
 function workerUIQuery(payload={}){
   const kind=payload.kind==='ui'?payload.panel:payload.kind;
   if(kind==='reference-html'){
@@ -9789,12 +9823,20 @@ function workerUIQuery(payload={}){
   }
   if(kind==='advisor-persona')return ADV.persona();
   if(kind==='annals')return allLines.slice(-Math.max(1,Math.min(200,+payload.count||20)));
-  if(kind==='advisor-inspect'){
-    const e=ADV.byName(payload.name);if(!e)return{error:'nothing by that name'};
-    const card=workerInspectorQuery(e.code,false),plain=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p\s*>/gi,'\n').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim();
-    const links=[],rx=/<a\b([^>]*)>([\s\S]*?)<\/a>/gi;let m;while((m=rx.exec(card.body))&&links.length<60){const code=(m[1].match(/\bdata-nm="([^"]*)"/)||[])[1]||(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1]&&'p'+(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1];if(code){const name=plain(m[2]);if(name&&name!=='Open the card')links.push({name,code});}}
-    return{code:e.code,at:card.anchor&&{x:Math.round(card.anchor.x),z:Math.round(card.anchor.z)},card:(plain(card.title)+' — '+plain(card.sub)+'\n'+plain(card.body)).slice(0,4000),links,tools:[]};
+  if(kind==='advisor-inspect'){ // a card by name or by any code the inspector knows; the full card on request, whole
+    let code=typeof payload.code==='string'&&payload.code?payload.code:null;
+    if(!code){const e=ADV.byName(payload.name);if(!e||!String(payload.name||'').trim())return{error:'nothing by that name: give a name as game:find gives it, or a code'};code=e.code;}
+    const full=!!payload.full,cap=t=>full?t.slice(0,200000):t.slice(0,4000);
+    if(/^(household|family|surname|choose|good|trade|structure):/.test(code)){ // records without a place of their own read as the reference sheet the page opens for them
+      const si=+code.split(':')[1],view=workerUIQuery({kind:'info',infoKind:'reference',reference:code,town:Number.isInteger(si)&&si>=0&&si<W.settlements.length?si:null});
+      return{code,card:cap(advisorText(view.html)),links:advisorLinks(view.html,full?400:60),tools:[]};}
+    let card;try{card=workerInspectorQuery(code,full);}catch(e){return{error:String(e.message||e)+': '+code};}
+    const html=card.body+(card.actions||'');
+    return{code,kind:card.targetType,at:card.anchor&&{x:Math.round(card.anchor.x),z:Math.round(card.anchor.z)},card:cap(advisorText(card.title)+' — '+advisorText(card.sub)+'\n'+advisorText(card.body)),orders:card.actions?cap(advisorText(card.actions)):undefined,links:advisorLinks(html,full?400:60),tools:[]};
   }
+  if(kind==='advisor-panel')return advisorPanel(payload);
+  if(kind==='advisor-annals')return advisorAnnals(payload);
+  if(kind==='advisor-codes')return(Array.isArray(payload.names)?payload.names.slice(0,80):[]).map(n=>typeof n==='string'&&n.length<200?ADVCHAT.code(n):null); // the chat's [[Name]] links, resolved where the people are
   throw Error('This view has not migrated to the worker');
 }
 function showInspect(pk){
@@ -13866,7 +13908,7 @@ function emit(cat,pri,pos,text,opts){
   HISTORY.event('annal',{cat,pri,pos:ev.pos,text});
   if(W&&W.houses)for(const h of W.houses)if(text&&text.includes(h.name))h._news={d:day(),t:text}; // what was last said of each house: the reason a sudden change of heart is remembered by
   if(W.prehistory)return ev; // the centuries before play begins leave their marks on the land and in each town's history, not in the annals
-  allLines.push('['+dateStr(ev.day)+'] '+ev.text);entryCount++;
+  allLines.push('['+dateStr(ev.day)+'] '+ev.text);if(typeof ANNAL_META!=='undefined')ANNAL_META[allLines.length-1]={d:ev.day,c:cat};entryCount++;
   projectEvent(ev);
   return ev;
 }
@@ -14042,7 +14084,7 @@ function reignHeader(n){
   const num=W.reignNum[n.name]||1;
   const ORD=['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth'];
   const t=`Here begin the years of ${n.sex==='f'?'Queen':'King'} ${n.name}${num>1?', '+(ORD[num-1]||num+'th')+' of that name':''}.`;
-  allLines.push('\n=== '+t+' ===\n');
+  allLines.push('\n=== '+t+' ===\n');if(typeof ANNAL_META!=='undefined')ANNAL_META[allLines.length-1]={d:day(),c:'crown',r:1};
   if(MODEL_ONLY){WORKER_PRESENTATION.events.push({day:day(),cat:'crown',pri:0,text:t,reign:true});return;}
   presentReign(t);
 }
@@ -17825,10 +17867,11 @@ const ADV={muted:false,
       body.setAttribute('aria-labelledby','tab-'+was);drawerTab=was;body.replaceChildren(...keep);body._h=h;contextSync();if(was==='crown')refreshCrownPanel();}}},
   async controls(scope){return ADV.TABS.includes(scope)?ADV.withTab(scope,()=>ADV.harvest(scope)):ADV.harvest(scope);},
   verbs:[
-    {name:'game:state',kind:'verb',label:'Read the state of the realm, or a part of it',args:{path:'optional: "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>", "rates"'}},
-    {name:'game:find',kind:'verb',label:'Find places, houses and notable people by name',args:{name:'text'}},
-    {name:'game:inspect',kind:'verb',label:"Fly to a place, house or person and open its card (then discover('card') lists the card's own buttons)",args:{name:'a name as game:find returns it'}},
-    {name:'game:chronicle',kind:'verb',label:'The latest entries of the annals',args:{n:'how many (default 20)'}},
+    {name:'game:state',kind:'verb',label:'Read the state of the realm, or a part of it',args:{path:'optional: "realm" (date, season, weather, drought, comet, dragon, war…), "settlements", "settlement:<name>" (works, garrison and militia, port, herds, stores, prices in gold), "houses", "house:<name>" (dues, pacts, hostages, feuds), "monarch", "player", "armies" (morale, supply, commander, objective, point), "petitions", "projects", "wars", "victory", "prices:<place>", "rates"'}},
+    {name:'game:find',kind:'verb',label:'Find places, houses, notable people and hosts by name, with their codes and points {x,z}',args:{name:'text'}},
+    {name:'game:inspect',kind:'verb',label:"Read a card and open it on the map (then discover('card') lists the card's own buttons)",args:{name:'a name as game:find returns it',code:'or any code a card or the annals link to: s3, h2, n41, a7, p1203, building:…, field:…, road:…, river:…, wall:…, caravan:…, ship:…, envoy:…, camp:…, family:…, household:…, good:…',full:'true for the whole card (accounts, stores and prices, buildings, households, muster)',open:'false to read without moving the player’s view'}},
+    {name:'game:panel',kind:'verb',label:'Read a panel the player can open: the court, the accounts, the timeline, the petitions, the houses and succession, a house’s ledger, a town’s storage, the works in hand, the campaign',args:{kind:'crown, accounts, timeline, about, petitions, houses, house, storage, plan or victory',town:'for accounts or storage: a town',house:'for house: a house'}},
+    {name:'game:chronicle',kind:'verb',label:'The annals, newest last, each with its day and category',args:{n:'how many (default 20, at most 400)',cat:'crown, war, trade, fates or house',from:'first day (or fromAD: a year)',to:'last day (or toAD)',q:'words to look for'}},
     {name:'game:persona',kind:'verb',label:'Who the advisor is in this game: the ruler’s closest confidant when the player rules, else the game master'},
     {name:'game:place',kind:'verb',label:'Finish a tool that asked for a place on the map (marked place:true), as a click would; {cancel:true} gives it up',args:{at:'a place name, or {x,z} (game:find and game:inspect give points)',target:'optional code of what is clicked: a host a12 to march on, a town s3, a building building:si:x:z:arch, a wall wall:si:key',cancel:'true to cancel'}},
     {name:'game:plan',kind:'verb',label:'Plan works with the brush (when you rule): the surveyors’ price for a stroke, and with commit:true the commission',args:{kind:'street, square, wall, stopup or raze',points:'[{x,z},…]: a line, or a loop for a square or wall',commit:'true to commission it'}},
@@ -17842,22 +17885,47 @@ const ADV={muted:false,
     if(depth<=0)return Array.isArray(v)?`[${v.length}]`:v.name||v.id||'{…}';
     if(v instanceof Map)return ADV.safe(Object.fromEntries([...v].slice(0,40).map(([k,x])=>[typeof k==='object'?(k.name||k.id):k,x])),depth);
     if(Array.isArray(v))return v.slice(0,40).map(x=>ADV.safe(x,depth-1));const o={};let n=0;for(const k in v){if(k[0]==='_'||++n>60)continue;const x=ADV.safe(v[k],depth-1);if(x!==undefined)o[k]=x;}return o;},
-  place(s){if(!s)return null;const pr={};for(const g of GOODS)pr[g]=+(price(s,g)/GOODBASE[g]).toFixed(2);
-    return{name:s.name,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),prosperity:Math.round(s.prosperity),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),
-      plague:s.infected>0.5,besieged:!!s.siegeBy,walls:s.walls||0,garrison:Math.round(s.garrison||0),murage:Math.round(s.murage||0),stores:ADV.safe(s.stores,1),prices_vs_usual:pr,trades:tradeCounts(s),wardOf:s.wardOf!=null?W.settlements[s.wardOf]?.name:undefined};},
-  state(path){const p=String(path||'realm'),[k,arg]=[p.split(':')[0],p.split(':').slice(1).join(':')],H=h=>({name:h.name,code:'h'+W.houses.indexOf(h),gold:Math.round(h.gold||0),loyalty:Math.round(h.loyalty??0),might:+(h.might||1).toFixed(2),seat:W.settlements[h.seat]?.name,places:W.settlements.filter(s=>s.owner===W.houses.indexOf(h)).map(s=>s.name),head:h.head!=null?fullTitle(notableById(h.head)||{name:'?'}):undefined,exiled:!!h.exiled});
-    if(k==='realm')return{date:dateStr(),year:AD(),monarch:W.monarch&&fullTitle(W.monarch),treasury:Math.round(W.treasury),people:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),legitimacy:Math.round(W.legitimacy),places:W.settlements.length,
-      war:!!W.war,feuds:(W.feuds||[]).map(f=>[W.houses[f.a]?.name,W.houses[f.b]?.name]),plague:!!W.plagueActive,priceLevel:+(W._pl||1).toFixed(2),player:W.player&&W.player.on?{house:W.houses[W.player.house|0]?.name,legacy:W.player.legacy}:null,petitions:(W.petitions||[]).length,speed:speedIdx};
-    if(k==='settlements')return W.settlements.map((s,i)=>({name:s.name,code:'s'+i,kind:s.kind,lord:W.houses[s.owner]?.name,people:Math.round(s.pop),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),besieged:!!s.siegeBy}));
+  // A town as its card would show it. Reads only: a price not yet found by the market is reckoned here and not kept, and the
+  // trades are the year's tally only once the town has taken it (taking it here would move the market's own index).
+  place(s){if(!s)return null;const i=W.settlements.indexOf(s),pr={},abs={},now=day();for(const g of GOODS){const v=s.px&&s.px[g]!=null?s.px[g]:price0(s,g);abs[g]=+v.toFixed(2);pr[g]=+(v/GOODBASE[g]).toFixed(2);}
+    return{name:s.name,code:'s'+i,kind:s.kind,role:s.role,at:{x:Math.round(s.pos.x),z:Math.round(s.pos.z)},tongue:CULT[s.cult]?.name,lord:W.houses[s.owner]?.name,people:Math.round(detailPopulation(s)),prosperity:Math.round(s.prosperity),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),
+      plague:s.infected>0.5?{sick:Math.round(s.infected),dead:Math.round(s.plagueDead||0)}:false,quarantinedUntil:s.quarantineUntil>now?dateStr(s.quarantineUntil):undefined,besieged:!!s.siegeBy,raidedUntil:s.raidedUntil>now?dateStr(s.raidedUntil):undefined,
+      walls:['none','palisade','stone'][s.walls|0]||'stone',wallsBuilding:s.wallBuild?Math.round(wallProg(s)*100)+'%':undefined,garrison:Math.round(s.garrison||0),militia:Math.round(s.militia||0),murage:Math.round(s.murage||0),
+      works:{mill:!!s.works?.mill,market:!!s.works?.market,clearing:s.clearUntil>now?'under way until '+dateStr(s.clearUntil):false},
+      port:s.harbor?{ships:(W.ships||[]).filter(x=>x.port===i).map(x=>({kind:x.kind,from:x.from,phase:x.phase,sails:x.until!=null?dateStr(x.until):undefined}))}:false,
+      herds:Object.fromEntries(BEASTS.map(b=>[b,Math.round(s.stores?.[b]||0)])),stores:Object.fromEntries(Object.entries(s.stores||{}).filter(([,v])=>typeof v==='number').map(([g,v])=>[g,Math.round(v)])),
+      prices:abs,prices_vs_usual:pr,trades:s._tcY===year()?s._tc:undefined,wardOf:s.wardOf!=null?W.settlements[s.wardOf]?.name:undefined};},
+  house(h){const hi=W.houses.indexOf(h),now=day(),T=n=>n?{name:fullTitle(n),code:'n'+n.id}:undefined;
+    return{name:h.name,code:'h'+hi,gold:Math.round(purse(hi)),loyalty:Math.round(h.loyalty??0),might:+(h.might||1).toFixed(2),seat:W.settlements[h.seat]?.name,places:W.settlements.filter(s=>s.owner===hi).map(s=>s.name),
+      head:T(hi===0?W.monarch:notableById(h.head)),exiled:!!h.exiled,extinct:!!h.extinct||undefined,claim:!!h.claim||undefined,dues:hi>0?Math.round((h.dues??1)*100)+'% of customary dues':Math.round(MOD.tax)+'% crown tax',netMonthly:h.lastNet!=null?Math.round(h.lastNet):undefined,
+      pacts:Object.entries(h.pacts||{}).filter(([,u])=>u>now).map(([j,u])=>({with:W.houses[j]?.name,until:dateStr(u)})),hostageAtCourtUntil:h.hostageUntil>now?dateStr(h.hostageUntil):undefined,
+      grudges:Object.keys(h.grudges||{}).filter(j=>h.grudges[j]).map(j=>W.houses[j]?.name),feuds:(W.feuds||[]).filter(f=>f.a===hi||f.b===hi).map(f=>({with:W.houses[f.a===hi?f.b:f.a]?.name,name:f.name,since:dateStr(f.start)})),inRevolt:inRevolt(hi)||undefined};},
+  host(a){let p=null;try{const q=armySimPos(a);p={x:Math.round(q.x),z:Math.round(q.z)};}catch(_){}const c=notableById(a.commander),o=a.objective;
+    return{name:a.name,code:'a'+a.id,house:W.houses[a.house]?.name,side:a.side,strength:Math.round(a.strength),morale:Math.round(a.morale??0),supply:Math.round(a.supply??0),commander:c?{name:fullTitle(c),code:'n'+c.id}:undefined,
+      state:a.state,at:W.settlements[a.at]?.name,point:p,target:W.settlements[a.target]?.name,arrives:a.state==='march'&&a.arriveDay!=null?dateStr(Math.ceil(a.arriveDay)):undefined,objective:o?{kind:o.kind,at:W.settlements[o.si]?.name}:undefined,
+      hold:!!a.hold,standing:!!a.standing,why:a.why||undefined,arrears:Math.round(a._arrears||0)};},
+  petitions(){const now=day();return(W.petitions||[]).map((p,i)=>({key:p.key,first:i===0,title:p.title,text:p.text,context:p.ctx,to:W.houses[p.to|0]?.name,due:dateStr(p.due),daysLeft:Math.max(0,Math.ceil(p.due-now)),at:p.pos?{x:Math.round(p.pos.x),z:Math.round(p.pos.z)}:undefined,
+    options:p.opts.map((o,k)=>({answer:k,label:o.label,cost:o.cost||0,affordable:!o.cost||purse(p.to|0)>=o.cost}))}));},
+  SPEED:['paused','Normal','Fast','Very fast','Fastest','Reel years','Life pace'],
+  state(path){const p=String(path||'realm'),[k,arg]=[p.split(':')[0],p.split(':').slice(1).join(':')],now=day();
+    if(k==='realm'){const dr=W.dragon,cm=W.comet;return{date:dateStr(),day:now,year:AD(),season:SEASONS[seasonIdx()],seasonDay:seasonDay(),weather:W.weather?.state,drought:!!W.drought,snowpack:W.snowpack?Math.round(W.snowpack):undefined,flooding:W.flooding>0||undefined,eclipse:W.eclipse>0||undefined,
+      comet:cm&&cm.until>now?{until:dateStr(cm.until),withTeeth:!!cm.teeth}:null,dragon:dr&&!dr.gone?{name:dr.name,state:dr.dead?'dead':dr.state,lair:dr.lair?{x:Math.round(dr.lair.x),z:Math.round(dr.lair.z)}:undefined,raiding:dr.target?.name}:null,
+      monarch:W.monarch&&fullTitle(W.monarch),treasury:Math.round(W.treasury),people:Math.round(W.settlements.reduce((t,s)=>t+detailPopulation(s),0)),legitimacy:Math.round(W.legitimacy),places:W.settlements.length,
+      war:W.war?{rebels:W.houses[W.war.rebel]?.name,name:W.war.name,since:dateStr(W.war.start),score:Math.round(W.war.score),meaning:'score from −120 (the rebels win) to +120 (the crown wins)'}:false,truceUntil:W.truceUntil>now?dateStr(W.truceUntil):undefined,
+      feuds:(W.feuds||[]).map(f=>[W.houses[f.a]?.name,W.houses[f.b]?.name]),plague:!!W.plagueActive,priceLevel:+(W._pl||1).toFixed(2),player:W.player&&W.player.on?{house:W.houses[W.player.house|0]?.name,legacy:W.player.legacy}:null,petitions:(W.petitions||[]).length,speed:speedIdx,speedName:ADV.SPEED[speedIdx]};}
+    if(k==='settlements')return W.settlements.map((s,i)=>({name:s.name,code:'s'+i,kind:s.kind,at:{x:Math.round(s.pos.x),z:Math.round(s.pos.z)},lord:W.houses[s.owner]?.name,people:Math.round(detailPopulation(s)),unrest:Math.round(s.unrest),hunger:+(s.hunger||0).toFixed(2),besieged:!!s.siegeBy}));
     if(k==='settlement'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]):{error:'no such place: '+arg};}
-    if(k==='houses')return W.houses.map(H);
-    if(k==='house'){const e=ADV.byName(arg);return e&&e.code[0]==='h'?H(W.houses[+e.code.slice(1)]):{error:'no such house: '+arg};}
+    if(k==='houses')return W.houses.map(ADV.house);
+    if(k==='house'){const e=ADV.byName(arg);return e&&e.code[0]==='h'?ADV.house(W.houses[+e.code.slice(1)]):{error:'no such house: '+arg};}
     if(k==='monarch')return ADV.safe(W.monarch,1);
-    if(k==='player')return W.player?ADV.safe(W.player,1):null;
-    if(k==='armies')return W.armies.filter(a=>!a.gone).map(a=>({name:a.name,code:'a'+a.id,house:W.houses[a.house]?.name,strength:Math.round(a.strength),state:a.state,at:W.settlements[a.at]?.name,target:W.settlements[a.target]?.name,arrears:Math.round(a._arrears||0)}));
+    if(k==='player'){const P=W.player;if(!P)return null;return{ruling:!!P.on,house:P.on?W.houses[P.house|0]?.name:undefined,legacy:Math.round(P.legacy||0),since:P.since!=null?dateStr(P.since):undefined,campaign:W.camp?{years:W.camp.len,endsAD:W.camp.end+W.startAD-1,result:W.camp.result?.kind}:undefined,
+      ambitionsMet:Object.keys(P.amb||{}),cooldowns:Object.fromEntries(Object.entries(P.cd||{}).filter(([,d])=>d>now).map(([k2,d])=>[k2,Math.ceil(d-now)+' d'])),pauseOnPetition:!!P.pause};}
+    if(k==='armies')return W.armies.filter(a=>!a.gone).map(ADV.host);
+    if(k==='petitions')return ADV.petitions();
+    if(k==='projects')return(W.projects||[]).filter(q=>!q.dead&&!q.gone).map(q=>({type:q.type,kind:q.kind,title:q.title,payer:q.payer!=null?W.houses[q.payer]?.name:undefined,town:W.settlements[q.si??q.ai]?.name,stage:q.stage,done:q.done!=null?Math.round(q.done*100)+'%':undefined,cost:q.total??q.cost,paid:q.paid!=null?Math.round(q.paid):undefined,stalled:!!q.stalled||undefined}));
     if(k==='wars')return{war:ADV.safe(W.war,1),feuds:ADV.safe(W.feuds,1)};
-    if(k==='victory')return W.vic?{scores:Object.fromEntries(Object.entries(W.vic.scores).map(([h,sc])=>[W.houses[h]?.name,Object.fromEntries(VPATH.map(P=>[P.n,{progress:+sc[P.k].v.toFixed(2),why:sc[P.k].why}]))])),yourHouse:W.houses[campHouse()]?.name,endsAD:W.camp&&W.camp.end+W.startAD}:null;
-    if(k==='prices'){const e=ADV.byName(arg);return e&&e.code[0]==='s'?ADV.place(W.settlements[+e.code.slice(1)]).prices_vs_usual:{error:'no such place: '+arg};}
+    if(k==='victory')return W.vic?{scores:Object.fromEntries(Object.entries(W.vic.scores).map(([h,sc])=>[W.houses[h]?.name,Object.fromEntries(VPATH.map(P=>[P.n,{progress:+sc[P.k].v.toFixed(2),why:sc[P.k].why}]))])),yourHouse:W.houses[campHouse()]?.name,endsAD:W.camp&&W.camp.end+W.startAD-1}:null;
+    if(k==='prices'){const e=ADV.byName(arg);if(!(e&&e.code[0]==='s'))return{error:'no such place: '+arg};const t=ADV.place(W.settlements[+e.code.slice(1)]);return{gold:t.prices,vs_usual:t.prices_vs_usual};}
     if(k==='rates')return ADV.safe(MOD,1);
     return{error:'unknown path',paths:ADV.verbs[0].args.path};},
   persona(){const P=W.player,hi=P&&P.on?(P.house|0):-1;if(hi<0)return{role:'game master',speak:'As the game master: knowing, wry, fair to every house; explain the rules and what the realm is doing, suggest what a player might try.'};
@@ -17904,9 +17972,10 @@ const ADV={muted:false,
     if(v==='state')return ADV.view('advisor-state',{path:a.path});
     if(v==='find')return ADV.view('advisor-find',{name:a.name});
     if(v==='persona')return ADV.view('advisor-persona');
-    if(v==='chronicle')return ADV.view('annals',{count:a.n});
+    if(v==='chronicle')return ADV.view('advisor-annals',{n:a.n,cat:a.cat,from:a.from,to:a.to,fromAD:a.fromAD,toAD:a.toAD,q:a.q});
+    if(v==='panel')return ADV.view('advisor-panel',a);
     if(v==='advise')return{muted:ADV.muted};
-    if(v==='inspect'){const r=await ADV.view('advisor-inspect',{name:a.name});if(r&&!r.error){await goName(r.code);r.tools=(await ADV.discover('card')).tools;}return r;}
+    if(v==='inspect'){const r=await ADV.view('advisor-inspect',{name:a.name,code:a.code,full:a.full});if(r&&!r.error&&a.open!==false){await goName(r.code);if(ADV.scopes().includes('card'))r.tools=(await ADV.discover('card')).tools;}return r;}
     if(v==='place')return ADV.placeAt(a);
     if(v==='plan')return ADV.plan(a);
     return{error:'unknown verb'};},
@@ -18092,9 +18161,10 @@ state:'none',ready:null,
   toolList(){const run=async(op,args)=>{const r=await ADV.call(op,args);if(r.error)throw new Error(r.error);return ADVCHAT.clip(r.result);};
     return[
       {name:'search',description:'Search the game: its controls (buttons, sliders, lists), the places, houses and people of the realm, and the rules. Returns matches.',inputSchema:{type:'object',properties:{query:{type:'string'}},required:['query']},execute:async i=>ADVCHAT.clip({game:(await ADV.call('search',{q:String(i.query||'')})).result,rules:ADVCHAT.rules(i.query)})},
-      {name:'state',description:'Read the realm: path "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>" or "rates". Returns JSON.',inputSchema:{type:'object',properties:{path:{type:'string'}}},execute:i=>run('execute',{tool:'game:state',args:{path:String(i.path||'realm')}})},
-      {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
-      {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
+      {name:'state',description:'Read the realm: path "realm" (date, season, weather, drought, comet, dragon, war), "settlements", "settlement:<name>" (works, garrison, militia, port, herds, stores, prices in gold), "houses", "house:<name>" (dues, pacts, hostages, feuds), "monarch", "player", "armies" (morale, supply, commander, objective), "petitions", "projects", "wars", "victory", "prices:<place>" or "rates". Returns JSON.',inputSchema:{type:'object',properties:{path:{type:'string'}}},execute:i=>run('execute',{tool:'game:state',args:{path:String(i.path||'realm')}})},
+      {name:'inspect',description:'Open the card of a place, house or person by name, or of anything by the code a card or the annals link to (building:…, field:…, road:…, household:…), and return what it says, its links with their codes and the buttons on it. full:true reads the whole card (accounts, stores and prices, buildings, households).',inputSchema:{type:'object',properties:{name:{type:'string'},code:{type:'string'},full:{type:'boolean'}}},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||''),code:i.code?String(i.code):undefined,full:!!i.full}})},
+      {name:'panel',description:'Read a panel the player can open: kind "crown" (the court: revenue, decrees, orders, houses, ambitions), "accounts" (the kingdom ledger, or a town’s with town), "timeline", "petitions" (each with text, options and deadline), "houses" (and the succession), "house" (a house’s ledger, with house), "storage" (with town), "plan" (works in hand) or "victory".',inputSchema:{type:'object',properties:{kind:{type:'string'},town:{type:'string'},house:{type:'string'}},required:['kind']},execute:i=>run('execute',{tool:'game:panel',args:{kind:String(i.kind||''),town:i.town?String(i.town):undefined,house:i.house?String(i.house):undefined}})},
+      {name:'chronicle',description:'The annals, newest last, each with its day and category; filter by cat (crown, war, trade, fates, house), a day range (from, to) or years (fromAD, toAD), and words (q).',inputSchema:{type:'object',properties:{n:{type:'number'},cat:{type:'string'},from:{type:'number'},to:{type:'number'},fromAD:{type:'number'},toAD:{type:'number'},q:{type:'string'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(60,Number(i.n)||15),cat:i.cat,from:i.from,to:i.to,fromAD:i.fromAD,toAD:i.toAD,q:i.q}})},
       {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "menu", "crown", "rates", "acts", "over", "world", "annals", and while open "card", "petition", "plan", "context", "info", "event", "legend", "place", "dialog"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
       {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: a place name or {x,z}, target: a code such as a host a12} to finish an act that wants a place ({cancel:true} gives it up), or "game:plan" {kind, points, commit} for the plan brush. Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); answers with the game’s own reply and the annals the press wrote. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   async brief(){let P,st,ch;if(BACKGROUND){[P,st,ch]=await Promise.all([BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}),BACKGROUND.request('view',{kind:'ui',panel:'advisor-state',path:'realm'}),BACKGROUND.request('view',{kind:'ui',panel:'annals',count:6})]);ch=ch.join('\n');}else{P=ADV.persona();st=ADV.state('realm');ch=allLines.slice(-6).join('\n');}
@@ -18115,6 +18185,9 @@ ${ch}`;},
     const head=document.getElementById('achwho');if(BACKGROUND)BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}).then(P=>{if(head)head.textContent=P.name?`${P.name}, ${P.role}`:'The game master';});else{const P=ADV.persona();head.textContent=P.name?`${P.name}, ${P.role}`:'The game master';}
     document.getElementById('achaccount').textContent=ADVCHAT.provider!=='Claude'?'Uses your '+ADVCHAT.provider+' key · '+ADVCHAT.apiModel:'Uses your own Claude account';
     el.style.display='flex';document.getElementById('achin').focus();},
+  codes:new Map(), // [[Name]] → code, as the realm's own records resolve it (the page's projection holds no lords or folk)
+  async resolve(text){const names=[...new Set([...String(text||'').matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map(m=>m[1].trim()))].filter(n=>n&&!ADVCHAT.codes.has(n)).slice(0,80);if(!names.length)return;
+    if(ADVCHAT.codes.size>2000)ADVCHAT.codes.clear();const codes=await ADV.view('advisor-codes',{names}).catch(()=>null);if(Array.isArray(codes))names.forEach((n,i)=>ADVCHAT.codes.set(n,codes[i]??null));},
   code(name){ // the code of a thing named in the realm (place, house, lord, host, or one of the folk), or null
     const t=String(name||'').trim().toLowerCase();if(t.length<3)return null;const E=ADV.entities();
     let x=E.find(e=>e.name.toLowerCase()===t)||E.find(e=>e.kind==='person'&&notableById(+e.code.slice(1))?.name?.toLowerCase()===t);
@@ -18123,7 +18196,7 @@ ${ch}`;},
   md(src){ // a little Markdown, safely: headings, bold, italics, code, lists, quotes, rules (no raw HTML, no links out of the sealed page; [[Name]] and [text](game:code) become links into the realm)
     const e=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),u=t=>t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&'),memo=new Map();
     const go=(label,c)=>{if(!/^[shnap]\d+$/.test(c||''))return label;return `<a class="nm" data-nm="${c}">${label}</a>`;},
-      who=n=>{if(!memo.has(n))memo.set(n,ADVCHAT.code(u(n)));return memo.get(n);};
+      who=n=>{if(!memo.has(n)){const k=u(n).trim();memo.set(n,ADVCHAT.codes.has(k)?ADVCHAT.codes.get(k):BACKGROUND?null:ADVCHAT.code(k));}return memo.get(n);};
     const inl=t=>e(t).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(m,n,l)=>go(l||n,who(n))).replace(/\[([^\]]+)\]\(game:([a-z]\d+)\)/g,(m,l,c)=>go(l,c)).replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/__([^_]+)__/g,'<b>$1</b>').replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\w)/g,'$1<i>$2</i>').replace(/(^|[^_\w])_([^_\s][^_]*)_(?!\w)/g,'$1<i>$2</i>').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1');
     const out=[],L=String(src).split('\n');let list=null,para=[];
     const flush=()=>{if(para.length){out.push('<p>'+para.map(inl).join('<br>')+'</p>');para=[];}if(list){out.push(`<${list.t}>`+list.items.map(x=>'<li>'+inl(x)+'</li>').join('')+`</${list.t}>`);list=null;}};
@@ -18144,7 +18217,7 @@ ${ch}`;},
     const out=ADVCHAT.bubble('ai','Thinking…'),ctl=new AbortController();ADVCHAT.busy=ctl;document.getElementById('achstop').style.display='';document.getElementById('achsend').disabled=true;
     const opts={cache:false,modelTier:'default',signal:ctl.signal,onText:({text})=>{out.innerHTML=ADVCHAT.md(text);document.getElementById('achlog').scrollTop=1e9;}};if(ADVCHAT.tools)opts.tools=ADVCHAT.toolList();
     try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:await ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
-      out.innerHTML=ADVCHAT.md(text)+(truncated?'<p><i>(cut short: ask for less at a time)</i></p>':'');ADVCHAT.turns.push({role:'assistant',content:text});}
+      await ADVCHAT.resolve(text);out.innerHTML=ADVCHAT.md(text)+(truncated?'<p><i>(cut short: ask for less at a time)</i></p>':'');ADVCHAT.turns.push({role:'assistant',content:text});}
     catch(e){if(ctl.signal.aborted){if(out.isConnected)out.remove();if(ADVCHAT.busy===ctl)ADVCHAT.turns.pop();return;}const code=e&&e.code;out.innerHTML=e&&e.text?ADVCHAT.md(e.text):'';
       const why={api_key_invalid:ADVCHAT.provider+' did not accept this key. Open Advisor to change it.',api_credit:ADVCHAT.provider+' needs more API credits. Check your API billing.',api_limit:ADVCHAT.provider+' API quota or rate limit reached. Check your API billing and try later.',api_access:'This key cannot use the requested model. Check its project permissions.',api_model:'That model was not found. Change the model in Advisor.',api_request:ADVCHAT.provider+' rejected the request. Check that the model supports tools and that the key can use it.',api_network:e.message,api_response:e.message,api_incomplete:e.message,api_tool_limit:e.message,cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??(ADVCHAT.provider!=='Claude'?'Something went wrong reaching '+ADVCHAT.provider+'; try again.':'Something went wrong reaching Claude; try again.');
       if(why)ADVCHAT.bubble('sys',why);if(!out.textContent)out.remove();ADVCHAT.turns.pop();}
