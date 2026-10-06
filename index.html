@@ -17471,7 +17471,7 @@ async function advancePrehistory(progress){
   for(const s of W.settlements)s.pop0=s.pop;
 }
 async function boot(){
-  const foreground=/(?:[#&])foreground=1(?:&|$)/.test(location.hash);
+  const foreground=/(?:[#&])foreground=1(?:&|$)/.test(location.hash),fresh=foreground||/(?:[#&])fresh=1(?:&|$)/.test(location.hash); // read before the link is normalized below
   {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
@@ -17485,7 +17485,7 @@ async function boot(){
     return new Promise(r=>setTimeout(r,delay));};
   await progress('Forging the realm…',0.02);
   // #5: a refresh takes up this tab's own game; a save, another realm or a fresh link begins the tab's next one
-  let tabGame=null;{const o=await tabSessionBoot(location.hash,RESUME_CODE);tabGame=o.resumed;RESUME_CODE=o.code;RESUME_DAY=o.day;}
+  let tabGame=null;{const o=await tabSessionBoot(location.hash,RESUME_CODE,undefined,fresh);tabGame=o.resumed;RESUME_CODE=o.code;RESUME_DAY=o.day;}
   if(!foreground){
     let profile={best:0,achievements:{}};try{profile={best:+localStorage.getItem('annals-best-'+seed)||0,achievements:JSON.parse(localStorage.getItem('furlong-ach')||'{}')};}catch(_){}
     const options={seed,fate:FATE,coast:COAST_PREF,startAD:START_AD,hash:location.hash,resume:RESUME_CODE,resumeDay:RESUME_DAY,profile};
@@ -17614,8 +17614,8 @@ function tabSessionRead(store=tabSessionStorage()){
 // or one that runs the main-thread reference driver (foreground=1, which the test harnesses load again and again in one tab), starts anew.
 function tabSessionResume(hash,store=tabSessionStorage()){if(/[#&](save|fresh|foreground)=/.test(String(hash||'')))return null;const s=tabSessionRead(store);return s&&s.world===worldIdentity(hash)?s:null;}
 // On boot, what this tab plays: the save its link opens; else its own game, if the link names that realm; else a new game.
-async function tabSessionBoot(hash,code,store=tabSessionStorage()){
-  const resumed=code?null:tabSessionResume(hash,store),saved=code?await unpackSave(code).catch(()=>null):null;
+async function tabSessionBoot(hash,code,store=tabSessionStorage(),fresh=false){ // fresh: the link asked for a new game (fresh=1, foreground=1)
+  const resumed=code||fresh?null:tabSessionResume(hash,store),saved=code?await unpackSave(code).catch(()=>null):null;
   tabSessionStart(resumed,saved,store);
   return resumed?{resumed,code:await packSave(resumed.record),day:resumed.day}:{resumed:null,code:code||null,day:null};}
 // Keep the resumed entry, or begin this tab's next game (from an opened save, or from nothing yet).

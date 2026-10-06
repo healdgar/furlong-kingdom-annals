@@ -61,6 +61,8 @@ test('another realm, an explicit save, a new game and Reforge are never overridd
   for(const flag of ['&fresh=1','&foreground=1']) // a fresh game on request, and the reference driver the harnesses reload in one tab
     assert.equal(s.run(`tabSessionResume(${JSON.stringify(HASH+flag)})`),null,flag);
   assert.ok(s.run(`tabSessionResume(${JSON.stringify(HASH)})`),'the plain link still resumes');
+  const asked=await s.run(`tabSessionBoot(${JSON.stringify(HASH)},null,undefined,true)`);assert.equal(asked.resumed,null,'boot with fresh begins a new game');
+  assert.equal(s.store.getItem('furlong-session'),null,'and drops the old entry');s.run('tabSessionCapture(rec)');
   // a save opened in this tab: its link wins, and it becomes the tab's game (a refresh mid-load opens it again)
   const savedRecord=record(500);const code=await s.run(`packSave(${JSON.stringify(savedRecord)})`);
   const boot=await s.run(`tabSessionBoot(${JSON.stringify(HASH+'&save='+code)},${JSON.stringify(code)})`);
@@ -105,7 +107,8 @@ test('storage that is refused, unreadable or full never breaks boot and never re
 
 test('boot asks the session first and passes the day to both the worker and the foreground replay',()=>{
   const boot=fn('boot');
-  assert.match(boot,/tabSessionBoot\(location\.hash,RESUME_CODE\)/);
+  assert.match(boot,/tabSessionBoot\(location\.hash,RESUME_CODE,undefined,fresh\)/);
+  assert.ok(boot.indexOf(',fresh=foreground||')<boot.indexOf('history.replaceState'),'fresh=1 and foreground=1 are read from the link as given, before it is normalized');
   assert.match(boot,/resume:RESUME_CODE,resumeDay:RESUME_DAY/);
   assert.match(boot,/saveToDay\(await unpackSave\(RESUME_CODE\),RESUME_DAY\)/);
   assert.match(boot,/onsession=record=>tabSessionCapture\(record\)/);
