@@ -9819,7 +9819,7 @@ function workerUIQuery(payload={}){
   if(kind==='advisor-state')return ADV.state(payload.path);
   if(kind==='advisor-find'){
     const q=String(payload.name||'').toLowerCase();
-    return ADV.entities().filter(e=>!q||e.name.toLowerCase().includes(q)).slice(0,30);
+    return ADV.entities().filter(e=>!q||e.name.toLowerCase().includes(q)).slice(0,Math.max(1,Math.min(400,Math.round(+payload.n)||60)));
   }
   if(kind==='advisor-persona')return ADV.persona();
   if(kind==='annals')return allLines.slice(-Math.max(1,Math.min(200,+payload.count||20)));
@@ -17864,7 +17864,7 @@ const ADV={muted:false,
   // Read or press a drawer tab's controls without disturbing the tab the player has open: the player's own panel is set aside whole
   // (its nodes keep their listeners) and put back after, so nothing is rebuilt and nothing flickers; the court is awaited from the worker.
   async withTab(t,fn){const body=document.getElementById('dbody'),was=drawerTab,wait=()=>BACKGROUND&&(t==='crown'?workerRefreshCourt(true):t==='world'?workerRefreshHousePanel(true):null);
-    if(was===t){if(BACKGROUND&&t==='crown'&&!body.children.length)await wait();return fn();}
+    if(was===t){if(BACKGROUND&&(!body.children.length||!drawerVisible()||!uiBusy()))await wait();return fn();} // a closed panel is not kept fresh: read it fresh, unless the player is busy in it
     const keep=[...body.childNodes],h=body._h;selectTab(t);
     try{await wait();return await fn();}
     finally{if(drawerTab===t){document.querySelectorAll('#dtabs .t').forEach(x=>{const on=x.dataset.t===was;x.classList.toggle('on',on);x.setAttribute('aria-selected',String(on));x.tabIndex=on?0:-1;});
@@ -17872,7 +17872,7 @@ const ADV={muted:false,
   async controls(scope){return ADV.TABS.includes(scope)?ADV.withTab(scope,()=>ADV.harvest(scope)):ADV.harvest(scope);},
   verbs:[
     {name:'game:state',kind:'verb',label:'Read the state of the realm, or a part of it',args:{path:'optional: "realm" (date, season, weather, drought, comet, dragon, war…), "settlements", "settlement:<name>" (works, garrison and militia, port, herds, stores, prices in gold), "houses", "house:<name>" (dues, pacts, hostages, feuds), "monarch", "player", "armies" (morale, supply, commander, objective, point), "petitions", "projects", "wars", "victory", "prices:<place>", "rates"'}},
-    {name:'game:find',kind:'verb',label:'Find places, houses, notable people and hosts by name, with their codes and points {x,z}',args:{name:'text'}},
+    {name:'game:find',kind:'verb',label:'Find places, houses, notable people and hosts by name, with their codes and points {x,z}',args:{name:'text (empty: everything)',n:'how many (default 60)'}},
     {name:'game:inspect',kind:'verb',label:"Read a card and open it on the map (then discover('card') lists the card's own buttons)",args:{name:'a name as game:find returns it',code:'or any code a card or the annals link to: s3, h2, n41, a7, p1203, building:…, field:…, road:…, river:…, wall:…, caravan:…, ship:…, envoy:…, camp:…, family:…, household:…, good:…',full:'true for the whole card (accounts, stores and prices, buildings, households, muster)',open:'false to read without moving the player’s view'}},
     {name:'game:panel',kind:'verb',label:'Read a panel the player can open: the court, the accounts, the timeline, the petitions, the houses and succession, a house’s ledger, a town’s storage, the works in hand, the campaign',args:{kind:'crown, accounts, timeline, about, petitions, houses, house, storage, plan or victory',town:'for accounts or storage: a town',house:'for house: a house'}},
     {name:'game:chronicle',kind:'verb',label:'The annals, newest last, each with its day and category',args:{n:'how many (default 20, at most 400)',cat:'crown, war, trade, fates or house',from:'first day (or fromAD: a year)',to:'last day (or toAD)',q:'words to look for'}},
@@ -17974,7 +17974,7 @@ const ADV={muted:false,
   view(panel,payload={}){return BACKGROUND?BACKGROUND.request('view',{...payload,kind:'ui',panel}):Promise.resolve().then(()=>simulationWorkerModel().view('ui',{...payload,kind:'ui',panel}));},
   async verb(v,a){
     if(v==='state')return ADV.view('advisor-state',{path:a.path});
-    if(v==='find')return ADV.view('advisor-find',{name:a.name});
+    if(v==='find')return ADV.view('advisor-find',{name:a.name,n:a.n});
     if(v==='persona')return ADV.view('advisor-persona');
     if(v==='chronicle')return ADV.view('advisor-annals',{n:a.n,cat:a.cat,from:a.from,to:a.to,fromAD:a.fromAD,toAD:a.toAD,q:a.q});
     if(v==='panel')return ADV.view('advisor-panel',{of:a.kind,town:a.town,house:a.house});
