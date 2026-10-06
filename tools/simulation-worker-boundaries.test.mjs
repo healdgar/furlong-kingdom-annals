@@ -30,7 +30,7 @@ function context(extra={}){
   const c=vm.createContext({console,performance,Map,Set,WeakMap,WeakSet,ArrayBuffer,DataView,Uint8Array,Uint16Array,
     Uint8ClampedArray,Float32Array,Float64Array,structuredClone,Number,Math,JSON,Object,Array,RegExp,Error,TypeError,Infinity,NaN,...extra});
   new vm.Script(`
-    let W={seed:33,clock:{day:7,frac:.2},weather:{state:'clear'},settlements:[],houses:[],monarch:{},petitions:[],armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],dragon:null,memorials:[],roads:[],bridges:[],projects:[],trackSet:new Set(),treeSpots:[],land:{F:[],mask:new Uint8Array(8),flood:new Uint8Array(4)}};
+    let W={seed:33,clock:{day:7,frac:.2},weather:{state:'clear'},settlements:[],bldList:[],houses:[],monarch:{},petitions:[],armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],dragon:null,memorials:[],roads:[],bridges:[],projects:[],trackSet:new Set(),treeSpots:[],land:{F:[],mask:new Uint8Array(8),flood:new Uint8Array(4)}};
     const G={structuresDirty:true,roadsDirty:true,wallsDirty:true,detDirty:true,herdsDirty:false,armyFlagsDirty:false,landDirty:new Set(),treesDirty:new Set(),buildingDirty:new Set()};
     let BACKGROUND=null,backgroundApplying=false;const WORKER_PRESENTATION={events:[],camera:null,started:false,revision:0,buildingCount:0,towns:0,storageStatus:{id:'fixture',records:0,processingMode:'worker'}},JOURNAL=[];
     const STORAGE_OUTCOMES={status:()=>({id:'fixture',records:0,processingMode:'worker'}),flush:async()=>{throw Error('foreground journal must not flush in worker mode')},saved:async()=>[],open:async()=>null,records:async function*(){},storageRecords:async function*(){},stream:()=>new ReadableStream()};
@@ -163,7 +163,7 @@ test('presentation install preserves dragon identity and reconciles sapling crea
   vm.runInContext(`
     W.settlements=[{buildings:[],streets:[],places:[],furl:[],folk:[],fires:[]}];W.land.F=[{k:0,sap:[],trees:[]}];W.treeSpots=[];
     const base={protocol:1,day:7,speed:0,mod:{},world:{clock:{frac:0}},monarch:{},player:null,houses:[],petitions:[],commands:0,
-      settlements:[{si:0,name:'Test',buildings:[],fires:[],furl:[]}],capital:0,buildings:undefined,
+      settlements:[{si:0,name:'Test',buildings:[],fires:[],furl:[],millId:null}],capital:0,buildings:undefined,
       armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],memorials:[],projects:[],dirty:{armies:true},events:[]};
     base.world.player={on:true};
     let packet={...base,revision:1,dragon:{name:'Ashwing',state:'raiding',pos:{x:4,z:5}},fields:[{k:0,sap:[{i:2,x:3,z:4,s:1,k:'dec'}],treeRefs:[]}]};
@@ -178,6 +178,43 @@ test('presentation install preserves dragon identity and reconciles sapling crea
   assert.deepEqual(Array.from(vm.runInContext('[W.dragon.pos.x,W.dragon.pos.z]',c)),[8,9]);
   assert.equal(vm.runInContext('W.land.F[0].sap',c),null);assert.equal(vm.runInContext('G.sapRemoved.length',c),1);
   assert.equal(vm.runInContext('G.sapRemoved[0].i',c),2);
+});
+
+test('mill projection preserves detached intake geometry and relinks the canonical mill across sparse packets',()=>{
+  const c=context();
+  vm.runInContext(`
+    const mill={idx:0,arch:'mill',state:'sound',x:127.25,z:-84.5,rot:.731,w:9,d:9,h:8.75,
+      millWater:{x:121.1,z:-80.2,y:4.25,side:0,offset:6.8,kind:'river',intake:{x:100.5,z:-63.75}}};
+    const other={idx:1,arch:'mill',state:'sound',x:130,z:-90,rot:1.1,w:9,d:9,h:8.75,millWater:{x:124,z:-86,y:4,side:0,offset:6.8,kind:'river'}};
+    const s={idx:0,name:'Mill town',kind:'town',owner:0,pos:{x:0,y:0,z:0},radius:10,extentR:20,hm:true,
+      buildings:[mill,other],mill,stores:{grain:2},fires:[],furl:[],streets:[],places:[],folk:[]};
+    mill.s=other.s=s;W.bldList=[mill,other];W.settlements=[s];W.capital=s;W.houses=[];W.petitions=[];W.armies=[];W.caravans=[];W.envoys=[];W.travellers=[];W.ships=[];W.banditCamps=[];W.projects=[];
+    globalThis.mill=mill;globalThis.other=other;globalThis.town=s;
+  `,c);
+  const before=vm.runInContext('JSON.stringify([mill.millWater,mill.rot,mill.x,mill.z,mill.w,mill.d])',c);
+  const millDTO=vm.runInContext('visualBuilding(mill)',c),settlementDTO=vm.runInContext('visualSettlement(town,true)',c);
+  assert.deepEqual(JSON.parse(JSON.stringify(millDTO.millWater)),{x:121.1,z:-80.2,y:4.25,side:0,offset:6.8,kind:'river',intake:{x:100.5,z:-63.75}});
+  assert.notEqual(millDTO.millWater,vm.runInContext('mill.millWater',c));
+  assert.notEqual(millDTO.millWater.intake,vm.runInContext('mill.millWater.intake',c));
+  assert.equal(settlementDTO.millId,0,'index zero is a valid mill id');
+  auditDTO(millDTO);auditDTO(settlementDTO);
+  assert.equal(vm.runInContext('JSON.stringify([mill.millWater,mill.rot,mill.x,mill.z,mill.w,mill.d])',c),before,'DTO creation leaves source building untouched');
+
+  const packetBase={protocol:1,revision:1,day:7,speed:0,mod:{},world:{clock:{frac:0},player:null},monarch:{},houses:[],petitions:[],commands:0,entries:0,
+    settlements:[settlementDTO],capital:0,buildings:[millDTO,vm.runInContext('visualBuilding(other)',c)],armies:[],caravans:[],envoys:[],travellers:[],ships:[],banditCamps:[],dragon:null,memorials:[],projects:[],events:[],dirty:{}};
+  c.packetBase=packetBase;c.settlementDTO=settlementDTO;
+  vm.runInContext('installPresentation(packetBase)',c);
+  assert.equal(vm.runInContext('W.settlements[0].mill',c),vm.runInContext('W.bldList[0]',c));
+  assert.equal(vm.runInContext('W.settlements[0].mill.millWater.intake.x',c),100.5);
+  assert.deepEqual(Array.from(vm.runInContext('[W.bldList[0].x,W.bldList[0].z,W.bldList[0].rot,W.bldList[0].w,W.bldList[0].d]',c)),[127.25,-84.5,.731,9,9]);
+
+  vm.runInContext(`packetBase={...packetBase,revision:2,day:8,buildings:undefined,settlements:[{...settlementDTO,millId:0,buildings:undefined}]};installPresentation(packetBase)`,c);
+  assert.equal(vm.runInContext('W.settlements[0].mill',c),vm.runInContext('W.bldList[0]',c),'a day packet without structure records retains the same mill target');
+  vm.runInContext(`packetBase={...packetBase,revision:3,day:9,buildings:[visualBuilding(other)],settlements:[{...settlementDTO,millId:1,buildings:undefined}]};installPresentation(packetBase)`,c);
+  assert.equal(vm.runInContext('W.settlements[0].mill',c),vm.runInContext('W.bldList[1]',c),'explicit id selects the same canonical proxy among multiple mills');
+  vm.runInContext(`packetBase={...packetBase,revision:4,day:10,buildings:undefined,settlements:[{...settlementDTO,millId:null,buildings:undefined}]};installPresentation(packetBase)`,c);
+  assert.equal(vm.runInContext('W.settlements[0].mill',c),null,'null mill id clears a removed target');
+  assert.equal(vm.runInContext('JSON.stringify([mill.millWater,mill.rot,mill.x,mill.z,mill.w,mill.d])',c),before,'installing returned DTOs does not alter mill placement geometry');
 });
 
 test('main-thread simTick rejects worker-owned simulation before storage checks or writes',()=>{

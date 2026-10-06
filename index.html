@@ -5559,6 +5559,24 @@ function recolorApron(){
   for(const q of G.apron.userData.blends||[])col.setXYZ(q.id,...[0,1,2].map(c=>q.ids.reduce((n,id,j)=>n+col.array[id*3+c]*q.w[j],0)));
   col.needsUpdate=true;
 }
+function riverSeaAt(x,z){
+  // Carved inland river beds can lie below sea level without being sea.
+  return !!W.coastal&&x>=cellX(0)&&z>=cellZ(0)&&x<=cellX(GRID-1)&&z<=cellZ(GRID-1)
+    &&W.water[cIdx(toCell(x),toCell(z))]===1&&hAt(x,z)<SEA+0.2;
+}
+function extendRiverSeaOutlet(out){
+  const n=out.pts.length;if(n<2||out.mouth)return;
+  const a=out.pts[n-2],b=out.pts[n-1];if(!riverSeaAt(b.x,b.z))return;
+  const L=dist2d(a.x,a.z,b.x,b.z);if(!L)return;
+  const ux=(b.x-a.x)/L,uz=(b.z-a.z)/L,w=out.hw[n-1]*1.12;
+  out.ys[n-1]=SEA_SURFACE;out.hw[n-1]=w;
+  // Only continue through existing sea, stopping before land or the survey edge.
+  for(let d=8;d<=320;d+=8){
+    const q={x:b.x+ux*d,z:b.z+uz*d},hw=w*(1+Math.min(d/120,1)*0.25);
+    if(![-1,0,1].every(side=>riverSeaAt(q.x-uz*hw*side,q.z+ux*hw*side)))break;
+    out.pts.push(q);out.ys.push(SEA_SURFACE);out.hw.push(hw);
+  }
+}
 function buildTerrain(){
   // vertex (cx,cz) must sit exactly at (cellX(cx),cellZ(cz)): a SIZE-wide plane spaces vertices SIZE/(GRID-1)
   // apart, not CELL, which slid the ground up to a whole cell away from everything placed with hAt()
@@ -5588,7 +5606,7 @@ function buildTerrain(){
   const riv=newAcc(),footprints=[],banks=[];G.drawRivRuns=[];
   const drawnPart=st=>{ // for drawing only (layouts still see the whole channel): no overlapping tongues
     const me=W.rivStrips.indexOf(st),inOther=(q,w)=>W.rivStrips.some((o,oi)=>o!==st&&!o.canal&&o.pts.some((p2,k)=>k<o.pts.length-1&&segDist(q.x,q.z,p2,o.pts[k+1])<o.hw[k]*0.6&&(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me)));
-    const sea=q=>hAt(q.x,q.z)<SEA+0.2; // trim against the rendered coast, not the coarse water-cell mask
+    const sea=q=>riverSeaAt(q.x,q.z);
     let a=0,b=st.pts.length;
     if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;a=Math.max(0,a-1);b=Math.min(st.pts.length,b+1);}
     else{let k=b-1;while(k>1&&(sea(st.pts[k-1])||inOther(st.pts[k-1],st.hw[k-1])))k--;b=Math.min(b,k+1);} // keep one point in, to meet the water
@@ -5607,11 +5625,7 @@ function buildTerrain(){
         const y0=riverDrawLevel(p0.x,p0.z,o.ys[k]),y1=riverDrawLevel(p1.x,p1.z,o.ys[k+1]);out.join=riverJoinPolygon(points).map(p=>({...p,y:lerp(y0,y1,clamp(((p.x-p0.x)*dx+(p.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1))+0.02}));out.joinFlow={x:ux,z:uz,hw};out.join.flow=[ux,uz];out.join.inFlow=[(end.x-prev.x)/L,(end.z-prev.z)/L];out.join.origins=[p0.x,p0.z,prev.x,prev.z];out.join.widths=[hw,out.hw[n-2]];}
     }
     if(!out.mouth){ // the channel dives beneath the sea rather than ending as a square blue tongue
-      const n=out.pts.length;
-      if(sea(out.pts[n-1])){out.ys[n-1]=SEA_SURFACE;out.hw[n-1]*=1.12;
-        const a=out.pts[n-2],b=out.pts[n-1],L=dist2d(a.x,a.z,b.x,b.z)||1,ux=(b.x-a.x)/L,uz=(b.z-a.z)/L;
-        for(let d=8;d<=3200;d+=d<320?8:80){const q={x:b.x+ux*d,z:b.z+uz*d};out.pts.push(q);out.ys.push(SEA_SURFACE);out.hw.push(out.hw[n-1]*(1+Math.min(d/120,1)*0.25));const w=out.hw.at(-1);if(d>=320&&Math.max(Math.abs(q.x),Math.abs(q.z))<SIZE/2-100&&[-1,0,1].every(side=>hAt(q.x-uz*w*side,q.z+ux*w*side)<SEA-0.8))break;}}
-
+      extendRiverSeaOutlet(out);
       if(st.canal&&sea(out.pts[0]))out.ys[0]=SEA+0.35;
     }
     return out;
@@ -16600,8 +16614,8 @@ function visualGeometry(value,seen=new Set()){
 }
 function visualRecord(o,fields){const out=visualScalars(o);for(const k of fields.split(' '))if(o?.[k]!==undefined)out[k]=visualGeometry(o[k]);return out;}
 function visualPerson(p){return p?{id:p.id,si:p.si,sx:p.sx,dead:!!p.dead}:null;}
-function visualBuilding(b){const out=visualRecord(b,'ch lot roofPlan wheel mill waterwheel dam _graveyard');if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
-function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey castle cas citadel tg wallRad wallDmg wallBuild gateAngles wallGates ramparts breaches takenCircuit');out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);}return out;}
+function visualBuilding(b){const out=visualRecord(b,'ch lot roofPlan wheel mill waterwheel millWater dam _graveyard');if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
+function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey castle cas citadel tg wallRad wallDmg wallBuild gateAngles wallGates ramparts breaches takenCircuit');out.millId=s.mill?.idx??null;out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);}return out;}
 function visualField(f){const out=visualRecord(f,'poly sap');for(const k of ['own','wk'])if(typeof f[k]==='number'||typeof f[k]==='string')out[k]=f[k];out.treeRefs=f.trees.map(t=>({kind:t.k,index:t.i}));return out;}
 function workerTrackSegments(){return [...(W.trackSet||[])].map(k=>{const e=W.tg.E.get(k);return{a:{x:W.tg.pts[e.a].x,z:W.tg.pts[e.a].z},b:{x:W.tg.pts[e.b].x,z:W.tg.pts[e.b].z},L:e.L};});}
 function workerFenceSegments(){const out=[];for(const f of W.land.F){if(!fenceWorked(f))continue;const P=f.poly||computeFurlongPoly(f),stone=fenceStoneView(W.settlements[f.dom]);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?W.land.F[a.nb]:null,ta=W.tg?.V.get(tgKey(a)),tb=W.tg?.V.get(tgKey(b)),lane=W.trackSet&&ta!==undefined&&tb!==undefined&&W.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);if(!lane){if(g&&fenceWorked(g)&&g.dom===f.dom&&(g.state===LS.PASTURE)===(f.state===LS.PASTURE))continue;if(g&&fenceWorked(g)&&g.k<f.k)continue;}out.push({a:{x:a.x,z:a.z},b:{x:b.x,z:b.z},x:f.x,z:f.z,lane:!!lane,stone});}}return out;}
@@ -16656,7 +16670,7 @@ function installPresentation(packet){
     if(packet.fields)for(const f of packet.fields){const o=W.land.F[f.k]||(W.land.F[f.k]={}),oldSap=o.sap||[];Object.assign(o,f);if(f.sap){o.sap=f.sap.map(t=>Object.assign(oldSap.find(p=>p.i===t.i&&p.x===t.x&&p.z===t.z)||{},t));(G.sapDirty||(G.sapDirty=new Set())).add(o);}for(const t of oldSap)if(!o.sap?.includes(t))(G.sapRemoved||(G.sapRemoved=[])).push(t);o.trees=(f.treeRefs||[]).map(t=>W.treeSpots[t.kind]?.[t.index]).filter(Boolean);(G.landDirty||(G.landDirty=new Set())).add(o);}
     if(packet.mask){W.land.mask.set(packet.mask);G.landMaskDirty=true;}
     if(packet.buildings){for(const b of packet.buildings){const o=W.bldList[b.idx]||(W.bldList[b.idx]={});Object.assign(o,b);o.s=W.settlements[b.si];if(o._graveyard)o._graveyard.churchyardOf=o;(G.buildingDirty||(G.buildingDirty=new Set())).add(o);}for(const s of W.settlements){s.buildings=(s._buildingIds||[]).map(i=>W.bldList[i]);s.furl=(s._furlIds||[]).map(i=>W.land.F[i]);}}
-    for(const s of W.settlements)s.fires=(s._fireIds||[]).map(i=>W.bldList[i]).filter(Boolean);
+    for(const s of W.settlements){s.mill=s.millId===null?null:W.bldList[s.millId];s.fires=(s._fireIds||[]).map(i=>W.bldList[i]).filter(Boolean);}
     for(const k of ['armies','caravans','envoys','travellers','ships','banditCamps'])W[k]=reconcileVisualList(W[k]||[],packet[k]||[],k==='caravans'?'renderKey':k==='travellers'?'renderKey':'id');
     if(packet.dragon){if(!W.dragon||W.dragon.name!==packet.dragon.name){if(W.dragon)W.dragon.gone=true;W.dragon={};}Object.assign(W.dragon,packet.dragon);}else{if(W.dragon)W.dragon.gone=true;W.dragon=null;}W.memorials=packet.memorials;if(packet.roads){W.roads=reconcileVisualList(W.roads||[],packet.roads,'renderKey');W.bridges=packet.bridges;}W.projects=packet.projects;
     if(packet.tracks){W.renderTracks=packet.tracks;W.trackBridgePlan=packet.trackBridgePlan;G.tracksDirty=true;}if(packet.fences){W.renderFences=packet.fences;G.fenceDirty=true;}
