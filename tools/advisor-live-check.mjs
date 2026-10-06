@@ -6,6 +6,7 @@
    One Chrome, one page, a hard timeout. It never presses Reforge or a load, and answers any JS dialog with Cancel. The page and
    Chrome's profile live in --out; the profile is removed at the end. results.json there. Exit 0 ok, 1 a check failed, 2 setup. */
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,7 +60,7 @@ async function main(){
   const SRC=fs.readFileSync(HTML,'utf8');if(!SRC.includes(MARK)){console.error('index.html lacks the worker runtime marker');return 2;}
   fs.writeFileSync(path.join(OUT,'index.html'),SRC.replace(MARK,INJECT+MARK));try{fs.symlinkSync(path.join(path.dirname(HTML),'assets'),path.join(OUT,'assets'));}catch{}
   const PAGE=pathToFileURL(path.join(OUT,'index.html')).href+'#s=1001&f=42&c=sea&fresh=1';
-  const R={schema:1,html:HTML,started:new Date().toISOString(),loadavgStart:os.loadavg(),steps:{},checks:{},dialogs:[],exceptions:[],consoleErrors:[]};
+  const R={schema:1,html:HTML,htmlSHA256:createHash('sha256').update(SRC).digest('hex'),started:new Date().toISOString(),loadavgStart:os.loadavg(),steps:{},checks:{},dialogs:[],exceptions:[],consoleErrors:[]};
   const save=()=>fs.writeFileSync(path.join(OUT,'results.json'),JSON.stringify(R,null,1));
   const {c,b,kill}=await launch(fs.mkdtempSync(path.join(OUT,'chrome-profile-')));
   const hard=setTimeout(()=>{R.failure='hard timeout';save();kill();process.exit(3);},HARD_MS);
