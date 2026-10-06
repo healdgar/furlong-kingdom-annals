@@ -1,6 +1,8 @@
 # Issues
 
-The working list of known bugs and planned work. Update it when an issue is found, assigned or fixed; remove fixed items once their release is out (the commit history keeps them). Calibration and simulation-design debt stays in [SIM_DEBT.md](SIM_DEBT.md).
+The one list of known bugs, simulation debt and planned work. Update it when an issue is found, assigned or fixed; remove fixed items once their release is out (the commit history keeps them, including the retired simulation-debt register, `docs/SIM_DEBT.md`, removed October 2026).
+
+The simulation's rule: things happen because a quantity (surplus, rent against cost, threat against value) makes them worth doing, not because a number crossed a hand-picked line.
 
 Status: **open**, **investigating**, **in progress**, **queued** (waiting on another item).
 
@@ -27,13 +29,25 @@ Status: **open**, **investigating**, **in progress**, **queued** (waiting on ano
 
 | # | Issue | Status | Notes |
 |---|---|---|---|
-| 15 | A game day costs ~50–150 ms late in a game; Reel reaches ~27 days/s, not 360 | open | After the boundary fix. Cost grows with the number of places (hamlets multiply: SIM_DEBT C16). |
+| 15 | A game day costs ~50–150 ms late in a game; Reel reaches ~27 days/s, not 360 | open | After the boundary fix. Cost grows with the number of places (hamlets multiply: #22). |
 | 16 | Fastest reaches 45% of its 30 days/s | in progress | Each daily packet carries 8–11 MB of mostly unchanged structure; siege arcs clone whole towns (24 MB). Boundary fix removes the clones; send structures only when changed after. |
 
-## Tooling decisions pending
+## Simulation and calibration
 
-| # | Item | Proposal |
+| # | Issue | Status | Notes |
+|---|---|---|---|
+| 19 | Money made or lost without a named payer or recipient | open | Still open from the money sweep (M23–M30): bandit loot, metro pooling, toll houses. Also check the lord-gold initialisation and prepaid wages booked as minted. Verify with `tools/soak.mjs --audit`; a 1-year soak on 2026-10-06 reported residual 0. |
+| 20 | Two population models (C12) | open, partly fixed | Prosperity now follows what families live by, but a town's population ceiling is still reckoned from land, trade and workshops, not from its households' own living, so the two can part. |
+| 21 | Meadow on dry ground (C17) | open | Any strip may go to hay when hay pays: up to half the ploughland turns to meadow and ploughmen go short of bread. Meadow should come from wet bottomland. Likely feeds #12. |
+| 22 | Hamlets multiply (C16) | open | Strips stay with holders and heirs, new households are landless and found hamlets: a 400-year history spreads ~1,300 souls over ~85 hamlets. Holdings should be let or shared first, pioneer parties gather over years. Also drives #15. |
+| 23 | Calibration pass not yet done | open | The economic replacements changed many interlocking rates at once: growth pace, prosperity levels, castle and church tempo, rebellion frequency, prices, rents, wages and army sizes, to be checked across several worlds and centuries with `tools/soak.mjs`. |
+
+Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190, bastions 1500, mills, siege engines), the logistic birth curve, army-supply and watch top-up hysteresis, courtyard-house gates, the house-tongue dice.
+
+## Tooling
+
+| # | Item | Status |
 |---|---|---|
-| 17 | `tools/history-check.mjs` fails on any ledger; it tests the off-by-default full history recorder | Delete; review whether the recorder is dead code. |
-| 18 | Frozen baseline modules (`*-baseline.mjs`) and their equivalence tests; `game-write-*` prototype (5 tests); `long-run-check` (overlaps soak) | Delete. |
-| 19 | Money: unrecorded flows (lord gold initialised without a flow; prepaid wages booked as minted) | Verify with `tools/soak.mjs --audit` on the current ledger; a 1-year soak on 2026-10-06 reported residual 0. |
+| 17 | Delete `tools/history-check.mjs` (fails on any ledger; tests the off-by-default full history recorder) | in progress; then review whether the recorder is dead code |
+| 18 | Delete frozen baseline modules (`*-baseline.mjs`) and their old-versus-new comparison tests | in progress |
+| 24 | `game-write-*` prototype (5 tests) and `long-run-check` (overlaps soak) | proposed for deletion |

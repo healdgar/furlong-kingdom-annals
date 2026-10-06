@@ -486,7 +486,7 @@ itself; you rule one lord's domain:
 ## The economy drives it
 
 What happens is decided by quantities the economy produces, not by numbers crossing hand-picked lines
-(the register of what was replaced, and what remains, is [docs/SIM_DEBT.md](docs/SIM_DEBT.md)):
+(what remains to fix is listed in [docs/ISSUES.md](docs/ISSUES.md)):
 
 - **Prosperity** is a town's measured surplus: what its land, trade and crafts keep beyond its people's
   needs, less hunger, disorder and danger. Shocks knock it down; it returns to what the economy supports.
