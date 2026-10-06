@@ -32,7 +32,7 @@ function retreatRealm({routeResult={poly:[{x:100,z:0},{x:0,z:0}],len:100,time:10
     armyRouteBlocked:a=>{a.field={...position};a.fieldTo=null;a.chase=null;a.state='idle';a.why='no passable route: a bridge, ford, or breach is needed';return false;},
     armyMarchPath:(a,p,speed)=>{a.poly=p;a.lastSpeed=speed;a.arriveDay=now+100;a.state='march';return true;},
     MARCH_MPD:400,FIELD_MPD:250,COG_MPD:2800,PORT_DELAY:1200,PL:()=>1,
-    spend:(...args)=>{calls.spend.push(args);return spendOk;},payAmong:(...args)=>calls.paid.push(args),
+    purse:(...args)=>{calls.spend.push(args);return spendOk?1e9:0;},purseAcct:()=>'crown',payAmong:(...args)=>calls.paid.push(args),
     heads_:()=>[],book:()=>{},houseName:()=> 'House Test',vary:(_k,options)=>options[0]()
   });
   vm.runInContext(sourceFunction('armyRouteBlocked')+'\n'+sourceFunction('armyRoadDeparture')+'\n'+sourceFunction('marchArmy')+'\n'+sourceFunction('tickMilitary'),c);

@@ -90,6 +90,7 @@ function runtimeContext(source, { volumeType = false } = {}) {
     means: () => 1e9,
     acct: () => {},
     wages: () => {},
+    buildWorks: () => {},
     lordAcct: () => 'crown',
   });
   vm.runInContext(fn(source, 'commodityFacilities') + '\n' + fn(source, 'commodityDestroy'), c);

@@ -81,4 +81,5 @@ test('bandit raid credits v3 cargo proceeds once at the fence and leaves money u
   near(r.eval("cargo.qty"),0);
   near(r.eval("s.storage.total('grain')"),6);
   near(r.coins(),moneyBefore);
+  assert.ok(r.eval("[...fence.storage.entries({good:'grain'})].every(e=>e.owner&&e.owner!=='out'&&e.owner._hh)"),'the stolen goods belong to one of the camp\'s men, not to a dealer beyond the realm');
 });

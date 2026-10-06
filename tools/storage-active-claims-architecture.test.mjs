@@ -51,7 +51,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // ({k:'settle'}) and replayed at the same point; the daily settlement passes daily=true. Settle calls, their order and
  // every quantity/title writer are unchanged; save-session.test.mjs covers the journaling.
  // Tick-cost: the ledger fast paths (fixed-depth nested maps, slot quantity cache, exposedOnly rows) keep writers, events and order; commodity-ledger-equivalence covers them.
- assert.equal(digest(source.slice(a,b)),"1ba846f4ccce7597f24fa713e7925028843adc6ed3f44ae2b7fae0a7cc580b8d");
+ // Money routing (issue #19): carriage and construction wages now pass their payer to buildWorks/payAmong
+ // instead of debiting it and booking the wage as coined from nobody, and a robbed cargo is owned by the
+ // outlaw household that took it (the thief argument, default 'out') instead of a dealer abroad. No lot,
+ // title, claim or journal writer changes; money-routes.test.mjs and the storage fixtures cover these lines.
+ assert.equal(digest(source.slice(a,b)),"fe882e7cf10cdb646276b2fad5df523b9f9e06fe04ecda2446c54272bdc2842e");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

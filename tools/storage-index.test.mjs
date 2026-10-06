@@ -38,7 +38,7 @@ test('inheritance visits the same original lots even while transfers split them'
   const P=pair();run(P,"transferOwnership('crown',[[accountOwner(H[0]),.4],[accountOwner(H[1]),.6]]);storageTitles(s)");
 });
 test('exposed hauling and reporting preserve lot order across custody changes',()=>{
-  const P=pair();run(P,"K.destroy('a');K.destroy('b');s.buildings.push({arch:'grange',storageId:'store',state:'sound',x:30,z:0,tier:0,ownerId:'crown'});storageRoute=()=>10;wages=()=>{};dist2d=(a,b,c,d)=>Math.hypot(a-c,b-d);storageTick(s)");
+  const P=pair();run(P,"K.destroy('a');K.destroy('b');s.buildings.push({arch:'grange',storageId:'store',state:'sound',x:30,z:0,tier:0,ownerId:'crown'});storageRoute=()=>10;wages=()=>{};buildWorks=(s,q,payer)=>{acct(payer,-q)};dist2d=(a,b,c,d)=>Math.hypot(a-c,b-d);storageTick(s)");
 });
 test('indexed reads avoid full lot iteration and remain derived, including incoming cargo',()=>{
   const r=pair()[1];r.eval("K.matching({good:'grain'});const keys=Object.keys(K).join(',');const values=K.lots.values;K.lots.values=()=>{throw Error('full scan')};storageSpoil(s,'grain',.001);storageConsumeSale(s,'crown','grain',.25);K.destroy('a');K.lots.values=values;");

@@ -8,14 +8,14 @@ const ix=source.slice(source.indexOf('/* ARMY_SETTLEMENT_INDEX_HELPERS_BEGIN */'
 function realm(){
   const s={name:'Town',owner:1,pop:1000,unrest:80,garrison:0,militia:0,prosperity:50,buildings:[],_room:1000,infected:0,recovered:0,res:{},revolted:true,pos:{x:0,z:0}};
   const W={settlements:[s,{owner:1}],houses:[{}, {name:'Lord',seat:1}],armies:[],_pm:{}};
-  const payments=[],events=[],cooldowns=new Map();let gold=1000,hunger=0;
+  const payments=[],payers=[],events=[],cooldowns=new Map();let gold=1000,hunger=0;
   const C=vm.createContext({W,MOD:{tax:12},BIRTH0:0,HOUSEHOLD:4,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),day:()=>1,
     eatHouseholds:()=>hunger,householdsOf:()=>[],carryingCap:()=>1000,foodYr:()=>100,plyH:()=>1,inRevolt:()=>false,
-    spend:(_hi,c)=>{if(gold<c)return false;gold-=c;return true;},cdLeft:k=>cooldowns.get(k)||0,setCd:(k,n)=>cooldowns.set(k,n),
-    heads_:()=>[],payAmong:(_heads,c)=>payments.push(c),emit:(...e)=>events.push(e),chance:()=>false,
+    spend:(_hi,c)=>{if(gold<c)return false;gold-=c;return true;},purse:()=>gold,purseAcct:()=>'purse',cdLeft:k=>cooldowns.get(k)||0,setCd:(k,n)=>cooldowns.set(k,n),
+    heads_:()=>[],payAmong:(_heads,c,payer)=>{payments.push(c);payers.push(payer);gold-=c;},emit:(...e)=>events.push(e),chance:()=>false,
     atWar:()=>false,cbtn:(cmd,arg,label,cost,disabled='',description='')=>JSON.stringify({cmd,arg,label,cost,disabled,description}),worksHTML:()=>'',esc:String});
   vm.runInContext(ix+['detailPopulation','friendlyTown','sheltered','publicOrderMen','publicOrderSuppression','watchRecruitment','suppressUnrestAmount','tickPopulation','settlementCmd','settlementActsHTML'].map(fn).join('\n'),C);
-  return {C,W,s,payments,events,cooldowns,get gold(){return gold;},set gold(v){gold=v;},set hunger(v){hunger=v;}};
+  return {C,W,s,payments,payers,events,cooldowns,get gold(){return gold;},set gold(v){gold=v;},set hunger(v){hunger=v;}};
 }
 test('only the owner’s troops actually in town count; movement and casualties update immediately',()=>{
   const f=realm(),{C,W,s}=f;
@@ -51,7 +51,7 @@ test('public order queries are read-only once the existing army index is warm',(
 });
 test('local watch recruitment is population bounded, paid, cooled down and ownership restricted',()=>{
   const f=realm();f.s.pop=50;f.C.settlementCmd('garrison',0);
-  assert.equal(f.s.garrison,6);assert.equal(f.gold,940);assert.deepEqual(f.payments,[60]);assert.equal(f.cooldowns.get('s_gar0'),60);
+  assert.equal(f.s.garrison,6);assert.equal(f.gold,940);assert.deepEqual(f.payments,[60]);assert.deepEqual(f.payers,['purse'],'the watch is paid from the owner\'s purse, not from nowhere');assert.equal(f.cooldowns.get('s_gar0'),60);
   assert.equal(f.C.watchRecruitment(f.s),0);f.C.settlementCmd('garrison',0);assert.equal(f.gold,940);
   const other=realm();other.s.owner=2;other.C.settlementCmd('garrison',0);assert.equal(other.gold,1000);assert.equal(other.s.garrison,0);
   const broke=realm();broke.gold=0;broke.C.settlementCmd('garrison',0);assert.equal(broke.s.garrison,0);assert.equal(broke.cooldowns.size,0);
