@@ -1169,7 +1169,10 @@ function segSegDist(a,b,c,d){ // 0 if they cross
 }
 function slopeAt(cx,cz){
   const h=W.h,c=h[cIdx(cx,cz)];let m=0;
-  for(const[dx,dz]of[[1,0],[-1,0],[0,1],[0,-1]])if(inB(cx+dx,cz+dz))m=Math.max(m,Math.abs(h[cIdx(cx+dx,cz+dz)]-c));
+  if(inB(cx+1,cz))m=Math.max(m,Math.abs(h[cIdx(cx+1,cz)]-c));
+  if(inB(cx-1,cz))m=Math.max(m,Math.abs(h[cIdx(cx-1,cz)]-c));
+  if(inB(cx,cz+1))m=Math.max(m,Math.abs(h[cIdx(cx,cz+1)]-c));
+  if(inB(cx,cz-1))m=Math.max(m,Math.abs(h[cIdx(cx,cz-1)]-c));
   return m/CELL;
 }
 
@@ -3642,6 +3645,8 @@ globalThis.CommodityBalanceLedger = (() => {
     return OMIT;
   }
   const OMIT = Symbol('omit');
+  const QUANTITY_TERM_RANKS = [], QUANTITY_TERM_QTYS = []; // scratch for quantity(): it never re-enters
+  const quantityRank = (state, id, good, owner, kind) => state.orderRanks.get(id)?.get(good)?.get(owner)?.get(kind) ?? Number.MAX_SAFE_INTEGER;
   function metadataOf(id, data, prior) {
     const input = { ...(prior || {}), ...(data || {}) }, meta = {};
     for (const key of Object.keys(input).sort()) {
@@ -3684,11 +3689,30 @@ globalThis.CommodityBalanceLedger = (() => {
       const child = maps[i + 1]; if (child.size) break; maps[i].delete(keys[i]);
     }
   }
-  function rowKey(location, good, owner, availability) { return [location, good, owner, availability]; }
+  // Fixed-depth forms of nestedSet/nestedDelete: same intermediate Maps, insertion order and pruning, without a key array per call.
+  function nestedSet3(root, a, b, c, value) {
+    let m = root.get(a); if (m === undefined) root.set(a, m = new Map());
+    let n = m.get(b); if (n === undefined) m.set(b, n = new Map());
+    n.set(c, value);
+  }
+  function nestedSet4(root, a, b, c, d, value) {
+    let m = root.get(a); if (m === undefined) root.set(a, m = new Map());
+    let n = m.get(b); if (n === undefined) m.set(b, n = new Map());
+    let o = n.get(c); if (o === undefined) n.set(c, o = new Map());
+    o.set(d, value);
+  }
+  function nestedDelete3(root, a, b, c) {
+    const m = root.get(a); if (!m) return; const n = m.get(b); if (!n) return;
+    n.delete(c); if (n.size) return; m.delete(b); if (m.size) return; root.delete(a);
+  }
+  function nestedDelete4(root, a, b, c, d) {
+    const m = root.get(a); if (!m) return; const n = m.get(b); if (!n) return; const o = n.get(c); if (!o) return;
+    o.delete(d); if (o.size) return; n.delete(c); if (n.size) return; m.delete(b); if (m.size) return; root.delete(a);
+  }
   function recordBalance(ledger, location, good, owner, availability, before, after, cause) {
-    const state = DAILY.get(ledger), keys = rowKey(location, good, owner, availability);
-    let row = nestedGet(state.rows, keys);
-    if (!row) { row = { location, good, owner, ownerId: ownerIdString(state.ownerId(owner), 'ownerId'), availability, before, after }; nestedSet(state.rows, keys, row); }
+    const state = DAILY.get(ledger);
+    let row = state.rows.get(location)?.get(good)?.get(owner)?.get(availability);
+    if (!row) { row = { location, good, owner, ownerId: ownerIdString(state.ownerId(owner), 'ownerId'), availability, before, after }; nestedSet4(state.rows, location, good, owner, availability, row); }
     else row.after = after;
     if (cause) {
       let byGood = keyFor(state.flows, cause, () => new Map());
@@ -3710,8 +3734,12 @@ globalThis.CommodityBalanceLedger = (() => {
     state.notes.set(cause, note);
   }
   function clearBuffer(state) { state.rows = new Map(); state.locations = new Map(); state.flows = new Map(); state.notes = new Map(); }
+  // One cached total per (availability filter, transit scope) for an (owner, good): slots 0..11. Invalidated slot arrays are reused.
+  const QUANTITY_SLOTS = [];
   function invalidateQuantity(state, owner, good) {
-    const goods = state.quantityCache.get(owner); if (goods) goods.delete(good);
+    const goods = state.quantityCache.get(owner); if (!goods) return;
+    const slots = goods.get(good); if (slots === undefined) return;
+    goods.delete(good); slots.fill(undefined); QUANTITY_SLOTS.push(slots);
   }
   function ownerFacilitySet(state, owner, good, make = false) {
     let goods = state.ownerFacilities.get(owner);
@@ -3824,10 +3852,10 @@ globalThis.CommodityBalanceLedger = (() => {
     }
     _set(facility, location, good, owner, availability, after, cause) {
       const state = DAILY.get(this);
-      const before = nestedGet(facility.balances, [good, owner, availability]) || 0;
+      const before = facility.balances.get(good)?.get(owner)?.get(availability) || 0;
       if (before === after) return;
-      if (after === 0) nestedDelete(facility.balances, [good, owner, availability]);
-      else nestedSet(facility.balances, [good, owner, availability], after);
+      if (after === 0) nestedDelete3(facility.balances, good, owner, availability);
+      else nestedSet3(facility.balances, good, owner, availability, after);
       state.usedCache.delete(location);
       state.totalCache.delete(good);
       invalidateQuantity(state, owner, good);
@@ -3840,8 +3868,8 @@ globalThis.CommodityBalanceLedger = (() => {
         }
       }
       // Priority changes only with cell membership, never on ordinary quantity updates.
-      if (before === 0 && after > 0) nestedSet(state.orderRanks, [location, good, owner, availability], state.nextOrderRank++);
-      else if (before > 0 && after === 0) nestedDelete(state.orderRanks, [location, good, owner, availability]);
+      if (before === 0 && after > 0) nestedSet4(state.orderRanks, location, good, owner, availability, state.nextOrderRank++);
+      else if (before > 0 && after === 0) nestedDelete4(state.orderRanks, location, good, owner, availability);
       recordBalance(this, location, good, owner, availability, before, after, cause);
     }
     adjust(location, good, owner, availability, delta, cause = 'adjustment') {
@@ -3867,32 +3895,46 @@ globalThis.CommodityBalanceLedger = (() => {
     }
     *entries(fields = {}) {
       if (!fields || typeof fields !== 'object' || Array.isArray(fields)) fail('fields must be an object');
-      const has = key => own(fields, key), includeTransit = !!fields.includeTransit || fields.location !== undefined || fields.availability === 'transit';
+      const hasLocation = own(fields, 'location'), hasGood = own(fields, 'good'), hasOwner = own(fields, 'owner'), hasAvailability = own(fields, 'availability'), exposedOnly = fields.exposedOnly === true; // exposedOnly: rows of exposed facilities only, in the same order
+      const includeTransit = !!fields.includeTransit || fields.location !== undefined || fields.availability === 'transit';
       const state = DAILY.get(this); let ids;
-      if (has('owner') && has('good')) ids = ownerFacilitySet(state, fields.owner, fields.good) || [];
-      else if (has('owner')) { ids = new Set(); for (const locations of state.ownerFacilities.get(fields.owner)?.values() || []) for (const id of locations) ids.add(id); }
+      if (hasOwner && hasGood) ids = ownerFacilitySet(state, fields.owner, fields.good) || [];
+      else if (hasOwner) { ids = new Set(); for (const locations of state.ownerFacilities.get(fields.owner)?.values() || []) for (const id of locations) ids.add(id); }
       else ids = state.orderRanks.keys(); // existing positive-row index excludes retired, empty cargo
-      const ledger = this, facilities = has('location') ? [[fields.location, this._facility(fields.location)]] : (function* () { for (const id of ids) { const facility = ledger.facilities.get(id); if (facility) yield [id, facility]; } })();
-      const selected = [];
-      for (const [location, facility] of facilities) {
-        if (!includeTransit && facility.transit) continue;
-        const goods = has('good') ? [[fields.good, facility.balances.get(fields.good)]] : facility.balances;
-        for (const [good, owners] of goods) {
-          if (!owners) continue;
-          const ownerEntries = has('owner') ? [[fields.owner, owners.get(fields.owner)]] : owners;
-          for (const [owner, availabilities] of ownerEntries) {
-            if (!availabilities) continue;
-            const rows = has('availability') ? [[fields.availability, availabilities.get(fields.availability)]] : availabilities;
-            for (const [availability, qty] of rows) {
-              if (!(qty > 0) || !AVAILABILITY.has(availability)) continue;
-              if (!includeTransit && availability === 'transit') continue;
-              const rank = nestedGet(DAILY.get(this).orderRanks, [location, good, owner, availability]);
-              selected.push({ row: { location, good, owner, availability, qty }, rank: rank ?? Number.MAX_SAFE_INTEGER });
-            }
-          }
+      const selected = [], ranks = state.orderRanks;
+      if (hasOwner && hasGood && hasAvailability && !hasLocation) { // one owner's balance of one good in one availability, wherever it lies
+        const owner = fields.owner, good = fields.good, availability = fields.availability;
+        if (AVAILABILITY.has(availability) && (includeTransit || availability !== 'transit')) for (const id of ids) {
+          const facility = this.facilities.get(id); if (!facility || !includeTransit && facility.transit || exposedOnly && !facility.exposed) continue;
+          const qty = facility.balances.get(good)?.get(owner)?.get(availability);
+          if (qty > 0) selected.push({ row: { location: id, good, owner, availability, qty }, rank: ranks.get(id)?.get(good)?.get(owner)?.get(availability) ?? Number.MAX_SAFE_INTEGER });
         }
+        if (selected.length > 1) selected.sort((a, b) => a.rank - b.rank);
+        for (const item of selected) yield item.row;
+        return;
       }
-      selected.sort((a, b) => a.rank - b.rank);
+      const addRow = (location, good, owner, availability, qty) => {
+        if (!(qty > 0) || !AVAILABILITY.has(availability)) return;
+        if (!includeTransit && availability === 'transit') return;
+        const rank = ranks.get(location)?.get(good)?.get(owner)?.get(availability);
+        selected.push({ row: { location, good, owner, availability, qty }, rank: rank ?? Number.MAX_SAFE_INTEGER });
+      };
+      const scanOwners = (location, good, owners) => {
+        if (hasOwner) { const availabilities = owners.get(fields.owner); if (availabilities) scanAvailabilities(location, good, fields.owner, availabilities); }
+        else for (const [owner, availabilities] of owners) if (availabilities) scanAvailabilities(location, good, owner, availabilities);
+      };
+      const scanAvailabilities = (location, good, owner, availabilities) => {
+        if (hasAvailability) addRow(location, good, owner, fields.availability, availabilities.get(fields.availability));
+        else for (const [availability, qty] of availabilities) addRow(location, good, owner, availability, qty);
+      };
+      const scan = (location, facility) => {
+        if (!includeTransit && facility.transit || exposedOnly && !facility.exposed) return;
+        if (hasGood) { const owners = facility.balances.get(fields.good); if (owners) scanOwners(location, fields.good, owners); }
+        else for (const [good, owners] of facility.balances) if (owners) scanOwners(location, good, owners);
+      };
+      if (hasLocation) scan(fields.location, this._facility(fields.location));
+      else for (const id of ids) { const facility = this.facilities.get(id); if (facility) scan(id, facility); }
+      if (selected.length > 1) selected.sort((a, b) => a.rank - b.rank);
       for (const item of selected) yield item.row;
     }
     *owners(good, availability, includeTransit = false) {
@@ -3904,24 +3946,33 @@ globalThis.CommodityBalanceLedger = (() => {
       if (availability !== undefined && availability !== null && !AVAILABILITY.has(availability)) fail('invalid availability');
       const state = DAILY.get(this), token = availability == null ? undefined : availability;
       let goods = state.quantityCache.get(owner); if (!goods) state.quantityCache.set(owner, goods = new Map());
-      let variants = goods.get(good); if (!variants) goods.set(good, variants = new Map());
-      let scopes = variants.get(token); if (!scopes) variants.set(token, scopes = new Map());
+      let slots = goods.get(good); if (slots === undefined) goods.set(good, slots = QUANTITY_SLOTS.pop() || new Array(12));
       const scope = !!includeTransit || token === 'transit';
-      if (scopes.has(scope)) return scopes.get(scope);
-      const terms = [];
-      const ids = [...(ownerFacilitySet(state, owner, good) || [])];
-      for (const id of ids) {
+      const slot = (token === undefined ? 0 : token === 'held' ? 1 : token === 'sale' ? 2 : token === 'unassigned' ? 3 : token === 'transit' ? 4 : 5) * 2 + (scope ? 1 : 0);
+      const hit = slots[slot]; if (hit !== undefined) return hit;
+      // The first contributing row is kept as it is found: ranks are looked up only if a second one must be ordered after it.
+      const ids = ownerFacilitySet(state, owner, good), termRank = QUANTITY_TERM_RANKS, termQty = QUANTITY_TERM_QTYS; let n = 0, qty0 = 0, id0, kind0;
+      if (ids) for (const id of ids) {
         const facility = this.facilities.get(id); if (!facility || !scope && facility.transit) continue;
         const rows = facility.balances.get(good)?.get(owner); if (!rows) continue;
-        const selected = token !== undefined ? [[token, rows.get(token) || 0]] : [...rows];
-        for (const [kind, qty] of selected) if (qty > 0 && (scope || kind !== 'transit')) {
-          const rank = nestedGet(state.orderRanks, [id, good, owner, kind]);
-          terms.push({ rank: rank ?? Number.MAX_SAFE_INTEGER, qty });
+        if (token !== undefined) {
+          const qty = rows.get(token) || 0;
+          if (qty > 0 && (scope || token !== 'transit')) {
+            if (n === 0) { qty0 = qty; id0 = id; kind0 = token; n = 1; }
+            else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, token); termQty[n++] = qty; }
+          }
+        } else for (const [kind, qty] of rows) if (qty > 0 && (scope || kind !== 'transit')) {
+          if (n === 0) { qty0 = qty; id0 = id; kind0 = kind; n = 1; }
+          else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, kind); termQty[n++] = qty; }
         }
       }
-      terms.sort((a, b) => a.rank - b.rank);
-      let total = 0; for (const term of terms) total += term.qty;
-      scopes.set(scope, total);
+      let total = 0;
+      if (n === 1) total = qty0;
+      else if (n > 1) {
+        for (let i = 1; i < n; i++) { const r = termRank[i], q = termQty[i]; let j = i; while (j > 0 && termRank[j - 1] > r) { termRank[j] = termRank[j - 1]; termQty[j] = termQty[j - 1]; j--; } termRank[j] = r; termQty[j] = q; }
+        for (let i = 0; i < n; i++) total += termQty[i];
+      }
+      slots[slot] = total;
       return total;
     }
     total(good, includeTransit = false) {
@@ -4019,8 +4070,8 @@ globalThis.CommodityBalanceLedger = (() => {
       finiteNonnegative(day, 'day');
       const state = DAILY.get(this), deltas = [];
       const flattenRows = map => { for (const value of map.values()) if (value instanceof Map) flattenRows(value); else yieldRow(value); };
-      const yieldRow = row => { if (!Object.is(row.before, row.after)) deltas.push({ location: row.location, good: row.good, owner: row.ownerId, availability: row.availability,
-        before: row.before, after: row.after, delta: row.after - row.before }); };
+      const yieldRow = row => { if (!Object.is(row.before, row.after)) deltas.push(Object.freeze({ location: row.location, good: row.good, owner: row.ownerId, availability: row.availability,
+        before: row.before, after: row.after, delta: row.after - row.before })); }; // frozen as built: the event's deep freeze then stops at each row
       flattenRows(state.rows);
       const locations = [...state.locations.values()].filter(x => JSON.stringify(x.before) !== JSON.stringify(x.after)).map(x => ({ id: x.id, after: x.after }));
       const flows = {};
@@ -4105,7 +4156,8 @@ function commodityFacilities(s){const K=s.storage,seen=new Set();for(const b of 
     if(unchanged)for(const key in t)if(key!=='capacity'&&(key==='goods'?!sameGoods(prior.goods,t.goods):prior[key]!==t[key])){unchanged=false;break;}
     if(!unchanged)K.location(id,{building:b,x:b.x,z:b.z,...t,capacity,owner,public:b.storagePublic!==false,active});if(!active)commodityDestroy(K,id);}for(const n of K.locations.values())if(n.building&&!seen.has(n.id))commodityDestroy(K,n.id);return K;}
 function commodityDestroy(K,id){const n=K.locations.get(id);if(!n)return;K.location(id,{active:false});const rows=[...K.entries({location:id})];if(!rows.length)return;const yard=K.location('exposed:'+id,{x:n.x,z:n.z,capacity:Infinity,exposed:true,protection:4});for(const r of rows)K.transfer(r,r.qty,r.owner,{location:yard.id,availability:r.availability,cause:'facility-destroyed'});}
-function commodityExposed(K){return [...K.entries()].filter(r=>K.locations.get(r.location)?.exposed);}
+function commodityAnyHeld(K,g){for(const o of K.owners(g,'held'))return true;return false;} // whether any owner holds the good
+function commodityExposed(K){return [...K.entries({exposedOnly:true})];}
 function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?means(payer)/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0){acct(payer,-q*unitCost);wages(s,q*unitCost,'carriage');}K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+(K.locations.get(r.location).balances.get(r.good)?.get(r.owner)?.get(r.availability)||0)*K.volume(r.good),0)};}
 function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);let unassigned=0;for(const good of g==='timber'?['timber','char']:[g])for(const r of K.entries({good})){const n=K.locations.get(r.location);if(n.transit)continue;const q=r.qty*Math.min(1,rate*(n?.protection??4));K.consume(r,q,n?.exposed?'exposure-loss':'stored-spoilage');if(r.owner===null)unassigned+=q;}if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
 function commodityBuildingReport(s,b){const K=s.storage,n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const r of K.entries({location:n.id})){const g=commodityPhysical(r.good);goods[g]=(goods[g]||0)+r.qty;const id=storageOwnerId(r.owner);owners.set(id,(owners.get(id)||0)+r.qty*K.volume(r.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
@@ -4187,6 +4239,7 @@ function storageFacilities(s){if(commodityActive(s)||!s.storage&&globalThis.FURL
 function storageAccess(s,a,b){const d=dist2d(a.x,a.z,b.x,b.z),fortified=typeof fortCircuits==='function'&&fortCircuits(s).length,steps=Math.max(1,Math.ceil(d/(fortified?1:5)));if(typeof wallRadAt==='function'&&s.wallRad){const side=p=>dist2d(p.x,p.z,s.pos.x,s.pos.z)-wallRadAt(s,Math.atan2(p.z-s.pos.z,p.x-s.pos.x));if(side(a)*side(b)<0)return false;}for(let i=0;i<=steps;i++){const f=i/steps,x=a.x+(b.x-a.x)*f,z=a.z+(b.z-a.z)*f;if(typeof toCell==='function'&&W.water){const ci=toCell(x),cj=toCell(z);if(!inB(ci,cj)||W.water[cIdx(ci,cj)]||slopeAt(ci,cj)>0.35)return false;}if(typeof riverAt==='function'&&riverAt(x,z,0.5)||typeof lakeAt==='function'&&lakeAt(s,x,z,0.5)||fortified&&fortRoadBlocked(s,x,z))return false;}return true;}
 // Reuse only within one synchronous, read-only site evaluation; never retain across world changes.
 const STORAGE_ROUTE_BATCHES=new WeakMap();
+let STORAGE_NODE_DIST=new Float64Array(0),STORAGE_NODE_HEAP=new Int32Array(0); // scratch for the nearest-reachable-node search; storageAccess never re-enters it
 function storageRouteBatch(s,fn){if(typeof fn!=='function')return {s,g:null,points:new Map(),paths:new Map()};if(STORAGE_ROUTE_BATCHES.has(s))return fn();STORAGE_ROUTE_BATCHES.set(s,storageRouteBatch(s));try{return fn();}finally{STORAGE_ROUTE_BATCHES.delete(s);}}
 function storageRoute(s,a,b,batch){
   if(s.siegeBy||s.quarantineUntil>day())return Infinity;
@@ -4195,8 +4248,14 @@ function storageRoute(s,a,b,batch){
   if(s._storageRouteSignature!==signature){s._storageRouteSignature=signature;s._storageGraph=streetGraph({...s,_sg:null,streets:(s.streets||[]).filter(st=>!st.gone&&!st.hidden)});}
   const g=s._storageGraph,C=batch?.s===s?batch:STORAGE_ROUTE_BATCHES.get(s);if(!g.N.length)return Infinity;
   if(C&&C.g!==g){C.g=g;C.points.clear();C.paths.clear();}
-  const accessible=p=>{const key=p.x+','+p.z;if(C?.points.has(key))return C.points.get(key);let best=-1,bd=Infinity;
-    for(let i=0;i<g.N.length;i++){const d=dist2d(p.x,p.z,g.N[i].x,g.N[i].z);if(d<bd&&storageAccess(s,p,g.N[i])){best=i;bd=d;}}
+  const accessible=p=>{const key=p.x+','+p.z;if(C?.points.has(key))return C.points.get(key);let best=-1;
+    // The nearest reachable node, ties to the lowest index: try nodes in (distance, index) order and stop at the first reachable one.
+    const N=g.N,n=N.length;if(STORAGE_NODE_DIST.length<n){STORAGE_NODE_DIST=new Float64Array(n*2);STORAGE_NODE_HEAP=new Int32Array(n*2);}
+    const D=STORAGE_NODE_DIST,H=STORAGE_NODE_HEAP;let m=0;
+    for(let i=0;i<n;i++){const d=dist2d(p.x,p.z,N[i].x,N[i].z);D[i]=d;if(d<Infinity)H[m++]=i;} // a node at NaN or infinite distance is never chosen
+    const sink=k=>{const i=H[k];for(;;){let c=2*k+1;if(c>=m)break;if(c+1<m&&(D[H[c+1]]<D[H[c]]||D[H[c+1]]===D[H[c]]&&H[c+1]<H[c]))c++;const j=H[c];if(D[j]<D[i]||D[j]===D[i]&&j<i){H[k]=j;k=c;}else break;}H[k]=i;};
+    for(let k=(m>>1)-1;k>=0;k--)sink(k);
+    while(m>0){const i=H[0];H[0]=H[--m];if(m>1)sink(0);if(storageAccess(s,p,N[i])){best=i;break;}}
     if(C&&C.points.size<4096)C.points.set(key,best);return best;};
   const ai=accessible(a),bi=accessible(b);if(ai<0||bi<0)return Infinity;
   const key=ai+','+bi;let P=C?.paths.get(key);if(P===undefined){P=streetPath(g,ai,bi);if(C&&C.paths.size<4096)C.paths.set(key,P);}
@@ -5282,8 +5341,10 @@ function keepToBank(P0){ // a road never meets a river at too shallow an angle: 
     if(!hubs.some(h=>dist2d(q.x,q.z,h.m.x,h.m.z)<h.far))continue;const a=out[k-1],b=out[k+1];out[k]={x:q.x*0.5+(a.x+b.x)*0.25,z:q.z*0.5+(a.z+b.z)*0.25};}
   return out.map(q=>q.fix?{x:q.x,z:q.z}:q);
 }
-function riverAt(x,z,pad){ // the river segment under (x,z), if any
-  for(const o of W.rivHash.near(x,z,1))if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;
+const RIVER_HASH_CELL=40; // W.rivHash is made with makeHash(40)
+function riverAt(x,z,pad){ // the river segment under (x,z), if any: the cells near(x,z,1) would list, in its order, without building the list
+  const cells=W.rivHash.historyCells,i1=Math.floor((x+1)/RIVER_HASH_CELL),j1=Math.floor((z+1)/RIVER_HASH_CELL);
+  for(let i=Math.floor((x-1)/RIVER_HASH_CELL);i<=i1;i++)for(let j=Math.floor((z-1)/RIVER_HASH_CELL);j<=j1;j++){const list=cells.get(i*100003+j);if(list)for(const o of list)if(segDist(x,z,o.a,o.b)<o.hw+pad)return o;}
   return null;
 }
 function riverPolygonDifference(P,F){ // subtract a convex channel footprint, keeping the land outside it
@@ -10371,22 +10432,36 @@ function settleTracks(){
     for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k];for(let t=0;t<=1;t+=0.25){const i=Math.floor((a.x+(b.x-a.x)*t)/20),j=Math.floor((a.z+(b.z-a.z)*t)/20),q=sk(i,j);if(!SH.has(q))SH.set(q,[]);SH.get(q).push([a,b,st.hw||3]);}}}
   const onStreet=(x,z)=>{const i=Math.floor(x/20),j=Math.floor(z/20);for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){const L=SH.get(sk(i+di,j+dj));if(L)for(const[a,b,hw]of L)if(segDist(x,z,a,b)<hw+6)return true;}return false;};
   const urban=(x,z)=>candidates(towns,townNodes,x,z).some(({o})=>dist2d(x,z,o.pos.x,o.pos.z)<(o.extentR||o.radius||60))||candidates(yards,yardNodes,x,z).some(({b})=>Math.abs(b.x-x)<12&&Math.abs(b.z-z)<12)||onStreet(x,z); // a town's own ground is bought and laid out in lots and yards; a farmstead's yard is its own
+  // urban() and the near-town test depend only on the graph and the scratch hashes above, so each node, and each edge's midpoint,
+  // is judged once for all the places' searches. The search tables are reused: only the nodes a search reached are reset.
+  const urbanNode=new Int8Array(N),townsNear=new Array(N),urbanEdge=new Map(),NO_TOWNS=[];
+  const nodeUrban=w=>{let u=urbanNode[w];if(u===0){const P=T.pts[w];u=urbanNode[w]=urban(P.x,P.z)?2:1;}return u===2;};
+  const edgeUrban=(e,P,Pv)=>{let u=urbanEdge.get(e);if(u===undefined)urbanEdge.set(e,u=urban((P.x+Pv.x)/2,(P.z+Pv.z)/2));return u;};
+  const nearTowns=w=>{let L=townsNear[w];if(L===undefined){const P=T.pts[w];L=NO_TOWNS;for(const {o} of candidates(towns,townNodes,P.x,P.z))if(dist2d(P.x,P.z,o.pos.x,o.pos.z)<(o.radius||60)){if(L===NO_TOWNS)L=[];L.push(o);}townsNear[w]=L;}return L;};
+  const dist=new Float64Array(N).fill(Infinity),via=new Array(N),touched=[];let HD=new Float64Array(2*T.E.size+16),HV=new Int32Array(HD.length);
   W.settlements.forEach((s,si)=>{
     const fs=fields.get(si)||[];if(!fs.length)return;
     const R=(s.extentR||s.radius||60)+15;let a0=-1,bd=1e18;
     for(let i=0;i<N;i++){const d=dist2d(T.pts[i].x,T.pts[i].z,s.pos.x,s.pos.z);if(d>R*4)continue;const dd=Math.abs(d-R);if(dd<bd){bd=dd;a0=i;}}
     if(a0<0)return;
-    const dist=new Float64Array(N).fill(Infinity),via=new Array(N),heap=[];dist[a0]=0;
-    const push=(d,v)=>{heap.push([d,v]);let k=heap.length-1;while(k>0){const q=(k-1)>>1;if(heap[q][0]<=heap[k][0])break;[heap[q],heap[k]]=[heap[k],heap[q]];k=q;}};
-    const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let k=0;for(;;){const l=2*k+1,r=l+1;let m=k;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===k)break;[heap[m],heap[k]]=[heap[k],heap[m]];k=m;}}return top;};
+    // The search can stop once every field has met the nearest of its corners and the frontier has passed the farthest of those:
+    // a corner not yet settled is farther than that, so it could not be the nearest; settled corners and their paths are final.
+    const fv=fs.map(f=>furlongPoly(f).map(q=>T.V.get(tgKey(q)))),targets=new Map(),hit=new Uint8Array(fs.length);let pending=0,stopAt=Infinity;
+    fv.forEach((ids,fi)=>{let any=false;for(const i of ids){if(i===undefined)continue;any=true;const L=targets.get(i);if(!L)targets.set(i,[fi]);else if(L[L.length-1]!==fi)L.push(fi);}if(any)pending++;else hit[fi]=1;});
+    if(!pending)stopAt=-Infinity;
+    let hn=0;dist[a0]=0;touched.push(a0);
+    const push=(d,v)=>{if(hn===HD.length){const D2=new Float64Array(hn*2),V2=new Int32Array(hn*2);D2.set(HD);V2.set(HV);HD=D2;HV=V2;}let k=hn++;while(k>0){const q=(k-1)>>1;if(HD[q]<=d)break;HD[k]=HD[q];HV[k]=HV[q];k=q;}HD[k]=d;HV[k]=v;};
     push(0,a0);
-    while(heap.length){const[dc,v]=pop();
-      if(dc>dist[v])continue;if(dc>6000)break;
-      for(const e of T.adj[v]){const w=e.a===v?e.b:e.a,P=T.pts[w];let c=e.c;const Pv=T.pts[v];if(v!==a0&&(urban(P.x,P.z)||urban((P.x+Pv.x)/2,(P.z+Pv.z)/2)))continue; // the lanes stop at the town's edge and go round the farmyards
-        for(const {o} of candidates(towns,townNodes,P.x,P.z))if(o!==s&&dist2d(P.x,P.z,o.pos.x,o.pos.z)<(o.radius||60))c*=5; // not through another village's yards
-        if(dc+c<dist[w]){dist[w]=dc+c;via[w]=e;push(dist[w],w);}}}
-    for(const f of fs){let t=-1,td=1e18;for(const q of furlongPoly(f)){const i=T.V.get(tgKey(q));if(i!==undefined&&dist[i]<td){td=dist[i];t=i;}}
-      for(let v=t,g=0;v>=0&&v!==a0&&via[v]&&g<400;g++){const e=via[v];used.add(e.k);v=e.a===v?e.b:e.a;}}});
+    while(hn>0){const dc=HD[0],v=HV[0];
+      {const xd=HD[--hn],xv=HV[hn];if(hn>0){let k=0;for(;;){const l=2*k+1;if(l>=hn)break;let m=l,md=HD[l];const r=l+1;if(r<hn&&HD[r]<md){m=r;md=HD[r];}if(md<xd){HD[k]=md;HV[k]=HV[m];k=m;}else break;}HD[k]=xd;HV[k]=xv;}}
+      if(dc>dist[v])continue;if(dc>6000)break;if(dc>stopAt)break;
+      const hits=targets.get(v);if(hits)for(const fi of hits)if(!hit[fi]){hit[fi]=1;if(--pending===0)stopAt=dc;}
+      for(const e of T.adj[v]){const w=e.a===v?e.b:e.a,P=T.pts[w];let c=e.c;const Pv=T.pts[v];if(v!==a0&&(nodeUrban(w)||edgeUrban(e,P,Pv)))continue; // the lanes stop at the town's edge and go round the farmyards
+        for(const o of nearTowns(w))if(o!==s)c*=5; // not through another village's yards
+        if(dc+c<dist[w]){if(dist[w]===Infinity)touched.push(w);dist[w]=dc+c;via[w]=e;push(dist[w],w);}}}
+    fs.forEach((f,fi)=>{let t=-1,td=1e18;for(const i of fv[fi])if(i!==undefined&&dist[i]<td){td=dist[i];t=i;}
+      for(let v=t,g=0;v>=0&&v!==a0&&via[v]&&g<400;g++){const e=via[v];used.add(e.k);v=e.a===v?e.b:e.a;}});
+    for(const w of touched){dist[w]=Infinity;via[w]=undefined;}touched.length=0;});
   W.trackSet=used;prepareTrackBridges();G.tracksDirty=true;
 }
 
@@ -11243,7 +11318,7 @@ function frtRate(o,mode){const F=o.frt||(o.frt={cart:1,boat:1});return F[mode]??
 function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode)*PL();} // the beasts' keep and the driver's days, at the day's prices
 function driverFor(o,mode,m,d){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
   const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62;let L=heads_(o,ok);if(!L.length&&d)L=heads_(d,ok);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
-function merchantFor(o,cost,d){const ok=h=>(h.tr==='merchant'||h.tr==='carter'||h.tr==='boatman')&&(h.w||0)>cost*0.5,L=heads_(o,ok);if(d&&d!==o)L.push(...heads_(d,ok));L.sort((a,c)=>(c.tr==='merchant')-(a.tr==='merchant')||(c.w||0)-(a.w||0));return L[0]||null;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
+function merchantFor(o,cost,d){let best=null;const half=cost*0.5,scan=t=>{if(!t.folk)return;for(const h of householdsOf(t)){const p=h.head;if(!p||p.dead||p.role)continue;const tr=p.tr,w=p.w||0;if((tr==='merchant'||tr==='carter'||tr==='boatman')&&w>half&&(!best||(tr==='merchant'?best.tr!=='merchant'||w>(best.w||0):best.tr!=='merchant'&&w>(best.w||0))))best=p;}};scan(o);if(d&&d!==o)scan(d);return best;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
 function ladeOut(c,o,quiet){const mode=c.sea||c.river?'boat':'cart',want=c.qty,m=merchantFor(o,want*price(o,c.good)+freight(o,want,c.len,mode),W.settlements[c.dest]);if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
   const drv=driverFor(o,mode,m,W.settlements[c.dest]);
   if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman',Q=o._missQ||(o._missQ={}),k='~'+c.good,nq=Math.max(0,want-(Q[k]||0));Q[k]=Math.max(Q[k]||0,want);U[tr]=(U[tr]||0)+freight(o,nq,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}return null;} // no one free to drive it: the load waits, and the going rate will rise
@@ -11517,7 +11592,7 @@ function tickEconomy(){
       let vine=0;for(const f of s.furl||[])if(f.kind===LK.VINE&&f.state===LS.TILLED)vine+=f.area;s._smiths=sm;s._dyers=dy;s._vineHa=vine/1e4;} // the workshops and vineyards the place has, counted once a year
     { // crafts where there are workshops and the stuff to work: iron and charcoal into tools at the smithies, wool into cloth at the looms (every cottage spins and weaves a little), grapes into wine
       initOwnership(s);const smCap=s._smiths*0.45*(waterMill(s)&&AD()>=1200?1.4:1),wvCap=s._dyers*0.5+s.pop*0.0008;
-      const owners=[...s._owners],sm=owners.filter(([,x])=>(x.held.ore||0)>0&&(x.held.char||0)>0),wv=owners.filter(([,x])=>(x.held.wool||0)>0);
+      const sm=phaseK&&!(commodityAnyHeld(phaseK,'ore')&&commodityAnyHeld(phaseK,'char'))?[]:[...s._owners].filter(([,x])=>(x.held.ore||0)>0&&(x.held.char||0)>0),wv=phaseK&&!commodityAnyHeld(phaseK,'wool')?[]:[...s._owners].filter(([,x])=>(x.held.wool||0)>0); // no owner holds the stuff: nothing to scan
       for(const[o,x]of sm){const c=Math.max(0,Math.min((x.held.ore||0)/0.6,(x.held.char||0)/0.6,s.stores.ore/0.6,s.stores.timber/0.6,smCap/Math.max(1,sm.length)));
         consumeOwned(s,o,'ore',c*0.6);consumeOwned(s,o,'char',c*0.6);s.stores.tools+=c*0.8;offer(s,'tools',o,c*0.8,0.75*(price(s,'ore')+price(s,'timber')));}
       for(const[o,x]of wv){const w=Math.max(0,Math.min(x.held.wool||0,s.stores.wool||0,wvCap/Math.max(1,wv.length)));consumeOwned(s,o,'wool',w);s.stores.cloth+=w*0.8;offer(s,'cloth',o,w*0.8,price(s,'wool')/0.8);}
@@ -12100,20 +12175,28 @@ function armyBridgeAt(x,z){return !!W.rivHash&&!!riverAt(x,z,0)&&paidRoadAt(x,z)
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE)return 'water';
   const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river';
-  const i=toCell(x),j=toCell(z),seen=new Set(),scope=a.settlement?[a.settlement]:[];
-  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!inB(i+dx,j+dz))continue;const si=W.dom&&W.dom[cIdx(i+dx,j+dz)];if(si==null||si<0||seen.has(si))continue;seen.add(si);const s=W.settlements[si];if(s&&!scope.includes(s))scope.push(s);}
+  const i=toCell(x),j=toCell(z),mem=a._em&&a._em.scopes?a._em:null; // mem: armyLandPath's per-call memo, which also holds each cell's scope and each settlement's circuits (nothing moves during the call)
+  let scope=mem?mem.scopes.get(i*100003+j):undefined;
+  if(!scope){scope=a.settlement?[a.settlement]:[];const seen=[];
+    for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!inB(i+dx,j+dz))continue;const si=W.dom&&W.dom[cIdx(i+dx,j+dz)];if(si==null||si<0||seen.includes(si))continue;seen.push(si);const s=W.settlements[si];if(s&&!scope.includes(s))scope.push(s);}
+    if(mem)mem.scopes.set(i*100003+j,scope);}
   for(const s of scope){
     if(s.lake&&hAt(x,z)<s.lake.y&&inPoly(s.lake.poly,x,z))return 'water';
-    const placed=s._lay?.placed||(a.settlement===s&&a.placed);if(placed)for(const b of placed.near(x,z,1)){if(b.removed||b.state==='gone'||b.arch==='churchyard')continue;const c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0),X=x-b.x,Z=z-b.z;
-      if(Math.abs(X*c-Z*sn)<b.w/2+0.6&&Math.abs(X*sn+Z*c)<b.d/2+0.6)return 'building';}
-    for(const c of fortCircuits(s)){if(!c.wallRad)continue;const C=fortCenter(c),an=Math.atan2(z-C.z,x-C.x),r=wallRadAt(c,an);if(Math.abs(dist2d(x,z,C.x,C.z)-r)>1.3||wallKindAt(c,an)===1||!wallBuilt(c,an)||wallDmgAt(c,an)>=0.65)continue;
+    const placed=s._lay?.placed||(a.settlement===s&&a.placed);if(placed){
+      const hit=list=>{for(const b of list){if(b.removed||b.state==='gone'||b.arch==='churchyard')continue;const c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0),X=x-b.x,Z=z-b.z;
+        if(Math.abs(X*c-Z*sn)<b.w/2+0.6&&Math.abs(X*sn+Z*c)<b.d/2+0.6)return true;}return false;}; // any building under the point makes it 'building', whichever is met first
+      const cells=s._lay?.placed?placed.historyCells:null; // the 16 m cells near(x,z,1) lists, read without building the list
+      if(cells){const i1=Math.floor((x+1)/16),j1=Math.floor((z+1)/16);for(let ci=Math.floor((x-1)/16);ci<=i1;ci++)for(let cj=Math.floor((z-1)/16);cj<=j1;cj++){const list=cells.get(ci*100003+cj);if(list&&hit(list))return 'building';}}
+      else if(hit(placed.near(x,z,1)))return 'building';}
+    let circuits=mem?mem.circuits.get(s):undefined;if(!circuits){circuits=fortCircuits(s);if(mem)mem.circuits.set(s,circuits);}
+    for(const c of circuits){if(!c.wallRad)continue;const C=fortCenter(c),an=Math.atan2(z-C.z,x-C.x),r=wallRadAt(c,an);if(Math.abs(dist2d(x,z,C.x,C.z)-r)>1.3||wallKindAt(c,an)===1||!wallBuilt(c,an)||wallDmgAt(c,an)>=0.65)continue;
       const gates=fortGateAngles(s,c),open=s.owner===a.house||!hostileTo(a,s);
       if(open&&gates.some(g=>Math.abs(Math.atan2(Math.sin(an-g),Math.cos(an-g)))*r<(c===s.motte?1.2:2.1)))continue;return 'wall';}
   }
   return null;
 }
-function armySegmentClear(a,p,q){const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));let prev=p;
-  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(prev.x,prev.z,x,z);if(L&&Math.abs(fortGround(x,z,a.settlement)-fortGround(prev.x,prev.z,a.settlement))/L>0.65&&!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z))return false;prev={x,z};}return true;}
+function armySegmentClear(a,p,q){const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));let px=p.x,pz=p.z,pg; // pg: the ground at the previous step, once known (it was the last step's own)
+  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(px,pz,x,z);if(L){const g=fortGround(x,z,a.settlement);if(Math.abs(g-(pg!==undefined?pg:fortGround(px,pz,a.settlement)))/L>0.65&&!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z))return false;pg=g;}px=x;pz=z;}return true;}
 function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stretch; no smoothing across obstacles
   // A walker that carries `_em` (a Map) remembers each lattice edge's clearance. The lattice is the even integers, so every box shares its edges; the first and last edges (off the lattice) are never stored. Armies carry none.
   const step=2,x0=Math.floor((Math.min(p.x,q.x)-pad)/step)*step,z0=Math.floor((Math.min(p.z,q.z)-pad)/step)*step,
@@ -12128,10 +12211,14 @@ function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stret
 }
 function armyLandPath(a,P){ // validate an existing road or field route; repair only obstructed spans
   if(!P||P.length<2)return null;const out=[P[0]];
+  // Nothing moves during the call, so the wider detour boxes and later spans reuse the lattice edges already tried (the walker's `_em`, which an army has none of otherwise) and the cell scopes.
+  const memo=!a._em;if(memo){a._em=new Map();a._em.scopes=new Map();a._em.circuits=new Map();}
+  try{
   for(let k=1;k<P.length;k++){const p=out[out.length-1],q=P[k];if(p.sea&&q.sea){out.push(q);continue;}
     if(armySegmentClear(a,p,q)){out.push(q);continue;}
     let detour=null;for(const pad of[24,64,144]){detour=armyDetour(a,p,q,pad);if(detour)break;}if(!detour)return null;out.push(...detour.slice(1));}
   return out;
+  }finally{if(memo)delete a._em;}
 }
 function armyReach(a,p,pts,pad,cap){ // every lattice node a walker can reach from p inside the union of the detour boxes of pts (null if too large to say)
   // Sound by construction: pad exceeds every detour pad (144), so the box holds each armyDetour box for p→pts[i]; the edge test and neighbourhood are armyDetour's; so any node its search settles is marked here.
@@ -13253,7 +13340,7 @@ const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'
 const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
 function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of nonemptyHouseholds())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
-function headsOf(s){return householdsOf(s).map(h=>h.head).filter(p=>p&&!p.dead);} // an orphan household remains an owner even before its heir is grown
+function headsOf(s){const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead)out.push(p);}return out;} // an orphan household remains an owner even before its heir is grown
 function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost what the market says
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>!h.outlawCampId&&(TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant');
@@ -13392,8 +13479,8 @@ function clearMarket(s,g,orders,p){if(commodityActive(s)&&!BEASTS.includes(g))re
   const lo=lordAcct(s);if(sf>0)for(const[w,v]of L.ownedEntries()){if(R&&R.get(w)>p)continue;const q=forSale(w,v,g)*sf,r=v-q;if(!(q>0))continue;custody.push(...storageTitleTake(s,w,null,g,q,'market-cleared'));if(w===lo)lordTake(s,q*p);if(w==='out')flow('>import '+g,q*p);if(r>0)L.set(w,r);else{L.delete(w);if(R)R.delete(w);}acct(w,q*p);if(isHouse(w))book(w,'sales',q*p);}
   orders.forEach(([b],i)=>{if(!(res[i]>0)||!fill)return;const t=res[i]*fill;got[i]+=t;if(s.storage){let left=t;for(const l of custody){if(l.owner!==null||!(l.qty>0))continue;const q=Math.min(left,l.qty);s.storage.transfer(l,accountOwner(b),q,'held');left-=q;if(!(left>0))break;}}acct(b,-t*p);});
   const D=s._dem||(s._dem={}),S=s._sold||(s._sold={});D[g]=(D[g]||0)+Dt;S[g]=(S[g]||0)+got.reduce((a,b)=>a+b,0);return got;}
-function heads_(s,pred){return s.folk?headsOf(s).filter(h=>!h.role&&pred(h)):[];}
-function workers_(s,pred){return s.folk?headsOf(s).filter(h=>!h.role&&!h.outlawCampId&&pred(h)):[];}
+function heads_(s,pred){if(!s.folk)return [];const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead&&!p.role&&pred(p))out.push(p);}return out;}
+function workers_(s,pred){if(!s.folk)return [];const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead&&!p.role&&!p.outlawCampId&&pred(p))out.push(p);}return out;}
 function payAmong(list,v,payer,why){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
@@ -16481,7 +16568,7 @@ const OUTCOME_LOT_REF={owner:0,location:1,good:2,availability:3,qtyAfter:4,lot:5
 class OutcomeCodec{
   constructor(){this.schemas=[];this.schemaIds=new Map();this.strings=[];this.stringIds=new Map();this.snapshots=new Map();this.events=new Map();this.slots=0;}
   encode(seq,event){
-    const schemaStart=this.schemas.length,stringStart=this.strings.length,updates=new Map(),eventUpdates=new Map(),seen=new Set();let slots=this.slots;
+    const schemaStart=this.schemas.length,stringStart=this.strings.length,updates=new Map(),eventUpdates=new Map(),seen=new Set(),snapshotKeys=['lotAfter','sourceLotAfter','before','locationAfter'],recent=[];let slots=this.slots; // recent: key lists met lately and their schemas, so a run of like rows is not re-serialized to find its schema
     const same=(a,b)=>{if(Object.is(a,b))return true;if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!same(a[i],b[i]))return false;return true;};
     const walk=(v,key='',parent=null,inSnapshot=false,inEvent=false)=>{
       if(v===undefined)return [2];if(typeof v==='number'&&(!Number.isFinite(v)||Object.is(v,-0)))return [3,Object.is(v,-0)?'-0':String(v)];if(typeof v==='bigint')return [4,String(v)];
@@ -16493,9 +16580,10 @@ class OutcomeCodec{
       const array=!capture&&Array.isArray(v),trusted=!!capture||typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(v);if(!trusted){const proto=Object.getPrototypeOf(v);if(!array&&proto!==null&&proto!==Object.prototype)throw Error('Storage outcomes require plain data');}seen.add(v);
       const storage=!capture&&!array&&(trusted?v.kind:Object.getOwnPropertyDescriptor(v,'kind')?.value)==='storage';let refs=null;
       if(storage){const lot=trusted?v.lotAfter:Object.getOwnPropertyDescriptor(v,'lotAfter')?.value;if(lot){refs={present:[],values:[]};const data=typeof STORAGE_CAPTURE_HANDLES!=='undefined'?STORAGE_CAPTURE_HANDLES.get(lot):null,safe=typeof STORAGE_CAPTURE_DATA!=='undefined'&&STORAGE_CAPTURE_DATA.has(lot);for(let i=0;i<OUTCOME_LOT_FIELDS.length;i++){const k=OUTCOME_LOT_FIELDS[i],at=data?data.keys.indexOf(k):-1,d=safe||data?null:Object.getOwnPropertyDescriptor(lot,k);refs.present[i]=data?at>=0:safe?Object.hasOwn(lot,k):!!d&&'value'in d;refs.values[i]=data?data.values[at]:safe?lot[k]:d?.value;}}}
-      const snapshot=!inSnapshot&&!array&&['lotAfter','sourceLotAfter','before','locationAfter'].includes(key)&&typeof (capture?capture.values[capture.keys.indexOf('id')]:Object.getOwnPropertyDescriptor(v,'id')?.value)==='string';
+      const snapshot=!inSnapshot&&!array&&snapshotKeys.includes(key)&&typeof (capture?capture.values[capture.keys.indexOf('id')]:Object.getOwnPropertyDescriptor(v,'id')?.value)==='string';
       const keys=capture?capture.keys:Reflect.ownKeys(v),values=[];for(let at=0;at<keys.length;at++){const k=keys[at];if(typeof k!=='string')throw Error('Storage outcome symbol key');let value;if(capture)value=capture.values[at];else if(trusted)value=v[k];else{const d=Object.getOwnPropertyDescriptor(v,k);if(!('value'in d))throw Error('Storage outcome accessor');value=d.value;}values.push(walk(value,k,refs,inSnapshot||snapshot,inEvent||storage));}seen.delete(v);
-      const signature=JSON.stringify(keys);let schema=this.schemaIds.get(signature);if(schema===undefined){schema=this.schemas.length;this.schemaIds.set(signature,schema);this.schemas.push(keys);}
+      let schema=-1;for(let c=0;c<recent.length&&schema<0;c++){const known=recent[c].keys;if(known.length===keys.length){let at=0;while(at<keys.length&&known[at]===keys[at])at++;if(at===keys.length)schema=recent[c].schema;}}
+      if(schema<0){const signature=JSON.stringify(keys);schema=this.schemaIds.get(signature);if(schema===undefined){schema=this.schemas.length;this.schemaIds.set(signature,schema);this.schemas.push(keys);}if(recent.length<8)recent.push({keys,schema});}
       if(snapshot){
         const id=(key==='locationAfter'?'location:':'lot:')+schema,old=updates.get(id)||this.snapshots.get(id);if(old){const changes=[];if(old.schema===schema){for(let i=0;i<values.length;i++)if(!same(old.values[i],values[i]))changes.push(i,values[i]);updates.set(id,{slot:old.slot,schema,values});return [9,old.slot,schema,changes];}updates.set(id,{slot:old.slot,schema,values});return [8,old.slot,schema,values];}
         if(slots<4096){const slot=slots++;updates.set(id,{slot,schema,values});return [8,slot,schema,values];}
