@@ -59,6 +59,9 @@ docker run --rm -p 8080:80 -v "$PWD":/usr/share/nginx/html:ro nginx:alpine
 
 ## Automated checks
 
+[Legacy-search audit and migration gate](docs/LEGACY-SEARCH-MIGRATION.md) identify
+remaining broad searches and reject new or increased recognized scans.
+
 `node --test tools/provision.test.mjs` checks food replenishment, ownership,
 credit and payment conservation against the functions in `index.html`.
 `tools/soak.mjs` measures longer histories in isolated Chrome instances using
