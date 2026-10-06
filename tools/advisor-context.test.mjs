@@ -52,3 +52,13 @@ test('on the API-key path a tool’s own error reaches the model, so it can put 
   await sample([],{tools:[{name:'execute',inputSchema:{type:'object'},execute:()=>{throw Error('no such control here now; discover() again');}}]});
   assert.match(last.input.at(-1).output,/no such control here now; discover\(\) again/);
 });
+
+test('the conversation stays with the tab’s game across a refresh, and never with another game or in a save (#31)',()=>{
+  const line=k=>html.split('\n').find(l=>l.startsWith('  '+k+'(){'));
+  const store=new Map(),sessionStorage={getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v))},g={sessionStorage,TAB_SESSION:{n:'abc'},JSON};
+  const C=vm.runInNewContext('const ADVCHAT=({turns:[],'+line('keep')+line('recall')+'});ADVCHAT',g);
+  C.turns=[{role:'user',content:'How fares Ashby?'},{role:'assistant',content:'Hungry, my lord.'}];C.keep();
+  C.turns=[];C.recall();assert.deepEqual(JSON.parse(JSON.stringify(C.turns)).map(t=>t.content),['How fares Ashby?','Hungry, my lord.']);
+  g.TAB_SESSION.n='other';C.turns=[];C.recall();assert.equal(C.turns.length,0,'another game starts without it');
+  const save=html.match(/function saveDocument\([^)]*\)\{[^\n]*/);assert.ok(save&&!/ADVCHAT|turns/.test(save[0]),'a save carries no conversation');
+});
