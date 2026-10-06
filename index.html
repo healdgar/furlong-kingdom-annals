@@ -939,13 +939,12 @@ function siteKeys(s,f){ // why the place is where it is, most telling first
   k.push(s.kind==='village'?'farm':'field','farm');
   return k;
 }
-function culturedName(cultId,keys,r,mother){ // the first telling feature usually wins; unique in the realm
+function culturedName(cultId,keys,r){ // the first telling feature usually wins; unique in the realm
   const C=CULT[cultId]||CULT.anglo,used=W.usedNames||(W.usedNames=new Set());
   const RU=W.rootUse||(W.rootUse={});let best=null,bs=1e9,bRoot=null,bPat=null;
   for(let t=0;t<40;t++){
     let n,root=null,pat=null;
-    if(mother&&t<6&&r()<0.5)n=fillName(r1(r,C.neu),mother); // a daughter village takes its mother's name
-    else{const ki=Math.min(keys.length-1,Math.floor(Math.pow(r(),2.2)*keys.length)),key=keys[ki],pats=C.site[key]||C.site.farm;pat=r1(r,pats);root=r1(r,C.roots);n=fillName(pat,root);}
+    {const ki=Math.min(keys.length-1,Math.floor(Math.pow(r(),2.2)*keys.length)),key=keys[ki],pats=C.site[key]||C.site.farm;pat=r1(r,pats);root=r1(r,C.roots);n=fillName(pat,root);}
     if(used.has(n))continue;
     const sc=root?(RU[root]||0)*3+(RU['*'+pat]||0)*0.6+r()*0.5:-1; // a root or ending already worn in the realm is passed over: fewer Walcastles beside Walbury and Walchester
     if(sc<bs){bs=sc;best=n;bRoot=root;bPat=pat;}
@@ -953,6 +952,47 @@ function culturedName(cultId,keys,r,mother){ // the first telling feature usuall
   }
   if(best){used.add(best);if(bRoot){RU[bRoot]=(RU[bRoot]||0)+1;RU['*'+bPat]=(RU['*'+bPat]||0)+1;}return best;}
   return fillName(r1(r,C.site.farm),r1(r,C.roots))+' '+(used.size);
+}
+/* a daughter village is named from her mother's ROOT (the mother's name less its new/upper/nether-type words) with at most one such word of her own tongue,
+   or for the man who led the pioneers out, as that tongue names a place for a man (man); a daughter of a daughter (s.gen>1) takes an ordinary site name, so names never stack */
+const KIN={
+  anglo:{pre:/^(?:New|Newer|Old|Upper|Nether|Lower|Over|Great|Little|Greater|Lesser|Higher|Middle|East|West|North|South) /,suf:/ (?:Magna|Parva)$/,
+    man:(g,r)=>r1(r,[g+'ton',g+'ley',g+'by',g+(/s$/.test(g)?"' End":"'s End"),g+(/s$/.test(g)?"' Green":"'s Green")])},
+  german:{pre:/^(?:(?:Neu|Ober|Nieder)(?=\p{L}{4})|(?:Neu|Ober|Nieder|Unter|Alt|Groß|Klein|Hinter|Vorder|Mittel|Hoch|Nord|Süd|Ost|West)[- ])/u,suf:null,
+    man:(g,r)=>{const s=/[sßxz]$/i.test(g)?g:g+'s';return r1(r,[s+'dorf',s+'hausen',s+'reuth',s+'berg',s+'burg']);}},
+  french:{pre:/^(?:Villeneuve-|(?:Haut|Haute|Bas|Basse|Petit|Petite|Grand|Grande|Vieux|Vieille)-(?=\p{Lu})|(?:Le (?:Haut|Bas|Petit|Grand|Vieux)|La (?:Haute|Basse|Petite|Grande|Vieille)) )/u,
+    suf:/-(?:la-(?:Neuve|Haute|Basse|Petite|Grande|Vieille)|le-(?:Neuf|Haut|Bas|Petit|Grand|Vieux))$/,
+    man:(g,r)=>r1(r,[g+'ville','Ville-'+g,'La Ferté-'+g,g+'court','Villers-'+g])},
+  italian:{pre:/^(?:Borgo Nuovo di |Castelnuovo di |(?:Nuovo|Nuova|Alto|Alta|Basso|Bassa|Vecchio|Vecchia|Piccolo|Piccola|Grande) )/,suf:/(?:(?<=\p{L}{4})nuova| (?:Nuovo|Nuova|Alto|Alta|Basso|Bassa|Vecchio|Vecchia))$/u,
+    man:(g,r)=>r1(r,['Villa '+g,'Borgo '+g,'Casale '+g,'Castel '+g])},
+  norse:{pre:/^(?:Ny(?=\p{L}{4})|(?:Ny|Øvre|Nedre|Nord|Sør|Gamle|Store|Lille|Vest|Øst)[- ])/u,suf:null,
+    man:(g,r)=>{const s=/[sxz]$/i.test(g)?g:g+'s';return r1(r,[s+'by',s+'stad',s+'torp',s+'heim']);}},
+  slavic:{pre:/^(?:Nov(?=\p{L}{5})|(?:Nov|Nový|Nová|Nové|Horní|Dolní|Starý|Staré|Stará|Velký|Velká|Velké|Malý|Malá|Malé)[- ])/u,suf:null,
+    man:(g,r)=>{const b=g.replace(/[aeiouyáéíóúůýě]$/i,'');return r1(r,[b+'ov',b+'ovice',b+'ice',b+'ovo']);}},
+  celtic:{pre:/^Tre(?=.{3,}newydd$)/,suf:/(?:(?<=\p{L}{3})newydd|[ -](?:Uchaf|Isaf|Fawr|Fach|Newydd))$/u,
+    man:(g,r)=>{const l=g.toLowerCase();return r1(r,['Tre'+l,'Bally'+l,'Caer'+l]);}},
+  iberian:{pre:/^(?:Villanueva de |(?:Nuevo|Nueva|Alto|Alta|Bajo|Baja|Viejo|Vieja|Grande|Pequeño|Pequeña) )/,suf:/(?:(?<=\p{L}{4})nueva| de (?:Arriba|Abajo))$/u,
+    man:(g,r)=>r1(r,['Villa'+g.toLowerCase().replace(/^a/,''),'Torre de '+g,'Casas de '+g])}
+};
+function rootOf(cultId,name){ // a place's name less the new/upper/nether-type words it wears, as its own tongue wears them
+  const K=KIN[cultId]||KIN.anglo;let n=name;
+  for(let k=0;k<6;k++){let m=n.replace(K.pre,'');if(K.suf)m=m.replace(K.suf,'');if(m===n||m.length<3)break;n=m;}
+  return n[0].toUpperCase()+n.slice(1);
+}
+function pioneerLeader(m,r){ // the head of a household in his prime, among those the mother can spare: a short look from a drawn place in her folk (reads only; nothing of the simulation is touched)
+  const f=m.folk||[],n=f.length,o=Math.floor(r()*n);
+  for(let k=0;k<Math.min(n,40);k++){const p=f[(o+k)%n];if(p.sx==='m'&&!p.dead&&!p.outlawCampId&&p.gn&&ageYrs(p)>=18&&ageYrs(p)<40&&(p._hh?p._hh.head:oldHouseholdHead(p))===p)return p;}
+  return null;
+}
+function daughterName(s,fr,keys,r){
+  const used=W.usedNames||(W.usedNames=new Set());
+  if(s.gen<2){
+    const mc=fr.cult||W.crownCult,C=CULT[s.cult]||CULT.anglo,ancestral=r()<0.5,root=rootOf(mc,fr.name),o=Math.floor(r()*C.neu.length),lead=mc===s.cult&&KIN[mc]?pioneerLeader(fr,r):null;
+    const byRoot=root.length<3?[]:C.neu.map((_,k)=>{let p=C.neu[(o+k)%C.neu.length];const i=p.indexOf('*');if(i>0&&root.toLowerCase().startsWith(p.slice(0,i).trim().toLowerCase()))p=p.slice(i);return fillName(p,root);}); // one affix, not Tretre…
+    const byMan=lead?[0,1,2,3].map(()=>KIN[mc].man(lead.gn,r)):[];
+    for(const n of ancestral?[...byMan,...byRoot]:[...byRoot,...byMan])if(!used.has(n)){used.add(n);return n;}
+  }
+  return culturedName(s.cult,keys,r); // a daughter of a daughter, or no free name from her mother: the new place's own
 }
 function siteFeatures(x,z){ // the ground about a place, as the founders saw it
   const cx=toCell(x),cz=toCell(z);let riv=false,sea=false,forest=0,rock=0,marsh=0,ring=0;
@@ -13738,9 +13778,10 @@ function doAct(act,p,opt){
       { // named by its founders, in their tongue, for why it is here; a daughter village often after its mother
         const fr=opt&&opt.from,oc=opt&&opt.owner!=null?opt.owner:fr?fr.owner:s.owner;
         s.cult=(REALMAP&&realCultAt(p.x,p.z))||(fr&&fr.cult)||(W.houses[oc]&&W.houses[oc].cult)||W.crownCult;
+        const dau=fr&&!(opt.fort||opt.planned);if(dau)s.gen=(fr.gen|0)+1; // how many daughters deep: names are not handed down past the first
         const rs=realSiteNear(p.x,p.z,CELL*5); // founded where a real town stood: it takes that town's name
         if(rs){W.usedSites.add(rs.n);W.usedNames.add(rs.n);s.name=rs.n;s.cult=rs.c;s.real=true;}
-        else s.name=culturedName(s.cult,siteKeys(s,siteFeatures(p.x,p.z)),nameRng(day()*7+si),fr&&!(opt.fort||opt.planned)?fr.name:null);
+        else{const keys=siteKeys(s,siteFeatures(p.x,p.z)),r=nameRng(day()*7+si);s.name=dau?daughterName(s,fr,keys,r):culturedName(s.cult,keys,r);}
       }
       layoutSettlement(s);
       const jl=bj>=0&&W.settlements[bj]._lay;if(jl&&jl.joinRoad(W.roads.length-1))syncLive(W.settlements[bj]); // the track enters the old place as a street (none when it stands alone on its land)

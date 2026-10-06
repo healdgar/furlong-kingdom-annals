@@ -1028,8 +1028,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
   Slavic, Celtic, Castilian): most share the crown's, the marches may not.
   Places are named in the tongue of the nearest seat and for why they are
   there (a ford, a bridge, a hill fort, a harbour, a mine, a clearing):
-  Ashford, Eschfurt, Gué-le-Frêne, Vado de Lobo. Daughter villages often
-  take their mother's name (Neu-, Nether, Villanueva de). Castles,
+  Ashford, Eschfurt, Gué-le-Frêne, Vado de Lobo. A daughter village takes
+  her mother's root with one affix (New Ashford, Neu-, Villanueva de), or the
+  name of the man who led the pioneers out (Aldricton, Heinrichsdorf); the
+  daughter of a daughter gets a name of her own. Castles,
   churches, town halls and mills are named in the same tongue; inns and
   shops have signs made in its grammar (Zum Goldenen Hirsch, À la Couronne
   d'Or, U Zlatého Jelena), their master's name, or a promise to customers.
