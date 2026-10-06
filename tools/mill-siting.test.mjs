@@ -63,3 +63,64 @@ test('raised millpond dams span to both terrain banks at the proposed water leve
   assert.ok(span.width>80);assert.ok(C.hAt(0,span.min)>8);assert.ok(C.hAt(0,span.max)>8);
   assert.ok(C.hAt(0,(span.min+span.max)/2)<=8);
 });
+
+// The drawn wheel. Rivers are drawn at the bed + 0.35 (riverDrawLevel), while millDrive's wheel dips 0.4 below the simulation's level,
+// which stands at least 0.9 above the bed: that wheel always hangs clear of the water on screen. The fit sizes it to the drawn stream.
+function wheelWorld({bed=2,simY=3,bank=4,found=null,mesh=null,inset=1.25}={}){
+  const pts=[-24,-12,0,12,24].map(x=>({x,z:0}));
+  const C=vm.createContext({SEA:0,Math,G:mesh?{rivers:{geometry:{attributes:{position:{getY:i=>mesh(i)}}}},drawRivRuns:[{pts,hw:[5,5,5,5,5],renderBase:0}]}:{},
+    W:{rivStrips:[{pts,hw:[5,5,5,5,5],ys:pts.map(()=>simY)}],settlements:[]},
+    lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz),
+    segDist:(px,pz,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz||1,t=Math.max(0,Math.min(1,((px-a.x)*dx+(pz-a.z)*dz)/L2));return Math.hypot(px-(a.x+dx*t),pz-(a.z+dz*t));},
+    inPoly:()=>false,riverAt:(x,z)=>Math.abs(z)<5?{a:{x:-1,z:0},b:{x:1,z:0},y:simY,hw:5}:null,hAt:(x,z)=>Math.abs(z)<5?bed:bank});
+  vm.runInContext(source.match(/^const MILL_DIP=.*$/m)[0]+'\n'+['riverDrawLevel','riverSurfaceAt','millDrive','millWheelFit','millWheelPose','millPaddleToWater'].map(extract).join('\n'),C);
+  // a 9 m mill on the north bank, its wheel 1.25 m inside the water's edge and 6.8 m from its centre, as millBankSites lays it
+  const b={x:-6,z:5-inset+6.8,w:9,d:9,rot:Math.PI/2,y:bank,y0:found??bank-0.8,h:7.35,millWater:{x:-6,z:5-inset,y:simY,side:0,offset:6.8,kind:'river'}};
+  return{C,b,s:{}};
+}
+test('the drawn wheel dips a fixed depth into the stream as drawn, below the simulation level the old wheel hung from',()=>{
+  for(const [bed,simY,bank] of [[2,3,4],[2,4.5,4.2],[2,3,9],[2,3.2,2.5],[30,31.5,33]]){
+    const {C,b,s}=wheelWorld({bed,simY,bank}),P=C.millWheelPose(s,b),old=C.millDrive(s,b),drawn=bed+0.35;
+    assert.ok(Math.abs(P.water-drawn)<1e-9,'the drawn level is the bed + 0.35');
+    assert.ok(old.axleY-old.radius>drawn,'millDrive alone leaves the buckets above the drawn water');
+    assert.ok(Math.abs(P.axleY-P.radius-(drawn-0.3))<1e-9,'the lowest buckets run 0.3 deep');
+    assert.ok(P.radius>=1.2-1e-9&&P.radius<=2.7+1e-9,`a wheel for a 9 m mill (${P.radius})`);
+    assert.ok(P.axleY<=bank+0.5+1e-9||P.radius<=1.2+1e-9,'the axle comes no higher than the floor unless the wheel is already at its least');
+    assert.ok(P.axleY>=b.y0+0.3-1e-9||P.radius>=2.7-1e-9,'the shaft meets the wall, not the bank beneath it');
+    assert.ok(Math.abs(P.gap-2.3)<1e-9,'the shaft runs 2.3 m from the wheel to the wall face');
+    assert.equal(P.mode,old.mode);assert.equal(P.direction,old.direction);
+  }
+});
+test('a high bank takes the largest wheel the wall carries; an overshot rim rises to its race',()=>{
+  const high=wheelWorld({bed:2,simY:3,bank:12,found:6}),H=high.C.millWheelPose(high.s,high.b);
+  assert.ok(Math.abs(H.radius-2.7)<1e-9);assert.ok(Math.abs(H.axleY-(2.05+2.7))<1e-9);
+  const {C}=wheelWorld(),race=b=>({mode:'overshot',feed:{a:{x:0,z:0,y:9},b:{x:0,z:0,y:b}}});
+  const fit=C.millWheelFit(race(6.5),3,5,4,9);assert.ok(Math.abs(fit.axleY+fit.radius-(6.5-0.12))<1e-9,'the rim meets the race end');assert.ok(Math.abs(fit.bottom-2.7)<1e-9);
+  const tall=C.millWheelFit(race(12),3,5,4,9);assert.ok(Math.abs(tall.radius-2.7)<1e-9,'a race far above falls onto the largest wheel');assert.ok(Math.abs(tall.bottom-2.7)<1e-9);
+});
+test('the drawn level is read from the built river mesh where it stands (a junction pool raises it)',()=>{
+  const {C,b,s}=wheelWorld({mesh:i=>i%5===2?(i<12?2.6:3.1):0}),P=C.millWheelPose(s,b);
+  assert.ok(Math.abs(P.water-2.85)<1e-9,'halfway between centre-line vertices 2.6 and 3.1');assert.ok(Math.abs(P.axleY-P.radius-2.55)<1e-9);
+});
+
+test('a wheel in the river\'s pale shallows stands in a tail race of drawn water reaching clear water, short of its wall',()=>{
+  for(const inset of[1.25,1.6]){const {C,b,s}=wheelWorld({inset}),P=C.millWheelPose(s,b),bare={...P,race:null};
+    assert.ok(Math.abs(P.bank-inset)<1e-9,'the wheel stands this far inside the drawn edge');
+    assert.ok(C.millPaddleToWater(bare)>0.2,'without its race the lowest paddle hangs over the shallows the shader draws as gravel');
+    assert.equal(C.millPaddleToWater(P),0,'its race puts the lowest paddle in drawn water');
+    assert.ok(P.race.u0<-0.675&&P.race.u0>-P.gap,'the race runs under the whole paddle and stops short of the wall');
+    assert.ok(P.bank+P.race.u1>=1.9,'and out to clear water');assert.ok(P.race.half*2>2*Math.sqrt(P.radius**2-(P.radius-0.3)**2),'as wide as the wheel stands in it');}
+  const deep=wheelWorld({inset:3.2}),D=deep.C.millWheelPose(deep.s,deep.b);assert.equal(D.race,null,'a wheel already in clear water needs none');assert.equal(deep.C.millPaddleToWater(D),0);
+});
+test('a pond race ends on the drawn wheel: over an overshot rim, or beside an underfed one just above the drawn stream',()=>{
+  const {C,b}=wheelWorld({bed:2,simY:3,bank:4}),plane=(q,P)=>(q.x-P.x)*Math.sin(P.th)+(q.z-P.z)*Math.cos(P.th);
+  b.millWater.intake={x:-6,z:-30};const modes=new Set();
+  for(const lake of[{y:9,poly:[],dam:{x:-6,z:-25,a:Math.PI/2}},{y:4.6,poly:[],dam:{x:-6,z:-25,a:Math.PI/2}}]){const P=C.millWheelPose({lake},b),sim=C.millDrive({lake},b);
+    assert.ok(P.feed&&sim.feed);assert.deepEqual(P.feed.a,sim.feed.a,'the race leaves the pond where it did');
+    const u=plane(P.feed.b,P),v=P.feed.b.y-P.axleY;
+    if(P.mode==='overshot'){assert.ok(Math.abs(Math.hypot(u,v-0.12)-P.radius)<1e-9,'it spills onto the top of the rim');assert.ok(v>0);}
+    else{assert.ok(Math.abs(P.feed.b.y-(P.water+0.16))<1e-9,'it runs in just above the drawn stream');assert.ok(Math.abs(Math.hypot(u,v)-P.radius)<1e-9,'at the rim');}
+    modes.add(P.mode);
+  }
+  assert.equal(modes.size,2,'both an overshot and an underfed race');
+});

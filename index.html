@@ -6224,8 +6224,12 @@ function millWheelGeometry(){ // open spokes, two timber rims and sixteen bucket
   }
   for(let k=0;k<16;k++){const a=k*Math.PI/8;put(uv(new THREE.BoxGeometry(1.35,0.2,0.8),'x'),0,Math.cos(a)*3.87,Math.sin(a)*3.87,a);}
   const hub=new THREE.CylinderGeometry(0.52,0.52,1.65,12);hub.rotateZ(Math.PI/2);put(uv(hub,'x'),0,0,0);
-  const axle=new THREE.CylinderGeometry(0.18,0.18,3.2,8);axle.rotateZ(Math.PI/2);put(uv(axle,'x'),-0.95,0,0);
   const g=mergeGeoms(parts);for(const [part] of parts)part.dispose();return g;
+}
+function millShaftGeometry(){ // the shaft, one metre from its outer end (x 0) inward; each wheel stretches it to reach its own wall
+  const g=new THREE.CylinderGeometry(0.2,0.2,1,8);g.rotateZ(Math.PI/2);g.translate(-0.5,0,0);const p=g.attributes.position,n=g.attributes.normal,a=[];
+  for(let i=0;i<p.count;i++)a.push(Math.abs(n.getY(i))>0.5?p.getZ(i):p.getY(i),p.getX(i));
+  g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(a,2));return g;
 }
 function millRaceBox(w,h,l){
   const g=new THREE.BoxGeometry(w,h,l),p=g.attributes.position,n=g.attributes.normal,uv=[];
@@ -6243,13 +6247,45 @@ function millRaceRibbon(points,width,vertices,indices,uvs){
     if(i){const a=base-2,b=base-1,c=base,d=base+1;indices.push(a,c,b,b,c,d);}
   }
 }
+// The river is drawn at its bed + 0.35 (riverDrawLevel), below the simulation's level, and a junction as one pool: read the built mesh's
+// centre line where there is one; before it is built, or with no screen, the same rule from the strips. `bank` is how far inside the drawn edge.
+function riverSurfaceAt(x,z){
+  const P=G.rivers?.geometry?.attributes?.position,runs=P?G.drawRivRuns||[]:W.rivStrips||[];let best=null,bd=0.5;
+  for(const st of runs)for(let k=0;k<st.pts.length-1;k++){const d=segDist(x,z,st.pts[k],st.pts[k+1])-Math.max(st.hw[k],st.hw[k+1]);if(d<bd){bd=d;best=[st,k];}}
+  if(!best)return null;const[st,k]=best,a=st.pts[k],c=st.pts[k+1],dx=c.x-a.x,dz=c.z-a.z,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1),0,1);
+  const y=P?i=>P.getY(st.renderBase+i*5+2):i=>{const q=st.pts[i];let v=st.canal?st.ys[i]:riverDrawLevel(q.x,q.z,st.ys[i]);for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))v=Math.min(v,s.lake.y-0.8);return v;};
+  return{y:lerp(y(k),y(k+1),t),bank:lerp(st.hw[k],st.hw[k+1],t)-segDist(x,z,a,c)};
+}
+const MILL_DIP=0.3,MILL_CLEAR=1.9; // the lowest buckets run this deep in the stream as drawn; the water shader draws the river's first 1.85 m from its edge as wet gravel
+// A drawn wheel sized to the water the eye sees: its bottom dips MILL_DIP below it, its axle comes up to the floor (an overshot rim up to
+// its race), its diameter is at most three fifths of the wall it hangs on, and its shaft meets that wall rather than the bank beneath.
+function millWheelFit(drive,water,floor,found,wall){
+  const bottom=water-MILL_DIP,rMax=wall*0.3,rMin=Math.min(1.2,rMax);
+  let r=clamp(drive?.mode==='overshot'&&drive.feed?(drive.feed.b.y-0.12-bottom)/2:floor+0.5-bottom,rMin,rMax);
+  r=Math.max(r,Math.min(rMax,found+0.3-bottom));
+  return{radius:r,axleY:bottom+r,bottom};
+}
+// What is drawn for a mill: millDrive's mode and flow, its wheel refitted to the drawn stream (a pond's sheet where it stands in one), the race
+// from the pond ending on that wheel at the drawn level, and `gap`, from the wheel's mid-plane to the wall face its shaft runs to.
+// A wheel in the river's pale shallows gets a tail race (`race`: from u0 beside the wall to u1 in clear water, along its axle, half-wide `half`).
+// Display only: the simulation keeps millDrive.
+function millWheelPose(s,b,water=b.millWater){
+  const k=water.side||0,th=b.rot+k*Math.PI/2,half=(k%2?b.d:b.w)/2,off=water.offset||half+1.6,x=b.x+Math.cos(th)*off,z=b.z-Math.sin(th)*off,floor=b.y??hAt(b.x,b.z);
+  const drive=millDrive(s,b.millWater?b:{...b,millWater:water}),pond=!!s.lake&&inPoly(s.lake.poly,x,z),river=pond?null:riverSurfaceAt(x,z),level=pond?s.lake.y:river?.y??water.y-0.55;
+  const fit=millWheelFit(drive,level,floor,b.y0??floor-0.5,k%2?b.w:b.d),gap=off-half,bank=pond?Infinity:river?.bank??0;
+  let feed=null;if(drive.feed){const vx=Math.sin(th),vz=Math.cos(th),side=Math.sign((drive.feed.b.x-x)*vx+(drive.feed.b.z-z)*vz)||1,over=drive.mode==='overshot',
+    y=over?fit.axleY+fit.radius*Math.sqrt(1-0.25**2)+0.12:level+0.16,u=side*(over?fit.radius*0.25:Math.sqrt(Math.max(0,fit.radius**2-(y-fit.axleY)**2)));feed={a:drive.feed.a,b:{x:x+vx*u,z:z+vz*u,y}};}
+  const race=bank<MILL_CLEAR+0.675?{u0:-(gap-0.1),u1:Math.max(1.1,MILL_CLEAR-bank+0.5),half:Math.sqrt(Math.max(0,fit.radius**2-(fit.radius-MILL_DIP)**2))+0.8}:null;
+  return{...drive,...fit,feed,water:level,bank,race,th,off,gap,x,z};
+}
+function millPaddleToWater(P){return P.race&&P.race.u0<=0&&P.race.u1>=0?0:Math.max(0,MILL_CLEAR-P.bank);} // the lowest paddle's middle to drawn water clear of the shallows
 function millWheelKey(){return W.settlements.map(s=>{const b=s.mill,w=b?.millWater;return b?[b.idx,b.state,!!b.removed,b.x,b.z,b.rot,w?.kind,w?.side,w?.offset,w?.y].join(','):'';}).join('|');}
 function rebuildMillWheels(){
   G.millKey=millWheelKey();
   for(const wh of G.wheels||[])scene.remove(wh.userData.pivot);
   if(G.millRaceWood){scene.remove(G.millRaceWood);G.millRaceWood.geometry.dispose();G.millRaceWood=null;}
   if(G.millRaceWater){scene.remove(G.millRaceWater);G.millRaceWater.geometry.dispose();G.millRaceWater=null;}
-  G.wheels=[];if(!G.millWheelGeo)G.millWheelGeo=millWheelGeometry();
+  G.wheels=[];if(!G.millWheelGeo)G.millWheelGeo=millWheelGeometry();if(!G.millShaftGeo)G.millShaftGeo=millShaftGeometry();
   if(!G.millWheelMat){G.millWheelMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millWheelMat.defines={...G.millWheelMat.defines,MINI_STRUCTURE_UV:1};}
   const raceWood=[],waterPos=[],waterIdx=[],waterUv=[];let hasRace=false;
   if(!G.millRaceWoodMat){G.millRaceWoodMat=miniatureMaterial(6,[0.8,3],{color:0x6e5636,side:THREE.DoubleSide});G.millRaceWoodMat.defines={...G.millRaceWoodMat.defines,MINI_STRUCTURE_UV:1};}
@@ -6263,11 +6299,13 @@ function rebuildMillWheels(){
           if(r||lake){if(!best||d<best.d)best={d,side:k,y:lake?s.lake.y:r.y};break;}}}
       if(!best)continue;water={...best,kind:'legacy'};
     }
-    const drive=typeof millDrive==='function'?millDrive(s,b.millWater?b:{...b,millWater:water}):null;
-    const k=water.side,th=b.rot+k*Math.PI/2,off=water.offset||((k%2?b.d:b.w)/2+1.6);
+    const drive=millWheelPose(s,b,water); // fitted to the stream as drawn, not to the simulation's level above it
+    const th=drive.th,off=drive.off;
     const wh=new THREE.Mesh(G.millWheelGeo,G.millWheelMat),pivot=new THREE.Group();pivot.rotation.y=th;
-    const radius=drive?.radius||4,axleY=drive?.axleY??(water.y+3.05);
-    wh.scale.y=wh.scale.z=radius/4;wh.userData.direction=drive?.direction||1;
+    const radius=drive.radius,axleY=drive.axleY;
+    wh.scale.y=wh.scale.z=radius/4;wh.userData.direction=drive.direction||1;
+    {const sh=new THREE.Mesh(G.millShaftGeo,G.millWheelMat);sh.position.x=0.65;sh.scale.x=0.65+drive.gap-0.05;sh.castShadow=sh.receiveShadow=true;wh.add(sh);} // the shaft stops just short of the wall
+    if(drive.race){hasRace=true;const R=drive.race,y=drive.water+0.03;millRaceRibbon([R.u0,R.u1].map(u=>({x:drive.x+Math.cos(th)*u,y,z:drive.z-Math.sin(th)*u})),R.half*2,waterPos,waterIdx,waterUv);} // the tail race
     pivot.position.set(b.x+Math.cos(th)*off,axleY,b.z-Math.sin(th)*off);
     wh.castShadow=wh.receiveShadow=true;wh.userData.building=b;pivot.add(wh);scene.add(pivot);G.wheels.push(wh);wh.userData.pivot=pivot;
     if(drive?.feed?.a&&drive?.feed?.b){
@@ -6281,7 +6319,7 @@ function rebuildMillWheels(){
       // The stream follows the working blades and returns downstream to the river.
       const C=new THREE.Vector3(pivot.position.x,axleY,pivot.position.z),plane=new THREE.Vector3(Math.sin(th),0,Math.cos(th)),flow=drive.direction||1;
       const river=riverAt(C.x,C.z,0),arc=[B.clone()],startAng=Math.atan2(B.clone().sub(C).dot(plane),B.y-C.y);
-      if(river){const level=river.y+.1;let prev=B.clone(),hit=null;
+      if(river){const level=drive.water+.1;let prev=B.clone(),hit=null;
         for(let j=1;j<=24;j++){const t=j/24,ang=startAng+flow*t*Math.PI,rad=radius+.12,next=C.clone().addScaledVector(plane,Math.sin(ang)*rad);next.y=axleY+Math.cos(ang)*rad+.1;
           if(next.y<=level){const f=clamp((prev.y-level)/(prev.y-next.y),0,1);hit=prev.clone().lerp(next,f);hit.y=level;arc.push(hit);break;}
           arc.push(next);prev=next;
@@ -6296,7 +6334,7 @@ function rebuildMillWheels(){
 function millSluiceSlots(s){ // cut the dam where the actual fitted wheel's feeder crosses it
   const dm=s.lake.dam,dx=-Math.cos(dm.a),dz=-Math.sin(dm.a),nx=-dz,nz=dx,out=[];
   for(const b of s.buildings)if(b.arch==='mill'&&!b.removed&&b.state!=='gone'&&b.millWater){
-    const feed=millDrive(s,b).feed;if(!feed)continue;
+    const feed=millWheelPose(s,b).feed;if(!feed)continue;
     const a=feed.a,c=feed.b,da=(a.x-dm.x)*dx+(a.z-dm.z)*dz,dc=(c.x-dm.x)*dx+(c.z-dm.z)*dz;if(da>=0||dc<=0)continue;
     const t=-da/(dc-da),x=a.x+(c.x-a.x)*t,z=a.z+(c.z-a.z)*t,u=(x-dm.x)*nx+(z-dm.z)*nz;
     const lo=dm.lo??-dm.w/2,hi=dm.hi??dm.w/2;if(u>lo&&u<hi)out.push([Math.max(lo,u-0.6),Math.min(hi,u+0.6)]);
