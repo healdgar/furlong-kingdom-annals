@@ -8,7 +8,7 @@ const extract=name=>{
   const m=html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'));
   assert.ok(m,`missing function ${name}`);return m[0];
 };
-const core=['wallRadAt','wallKindAt','casRing','casStone','motteSurface','fortCenter','fortPoint','fortCircuits',
+const core=['entityView','polyLengthView','wallRadAt','wallKindAt','casRing','casStone','motteSurface','fortCenter','fortPoint','fortCircuits',
   'fortGateAngles','fortPrepare','fortContains','activeFort','castleDamage','fortSurface','fortWalkY',
   'fortGround','fortTerrainBounds','maskFortTerrain','wallDmgAt','wallDamage','damageWalls','wallWorks','wallProg','wallBuilt',
   'siegeGate','entryPath','casRing','casKeep','fortOf','defenceOf','planWallCuts','razeWall','rayPolyR','fortBaileyShape',
@@ -48,6 +48,29 @@ function castle(){
   town.cas={outer:24,dmg:0.35};
   return {town,keep,hall,store};
 }
+
+test('an ordinary siege of an unfortified town needs no wall objective',()=>{
+  const s={pos:{x:0,z:0}},a={id:17,strength:60,_ppos:{x:100,z:0}};
+  const ctx=vm.createContext({s,a,W:{settlements:[s]},activeFort:()=>null,siegeRadius:()=>90,
+    clamp:(v,l,h)=>Math.max(l,Math.min(h,v)),hash01:()=>0.5});
+  vm.runInContext(extract('siegeArc')+'\nsiegeArc(a,s)',ctx);
+  assert.equal(a.siegeArc.c,0);
+  assert.ok(Number.isFinite(a.siegeArc.w));
+  assert.equal(a.siegeArc.R,90);
+});
+
+test('gate inspection reads current geometry without populating canonical caches',()=>{
+  const s={pos:{x:0,z:0},wallRad:[20],wallR:20,streets:[]};let scans=0;
+  const ctx=vm.createContext({s,wallGates:()=>{scans++;return[0.3];}});
+  vm.runInContext(extract('fortGateAngles')+'\n'+extract('settleFortGates'),ctx);
+  assert.deepEqual(Array.from(ctx.fortGateAngles(s,s)),[0.3]);
+  assert.equal(s._gates,undefined);assert.equal(s._gatesK,undefined);
+  ctx.settleFortGates(s);const stored=s._gates,at=scans;
+  assert.equal(ctx.fortGateAngles(s,s),stored);assert.equal(scans,at);
+  s._gateTrafficVersion=1;
+  ctx.fortGateAngles(s,s);assert.equal(s._gates,stored);
+  ctx.settleFortGates(s);assert.notEqual(s._gates,stored);
+});
 
 test('circuit points, gates and damage use the circuit centre and independent segment arrays',()=>{
   const {c,run}=fixture(),{town}=castle();

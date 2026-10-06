@@ -36,7 +36,7 @@ test('newborns grow with simulation age, reaching species-specific adult sizes w
 });
 
 test('grazing checks the rendered channel with room for the whole animal, even on dry survey cells',()=>{
-  const wet=[],c=vm.createContext({W:{water:[0]},G:{land:{mask:[0,0,0,0]}},cIdx:()=>0,toCell:()=>0,renderedWaterNear:(x,z,pad)=>{wet.push(pad);return Math.abs(x)<4+pad;}});
+  const wet=[],c=vm.createContext({W:{water:[0],land:{mask:[0,0,0,0]}},G:{},cIdx:()=>0,toCell:()=>0,renderedWaterNear:(x,z,pad)=>{wet.push(pad);return Math.abs(x)<4+pad;}});
   vm.runInContext(source.slice(source.indexOf('function grazeOK('),source.indexOf('/* the herds on the map: each town',source.indexOf('function grazeOK('))),c);
   assert.equal(c.grazeOK(0,0),false);assert.equal(c.grazeOK(5,0),false);assert.equal(c.grazeOK(8,0),true);assert.ok(wet.every(p=>p===2.5));
 });

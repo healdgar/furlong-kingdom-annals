@@ -287,6 +287,7 @@ test('save construction flushes active commodity settlements before returning th
     return match[0];
   };
   const context = vm.createContext({
+    MODEL_ONLY: false,
     W: { settlements: [], houses: [], name: 'fixture' },
     day: () => 7, AD: () => 850, storageOwnerId: owner => owner ?? 'unassigned',
     storageOutcome: event => context.events.push(event), events: [], JOURNAL: [],

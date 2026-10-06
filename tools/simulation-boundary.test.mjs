@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {runSimulation} from './simulation-boundary.mjs';
+
+test('full game source starts without DOM or THREE and advances eight canonical days',async()=>{
+  const r=await runSimulation({seed:1001,fate:42,coast:'sea',startAD:850,days:8,roundTrip:true});
+  assert.equal(r.readyDay,0);
+  assert.equal(r.endDay,8);
+  assert.ok(r.settlementCount>0);
+  assert.ok(r.buildingCount>0);
+  assert.ok(r.householdCount>0);
+  assert.match(r.digest,/^[a-f0-9]{64}$/);
+  assert.ok(r.start.worldGraph.nodes>0);
+  assert.ok(r.end.worldGraph.nodes>=r.start.worldGraph.nodes);
+  assert.ok(r.end.journals.storage.seq>0);
+  assert.ok(r.end.journals.storage.rows.length>0,'the final native storage batch remains inspectable by sequence');
+  assert.equal(r.end.journals.storage.rows.at(-1).seq+1,r.end.journals.storage.seq);
+  assert.ok(r.end.households.every(h=>Number.isFinite(h.purse)&&Number.isFinite(h.debt)&&Array.isArray(h.pantry)));
+  assert.notDeepEqual(r.start.rng,r.end.rng,'real master ticks must advance simulation randomness');
+  assert.ok(['F1','J1'].includes(r.saveInfo.encoding),'save packing may use compressed F1 or the documented J1 fallback');
+  assert.equal(r.saveInfo.day,8);
+  assert.equal(r.saveInfo.commands,2);
+  assert.equal(r.replay.endDay,8);
+  assert.equal(r.replay.resumed,true);
+  assert.equal(r.replay.worldOnlySHA256,r.replay.savedEnd.worldOnlySHA256,'replay must reconstruct W at the save boundary');
+  assert.deepEqual(r.replay.rng,r.replay.savedEnd.rng,'replay must reconstruct each RNG stream');
+  assert.deepEqual(r.replay.settlements,r.replay.savedEnd.settlements,'stocks, land, ownership, structures and storage match after replay');
+  assert.deepEqual(r.replay.households,r.replay.savedEnd.households,'pantry, hunger, purse, debt, membership and household ledgers match');
+  assert.deepEqual(r.replay.mod,r.replay.savedEnd.mod);
+  assert.deepEqual(r.replay.journals.commands,r.replay.savedEnd.journals.commands);
+  assert.equal(r.replay.journals.storage.seq,r.replay.savedEnd.journals.storage.seq);
+  assert.deepEqual(r.replay.annals.slice(0,r.replay.savedEnd.journals.annals.length),r.replay.savedEnd.journals.annals,'replay may append its expected resumed note after the original annals');
+  assert.match(r.replay.annals.at(-1),/annals are taken up again/i);
+});

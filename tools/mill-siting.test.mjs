@@ -8,7 +8,7 @@ const extract=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^functi
 function fixture(angle=0,{cliff=false,shallow=false,pond=false}={}){
   const x=Math.cos(angle),z=Math.sin(angle),across=(px,pz)=>px*z-pz*x;
   const wet=(px,pz)=>pond?Math.abs(px)<20&&Math.abs(pz)<20:Math.abs(across(px,pz))<5;
-  const C=vm.createContext({SEA:0,G:{rivStrips:pond?[]:[{pts:[-24,-12,0,12,24].map(t=>({x:x*t,z:z*t})),hw:[5,5,5,5,5],ys:[3,3,3,3,3]}]},
+  const C=vm.createContext({SEA:0,W:{rivStrips:pond?[]:[{pts:[-24,-12,0,12,24].map(t=>({x:x*t,z:z*t})),hw:[5,5,5,5,5],ys:[3,3,3,3,3]}]},
     lerp:(a,b,t)=>a+(b-a)*t,dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz),riverAt:(px,pz)=>!pond&&wet(px,pz),lakeAt:(s,px,pz)=>pond&&wet(px,pz),
     inPoly:(p,px,pz)=>wet(px,pz),hAt:(px,pz)=>wet(px,pz)?(shallow?2.6:1):(cliff?14:4),
     rng:()=>assert.fail('siting must not consume simulation RNG')});
@@ -53,4 +53,13 @@ test('ordinary river wheels change size with bank context and follow the actual 
   f.C.riverAt=()=>({a:{x:0,z:-1},b:{x:0,z:1}});const a=f.C.millDrive({},b);assert.equal(a.direction,-1);
   b.y=6;const taller=f.C.millDrive({},b);assert.ok(taller.radius>a.radius);
   f.C.riverAt=()=>({a:{x:0,z:1},b:{x:0,z:-1}});assert.equal(f.C.millDrive({},b).direction,1);
+});
+
+test('raised millpond dams span to both terrain banks at the proposed water level',()=>{
+  const C=vm.createContext({hAt:(x,z)=>z< -31?9:z>47?11:4});
+  vm.runInContext(extract('millDamSpan'),C);
+  const span=C.millDamSpan(0,0,0,1,8);
+  assert.ok(span);assert.ok(span.min< -31&&span.max>47);
+  assert.ok(span.width>80);assert.ok(C.hAt(0,span.min)>8);assert.ok(C.hAt(0,span.max)>8);
+  assert.ok(C.hAt(0,(span.min+span.max)/2)<=8);
 });

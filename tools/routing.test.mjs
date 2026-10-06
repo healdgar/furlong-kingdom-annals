@@ -18,7 +18,7 @@ function world(seed,n=20){let state=seed;const roll=()=>((state=Math.imul(state,
   for(let i=0;i<3;i++){const a=Math.floor(roll()*n),b=Math.floor(roll()*n);if(a!==b)W.seaLanes.push({a,b,len:10,poly:[{x:a*20,z:0},{x:b*20,z:0}]});}
   return W;
 }
-function realm(W,WorkerType,hash=''){const c=vm.createContext({W,Math,console,Worker:WorkerType,Blob,URL,location:{hash},MARCH_MPD:420,COG_MPD:1000,PORT_DELAY:1200,dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz)});vm.runInContext(code,c);return{c,eval:s=>vm.runInContext(s,c)};}
+function realm(W,WorkerType,hash=''){const c=vm.createContext({MODEL_ONLY:false,WORLD_PARAMS:typeof hash==='string'?hash:'',W,Math,console,Worker:WorkerType,Blob,URL,location:{hash},MARCH_MPD:420,COG_MPD:1000,PORT_DELAY:1200,dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz)});vm.runInContext(code,c);return{c,eval:s=>vm.runInContext(s,c)};}
 function previous(W,ai,bi,sea){ // frozen pre-optimization queue semantics
   const adj=c=>{const E=W.adj[c]||[];if(!sea||!W.seaLanes.length)return E;const o=E.slice();W.seaLanes.forEach((L,li)=>{if(L.a===c)o.push({to:L.b,li});else if(L.b===c)o.push({to:L.a,li});});return o;};
   const prev={},via={},g={},open=[ai],done=new Set();prev[ai]=null;g[ai]=0;

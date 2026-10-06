@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-const names=['armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath'];
+const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath'];
 const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
-function fixture(){const W={settlements:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
+function fixture(){const W={settlements:[],rivHash:{},roads:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
  const c=vm.createContext({W,G,SIZE:2000,CELL:10,SEA_SURFACE:.5,COG_MPD:100,PORT_DELAY:2,MARCH_MPD:40,
  hAt:()=>10,fortGround:()=>10,riverAt:()=>null,day:()=>5,
  toCell:x=>Math.max(0,Math.min(19,Math.floor((x+100)/10))),inB:(i,j)=>i>=0&&j>=0&&i<20&&j<20,cIdx:(i,j)=>j*20+i,
@@ -25,7 +25,8 @@ test('friendly gates and actual breaches pass; hostile intact gates and wall spa
  wall.damage=0;c.s=W.settlements[0];const goal=vm.runInContext('armyDestination(a,s,{x:30,z:0})',c);assert.equal(goal.x,38);});
 test('deep or broad rivers require an existing bridge; narrow shallow water can be forded',()=>{const{c,G}=fixture();let river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12};c.riverAt=()=>river;c.a={house:0};
  assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');river.hw=5;river.y=10.9;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);
- river.y=13;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');G.bridgeSpans.push({a:{x:-15,z:0},b:{x:15,z:0},hw:3,x0:-15,x1:15,z0:-3,z1:3});
+ river.y=13;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');G.bridgeSpans.push({a:{x:-15,z:0},b:{x:15,z:0},hw:3});
+ assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river','a drawn span cannot authorize travel');c.W.roads.push({path:[{x:-15,z:0},{x:15,z:0}]});
  assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);assert.equal(vm.runInContext('armyObstacle(a,0,8)',c),'river');});
 test('a failed order preserves current field position and cannot teleport to its old town',()=>{const{c}=fixture();c.a={house:0,state:'march',chase:8,fieldTo:{x:50,z:50}};
  assert.equal(vm.runInContext('armyRouteBlocked(a)',c),false);assert.equal(c.a.state,'idle');assert.deepEqual({...c.a.field},{x:7,z:9});assert.equal(c.a.fieldTo,null);assert.equal(c.a.chase,null);});

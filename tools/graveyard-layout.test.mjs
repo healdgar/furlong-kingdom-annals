@@ -8,7 +8,7 @@ const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^
 function fixture(){
   const F={k:1,kind:1,state:0,crofts:0},C=vm.createContext({
     hash01:n=>((Math.sin(n*12.9898)*43758.5453)%1+1)%1,Math,Set,Infinity,
-    G:{land:{F:[F],mask:new Uint8Array(1000000)}},W:{water:new Uint8Array(1000000)},SEA:-100,
+    G:{},W:{land:{F:[F],mask:new Uint8Array(1000000)},water:new Uint8Array(1000000)},SEA:-100,
     LS:{TILLED:2,PASTURE:3,BURNT:5,SCRUB:4,WOOD:1},LK:{NONE:0},ARABLE:new Set([1]),
     toCell:n=>Math.floor(n/15)+50,inB:(x,z)=>x>=0&&x<100&&z>=0&&z<100,cIdx:(x,z)=>z*1000+x,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
     hAt:()=>10,riverAt:()=>false,lakeAt:()=>false,furlongAt:()=>F,
@@ -64,7 +64,7 @@ test('churchyard street and mask commit wait for surveyed land and happen only o
     markChurchyardBuilt:()=>{marks++;},clearLandAt:()=>{clears++;}});
   vm.runInContext("finishChurchyard(s,b,addStreet)",Object.assign(C,{s,b}));
   assert.equal(streets,0);assert.equal(marks,0);
-  C.G.land._surveyed=true;
+  C.W.land._surveyed=true;
   vm.runInContext("finishChurchyard(s,b,addStreet)",Object.assign(C,{s,b}));
   assert.equal(streets,0);assert.equal(marks,0); // survey alone is insufficient before the authoritative church parcel exists
   b.lot=[{x:-10,z:-10},{x:10,z:-10},{x:10,z:10},{x:-10,z:10}];
@@ -107,10 +107,10 @@ test('on-site yard clips to the church parcel and retains only full monument slo
 
 test('on-site graves may use masked church land, while active or adjunct land remains protected',()=>{
   const{C,F}=fixture(),P=vm.runInContext('graveyardShape(50,50,0,2,2,1)',C),ci=C.toCell(50),cj=C.toCell(50),maskIndex=C.cIdx(ci,cj)*4+2;
-  F.state=2;F.crofts=1;C.G.land.mask[maskIndex]=255;
+  F.state=2;F.crofts=1;C.W.land.mask[maskIndex]=255;
   assert.equal(vm.runInContext('graveyardLandClear(s,P,1)',Object.assign(C,{P,s:{}})),true);
   assert.equal(vm.runInContext('graveyardLandClear(s,P,null)',Object.assign(C,{P,s:{}})),false);
-  C.G.land.mask[maskIndex]=0;
+  C.W.land.mask[maskIndex]=0;
   assert.equal(vm.runInContext('graveyardLandClear(s,P,1)',Object.assign(C,{P,s:{}})),false);
 });
 

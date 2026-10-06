@@ -14,11 +14,11 @@ test('Crown tax adjustments are immediate, bounded and coalesced, with no househ
   assert.equal(C.MOD.tax,21);assert.equal(JSON.stringify(C.W),before);assert.equal(vm.runInContext('JOURNAL.length',C),1);assert.equal(vm.runInContext('JOURNAL[0].v',C),21);
   assert.equal(vm.runInContext("setRulerRate('tax',100)",C),30);assert.equal(vm.runInContext("setRulerRate('tax',-1)",C),5);assert.equal(vm.runInContext("setRulerRate('tax',NaN)",C),null);
 });
-test('lords adjust only their customary dues; chroniclers and watch mode cannot rule',()=>{
+test('lords adjust only their customary dues; watch mode gates commands without changing authority',()=>{
   const C=realm(1);assert.equal(vm.runInContext("setRulerRate('tax',25)",C),null);assert.equal(C.MOD.tax,12);
   assert.equal(vm.runInContext("setRulerRate('dues',137)",C),135);assert.equal(C.W.houses[1].dues,1.35);assert.equal(C.W.houses[2].dues,1);
   C.W.player.on=false;assert.equal(vm.runInContext("setRulerRate('dues',50)",C),null);
-  C.W.player.on=true;C.document.body.classList.contains=()=>true;assert.equal(vm.runInContext("setRulerRate('dues',50)",C),null);
+  C.W.player.on=true;C.document.body.classList.contains=()=>true;assert.equal(vm.runInContext('sovOn()',C),true);assert.equal(vm.runInContext("setRulerRate('dues',50)",C),null);
   C.document.body.classList.contains=()=>false;C.W.houses[1].exiled=true;assert.equal(vm.runInContext("setRulerRate('dues',50)",C),null);
 });
 test('unchanged rates produce no command and existing save settings replay identically',()=>{

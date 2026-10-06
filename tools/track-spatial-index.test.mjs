@@ -8,7 +8,7 @@ const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const baseline=execFileSync('git',['show','e3636c6:index.html'],{encoding:'utf8',maxBuffer:20e6});
 function fn(s,n){const m=s.match(new RegExp('^function '+n+'\\b[\\s\\S]*?^\\}','m'));assert.ok(m,`missing ${n}`);return m[0];}
 const hashSource=fn(source,'makeHash');
-const baseTrack=fn(baseline,'buildTracks'),newTrack=fn(source,'buildTracks');
+const baseTrack=fn(baseline,'buildTracks'),newTrack=fn(source,'settleTracks');
 
 function fixture(spec={}){
   const points=spec.points||Array.from({length:12},(_,i)=>({x:i*24,z:0}));
@@ -20,7 +20,7 @@ function run(which,spec={}){
   const {points,settlements,fields}=fixture(spec),edges=(spec.edges||points.slice(1).map((_,i)=>[i,i+1,points[i+1].x-points[i].x])).map(([a,b,c])=>({a,b,k:a<b?`${a}_${b}`:`${b}_${a}`,L:c,c}));
   const T={V:new Map(points.map((p,i)=>[`${Math.round(p.x)},${Math.round(p.z)}`,i])),pts:points,adj:points.map(()=>[]),E:new Map()};
   for(const e of edges){T.adj[e.a].push(e);T.adj[e.b].push(e);T.E.set(e.k,e);}
-  const W={settlements};const G={land:{F:fields},tg:T,trackSet:null};let distanceCalls=0,bridgeCalls=0,projectCalls=0;
+  const W={settlements,land:{F:fields},tg:T,trackSet:null};const G={land:W.land,tg:T,trackSet:null};let distanceCalls=0,bridgeCalls=0,projectCalls=0;
   const context={W,G,trackGraph:()=>T,LS:{TILLED:'tilled',PASTURE:'pasture'},LK:{NONE:'none'},HASH_STAMP:0,
     dist2d:(x,z,a,b)=>{distanceCalls++;return Math.hypot(x-a,z-b);},
     segDist:(x,z,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/L));return Math.hypot(x-a.x-dx*t,z-a.z-dz*t);},
@@ -28,13 +28,13 @@ function run(which,spec={}){
     prepareTrackBridges(){bridgeCalls++;G.trackBridgeAt=[];G.trackBridgePlan=[];},
     VISUAL:{defer(){return true;}},projectTracks(){projectCalls++;},console,
   };
-  vm.createContext(context);vm.runInContext(hashSource,context);vm.runInContext(which==='base'?baseTrack:newTrack,context);vm.runInContext('buildTracks()',context);
+  vm.createContext(context);vm.runInContext(hashSource,context);vm.runInContext(which==='base'?baseTrack:newTrack,context);vm.runInContext(which==='base'?'buildTracks()':'settleTracks()',context);
   const graph=JSON.stringify({points:T.pts,edges:[...T.E.values()],adj:T.adj.map(a=>a.map(e=>e.k))});
   const originals=[...settlements,...settlements.flatMap(s=>[s.pos,...(s.buildings||[]),...(s.streets||[]).flatMap(st=>[st,...(st.pts||[])])]),...fields,...fields.flatMap(f=>f.poly||[]),...T.pts,...edges];
-  return {trackSet:[...context.G.trackSet],distanceCalls,bridgeCalls,projectCalls,originalsClean:originals.every(o=>!Object.hasOwn(o,'__hs')),
-    world:JSON.stringify(context.W),fields:JSON.stringify(context.G.land.F),graph};
+  return {trackSet:[...(which==='base'?context.G.trackSet:context.W.trackSet)],distanceCalls,bridgeCalls,projectCalls,originalsClean:originals.every(o=>!Object.hasOwn(o,'__hs')),
+    world:JSON.stringify(context.W.settlements),fields:JSON.stringify(context.G.land.F),graph};
 }
-function equivalent(spec){const a=run('base',spec),b=run('new',spec);assert.deepEqual(b.trackSet,a.trackSet);assert.equal(b.bridgeCalls,a.bridgeCalls);assert.equal(b.projectCalls,a.projectCalls);assert.equal(b.world,a.world);assert.equal(b.fields,a.fields);assert.equal(b.graph,a.graph);assert.equal(b.originalsClean,true);}
+function equivalent(spec){const a=run('base',spec),b=run('new',spec);assert.deepEqual(b.trackSet,a.trackSet);assert.equal(b.bridgeCalls,a.bridgeCalls);assert.equal(b.projectCalls,0);assert.equal(a.projectCalls,0);assert.equal(b.world,a.world);assert.equal(b.fields,a.fields);assert.equal(b.graph,a.graph);assert.equal(b.originalsClean,true);}
 
 test('spatial candidates preserve routes for urban, rural, overlapping, edge, and root cases',()=>{
   const points=Array.from({length:14},(_,i)=>({x:i*24,z:0}));

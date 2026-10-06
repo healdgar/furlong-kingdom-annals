@@ -14,8 +14,8 @@ const toCell = x => Math.floor((x + SIZE / 2) / CELL);
 function landContext({ coastal = true, water = Array(GRID * GRID).fill(0), heights = Array(GRID * GRID).fill(10), lakes = [] } = {}) {
   const furlong = { x: 0, z: 0, af: -1, area: -1, kind: 3, state: 2, lord: 0 };
   const context = vm.createContext({
-    G: { land: { mask: null, flood: null }, trackSet: null },
-    W: { coastal, water, h: heights, biome: Array(GRID * GRID).fill(0), settlements: lakes },
+    G: { trackSet: null },
+    W: { land: { mask: null, flood: null }, coastal, water, h: heights, biome: Array(GRID * GRID).fill(0), settlements: lakes },
     GRID, SIZE, CELL, FG, SEA: 0, SEA_SURFACE: 0.5,
     B: { ROCK: 1, SNOW: 2, MARSH: 3 },
     LK: { MEADOW: 3 }, LS: { TILLED: 2 },
@@ -42,7 +42,7 @@ test('classified sea, river, lake and shallow coastal cells suppress field masks
   const lake = { lake: { dam: { x: cellX(0), z: cellZ(0) } } };
   const { context, furlong } = landContext({ water, heights, lakes: [lake] });
   vm.runInContext('computeMask()', context);
-  const mask = context.G.land.mask;
+  const mask = context.W.land.mask;
   for (const c of [cIdx(1, 1), cIdx(2, 1), cIdx(0, 0), cIdx(1, 2)]) {
     assert.equal(mask[c * 4], 0, `arable channel wet at cell ${c}`);
     assert.equal(mask[c * 4 + 1], 0, `vine channel wet at cell ${c}`);
@@ -65,7 +65,7 @@ test('an inland quarter-metre cell is not treated as coastal water', () => {
   const heights = Array(GRID * GRID).fill(10); heights[cIdx(2, 2)] = 0.25;
   const { context } = landContext({ coastal: false, heights });
   vm.runInContext('computeMask()', context);
-  const mask = context.G.land.mask, c = cIdx(2, 2);
+  const mask = context.W.land.mask, c = cIdx(2, 2);
   assert.equal(mask[c * 4], 255);
   assert.equal(mask[c * 4 + 3], 255);
 });
@@ -84,7 +84,7 @@ test('parchment land overlay leaves wet pixels untouched but paints dry parcel b
   const image = { data };
   const g = { getImageData: () => image, putImageData: value => { image.data.set(value.data); } };
   const context = vm.createContext({
-    G: { land: { F, mask } }, SIZE, GRID, FG, FN: GRID, LK: { NONE: 0, VINE: 5, MEADOW: 3 }, LS: { TILLED: 2 },
+    G: {}, W: { land: { F, mask } }, SIZE, GRID, FG, FN: GRID, LK: { NONE: 0, VINE: 5, MEADOW: 3 }, LS: { TILLED: 2 },
     cIdx, toCell, g, clamp: (x, a, b) => Math.max(a, Math.min(b, x)), lordColor: lord => lord & 1 ? 0xff0000 : 0x00ff00,
   });
   vm.runInContext(draw, context, { filename: 'drawLandMap.js' });

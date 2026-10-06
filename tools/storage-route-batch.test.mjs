@@ -9,7 +9,7 @@ for(const name of ['resample','segDist','slopeAt','hAt','makeHash','riverAt','on
 if(source.includes('const STORAGE_ROUTE_BATCHES='))vm.runInContext('const STORAGE_ROUTE_BATCHES=new WeakMap();',c);
 if(source.includes('function storageRouteBatch('))vm.runInContext(fn(source,'storageRouteBatch'),c);
 vm.runInContext("K.exposedLots=()=>[...K.lots.values()].filter(l=>K.locations.get(l.location)?.exposed);",c);
-vm.runInContext(`G.rivHash=makeHash(10);const originalAccess=storageAccess;storageAccess=function(){accessCalls++;return originalAccess.apply(this,arguments);};const originalPath=streetPath;streetPath=function(){pathCalls++;return originalPath.apply(this,arguments);};`,c);return {run:x=>vm.runInContext(x,c),c};}
+vm.runInContext(`G.rivHash=W.rivHash=makeHash(10);const originalAccess=storageAccess;storageAccess=function(){accessCalls++;return originalAccess.apply(this,arguments);};const originalPath=streetPath;streetPath=function(){pathCalls++;return originalPath.apply(this,arguments);};`,c);return {run:x=>vm.runInContext(x,c),c};}
 const value=(r,x)=>JSON.parse(r.run('JSON.stringify('+x+')'));
 function compareRoutes(change=''){const a=realm(baseline),b=realm(candidate);for(const r of [a,b])r.run(change);const body=`const endpoints=[s.places[0],...s.furl,{x:31.125,z:-14.75},{x:-0,z:0}];const results=[];for(let k=0;k<3;k++)for(const a of endpoints)for(const b of endpoints)results.push(storageRoute(s,a,b${','}BATCH));`;
 a.run(body.replace('BATCH','undefined'));b.run('const BATCH=storageRouteBatch(s);'+body);assert.deepEqual(value(a,'results.map(v=>Number.isFinite(v)?v:String(v))'),value(b,'results.map(v=>Number.isFinite(v)?v:String(v))'));return [a,b];}

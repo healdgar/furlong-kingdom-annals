@@ -14,7 +14,7 @@ function realm(){
     spend:(_hi,c)=>{if(gold<c)return false;gold-=c;return true;},cdLeft:k=>cooldowns.get(k)||0,setCd:(k,n)=>cooldowns.set(k,n),
     heads_:()=>[],payAmong:(_heads,c)=>payments.push(c),emit:(...e)=>events.push(e),chance:()=>false,
     atWar:()=>false,cbtn:(cmd,arg,label,cost,disabled='',description='')=>JSON.stringify({cmd,arg,label,cost,disabled,description}),worksHTML:()=>'',esc:String});
-  vm.runInContext(ix+['friendlyTown','sheltered','publicOrderMen','publicOrderSuppression','watchRecruitment','suppressUnrestAmount','tickPopulation','settlementCmd','settlementActsHTML'].map(fn).join('\n'),C);
+  vm.runInContext(ix+['detailPopulation','friendlyTown','sheltered','publicOrderMen','publicOrderSuppression','watchRecruitment','suppressUnrestAmount','tickPopulation','settlementCmd','settlementActsHTML'].map(fn).join('\n'),C);
   return {C,W,s,payments,events,cooldowns,get gold(){return gold;},set gold(v){gold=v;},set hunger(v){hunger=v;}};
 }
 test('only the owner’s troops actually in town count; movement and casualties update immediately',()=>{

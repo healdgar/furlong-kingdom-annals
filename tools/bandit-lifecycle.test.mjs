@@ -11,7 +11,7 @@ function fixture(){
   const s={name:'Mere',pos:{x:0,z:0},folk:[p]},camp={id:7,x:10,z:0,men:[],nextRecruit:1};
   const W={settlements:[s],adj:{0:[]},roads:[],banditCamps:[camp]};
   let removed=0;
-  const C=vm.createContext({W,s,camp,p,home,spouse,OUTLAW_MAX:12,G:{campMeshes:new Map()},scene:{remove:()=>removed++},
+  const C=vm.createContext({W,s,camp,p,home,spouse,OUTLAW_MAX:12,G:{campMeshes:new Map()},markCampDisplaysDirty(){},scene:{remove:()=>removed++},
     day:()=>14,year:()=>0,foodYr:()=>10,householdAccount:q=>q._hh,ageYrs:q=>q.age,folkName:q=>q.gn,
     nearestSettlementIdx:()=>0,dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
     trait:(q,k)=>k===1?0.7:k===2?-0.2:k===3?-0.3:0,GB:1,GD:2,GWa:3,KLaw:0,
@@ -62,7 +62,7 @@ test('an empty camp cannot raid and waits for its next recruitment day',()=>{
   assert.ok(tick.includes('function tickBandits(dis)'));
   const camp={id:3,x:0,z:0,raids:0,born:1,men:[],nextRecruit:20};
   const caravan={sea:false,river:false,robbed:false,poly:[{x:0,z:0}],departDay:0,arriveDay:30,origin:0,dest:0,qty:0,value:1};const W={settlements:[{name:'nearby',unrest:0,prosperity:50,stores:{}}],banditCamps:[camp],caravans:[caravan],war:false};
-  let chanceCalls=0;const C=vm.createContext({W,camp,MOD:{bandit:1},G:{campMeshes:new Map()},scene:{remove(){}},
+  let chanceCalls=0;const C=vm.createContext({W,camp,MOD:{bandit:1},G:{campMeshes:new Map()},markCampDisplaysDirty(){},scene:{remove(){}},
     day:()=>10,chance:()=>++chanceCalls===2,nearestSettlementIdx:()=>0,dist2d:()=>0,polyPos:()=>({x:0,z:0}),emit:()=>{},vary:(k,L)=>L[0](),
     });
   vm.runInContext(helpers+'\n'+tick+'\ntickBandits(0)',C);

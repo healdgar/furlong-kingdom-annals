@@ -34,9 +34,9 @@ test('hidden lanes can open on connected dry land but cannot cross water for fre
 });
 test('rural placement traverses only built dry tracks connected to town',()=>{
   const C=realm(),pts=[{x:-15,z:0},{x:-15,z:90},{x:-15,z:180}],e0={a:0,b:1,k:'a'},e1={a:1,b:2,k:'b'};
-  C.G.tg={pts,E:new Map([['a',e0],['b',e1]]),adj:[[e0],[e0,e1],[e1]]};C.G.trackSet=new Set(['a','b']);
+  C.W.tg={pts,E:new Map([['a',e0],['b',e1]]),adj:[[e0],[e0,e1],[e1]]};C.W.trackSet=new Set(['a','b']);
   assert.equal(C.ruralRoadAccess(C.s,{x:-15,z:200}),true);
-  C.G.trackSet.delete('a');assert.equal(C.ruralRoadAccess(C.s,{x:-15,z:200}),false);
+  C.W.trackSet.delete('a');assert.equal(C.ruralRoadAccess(C.s,{x:-15,z:200}),false);
   assert.equal(C.ruralRoadAccess(C.s,{x:15,z:200}),false);
 });
 test('local paving clips wet stretches; only paid road rendering produces bridge spans',()=>{

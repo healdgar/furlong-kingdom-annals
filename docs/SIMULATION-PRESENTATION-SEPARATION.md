@@ -1,87 +1,24 @@
-# Simulation–presentation separation checkpoint
+# Simulation–presentation separation
 
-Parent: `61ba24d`. Branch: `codex/ruler-controls`.
+Implementation checkpoint, 2026-10-05. Final integration evidence is pinned to HTML SHA `42b9a2b3edecf4a7b3e40d768661127dd148809721f9d609264737dff0ba84e4`.
 
-Goal: daily simulation determines gameplay independently of display cadence.
-Presentation reads current state and reconstructs graphics at a bounded cadence.
-This checkpoint is partial; the whole engine is not worker-ready.
+## Ownership boundary
 
-## Completed
+- `W` is authoritative for semantic land, parcels, buildings, household/economic records and simulation state. HISTORY roots `W`; playback state is recorded separately.
+- Renderer indexes (`G.citList`, `herdPos`, `herdOwner`, `citIdx`, `travIdx`) and query/computed-view caches (`HASH_STAMP`, `__hs`, `G.entityViews`) are disposable, not additional semantic roots.
+- Model-side code handles land-market/founding, land tick, livestock, trees, tracks/layout, parcel settlement and structural growth. Renderer construction consumes model state. Shared prehistory invokes the real simulation tick for both headless and browser starts.
+- `tools/simulation-boundary.mjs` runs the real game source in a VM without DOM or Three.js; its boundary tests cover actual ticks, journal, save/replay and canonical state. Inspection/query helpers are checked for observational reads.
+- `tools/game-write-game-config.mjs` source-pins W and playback ownership and classifies known projections/scratch. It is an incomplete analysis prototype, not a worker or save-history runtime; unsupported aliases, accessors, native calls and facade hydration remain blockers.
 
-- `advanceSimulation` owns the existing daily tick budget and backlog. It does
-  not call camera, animation or DOM functions directly. Its called subsystems
-  still contain presentation hooks; extraction does not make them pure.
-- Presentation interpolation lives in `G.clockFrac`, through `displayFrac` and
-  `displayDay`. Frames no longer overwrite `W.clock.day`, `W.clock.frac` or
-  `W.visT`. Queued whole days cannot become a walker's fractional hour.
-- `tickEnvoys` expires model records during daily simulation. Rendering only
-  disposes expired envoy meshes and markers.
-- Cart positions derive from consignment dates, including siege-shifted dates;
-  requested speed no longer advances a separate cart distance accumulator.
-  Consignment state owns arrival. Proxy geometry and material are both disposed.
-- Citizens advance their disposable walking projection using elapsed calendar
-  time; windmill phase is display state in `G.sailAngle`, not building data.
-- `projectWorld` refreshes animation at most every 100 ms at speed 5. It retains
-  accumulated visual dt, refreshes immediately on speed changes, and runs each
-  frame at other speeds or with `defer=off`. Camera/input and canvas drawing
-  remain per frame. Daily ticks are retained.
+## Verification and limits
 
-Errand departures now use simulation day plus the existing seeded random offset.
-Previously they also used the last frame's fractional clock, potentially even
-whole queued days. Errand timing and subsequent demographic choices may therefore
-differ from old runs. Household pantry, hunger and debt rules are unchanged.
-Rendering no longer doubles interpolation for ships and travellers or makes
-Sunday/wedding checks see a fractional authoritative day.
+- Full-source headless checks completed: seed 1001/fate 42/sea at AD 850 plus 360 real days reached day 360; AD 851 ran real shared prehistory to ready day 360. Their source snapshots differ, so they do not establish parity.
+- The strict 8-day headless save/replay check passed with W, RNG, settlements/households, MOD, storage sequence and annals matching at the save boundary.
+- Final four-mode cadence at the exact source SHA above matched canonical roots, RNG streams and layouts at day 0 and day 30. Animation made zero canonical writes; expanded settlement/person/household/river/fort/beast inspectors produced no errors. Evidence: `/tmp/furlong-cadence-final-source/meta.json`. The check includes the deterministic visual-only bird change in `buildAgents`, UI memo relocation to `G.entityViews`, pure population/beast-price reads and recorded migration-row reads.
+- The final fast source suite passed 950/950 in 5.8 s (`/tmp/furlong-final-integrated-suite.log`), excluding the separately passed strict 8-day full-source save/replay. The public-order fixture extracts the actual `detailPopulation` helper. Configuration tests passed 8/8 and `git diff --check` is clean.
+- Native Metal baseline/candidate two-year runs passed (`/tmp/furlong-cpu-final/results.json`). Baseline `e0cd7e5` with only a null-target `siegeArc` fix (snapshot `7eeeb50b…57ce5`) recorded year 1 tick/projection 18.359/1.919 s and year 2 28.544/1.766 s. Candidate `6f16d983…274605` recorded 16.989/2.596 s and 27.562/2.217 s. The candidate-only 720-day run passed without errors at the pinned source: year 1 tick/projection/total 16.906/2.634/19.539 s; year 2 27.457/2.222/29.679 s. Candidate population, household and building counts repeat the earlier candidate snapshot. Since generated founding histories differ, these raw totals do not isolate a speedup; none is claimed.
+- Native render validation passed for seed 1001/sea and 2002/land through day 30, including graphics compile/material/camera/live-rebuild/church/world/reel checks. It is graphics validation, not throughput evidence.
 
-## Validation
+Current gates pass. Evidence covers model execution through 720 days and cadence/rendering through 30 days; it does not establish 200-year behavior, worker execution, archive/export or complete history hydration. Do not describe the prototype as worker-ready or infer accelerated-time safety.
 
-- All 922 source tests pass; executable inline scripts parse; diff checks pass.
-- `tools/simulation-display.test.mjs` covers integer clock ownership, actual
-  errand independence, envoy expiry, siege-held traffic, projection scheduling,
-  pause/new-world transitions and simulation advancement through display errors.
-- Native Chrome/Metal HTTP snapshots pass sea 1001 and inland 2002 through
-  30 days: shaders, camera uniforms, live rebuilds and church variants. Those
-  snapshots precede the behavior-preserving extraction of `advanceSimulation`.
-- `tools/render-check.mjs --reel-smoke` passes for sea 1001, exercising the real RAF driver, projection
-  rate and immediate pause refresh. Evidence remains local under
-  `/tmp/furlong-separation-reel-checkpoint-20261005/`.
-
-No matched throughput gain, arbitrary-frame state equality or century-scale
-clearance is claimed. No maintained simulation index or journal event was added.
-
-## Next boundary: parcels and churchyards
-
-`rebuildDetails` still computes `b.lot` and calls `finishYards`. These are gameplay
-changes, not cosmetic metadata. `tickInfill` reads parcel area; churchyard layout
-clips against parcels. `featLots` calls `markLot`, which writes the land exclusion
-mask used by simulation. `finishYards` may relocate graveyards, add paths, change
-land area and cut trees. Do not merely defer or throttle this mixed function.
-
-1. Extract existing parcel math unchanged, separating semantic parcel/mask
-   settlement from fence/yard mesh and shader projection.
-2. Move churchyard/path/land settlement to structural commits. Keep post-survey
-   settlement in `buildFields`; rendering must only read its results.
-3. Reuse `syncLive(s)` and existing layout `placed`/`segH` hashes. Also cover
-   live growth, `tickSettlers` batches, direct rural insertion, footprint widening
-   and removal. Update affected neighbors once per structural batch. Avoid a
-   new daily whole-map pass or one whole-world solve per inserted building.
-4. Check cross-town and rural parcel neighbors before narrowing the current
-   global solver. Preserve weighted bisectors, edge order and clipping.
-
-Other seams remain: `spawnCarts` in `tickEconomy`, a dead `c.proxy` disposal path,
-`emit` calling DOM/director/effects, graphics handles and derived caches on world
-objects, and simulation-side building/terrain GPU writes. Classify semantic
-mutation before moving each hook. The routing worker is not a simulation worker.
-
-## Review constraints
-
-- Preserve every household's pantry, hunger, purse, debt, assets and inheritance.
-- No per-person walking budgets, bulk lot splitting, new journal records or
-  overlapping maintained indexes. Reuse authoritative membership and existing
-  layout indexes. Do not add cleanup scans to every tick.
-- Commit bounded work with source hash, scope, checks and limitations. Measure
-  the native path before claiming speedup. A worker alone does not reduce CPU
-  work. Test the combined source after integration.
-
-Checkpoint `index.html` SHA256:
-`f1cf4296f2ec74aa528cd6a1e6401306f54d187494acf059403a2888231d0708`.
+Historical 2026-10-04 checkpoint: parent `61ba24d`, branch `codex/ruler-controls`, source SHA `f1cf4296f2ec74aa528cd6a1e6401306f54d187494acf059403a2888231d0708`. Its earlier tests and open checklist are superseded by the evidence above.
