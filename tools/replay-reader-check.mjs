@@ -1,9 +1,0 @@
-#!/usr/bin/env node
-// Extract production reader without booting the game; rejected records must not mutate any reader state.
-import fs from 'node:fs';import vm from 'node:vm';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
-const file=process.argv[2]||'index.html',source=fs.readFileSync(file,'utf8'),begin=source.indexOf('function replayEqual('),end=source.indexOf('// REPLAY TRANSACTION CORE END',begin);if(begin<0||end<0)throw Error('Source has no semantic reader');const c=vm.createContext({});vm.runInContext(source.slice(begin,end)+'\nthis.Reader=ReplayLedgerReader;',c);
-const snapshot=r=>JSON.stringify({sequence:r.sequence,fields:[...r.fields],transactions:[...r.transactions],ledgers:[...r.ledgers]});
-const transaction=(id,effects=[],participants=[])=>({kind:'transaction',id,effects,participants});const definition={kind:'definition',entity:'household:debtor',path:['assets'],fields:{w:{present:true,value:10}}};const field=(a,b)=>({kind:'field',entity:'household:debtor',path:['assets','w'],before:{present:true,value:a},after:{present:true,value:b}});
-const scenarios=[['duplicate-participant',transaction('bad',[],[{entity:'x',roles:[]},{entity:'x',roles:[]}])],['late-field-precondition',transaction('bad',[field(10,5),field(11,2)])],['duplicate-transaction',transaction('good')],['sequence-gap',transaction('bad'),3]],results=[];
-for(const [name,bad,sequence]of scenarios){const r=new c.Reader();r.append(transaction('good',[definition]),0);const before=snapshot(r);let rejected=false;try{r.append(bad,sequence??1);}catch{rejected=true;}try{assert.ok(rejected,'Malformed record accepted');assert.equal(snapshot(r),before,'Rejected append partially changed reader');results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.message});}}
-console.log(JSON.stringify({source:file,sourceSHA256:createHash('sha256').update(source).digest('hex'),results},null,2));if(results.some(r=>!r.pass))process.exitCode=1;

@@ -34,13 +34,10 @@ Source and measurements are recorded with each local run under `.git/deferral/20
 node --test tools/source.test.mjs tools/life-history.test.mjs tools/history.test.mjs \
   tools/provision.test.mjs tools/ownership.test.mjs tools/advisor-api.test.mjs \
   tools/routing.test.mjs tools/deferral.test.mjs
-node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
-  --years 2 --variants baseline,candidate,off --out /tmp/furlong-deferral
-node tools/deferral-check.mjs --baseline 75ac15d --seeds 1001:sea,2002:land \
-  --era 855 --years 0 --out /tmp/furlong-deferral-era
 ```
 
-The deferral harness retains authoritative geographic records as well as world/household/land,
+The one-off parent/candidate harness for this validation (`tools/deferral-check.mjs`) is removed
+(see git history); it retained authoritative geographic records as well as world/household/land,
 full life and annal history, ownership and account state. It compares every annual graph hash,
 final state and next 16 draws from each RNG stream at matched daily/mixed-builder boundaries.
 Only existing derived caches/graphics and spatial scratch stamps are omitted. Pause geometry

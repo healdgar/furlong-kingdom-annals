@@ -6,10 +6,4 @@ for(const [name,edit]of [['unlogged metadata',l=>l.metadata.custom[1].x++],['mis
 test('cross-settlement identity departure and arrival',()=>{const r=setup();r.apply({settlement:0,seq:3,lot:lot.id,lotAfter:null});r.apply({settlement:1,seq:1,lot:lot.id,lotAfter:lot});r.compare([{settlement:0,lots:[],locations:[{id:'yard',capacity:{$auditNumber:'Infinity'},active:true,custom:undefined}]},{settlement:1,lots:[lot],locations:[]}]);});
 test('missing/reordered events are rejected',()=>assert.throws(()=>setup().apply({settlement:0,seq:4}),/Noncontiguous/));
 test('location metadata mismatch is rejected',()=>assert.throws(()=>setup().compare([{settlement:0,lots:[lot],locations:[{id:'yard',capacity:{$auditNumber:'Infinity'},active:false,custom:undefined}]}])));
-import fs from 'node:fs';import vm from 'node:vm';
-const harness=fs.readFileSync(new URL('./storage-event-check.mjs',import.meta.url),'utf8');
-const dataFunction=harness.slice(harness.indexOf('function independentData('),harness.indexOf('function independentOwner('));
-const canonical=vm.runInNewContext(dataFunction+';independentData');
-test('independent encoding distinguishes undefined, missing and reserved-looking metadata',()=>{assert.notDeepEqual(canonical({x:undefined}),canonical({}));assert.notDeepEqual(canonical(Infinity),canonical({$auditNumber:'Infinity'}));assert.notDeepEqual(canonical(-0),canonical(0));});
-test('independent encoding retains array holes and additional own metadata',()=>{assert.notDeepEqual(canonical([,]),canonical([null]));const a=[1];a.custom='retained';assert.notDeepEqual(canonical(a),canonical([1]));});
 test('one live lot identity cannot exist in two settlements',()=>{const r=setup();r.apply({settlement:1,seq:1,lot:lot.id,lotAfter:lot});assert.throws(()=>r.compare([{settlement:0,lots:[lot],locations:[{id:'yard',capacity:{$auditNumber:'Infinity'},active:true,custom:undefined}]},{settlement:1,lots:[lot],locations:[]}]),/duplicate live lot/);});

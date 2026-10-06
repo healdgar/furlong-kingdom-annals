@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
-const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+// Embedded README/docs text (the advisor's rules, refreshed by stamp.sh) is documentation, not game source.
+const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8').replace(/(<script type="text\/plain" id="adv(?:rules|bridge)">)[\s\S]*?(<\/script>)/g,'$1$2');
 const digest=s=>createHash('sha256').update(s).digest('hex');
 // Pin the reviewed ownership/balance adapter region and the unchanged external
 // legacy owner-table writers. This is a source-change tripwire, not an alias proof.
@@ -58,6 +59,7 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // each species owner order; no external ownership writer changed.
  // Sort to tolerate declaration moves; exclude the added read-only herd inspector,
  // and normalize the land-uniform guard. Canonical claim and balance writes match HEAD.
- assert.equal(digest(outside),"bda74fd996d3927188b732f4a7a5c3c54b7d3a62e65e89f9eadb2d5bcf100f1c");
+ // Re-pinned with the embedded docs excluded: the corpus is identical at 9c66076, cd2eab8, e472d30 and HEAD; only stamped doc lines had varied.
+ assert.equal(digest(outside),"ed8c1a733cae2098bb43c797c6987ebb6068b4a8c5f605cf9aeeed02169f47cf");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

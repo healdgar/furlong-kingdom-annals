@@ -28,11 +28,10 @@ Tested index.html SHA256:
 
 ```sh
 node --test tools/*.test.mjs
-node tools/storage-title-check.mjs --baseline 40492fc --seeds 1001:sea,2002:land \
-  --days 270 --out /tmp/furlong-title270
 ```
 
-The native Metal Chrome harness commissions a grange on a fresh map and retains the real compressed
+The native Metal Chrome harness (`tools/storage-title-check.mjs`, removed with the legacy ledger;
+`tools/performance-check.mjs` is its successor) commissioned a grange on a fresh map and retains the real compressed
 IndexedDB journal. It uses identical explicit 15-day yields, 30-day flushes and 1,024-record chunks
 in both sources, replacing the automatic flush timer only in test snapshots. It compares every
 chunk's SHA256, all 30-day world/land/geography/history graph hashes, final state and subsequent RNG

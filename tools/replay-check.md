@@ -42,7 +42,7 @@ history and at least 2x end-to-end actual RAF throughput. Tick measurements cann
 Gate failure is reported distinctly from correctness failures; JSON contains all failures, while process
 exit failure denotes correctness/runtime failures. A short run does not establish mature-world safety.
 
-The broad graph oracle follows performance-check exclusions for named derived indexes/routes and graphics, includes uncapped life/annal ledgers, Map/Set order, array holes and exact special-number tags. It is a comparison oracle, not an archive/hydrator. `node tools/replay-reader-check.mjs SOURCE_HTML` checks atomic production-reader rejection separately; unsupported baseline sources report absence rather than a pass.
+The broad graph oracle follows performance-check exclusions for named derived indexes/routes and graphics, includes uncapped life/annal ledgers, Map/Set order, array holes and exact special-number tags. It is a comparison oracle, not an archive/hydrator.
 
 Canonical storage audit capture uses FURLONG_STORAGE_AUDIT_OBSERVER only when FURLONG_STORAGE_AUDIT_SUPPORTED is true; otherwise it wraps the legacy storageOutcome function. It never installs both. Every CDP response wait has a 120-second deadline identifying the method and a bounded expression prefix.
 

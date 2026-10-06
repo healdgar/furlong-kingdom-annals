@@ -68,10 +68,10 @@ losses, tiny balances, migration, remote inheritance and corrupt claims.
 `node --test tools/*.test.mjs` includes existing ownership, provisioning, life,
 history, routing, advisor and script syntax checks.
 
-`node tools/inventory-trace.mjs OUT candidate|GIT_REF YEARS SEED sea|land` runs
-fresh isolated hardware-GPU Chrome and records source identity, annual statistics
-and the first non-finite or over-physical combined animal title claim at herd/ownership
-boundaries. The floating-point error bound is 32 × machine epsilon × the
+The independent audit (`tools/inventory-audit.mjs`, run daily by
+`node tools/soak.mjs --inventory 1`; the one-off `tools/inventory-trace.mjs` that first
+traced it is removed) records the first non-finite or over-physical combined animal
+title claim at herd/ownership boundaries. The floating-point error bound is 32 × machine epsilon × the
 largest observed quantity for that community/good × owner count. Using the
 ending quantity alone incorrectly rejects cancellation: moving
 4.477105034977209 physical sheep against a claim one ULP larger leaves a

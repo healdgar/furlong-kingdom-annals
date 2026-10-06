@@ -1,7 +1,9 @@
 # Independent storage event replay
 
-`node tools/storage-event-check.mjs OUT SOURCE_HTML DAYS SEED sea|land` copies
-and hashes the selected source, boots isolated hardware-GPU Chrome, and steps
+The former `node tools/storage-event-check.mjs OUT SOURCE_HTML DAYS SEED sea|land`
+(removed with the v2 lot ledger it replayed; for the v3 ledger see
+`node tools/replay-check.mjs --commodity` and `node tools/storage-check.mjs`) copied
+and hashed the selected source, booted isolated hardware-GPU Chrome, and stepped
 whole days. Accepted storage events alone reconstruct all lots and locations
 from empty ledgers. Each day compares every own data field against a separate
 live-descriptor walk, including metadata and property presence. It never calls
@@ -124,8 +126,8 @@ BigInt, holes, mutable metadata ownership, immediate protocol faults, backpressu
 injected transaction failure, uncertain acknowledgement and prefix/tail export.
 The fixtures establish pipeline semantics, not browser IndexedDB reliability.
 
-`node tools/storage-worker-bench.mjs 131072 baseline` and `... 131072 worker` run
-matched owned-handle events in fresh processes. Synthetic measurements diagnose
+The one-off `tools/storage-worker-bench.mjs` (removed) ran matched owned-handle
+events in fresh processes. Synthetic measurements diagnose
 capture, transport and persistence separately; they do not establish browser
 throughput or device memory limits. Earlier Worker codec experiments regressed
 native timing and were not shipped. Native v3 removes that codec work and retains
