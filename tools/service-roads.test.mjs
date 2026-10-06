@@ -131,3 +131,41 @@ test('a quay already connected to the public network can anchor a short mill lan
   const bank=street('road',Array.from({length:30},(_,i)=>({x:20,z:i-15}))),quay=street('quay',[{x:0,z:30},{x:5,z:30}],{serviceLinked:true});
   const result=C.serviceRoadPlan({owner:1,streets:[bank,quay]},{x:0,z:0},{},null);assert.equal(result.street,quay);assert.ok(calls<=4);
  });
+
+function shoreRuntime(extra={}){
+  const C=context({SEA_SURFACE:0,hAt:()=>10,lakeAt:()=>false,riverAt:()=>null,fortRoadBlocked:()=>false,...extra});
+  vm.runInContext(['lerpPt','resample','smoothPath','shoreRoadClear','shoreRoadRuns'].map(fn).join('\n'),C);return C;
+}
+test('quay smoothing retains a surveyed bank bend rather than cutting through water',()=>{
+  const C=shoreRuntime({riverAt:(x,z,pad)=>Math.hypot(x,z)<5+pad?{}:null}),P=[{x:-10,z:0},{x:0,z:10},{x:10,z:0}],before=JSON.stringify(P);
+  const runs=C.shoreRoadRuns({},P,1);
+  assert.equal(runs.length,1);assert.equal(JSON.stringify(runs[0]),before);
+  assert.ok(runs[0].slice(1).every((q,k)=>C.shoreRoadClear({},runs[0][k],q,1)));
+  assert.equal(JSON.stringify(P),before,'survey is not mutated by smoothing');
+});
+test('a waterfront survey splits at a channel instead of inventing a quay bridge',()=>{
+  const C=shoreRuntime({riverAt:(x,z,pad)=>Math.abs(x)<3+pad?{}:null}),P=[-20,-10,10,20].map(x=>({x,z:0}));
+  const runs=C.shoreRoadRuns({},P,1);
+  assert.equal(runs.length,2);assert.ok(runs.every(run=>run.slice(1).every((q,k)=>C.shoreRoadClear({},run[k],q,1))));
+});
+test('a quay needs dry land across its width, including the coast and pond edge',()=>{
+  const C=shoreRuntime({hAt:(x,z)=>z<0?-1:10,lakeAt:(s,x,z)=>x>5});
+  assert.equal(C.shoreRoadClear({}, {x:0,z:.5},{x:4,z:.5},1),false);
+  assert.equal(C.shoreRoadClear({}, {x:4.5,z:2},{x:4.5,z:6},1),false);
+  assert.equal(C.shoreRoadClear({}, {x:0,z:2},{x:4,z:2},1),true);
+});
+test('road resampling preserves surveyed corners used by both graph and renderer',()=>{
+  const C=shoreRuntime(),P=[{x:0,z:0},{x:0,z:1},{x:1,z:1}];
+  const surveyed=C.resample(P,5,true),ordinary=C.resample(P,5);
+  assert.equal(JSON.stringify(surveyed),JSON.stringify(P));assert.ok(ordinary.length<surveyed.length);
+});
+test('quay access detours along the dry bank with lane-width clearance, without a free crossing',()=>{
+  const C=planRuntime({W:{rivHash:{},settlements:[]},SIZE:2000,CELL:10,SEA_SURFACE:0,hAt:()=>10,
+    riverAt:(x,z,pad=0)=>x>4-pad&&x<10+pad&&Math.abs(z)<3+pad?{hw:3,y:9}:null,
+    paidRoadAt:()=>false,toCell:()=>0,inB:()=>false,fortCircuits:()=>[]});
+  vm.runInContext(fn('armyObstacle'),C);
+  const s={owner:0,streets:[street('road',[{x:18,z:-10},{x:18,z:10}])]},p={x:0,z:0},plan=C.serviceRoadPlan(s,p,null,null,1.6);
+  assert.ok(plan);assert.ok(plan.path.some(q=>Math.abs(q.z)>=5.6));
+  for(let k=1;k<plan.path.length;k++){const a=plan.path[k-1],b=plan.path[k],n=Math.ceil(distance(a.x,a.z,b.x,b.z));
+    for(let j=0;j<=n;j++)assert.equal(C.riverAt(a.x+(b.x-a.x)*j/n,a.z+(b.z-a.z)*j/n,2.6),null);}
+});

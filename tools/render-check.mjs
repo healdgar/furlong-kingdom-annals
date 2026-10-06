@@ -264,7 +264,7 @@ function serviceRoadCheck(){
       mills.push({town:s.name,riverWheel:b.millWater?.kind==='river'&&!lakeAt(s,b.millWater.x,b.millWater.z,0),connected:ok&&!!b.st&&!b.st.hidden&&!b.st.gone,idempotent:s.streets.length===n,dry:!armyObstacle(walker,start.x,start.z),clear:!!b.st?.serviceAccess&&b.st.pts.slice(2).every((q,k)=>armySegmentClear(walker,b.st.pts[k+1],q)),blocked:b.st?.pts.slice(2).map((q,k)=>{const p=b.st.pts[k+1];if(armySegmentClear(walker,p,q))return null;const n=Math.ceil(dist2d(p.x,p.z,q.x,q.z));for(let i=1;i<=n;i++){const x=lerp(p.x,q.x,i/n),z=lerp(p.z,q.z,i/n),reason=armyObstacle(walker,x,z);if(reason)return{x,z,reason,buildings:s._lay.placed.near(x,z,1).filter(o=>!o.removed&&o.state!=='gone').map(o=>({arch:o.arch,x:o.x,z:o.z,w:o.w,d:o.d}))};}return{p,q,reason:'grade'};}).filter(Boolean)});
     }
     for(const q of s.streets)if(q.kind==='quay'&&!q.hidden&&!q.gone){const p=q.pts[Math.floor(q.pts.length/2)],n=s.streets.length,ok=s._lay.quayAccess(q),a=nearestNode(g,p.x,p.z),dest=publicStreet?.pts[0],b=dest?nearestNode(g,dest.x,dest.z):-1;
-      quays.push({town:s.name,connected:ok&&!!streetPath(g,a,b),idempotent:s.streets.length===n});}
+      quays.push({town:s.name,connected:ok&&!!streetPath(g,a,b),idempotent:s.streets.length===n,dry:q.pts.slice(1).every((p,k)=>shoreRoadClear(s,q.pts[k],p,q.hw)),renderDry:resample(q.pts,5,true).every(p=>!riverAt(p.x,p.z,q.hw*0.5+1))});}
   }
   let grange=null;
   for(const s of W.settlements){if(grange)break;const anchor=(s.places||[]).find(p=>p.kind==='market')||s.pos;
@@ -275,7 +275,7 @@ function serviceRoadCheck(){
       b.removed=true;s.buildings.splice(s.buildings.indexOf(b),1);for(const st of s.streets.slice(oldN)){st.gone=true;st.hidden=true;}break;
     }}
   }
-  return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.riverWheel&&m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
+  return{mills,quays,grange,valid:mills.length>0&&mills.every(m=>m.riverWheel&&m.connected&&m.idempotent&&m.dry&&m.clear)&&quays.every(q=>q.connected&&q.idempotent&&q.dry&&q.renderDry)&&!!grange&&Object.entries(grange).every(([k,v])=>k==='town'||v)};
 }
 
 function uiReferencesCheck(audit){

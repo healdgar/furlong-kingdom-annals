@@ -1095,13 +1095,15 @@ function motteSurface(m,x,z){ // absolute earthwork surface; callers pass the ca
 /* ---------------- polyline helpers ---------------------------------------- */
 function polyLen(p){let L=0;for(let k=1;k<p.length;k++)L+=dist2d(p[k-1].x,p[k-1].z,p[k].x,p[k].z);return L;}
 function lerpPt(a,b,f){const o={x:lerp(a.x,b.x,f),z:lerp(a.z,b.z,f)};if(a.w!==undefined)o.w=lerp(a.w,b.w??a.w,f);return o;}
-function resample(p,step){ // evenly spaced points along a polyline (keeps both ends)
+function resample(p,step,keepTurns=false){ // keep surveyed road bends when requested; never chord across a bank
   if(p.length<2)return p.map(q=>({...q}));
   const out=[{...p[0]}];let need=step;
   for(let i=1;i<p.length;i++){
     const a=p[i-1],b=p[i],L=dist2d(a.x,a.z,b.x,b.z);let pos=0;
     while(L-pos>=need){pos+=need;out.push(lerpPt(a,b,pos/L));need=step;}
     need-=L-pos;
+    if(keepTurns){const q=p[i+1],dx=b.x-a.x,dz=b.z-a.z;
+      if(!q||Math.abs(dx*(q.z-b.z)-dz*(q.x-b.x))>1e-7||dx*(q.x-b.x)+dz*(q.z-b.z)<0){if(dist2d(out.at(-1).x,out.at(-1).z,b.x,b.z)>1e-8)out.push({...b});need=step;}}
   }
   const last=p[p.length-1],o=out[out.length-1];
   if(dist2d(o.x,o.z,last.x,last.z)>step*0.35)out.push({...last});else out[out.length-1]={...last};
@@ -1686,15 +1688,29 @@ function roadAccessClear(s,a,b){
   }return true;
 }
 // A service lane is planned once when its building or quay is laid out.
-function serviceRoadPlan(s,p,placed,skip){
+function serviceRoadPlan(s,p,placed,skip,hw=1.3){
   const candidates=[];
   for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&(st.kind!=='quay'||st.serviceLinked)&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
     const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L,0,1),x=a.x+dx*t,z=a.z+dz*t;
     if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
-  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true};
+  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,waterClearance:hw+1};
   if(armyObstacle(walker,p.x,p.z))return null;
   const attempted=[];for(const q of candidates){if(armyObstacle(walker,q.x,q.z)||attempted.some(a=>a.st===q.st))continue;attempted.push(q);const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};if(attempted.length===12)break;}
   return null;
+}
+// Survey waterfront streets once. Smoothing must not cut a river bend or cross a shore.
+function shoreRoadClear(s,a,b,hw){
+  const L=dist2d(a.x,a.z,b.x,b.z),n=Math.max(1,Math.ceil(L)),nx=L?(b.z-a.z)/L:0,nz=L?-(b.x-a.x)/L:0;
+  for(let k=0;k<=n;k++){const x=lerp(a.x,b.x,k/n),z=lerp(a.z,b.z,k/n);
+    if(riverAt(x,z,hw+1)||fortRoadBlocked(s,x,z,hw))return false;
+    for(const off of[-hw,0,hw])if(hAt(x+nx*off,z+nz*off)<=SEA_SURFACE||lakeAt(s,x+nx*off,z+nz*off,0))return false;
+  }return true;
+}
+function shoreRoadRuns(s,P,hw){
+  const smoothed=smoothPath(P,2),Q=smoothed.every((q,k)=>shoreRoadClear(s,k?smoothed[k-1]:q,q,hw))?smoothed:P,runs=[];let run=[];
+  for(const q of Q){if(!shoreRoadClear(s,q,q,hw)){if(run.length>1)runs.push(run);run=[];continue;}
+    if(run.length&&!shoreRoadClear(s,run.at(-1),q,hw)){if(run.length>1)runs.push(run);run=[];}run.push(q);
+  }if(run.length>1)runs.push(run);return runs;
 }
 function serviceDoor(b,pad=1.2){
   if(b.arch==='mill'){const a=(b.millWater?.side||0)*Math.PI/2,c=Math.cos(a),sn=Math.sin(a),r=(Math.abs(c)*b.w+Math.abs(sn)*b.d)/2+pad;const q=locW(b,-c*r,sn*r);return{x:q[0],z:q[1]};}
@@ -1898,7 +1914,7 @@ function fortRoadBlocked(s,x,z,pad=0){ // roads and walkers share the actual cur
   return false;
 }
 function fortStreetRuns(s,st){ // clipped centre lines: a grid lane ends before a closed wall instead of implying a gate
-  if(!fortCircuits(s).length)return [st.pts];const runs=[],P=resample(st.pts,1.5);let run=[];
+  if(!fortCircuits(s).length)return [st.pts];const runs=[],P=resample(st.pts,1.5,st.kind==='quay'||!!st.serviceAccess);let run=[];
   for(const p of P){if(fortRoadBlocked(s,p.x,p.z,(st.hw||2)+0.75)){if(run.length>1)runs.push(run);run=[];}else run.push(p);}
   if(run.length>1)runs.push(run);return runs;
 }
@@ -2161,8 +2177,9 @@ function layoutSettlement(s){
     if(dist2d(plan.path[0].x,plan.path[0].z,plan.path.at(-1).x,plan.path.at(-1).z)<1){b.st=plan.street;return true;}
     plan.path.unshift(serviceDoor(b,0));b.st=addStreet(plan.path,1.3,'alley',{straight:true,serviceAccess:b.arch});G.roadsDirty=true;return !!b.st;};
   const quayAccess=st=>{if(st.gone||st.hidden)return false;if(st.serviceLinked)return true;
-    const points=[...st.pts].sort((a,b)=>dist2d(a.x,a.z,C.x,C.z)-dist2d(b.x,b.z,C.x,C.z));
-    for(const p of points.slice(0,12)){const plan=serviceRoadPlan(s,p,placed,st);if(!plan)continue;
+    const points=[...st.pts];for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((C.x-a.x)*dx+(C.z-a.z)*dz)/L,0,1);points.push({x:a.x+dx*t,z:a.z+dz*t});}
+    points.sort((a,b)=>dist2d(a.x,a.z,C.x,C.z)-dist2d(b.x,b.z,C.x,C.z));
+    for(const p of points.slice(0,12)){const plan=serviceRoadPlan(s,p,placed,st,1.6);if(!plan)continue;
       if(dist2d(p.x,p.z,plan.path.at(-1).x,plan.path.at(-1).z)>1)addStreet(plan.path,1.6,'alley',{straight:true,serviceAccess:'quay'});
       st.serviceLinked=true;G.roadsDirty=true;return true;}return false;};
   const ux=Math.cos(rAng),uz=Math.sin(rAng),vx=-uz,vz=ux;
@@ -2282,7 +2299,7 @@ function layoutSettlement(s){
       for(let d=1;d<NA/2;d++){const k=(bk-d+NA)%NA;if(!coast[k]||Math.abs(coast[k]-coast[(k+1)%NA])>40)break;run.unshift(k);}
       const q=run.map(k=>{const a=k/NA*Math.PI*2,r=coast[k]-11;return{x:C.x+Math.cos(a)*r,z:C.z+Math.sin(a)*r};})
         .filter(p=>cellOK(p.x,p.z)&&dist2d(p.x,p.z,C.x,C.z)<Rmax*(isVil?0.8:0.6));
-      if(q.length>=3)addStreet(resample(smoothPath(q,3),8),4,'quay');
+      if(q.length>=3)for(const path of shoreRoadRuns(s,q,4))addStreet(path,4,'quay');
     }
     foundLine=role==='port'?'Began as a landing on the shore, where boats could be drawn up out of the swell.':'Began as a row of fishers’ huts above the shingle.';
   }
@@ -2325,7 +2342,7 @@ function layoutSettlement(s){
   if(s.river||s.canals){ // quays along the bank where a river or a canal runs close to the nucleus
     for(const rs of W.rivStrips)for(const side of[-1,1]){
       let run=[];
-      const take=()=>{if(run.length>=4)addStreet(smoothPath(run,2),HW*0.9,'quay');run=[];};
+      const take=()=>{if(run.length>=4)for(const path of shoreRoadRuns(s,run,HW*0.9))addStreet(path,HW*0.9,'quay');run=[];};
       for(let k=0;k<rs.pts.length;k++){
         const a=rs.pts[Math.max(0,k-1)],b=rs.pts[Math.min(rs.pts.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1;
         const off=rs.hw[k]+HW+3,x=rs.pts[k].x-(b.z-a.z)/L*off*side,z=rs.pts[k].z+(b.x-a.x)/L*off*side;
@@ -2925,7 +2942,7 @@ function layoutSettlement(s){
   const townPath0=(a,b,J)=>{
     const N=[],h=makeHash(Math.max(8,J));
     for(const t of s.streets){if(t.hidden||t.gone||t.kind==='edge'||t.pts.length<2)continue;
-      const q=resample(t.pts,7),o=N.length;q.forEach(p=>{const n={x:p.x,z:p.z,i:N.length,nb:[]};N.push(n);h.add(n,0);});
+      const q=resample(t.pts,7,t.kind==='quay'||!!t.serviceAccess),o=N.length;q.forEach(p=>{const n={x:p.x,z:p.z,i:N.length,nb:[]};N.push(n);h.add(n,0);});
       for(let k=o+1;k<N.length;k++)if(roadAccessClear(s,N[k-1],N[k])){N[k-1].nb.push(k);N[k].nb.push(k-1);}}
     if(N.length<2)return null;
     for(const n of N)for(const m of h.near(n.x,n.z,J))if(m!==n&&dist2d(n.x,n.z,m.x,m.z)<J&&roadAccessClear(s,n,m))n.nb.push(m.i); // streets meet where they touch
@@ -4372,7 +4389,7 @@ function streetGraph(s){ // nodes at the street points; streets that meet (or ne
     const i=N.length;N.push({x,z,st});adj.push([]);const h=hk(x,z);(H.get(h)||H.set(h,[]).get(h)).push(i);return i;};
   const link=(a,b)=>{if(a===b||!roadAccessClear(s,N[a],N[b]))return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
   const ends=[];
-  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;for(const run of fortStreetRuns(s,st)){const P=resample(run,7);let prev=-1;
+  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;for(const run of fortStreetRuns(s,st)){const P=resample(run,7,st.kind==='quay'||!!st.serviceAccess);let prev=-1;
     for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}}
   for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd&&roadAccessClear(s,N[e],N[i])){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
   let root=-1,bd=90;for(let i=0;i<N.length;i++)if(!N[i].st.castlePath){const d=dist2d(N[i].x,N[i].z,s.pos.x,s.pos.z);if(d<bd&&roadAccessClear(s,s.pos,N[i])){root=i;bd=d;}}
@@ -5322,7 +5339,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       }
       const pv=st.kind==='wallst'||st.kind==='quay'&&pr>0;
       const earth=st.castlePath&&typeof fortSurface==='function'?(x,z)=>fortSurface(s,st.earthwork==='bailey'?s.bailey:s.motte,x,z):null;
-      for(const run of fortStreetRuns(s,st))lay(resample(run,5),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
+      for(const run of fortStreetRuns(s,st))lay(resample(run,5,st.kind==='quay'||!!st.serviceAccess),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
     }
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
       ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
@@ -5333,7 +5350,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
     if(G.roadJoins){scene.remove(G.roadJoins);G.roadJoins.geometry.dispose();G.roadJoins=null;}
     const lines=[];
     for(const r of W.roads)lines.push({P:resample(r.drawn||r.path,5),hw:(r.grade?4.8:4.2)*(0.45+0.55*(r.cond??1)),pv:!!r.grade&&(r.cond??1)>0.6}); // a neglected road narrows to a track
-    for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')for(const run of fortStreetRuns(s,st)){const P=resample(run,5);
+    for(const s of W.settlements){const pr=s.paveR||0;for(const st of s.streets||[])if(!st.hidden&&!st.gone&&st.kind!=='edge')for(const run of fortStreetRuns(s,st)){const P=resample(run,5,st.kind==='quay'||!!st.serviceAccess);
       lines.push({P,hw:st.hw,pv:st.kind==='wallst'||P.some(q=>dist2d(q.x,q.z,s.pos.x,s.pos.z)<pr)});}}
     const H=makeHash(24);
     lines.forEach((l,li)=>{for(let k=0;k<l.P.length-1;k++){const a=l.P[k],b=l.P[k+1];H.add({x:(a.x+b.x)/2,z:(a.z+b.z)/2,a,b,li,k},dist2d(a.x,a.z,b.x,b.z)/2+l.hw);}});
@@ -11721,7 +11738,7 @@ function buildArmyRaft(a,x,z){ // an explicit order: actual timber purchases, on
 function armyBridgeAt(x,z){return !!W.rivHash&&!!riverAt(x,z,0)&&paidRoadAt(x,z);}
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE)return 'water';
-  const water=W.rivHash&&riverAt(x,z,0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river';
+  const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river';
   const i=toCell(x),j=toCell(z),seen=new Set(),scope=a.settlement?[a.settlement]:[];
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!inB(i+dx,j+dz))continue;const si=W.dom&&W.dom[cIdx(i+dx,j+dz)];if(si==null||si<0||seen.has(si))continue;seen.add(si);const s=W.settlements[si];if(s&&!scope.includes(s))scope.push(s);}
   for(const s of scope){

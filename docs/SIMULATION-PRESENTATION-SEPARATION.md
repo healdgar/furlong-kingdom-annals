@@ -10,6 +10,12 @@ Implementation checkpoint, 2026-10-05. Final integration evidence is pinned to H
 - `tools/simulation-boundary.mjs` runs the real game source in a VM without DOM or Three.js; its boundary tests cover actual ticks, journal, save/replay and canonical state. Inspection/query helpers are checked for observational reads.
 - `tools/game-write-game-config.mjs` source-pins W and playback ownership and classifies known projections/scratch. It is an incomplete analysis prototype, not a worker or save-history runtime; unsupported aliases, accessors, native calls and facade hydration remain blockers.
 
+## Waterfront road layout
+
+Quays are surveyed on dry banks at construction time. Unsafe smoothing falls back to the surveyed bend; channel crossings split the survey instead of creating a bridge. Access paths reserve river clearance for the lane width and can join segment interiors. Both walking graphs and rendering preserve those bends through shared pure resampling. This adds no maintained index, daily repair pass, or ledger event.
+
+HTML SHA `cf2cf52353a65068006eeb07a89ccf25039eee6bd579fb1a97df5fd99f1b32a0`: native seed 287970763/fate 370450810 validated 13 connected, dry quays and 14 connected mills (`/tmp/quay-final-render/results.json`). Eight-day model-only/continuous cadence matched all canonical roots, with zero projection writes (`/tmp/quay-final-boundary/meta.json`). New regressions cover concave banks, channel splitting, coast/pond width, turn preservation and bank detours. These checks establish routing correctness, not a simulation speedup.
+
 ## Verification and limits
 
 - Full-source headless checks completed: seed 1001/fate 42/sea at AD 850 plus 360 real days reached day 360; AD 851 ran real shared prehistory to ready day 360. Their source snapshots differ, so they do not establish parity.
