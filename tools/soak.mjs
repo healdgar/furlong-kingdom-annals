@@ -100,7 +100,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     for(let i=1;i<W.houses.length;i++)if(W.houses[i])by.houses+=coin(W.houses[i].gold);
     for(const s of W.settlements){for(const p of s.folk||[])P(p);by.murage+=coin(s.murage);by.pool+=coin(s._poolCash);for(const v of Object.values(s._poolBy||{}))by.pool+=coin(v);}
     for(const a of W.armies||[])for(const p of a.men||[])P(p);for(const t of W.travellers||[])P(t&&t.p?t.p:t);for(const l of W.levies||[])P(l&&l.p?l.p:l);
-    const chs=new Set();for(const b of G.bldList)if(b&&b.ch&&!chs.has(b.ch)){chs.add(b.ch);by.church+=coin(b.ch.fund);}
+    const chs=new Set();for(const b of W.bldList)if(b&&b.ch&&!chs.has(b.ch)){chs.add(b.ch);by.church+=coin(b.ch.fund);}
     for(const q of W.projects||[])if(q.type==='persuade'&&q.lever==='gold')by.escrow+=coin(q.pay);
     let t=0;for(const k in by)t+=by[k];return {t,by,bad};};
   const flows=()=>Object.assign({},W._flow||{});
@@ -111,7 +111,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   S.view=v=>{const s=W.capital;cam.follow=null;cam.mode='free';if(v==='street')flyTo(s.pos.x,s.pos.z,160);else flyTo(s.pos.x,s.pos.z,3000*MAPK);return v;};
   S.frames=()=>{const F=PERF.f.slice(),g=PERF.gpu.slice(),n=F.length;if(!n)return null;const a=k=>F.reduce((t,x)=>t+x[k],0)/n,d=F.map(x=>x.dt).sort((x,y)=>x-y),inf=renderer.info;
     return {n,fps:+(1000/a('dt')).toFixed(1),frame:+a('dt').toFixed(1),p95:+d[Math.floor(n*0.95)].toFixed(1),worst:Math.round(d[n-1]),busy:Math.round(a('total')/a('dt')*100),sim:+a('sim').toFixed(1),days:+a('ticks').toFixed(2),
-      world:+a('world').toFixed(1),rebuild:+a('rebuild').toFixed(1),render:+a('render').toFixed(1),gpu:g.length?+(g.reduce((t,v)=>t+v,0)/g.length).toFixed(1):null,calls:inf.render.calls,tris:inf.render.triangles,buildings:G.bldList.length};};
+      world:+a('world').toFixed(1),rebuild:+a('rebuild').toFixed(1),render:+a('render').toFixed(1),gpu:g.length?+(g.reduce((t,v)=>t+v,0)/g.length).toFixed(1):null,calls:inf.render.calls,tris:inf.render.triangles,buildings:W.bldList.length};};
   S.info=()=>({land,places:W.settlements.length,pop:Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),realm:W.name,startAD:AD(),startDay:day(),gpu:(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()});
   S.year=async(aud=0)=>{const Fd0={...S.F},R0={...S.R},T0=Object.assign({},S.T),t0=performance.now(),was=new Map();let famDays=0,onsets=0,famPop=0,hung=0,popDays=0,placeDays=0,tickMs=0;
     for(const s of W.settlements)was.set(s,!!s.famineFlag);

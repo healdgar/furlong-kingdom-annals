@@ -162,3 +162,29 @@ A foreign ship cancelling a purchased load below its one-unit departure minimum 
 When no eligible household head can buy necessities, provision may use the lord's purse for an orphan household. The payer and recipient remain explicit: the lord's completed pending purchase transfers title to the recipient before its pantry is credited, while custody stays at the seller's location. A settlement with no household recipient retains the institutional account as recipient. This applies to every provisioned good, including timber, cloth and tools.
 
 Paid pending custody is excluded from ordinary held/sale matching and from physical surplus available for reconciliation to offer again. Only explicit completion, gift, purchased consumption or purchased cargo dispatch releases protection for the affected units. Daily food top-ups transfer the fallback lord purchaser's pending lots to the final household before crediting its pantry. Native merchant dispatch selects newly purchased pending lots, preserving previously held stock; the generic cargo helper retains its existing behavior. Reconciliation sums non-transit pending quantities by physical good, adding one traversal of that good's lot index per call.
+# Road access and completed construction
+
+Storage commissioning now requires a short, dry connector from the building
+door to an accessible street. The survey uses the existing street-segment hash,
+checks the proposed footprint and obstacles, and limits the connector to 32 map
+units. It creates no building, road, inventory index, or journal record. Live
+placement repeats that bounded survey and installs its access lane once.
+
+Completed projects awaiting placement no longer pay more labor, increment their
+working days, or emit repeated progress records. A failed placement can retry
+when its site becomes accessible without town-wide detour searches. Daily
+unfinished-site checks retain the inexpensive footprint check.
+
+At seed/fate 1001, sea, 12 settlements, two native Chrome years, year-two elapsed
+processing changed from 210,726 ms to 14,917 ms (585.35 to 41.44 ms/day).
+`tickProjects` changed from 185,123 ms to 55 ms. Both runs had zero simulation
+errors and balanced money totals. Histories differ because siting and payment
+behavior were corrected; this is a matched initial workload, not state parity
+or a general performance guarantee. Source snapshots and profiles are in
+`/tmp/legacy-search-baseline-patched` and `/tmp/storage-frontage-native`.
+
+Validation: 87 focused tests passed, including the legacy-search regression
+guard, construction/material conservation, failed-completion retries, road
+surveys, and route batching. Native rendering at seed 287970763 passed mill,
+quay, grange access, and paid-crossing checks in
+`/tmp/storage-frontage-render/checks.json`.

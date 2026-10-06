@@ -17,8 +17,26 @@ function context(extra={}){
 }
 function planRuntime(extra={}){const C=context(extra);vm.runInContext(fn('armySegmentClear')+'\n'+fn('armyDetour')+'\n'+fn('armyLandPath')+'\n'+fn('serviceRoadPlan')+'\n'+fn('serviceDoor'),C);if(extra.armyLandPath)C.armyLandPath=extra.armyLandPath;return C;}
 function footprintRuntime(){const C=context();vm.runInContext(fn('streetFootprintOverlap'),C);return C.streetFootprintOverlap;}
+function storagePlanRuntime(extra={}){const C=context({armyObstacle:()=>null,armySegmentClear:()=>true,...extra});vm.runInContext(fn('streetFootprintOverlap')+'\n'+fn('serviceDoor')+'\n'+fn('storageRoadPlan'),C);return C;}
 const street=(kind,pts,extra={})=>({kind,pts,hw:2,...extra});
 const segment=(ax,az,bx,bz,hw=0)=>({a:{x:ax,z:az},b:{x:bx,z:bz},hw});
+
+test('storage dry survey finds a nearby connected road without invoking detour planning',()=>{
+  let detours=0;const C=storagePlanRuntime({armyLandPath:()=>{detours++;throw Error('storage survey must stay straight and cheap');}});
+  const road=street('road',[{x:-20,z:8},{x:20,z:8}]),s={owner:0,streets:[road]},segments={near:()=>[{a:{x:-20,z:8},b:{x:20,z:8},st:road}]};
+  const plan=C.storageRoadPlan(s,{arch:'grange',x:0,z:0,w:12,d:10,rot:0},{},segments);
+  assert.ok(plan);assert.equal(plan.street,road);assert.deepEqual(Array.from(plan.path,p=>[p.x,p.z]),[[0,6.2],[0,8]]);assert.equal(detours,0);
+});
+
+test('storage dry survey rejects absent, blocked, water-crossing and footprint-crossing connectors',()=>{
+  const road=street('road',[{x:-20,z:8},{x:20,z:8}]),s={owner:0,streets:[road]},f={arch:'grange',x:0,z:0,w:12,d:10,rot:0};
+  const edge={a:{x:-20,z:8},b:{x:20,z:8},st:road};
+  assert.equal(storagePlanRuntime().storageRoadPlan(s,f,{}, {near:()=>[]}),null,'no road candidate');
+  assert.equal(storagePlanRuntime({armyObstacle:(walker,x,z)=>x===0&&z===8?'obstruction':null}).storageRoadPlan(s,f,{}, {near:()=>[edge]}),null,'obstructed road endpoint');
+  const water=storagePlanRuntime({armySegmentClear:(walker,p,q)=>{assert.equal(walker.requireRoadCrossing,true);assert.equal(walker.waterClearance,2.3);return !(p.z<7&&q.z>7);}});
+  assert.equal(water.storageRoadPlan(s,f,{}, {near:()=>[edge]}),null,'unpaid water crossing');
+  assert.equal(storagePlanRuntime().storageRoadPlan(s,f,{}, {near:()=>[{...edge,a:{x:-2,z:0},b:{x:2,z:0}}]}),null,'connector crosses hypothetical footprint');
+});
 
 test('mill access door lies opposite the wheel for each heading and wheel side',()=>{
   const C=planRuntime();
