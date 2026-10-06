@@ -16190,8 +16190,9 @@ class OutcomeWorkerClient{
 // STORAGE OUTCOME JOURNAL END
 const STORAGE_LEGACY_AUDIT=globalThis.FURLONG_REPLAY_LEGACY_AUDIT===true;
 const STORAGE_OUTCOMES={journal:null,db:null,meta:null,lastHash:null,lastChunk:-1,modelFault:null,
-  async begin(){
-    const code=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n');
+  async begin({source}={}){
+    const code=source??(typeof document!=='undefined'?[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain').map(s=>s.textContent).join('\n'):null);
+    if(typeof code!=='string'||!code.length)throw Error('Storage history requires its source identity');
     const hex=bytes=>[...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');
     this.meta={format:'furlong-storage-outcomes',version:STORAGE_LEGACY_AUDIT?1:2,encoding:STORAGE_LEGACY_AUDIT?'tagged-json-v1':'compact-storage-v2',id:crypto.randomUUID(),world:worldHash(),sourceSHA256:hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code))),created:Date.now(),continuation:false,lastChunk:-1,lastSeq:-1,lastHash:null,storedBytes:0,encodedBytes:0};this.lastHash=null;this.lastChunk=-1;this.modelFault=null;
     this.db=await new Promise((resolve,reject)=>{const r=indexedDB.open('furlong-storage-outcomes',1);r.onupgradeneeded=()=>{r.result.createObjectStore('games');r.result.createObjectStore('chunks');};r.onerror=()=>reject(r.error);r.onblocked=()=>reject(new Error('Storage history database is blocked'));r.onsuccess=()=>resolve(r.result);});
@@ -16251,6 +16252,130 @@ function beginChronicle(){
   emit('crown',3,W.capital.pos,`${fullTitle(m0)}, ${m0.traits.join(' and ')}, holds the throne at ${W.capital.name}. ${W.settlements.length-1} towns and villages owe fealty, and the five great houses keep their seats.`);
   W.openingYaw=rand('sim')*Math.PI*2;
 }
+// SIMULATION WORKER HOST BEGIN — sole model owner; no automatic UI cutover.
+class SimulationWorkerHost{
+  constructor(model,send,{now=()=>performance.now(),schedule=(fn,ms)=>setTimeout(fn,ms),cancel=id=>clearTimeout(id),budget=8}={}){
+    this.model=model;this.send=send;this.now=now;this.schedule=schedule;this.cancel=cancel;this.budget=budget;
+    this.queue=[];this.lastId=0;this.ready=false;this.closed=false;this.busy=false;this.timer=null;this.advance=null;this.fault=null;this.accum=0;this.lastTime=now();this.publication=null;this.viewSequence=0;
+  }
+  reply(message,value,error){this.send({protocol:1,replyTo:message.id,...(error?{error:String(error.message||error)}:{value})});}
+  receive(message){
+    if(message?.protocol!==1||!Number.isSafeInteger(message.id)||message.id<=this.lastId){this.reply(message||{},null,Error('Simulation request sequence differs'));return;}
+    this.lastId=message.id;
+    if(this.closed||this.queue.length>=64){this.reply(message,null,Error(this.closed?'Simulation worker is closed':'Simulation command queue is full'));return;}
+    this.queue.push(message);this.wake(0);
+  }
+  wake(delay){if(this.closed||this.busy)return;if(this.timer!==null){if(delay)return;this.cancel(this.timer);}this.timer=this.schedule(()=>{this.timer=null;this.pump();},delay);}
+  fail(error){this.fault=error;this.accum=0;this.model.speed(0);if(this.advance){this.reply(this.advance,null,error);this.advance=null;}this.send({protocol:1,type:'fault',error:String(error.message||error)});}
+  async control(message){
+    const {type,payload={}}=message;
+    if(type==='init'){
+      if(this.ready||this.fault)throw Error('Simulation worker already initialized');
+      await this.model.init(payload,(text,fraction)=>this.send({protocol:1,type:'progress',text,fraction}));
+      this.ready=true;this.model.speed(0);this.lastTime=this.now();this.reply(message,this.model.view('summary'));return;
+    }
+    if(!this.ready)throw Error('Simulation worker is not initialized');
+    if(this.fault&&!['view','save','flush','close'].includes(type))throw this.fault;
+    switch(type){
+      case 'advance':
+        if(!Number.isSafeInteger(payload.days)||payload.days<1||payload.days>360000)throw Error('Invalid day count');
+        if(this.advance||this.model.rate()>0)throw Error('Pause before requesting a bounded advance');
+        this.advance={...message,target:this.model.day()+payload.days};return;
+      case 'speed':
+        if(!Number.isInteger(payload.index)||payload.index<0||payload.index>6)throw Error('Invalid simulation speed');
+        if(this.advance)throw Error('A bounded advance is running');this.model.speed(payload.index);this.accum=0;this.lastTime=this.now();this.reply(message,this.model.view('summary'));return;
+      case 'pause':
+        this.model.speed(0);this.accum=0;if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
+      case 'command':
+        // Validation precedes journal admission; every accepted command runs once.
+        this.model.validate(payload);try{this.model.command(payload);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day()});return;
+      case 'view':this.reply(message,await this.model.view(payload.kind||'summary',payload));return;
+      case 'watch':
+        if(payload.enabled===false){this.publication=null;this.reply(message,{day:this.model.day()});return;}
+        {const everyDays=payload.everyDays??30;if(!Number.isInteger(everyDays)||everyDays<1||everyDays>360)throw Error('Invalid view interval');this.publication={everyDays,next:this.model.day()+everyDays,inflight:null};this.reply(message,{day:this.model.day(),everyDays});return;}
+      case 'view-ack':
+        if(!this.publication){this.reply(message,{stale:true});return;}
+        if(payload.sequence!==this.publication.inflight)throw Error('Simulation view acknowledgement differs');this.publication.inflight=null;await this.publish();this.reply(message,{day:this.model.day()});return;
+      case 'save':this.reply(message,await this.model.save(payload.name||''));return;
+      case 'flush':this.reply(message,await this.model.flush());return;
+      case 'close':
+        this.model.speed(0);this.accum=0;if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}await this.model.flush();this.closed=true;this.reply(message,{day:this.model.day()});return;
+      default:throw Error('Unknown simulation request');
+    }
+  }
+  async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next)return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view('summary')});}
+  async pump(){
+    if(this.busy||this.closed)return;this.busy=true;const start=this.now();
+    try{
+      while(!this.closed){
+        if(this.queue.length){const message=this.queue.shift();try{await this.control(message);}catch(error){if(message.type==='init')this.fail(error);this.reply(message,null,error);}}
+        else if(this.ready&&!this.fault){
+          const now=this.now(),rate=this.model.rate(),reeling=this.model.reeling?.()===true;
+          this.accum=reeling?0:Math.min(45+rate*.25,this.accum+Math.max(0,now-this.lastTime)*rate/1000);this.lastTime=now;
+          if(!this.advance&&!reeling&&this.accum<1)break;
+          await this.model.wait();if(this.queue.length)continue;
+          try{if(this.model.tick()===false)break;}catch(error){this.fail(error);break;}
+          if(this.publication&&this.publication.inflight===null&&this.model.day()>=this.publication.next)await this.publish(); // at most one unacknowledged, replaceable display batch
+          if(this.advance){if(this.model.day()>=this.advance.target){this.reply(this.advance,{day:this.model.day(),complete:true});this.advance=null;}}
+          else this.accum=Math.max(0,this.accum-1);
+          if(!this.model.rate())this.accum=0;
+        }else break;
+        if(this.now()-start>=this.budget)break; // commands can enter between whole daily transactions
+      }
+    }catch(error){this.fail(error);}finally{this.busy=false;if(!this.closed&&(this.queue.length||this.ready&&!this.fault&&(this.advance||this.model.rate()>0)))this.wake(this.queue.length||this.advance||this.model.reeling?.()===true?0:8);}
+  }
+}
+function simulationWorkerModel(){return{
+  async init(options,progress){
+    if(!Number.isInteger(options.seed)||options.seed<0||options.seed>0xffffffff||!Number.isInteger(options.fate)||options.fate<0||options.fate>0xffffffff)throw Error('Invalid realm seeds');
+    if(!STORAGE_OUTCOMES.journal)await STORAGE_OUTCOMES.begin({source:options.source});
+    await startSimulation({...options,outcomeJournal:STORAGE_OUTCOMES.journal,progress});
+    if(options.resume){const save=await unpackSave(options.resume);if(save.hash!==worldHash())throw Error('Save belongs to another realm');await replaySave(save,progress);}
+  },
+  day:()=>day(),rate:()=>SPEEDS[speedIdx]||0,reeling:()=>speedIdx===5,speed:index=>setSpeed(index),tick:()=>simTick(),wait:()=>STORAGE_OUTCOMES.wait(),
+  validate(command){
+    if(command.k==='set'){if(typeof command.n!=='string'||!Number.isFinite(command.v)||!(command.n==='tax'||command.n==='dues'||command.n.startsWith('mod:')&&Object.hasOwn(MOD,command.n.slice(4))))throw Error('Invalid setting');}
+    else if(command.k==='sov'){if(typeof command.on!=='boolean'||command.hi!==undefined&&(!Number.isInteger(command.hi)||command.hi<0||command.hi>=W.houses.length))throw Error('Invalid ruler');}
+    else if(command.k==='pet'){const p=W.petitions[0];if(!p||!Number.isInteger(command.i)||command.i<0||command.i>=p.opts.length)throw Error('Invalid petition answer');}
+    else throw Error('This command has not migrated to the worker');
+  },
+  command(command){jot({...command});if(command.k==='set')applySetting(command.n,command.v);else if(command.k==='sov')setSovereign(command.on,command.hi);else answerPetition(command.i);},
+  view(kind,payload={}){
+    if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
+    if(kind==='household'){const h=W.households.get(payload.id);if(!h)throw Error('Unknown household');return{id:h.id,head:h.head?.id??null,members:[...h.members].map(p=>p.id),purse:h.assets.w,debt:h.assets._debt,hunger:h.hunger,pantry:W.settlements.flatMap((s,si)=>{const held=s._owners?.get(h)?.held;return held?[{si,goods:{...held}}]:[];})};}
+    if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT();
+    throw Error('This view has not migrated to the worker');
+  },
+  async save(name){return packSave(makeSave(name));},
+  async flush(){await STORAGE_OUTCOMES.flush();return STORAGE_OUTCOMES.status();}
+};}
+function simulationWorkerRuntime(){
+  // Posted tasks yield to commands/storage without the nested setTimeout clamp.
+  const channel=new MessageChannel(),tasks=new Map();let next=0;
+  channel.port1.onmessage=({data})=>{const task=tasks.get(data);if(!task)return;tasks.delete(data);task.fn();};
+  const schedule=(fn,ms)=>{const id=++next,task={fn,timer:null};tasks.set(id,task);if(ms)task.timer=setTimeout(()=>channel.port2.postMessage(id),ms);else channel.port2.postMessage(id);return id;};
+  const cancel=id=>{const task=tasks.get(id);if(task?.timer!==null)clearTimeout(task?.timer);tasks.delete(id);};
+  const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message),{schedule,cancel});onmessage=event=>host.receive(event.data);return host;
+}
+class SimulationWorkerClient{
+  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;
+    worker.onmessage=({data})=>{if(this.closed||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='view'){Promise.resolve().then(()=>this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);data.error?request.reject(Error(data.error)):request.resolve(data.value);};
+    const fail=error=>{this.closed=true;for(const request of this.pending.values())request.reject(error);this.pending.clear();this.onfault?.(error);};worker.onerror=event=>fail(Error(event.message||'Simulation worker failed'));worker.onmessageerror=()=>fail(Error('Simulation worker reply could not be read'));
+  }
+  request(type,payload={}){if(this.closed)return Promise.reject(Error('Simulation worker is closed'));if(this.pending.size>=64)return Promise.reject(Error('Simulation request queue is full'));const id=++this.requestSequence;return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.worker.postMessage({protocol:1,id,type,payload});}catch(error){this.pending.delete(id);reject(error);}});}
+  async close(){try{return await this.request('close');}finally{this.closed=true;this.worker.terminate();for(const request of this.pending.values())request.reject(Error('Simulation worker closed'));this.pending.clear();}}
+}
+function createSimulationWorker(options){
+  if(MODEL_ONLY||typeof Worker==='undefined')throw Error('Simulation workers are unavailable');
+  const scripts=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain'),source=scripts.find(s=>s.textContent.includes('function simTick('))?.textContent;
+  if(!source)throw Error('Simulation source is unavailable');
+  const hash=options.hash??`#s=${options.seed}&f=${options.fate}${options.coast?'&c='+options.coast:''}&y=${options.startAD??850}`;
+  const prefix='globalThis.FURLONG_HEADLESS=true;globalThis.FURLONG_OPTIONS='+JSON.stringify({hash,build:buildId()})+';\n';
+  const url=URL.createObjectURL(new Blob([prefix,source,'\nsimulationWorkerRuntime();'],{type:'text/javascript'}));let worker;try{worker=new Worker(url);}finally{URL.revokeObjectURL(url);}
+  const client=new SimulationWorkerClient(worker);client.ready=client.request('init',{...options,source:scripts.map(s=>s.textContent).join('\n')});return client;
+}
+// SIMULATION WORKER HOST END
+
 async function startSimulation(options={}){
   if(options.outcomeJournal)STORAGE_OUTCOMES.journal=options.outcomeJournal;
   FATE=(options.fate??1)>>>0;COAST_PREF=options.coast??null;START_AD=clamp(options.startAD??850,850,1500);

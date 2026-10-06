@@ -40,9 +40,16 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Fortified endpoint attachments now reject closed castle curtains; the route
  // cache follows the clipped street graph. Quantity, title and journal writers
  // are unchanged; fort-streets and frozen routing fixtures cover this change.
- assert.equal(digest(source.slice(a,b)),"843a1d2fe9f8e8c900590fea452fe66742e9c15109555317f4ede4e01e6f45dd");
+ // 48c2b35 changes only storage site surveys and prevents repeat construction
+ // labour charges after the work is done; storage-placement/project fixtures cover
+ // those reviewed changes. The worker host does not modify this region.
+ assert.equal(digest(source.slice(a,b)),"46cfeb3c6f21980c901cff01e4db09e538356b5cb5180f4195e014bf5b27c782");
+ // This explicit worker inspector copies existing balances. Pin the entire line
+ // before excluding it so a future mutation cannot hide behind the read exemption.
+ const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
+ assert.equal(digest(inspectorLine),"277f2b74eb272b2cf60044723871d434e72e0bfa7add685246696265b292ddfc");
  const outside=(source.slice(0,a)+source.slice(b)).split('\n')
-   .filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)&&!l.includes('const inc=tradeIncome(s,hh.tr,counts),herd=s._owners?.get('))
+   .filter(l=>l!==inspectorLine).filter(l=>/_owners|storageClaimTables|\.held(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)|\.sale(?:\[[^\]]+\])?\s*(?:=|[+*/-]=)/.test(l)&&!l.includes('const inc=tradeIncome(s,hh.tr,counts),herd=s._owners?.get('))
    .map(l=>l.trim().replace(/(?:G\.land&&G\.land\.lordTex|W\.land&&G\.landView\?\.lordTex)/g,'LAND_VIEW_GUARD')).sort().join('\n');
  // Sort to tolerate declaration moves; exclude the added read-only herd inspector,
  // and normalize the land-uniform guard. Canonical claim and balance writes match HEAD.
