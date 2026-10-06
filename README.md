@@ -82,17 +82,21 @@ OpenRouter-backed client: your choice). When you rule, it is your closest confid
 in the game (your spouse, else the ablest of your kin); otherwise it is the game master. It sees the whole
 realm, answers for its workings from this README, and suggests how to play until you bid it be quiet.
 
-**Played on Claude** (the shared artifact link), click 🗣 and **Talk to your advisor here**: the advisor answers
+**Played on Claude** (the shared artifact link), open **Menu → Advisor** and **Talk to your advisor here**: the advisor answers
 in a panel beside the map, on your own Claude account (you are asked once to allow it, and what you ask uses your
 Claude usage). It has the same tools an agent gets through the bridge, run in the page, and its replies link every place, house,
 lord, host and person it names: click one to fly there and open its card. It asks Claude's default (balanced) tier;
 the page cannot pick a named model.
 
-**Anywhere else**, click 🗣 and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
+**With an API key** (anywhere, a phone or tablet included), open *Use an API key* in the Advisor dialog, choose
+OpenAI or OpenRouter, paste your key and a model that supports tools, and talk to the advisor in the same panel.
+The key stays in the tab's memory, goes only to that provider, and is forgotten on reload; questions use your API billing.
+
+**Anywhere else**, open the Advisor dialog and copy the prompt it shows into your agent app (Claude Code, Claude Cowork,
 Cursor, or any app that can run commands and local MCP servers). The prompt carries the advisor's whole program
 (one file, no dependencies): the agent checks for Node 18+, saves it as `furlong-advisor.mjs`, registers it as a
 local MCP server (in Claude Code, `claude mcp add furlong -- node <path>/furlong-advisor.mjs`), and answers with a
-pairing code (five letters and a digit). Enter the code in the 🗣 dialog and press Connect. An app that cannot change its own MCP
+pairing code (five letters and a digit). Enter the code in the Advisor dialog and press Connect. An app that cannot change its own MCP
 settings tells you what to paste where. The bridge talks only to a game open in a browser on the same machine
 (`FURLONG_PORT` changes its port, default 7357); once paired it learns the rules from the game itself.
 
@@ -100,10 +104,18 @@ The bridge's source is `advisor/furlong-advisor.mjs` (also runnable from a copy 
 `node tools/advisor-mcp.mjs`); `tools/stamp.sh` embeds it and the rules in `index.html` for each release.
 `advisor/` is laid out as an npm package (`furlong-advisor`, unpublished) for a later `npx` release.
 
-It has three tools. `search` finds controls, places, houses, people and rules. `discover` lists what can be done
-now: every button, slider and list the interface shows, read off the live page, so new buttons need no upkeep,
-plus verbs to read the state, find, inspect, read the chronicle, and name its persona. `execute` uses one, and it
-acts only when you ask. In a browser the agent drives itself, the same surface is `window.FURLONG`.
+It has three tools. `search` finds controls, places, houses, people and the paragraph of the rules that answers a
+question (from this README and [the guide to the screen](docs/UI-GUIDE.md)). `discover` lists what can be done: every
+button, slider, list and box the interface has, read off the live page (a closed panel's and the folded menu's
+too), so new buttons need no upkeep. Each is named by what it does (`crown:h-honour:3`), not by what it says today,
+with its cost, why it is disabled, what it acts on and any risk. `execute` uses one and answers with the game's own
+reply and the annals it wrote; it acts only when you ask, and Reforge or loading a game needs your word. Its verbs
+read everything the screen can show: `game:state` (the realm, towns, houses, hosts, petitions, works), `game:panel`
+(the court, the accounts, the timeline, the petitions, the houses and succession), `game:inspect` (any card, by name
+or by the code a card links to, whole on request), `game:chronicle` (by category, days and words), `game:find`,
+`game:persona` and `game:advise`; `game:place` finishes a pick on the map (a town, a host to march on, a building or
+a wall) and `game:plan` prices and commissions works with the plan brush. In a browser the agent drives itself,
+the same surface is `window.FURLONG`.
 
 ## Reading the realm
 
@@ -205,19 +217,27 @@ acts only when you ask. In a browser the agent drives itself, the same surface i
 |---|---|
 | drag | pan (the ground stays under the cursor) · **right-drag** or shift-drag turn & tilt · **scroll** zoom toward the cursor · trackpad: two-finger swipe pans, pinch zooms · touch: one finger pans, two pinch and twist |
 | click | inspect anything: settlements, buildings, armies, caravans, the dragon, walls, roads, streets, rivers, land parcels (tenure, lord, crop, state) |
-| `Space` | pause · `L` life pace (a day in half an hour) · `1–5` speeds (half a day to a year per second) |
+| `Space` | pause · `L` Life pace (a day in half an hour) · `1`–`5` Normal (half a day a second), Fast (2 days), Very fast (8), Fastest (30), Reel years (a year a second) |
 | `R` | **Rule the realm** — Sovereign mode (see below) |
 | `C` | **Watch mode** — pure documentary screensaver |
 | `M` | parchment map (click to fly) · `Esc` closes it |
+| `B` | plan with the brush · `P` performance |
 | `H` | hide UI · `Esc` deselect / cancel placement |
 
 Touch: one finger orbits, two fingers pinch-zoom.
 
-The left drawer has five tabs: **Crown** (Sovereign mode), **Rates** (harvest,
-plague virulence, house aggression, myth dial…), **Acts** (Unleash plague ·
-Wake the dragon · Assassinate the monarch · Contest the succession…),
-**Overlays** (territories, trade, prosperity, plague, unrest), and **Realm**
-(seed, houses, succession — click a name to inspect them).
+The top bar holds the date (click it for the timeline), the treasury (the
+kingdom accounts), Pause, the speed list and **Menu**. Menu opens the panels,
+each in one card beside the map that expands to a full sheet: **Crown** (take
+the crown or a house; when you rule, the court in four views: Overview with
+the tax or dues, Governance, Orders, Houses), **Realm** (seed, Reforge, map,
+watch mode, houses, succession — click a name to inspect it), **Overlays**
+(territories, tongues, trade, land value, land use, production, prosperity,
+plague, unrest), **Kingdom accounts**, **Annals** (filters: Crown, War, Trade,
+Fates), **Rates** (harvest, plague virulence, house aggression, myth dial…),
+**Acts** (Unleash plague · Wake the dragon · Assassinate the monarch · Contest
+the succession…), **Plan**, **Save**, **Advisor**, **Help**, and **Petitions**
+when one waits. [The guide to the screen](docs/UI-GUIDE.md) says more.
 
 ## The game
 
@@ -252,7 +272,7 @@ from your legacy. Only what you do after the game begins counts.
 
 ## Sovereign mode — rule it yourself
 
-Press **♛ Rule** (or `R`) to stop watching and govern. Providence's dials and
+Open **Menu → Crown** and take the crown (or press `R`) to stop watching and govern. Providence's dials and
 Acts are sealed while you rule; the crown's own levers take their place:
 
 - **Petitions.** Each names who and where it touches, with a link to show

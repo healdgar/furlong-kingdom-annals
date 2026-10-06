@@ -2,7 +2,7 @@
 /* furlong-advisor: a stateless MCP server (stdio) that lets any agent app, on any model, see and play the game of
    Furlong the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
    pairs with it from its 🗣 dialog, with a code this bridge gives in its answers; the bridge speaks to the page over
-   a WebSocket on 127.0.0.1 only. The game's rules (its README and design notes, bundled) are searchable before pairing.
+   a WebSocket on 127.0.0.1 only. The game's rules (its README and its guide to the screen, bundled) are searchable before pairing.
    No dependencies:  npx -y furlong-advisor   (FURLONG_PORT to change the port, default 7357) */
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -19,28 +19,43 @@ let VERSION = '0'; try { VERSION = JSON.parse(fs.readFileSync(path.join(HERE, 'p
 const log = (...a) => process.stderr.write('[furlong-advisor] ' + a.join(' ') + '\n');
 if (process.argv.includes('--version')) { process.stdout.write(VERSION + '\n'); process.exit(0); }
 
-/* ---- the rules, from the game's own docs: split into sections for search ---- */
+/* ---- the rules, from the game's own player-facing docs (its README and its guide to the screen), searched by paragraph ---- */
+const RULES = ['README.md', 'docs/UI-GUIDE.md'];
 const DOCS = [];
+// The same splitting and scoring as the game's own chat (ADVCHAT.rules in index.html); tools/advisor-context.test.mjs keeps them alike.
+const STOP = new Set('a an and are as at be been but by can could did do does doing for from get gets got had has have how i if in into is it its me my of on or our so than that the their them then there these they this those to up us was we were what when where which who whom why will with would you your'.split(' '));
+const stem = w => { w = { built: 'build', men: 'man', folk: 'folk', taxes: 'tax' }[w] || w; w = w.replace(/ies$/, 'y').replace(/(x|ch|sh|ss)es$/, '$1').replace(/([^s])s$/, '$1').replace(/(.{3,})ing$/, '$1').replace(/(.{3,})ed$/, '$1'); return w.length > 4 ? w.replace(/e$/, '') : w; };
+const words = t => (String(t).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').match(/[a-z0-9]+/g) || []).filter(w => !STOP.has(w)).map(stem);
 function addDocs(file, txt) {
   let head = file, buf = [];
-  const push = () => { if (buf.join('').trim()) DOCS.push({ file, section: head, text: buf.join('\n').trim() }); buf = []; };
-  for (const line of txt.split('\n')) { const m = line.match(/^<<<FILE (.+)>>>$/); if (m) { push(); file = head = m[1]; continue; } if (/^#{1,3} /.test(line)) { push(); head = line.replace(/^#+ /, ''); } else buf.push(line); }
-  push();
+  const para = (lines) => { const text = lines.join('\n').trim(); if (text) DOCS.push({ file, section: head, text, w: words(text), h: words(head), l: words((text.match(/^\W*\*\*([^*]+)\*\*/) || [, text.split(/[.:;]/)[0]])[1]) }); }; // a paragraph's lead: its bold opening, else its first clause
+  const push = () => { let cur = []; for (const line of buf) { if (!line.trim()) { para(cur); cur = []; } else if (/^\s*([-*]|\d+\.)\s/.test(line) && cur.length && !/^\s*\|/.test(line)) { para(cur); cur = [line]; } else cur.push(line); } para(cur); buf = []; };
+  for (const line of txt.split('\n')) { const m = line.match(/^<<<FILE (.+)>>>$/); if (m) { push(); file = head = m[1]; continue; } if (/^#{1,4} /.test(line)) { push(); head = line.replace(/^#+ /, ''); } else buf.push(line); }
+  push(); DF = null;
 }
-for (const f of ['README.md', ...(fs.existsSync(path.join(ROOT, 'docs')) ? fs.readdirSync(path.join(ROOT, 'docs')).filter(x => x.endsWith('.md')).map(x => 'docs/' + x) : [])]) {
+let DF = null;
+// The realm's own words for what a player asks after: a host is an army, dues are a tax, walls are raised as much as built.
+const SYN = { build: ['rais', 'construct', 'mason'], tax: ['due', 'toll', 'rent'], army: ['host', 'levy'], soldier: ['host', 'man'], money: ['gold', 'purse', 'treasury'], king: ['monarch', 'crown'], queen: ['monarch', 'crown'], food: ['grain', 'hunger', 'famine'], war: ['feud', 'rebel'], save: ['resume'], speed: ['pace'] };
+function searchDocs(q, n = 3) { // BM25 over paragraphs; a word in the section's heading or the paragraph's lead counts as its subject
+  const Q = [...new Set(words(q))];
+  if (!Q.length || !DOCS.length) return [];
+  if (!DF) { DF = new Map(); let L = 0; for (const d of DOCS) { L += d.w.length; for (const w of new Set(d.w)) DF.set(w, (DF.get(w) || 0) + 1); } DF.avg = L / DOCS.length; }
+  const idf = w => Math.log(1 + (DOCS.length - (DF.get(w) || 0) + 0.5) / ((DF.get(w) || 0) + 0.5));
+  return DOCS.map(d => { let s = 0, hit = 0; const norm = 1.2 * (0.25 + 0.75 * d.w.length / DF.avg);
+    for (const t of Q) { let best = 0; for (const w of [t, ...(SYN[t] || [])]) { let tf = 0; for (const x of d.w) if (x === w) tf++; const subj = (d.h.includes(w) ? 1 : 0) + (d.l.includes(w) ? 1 : 0);
+        best = Math.max(best, (w === t ? 1 : 0.5) * idf(t) * (tf * 2.2 / (tf + norm) + 2 * subj)); }
+      if (best) { hit++; s += best; } }
+    return { d, s: s * hit / Q.length }; })
+    .filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, n)
+    .map(({ d }) => ({ rules: d.file + ' › ' + d.section, text: d.text.slice(0, 1500) }));
+}
+for (const f of RULES) {
   try { addDocs(f, fs.readFileSync(path.join(ROOT, f), 'utf8')); } catch (_) { /* no rules beside the bridge: the game will send them once paired */ }
 }
 let rulesAsked = false;
 async function ensureRules() { // a bridge saved on its own learns the rules from the game it is paired with
   if (DOCS.length || rulesAsked || !sock) return;
   rulesAsked = true; const r = await ask('rules', {}); if (typeof r.result === 'string' && r.result) addDocs('README.md', r.result); else rulesAsked = false;
-}
-function searchDocs(q) {
-  const W = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
-  if (!W.length) return [];
-  return DOCS.map(d => ({ d, s: W.reduce((t, w) => t + (d.section.toLowerCase().includes(w) ? 3 : 0) + (d.text.toLowerCase().split(w).length - 1), 0) }))
-    .filter(x => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 4)
-    .map(({ d }) => ({ rules: d.file + ' › ' + d.section, text: d.text.slice(0, 1800) }));
 }
 
 /* ---- the page: one WebSocket on this machine, opened by the game when the player enters the code ---- */
@@ -116,7 +131,10 @@ const INSTRUCTIONS = `You are the advisor in Furlong, a medieval kingdom simulat
 Call execute {tool:"game:persona"} first and keep to it: when the player rules, you are their closest confidant at court (a named person in the game, speaking in character, in the first person, using the realm's own names); otherwise you are the game master.
 Read before you speak: game:state, game:panel, game:chronicle, game:inspect, and search for the rules. Explain why things happen from the game's own workings.
 Counsel, don't seize the reins: change the game (execute a control) only when the player asks you to.
-If game:advise says muted, answer only what you are asked and offer no counsel unasked.`;
+If game:advise says muted, answer only what you are asked and offer no counsel unasked.
+The screen: the top bar holds the date (the timeline), the treasury (the accounts), Pause, the speed list and Menu. Menu opens the panels: Crown (the court, in four views: Overview with the tax or dues, Governance, Orders, Houses), Realm, Overlays, Kingdom accounts, Annals (filters Crown, War, Trade, Fates), Rates and Acts (sealed while the player rules), Plan, Save, Advisor, Help. Each opens in one card beside the map, which can be expanded, minimized or closed.
+Controls are named scope:command:argument (crown:h-honour:3 honours house 3) and keep their names from day to day; discover lists them, a closed panel's too, with cost, why disabled, target and risk. A press answers once the game has: its reply and the annals it wrote. A control marked place:true wants game:place next (a road asks twice); game:place {cancel:true} gives it up. game:panel reads a panel; game:inspect reads any card by name or code.
+Speeds (realm.speed): 0 paused, 1 Normal (half a day a second), 2 Fast (2 days), 3 Very fast (8 days), 4 Fastest (30 days), 5 Reel years (a year a second), 6 Life pace (a day in half an hour). A year is four seasons of 90 days.`;
 
 function reply(id, result) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n'); }
 function fail(id, code, message) { process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message } }) + '\n'); }

@@ -19,14 +19,17 @@ By hand, register it as a local MCP server:
   ```
 
 Then ask the agent anything about your realm: it answers with a pairing code (five letters and a digit). Enter it in the game's
-🗣 dialog and press Connect. Needs Node 18 or later.
+Advisor dialog (Menu → Advisor) and press Connect. Needs Node 18 or later.
 
 ## Tools
 
-- `search` finds controls, places, houses, people, and the rules.
-- `discover` lists what can be done now: every button, slider and list on screen, read off the live page, plus
-  verbs to read the state, find, inspect, read the chronicle, and name the advisor's persona.
-- `execute` uses one.
+- `search` finds controls, places, houses, people, and the paragraph of the rules (the game's README and its guide
+  to the screen) that answers a question.
+- `discover` lists what can be done: every button, slider and list the game has, read off the live page (closed
+  panels too), each named by what it does (`crown:h-honour:3`) with its cost, why it is disabled, target and risk,
+  plus verbs to read the state, panels, cards and annals, find things, pick on the map, plan works, and name the
+  advisor's persona.
+- `execute` uses one and answers with the game's reply and the annals it wrote.
 
 The bridge listens on 127.0.0.1 only (port 7357; `FURLONG_PORT` to change it) and accepts only a game that
 gives the pairing code.
