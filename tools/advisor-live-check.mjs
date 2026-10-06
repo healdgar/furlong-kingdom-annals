@@ -124,9 +124,9 @@ async function main(){
     check('save box: controls listed and closable',sv.scopes?.includes('dialog')&&sv.dialogTools?.length>1&&sv.after?.saveboxOpen==='none',sv);
     await step('R8_storage_place',async()=>{const d=await D('card'),pickBtn=d.tools.find(t=>/storage-pick/.test(t.name))?.name;if(!pickBtn)return{error:'no storage site button',names:d.tools.map(t=>t.name)};const r=await X(pickBtn),cap2=await ev('W.capital.pos');
       const p=await X('game:place',{at:{x:cap2.x+60,z:cap2.z+40}});await sleep(800);return{press:r,place:p,mode:await ev('placeMode')};});
-    const panels=await step('R9_panels',async()=>{const out={};for(const kind of ['crown','accounts','timeline','petitions','houses','plan']){const r=await X('game:panel',{kind});out[kind]=r?.error?{error:r.error}:{len:JSON.stringify(r).length,head:String(r?.text||'').slice(0,120)};}
+    const panels=await step('R9_panels',async()=>{const out={};for(const kind of ['crown','accounts','timeline','petitions','houses','plan']){const r=await X('game:panel',{kind});out[kind]=r?.error?{error:r.error}:{len:JSON.stringify(r).length,head:String(r?.text||'').slice(0,120),rows:Array.isArray(r?.rows)?r.rows.length:undefined,loyalty:Array.isArray(r?.rows)?r.rows.every(x=>Number.isFinite(x.loyalty)):undefined};}
       out.town=await X('game:panel',{kind:'accounts',town:cap}).then(r=>r?.error?{error:r.error}:{len:(r?.text||'').length});return out;});
-    check('panel reads return data',['crown','accounts','timeline','houses'].every(k=>panels[k]?.len>200),panels);
+    check('panel reads return data',['crown','accounts','timeline'].every(k=>panels[k]?.len>200)&&panels.houses?.rows>0&&panels.houses?.loyalty===true,panels); // the houses panel draws loyalty as bars: its figures come as rows
     await step('R10_state_holes',async()=>{const r=await X('game:state',{path:'realm'}),s=await X('game:state',{path:'settlement:'+cap}),a=await X('game:state',{path:'armies'}),h=await X('game:state',{path:'houses'});
       return{realmKeys:Object.keys(r||{}),settlementKeys:Object.keys(s||{}),armyKeys:Object.keys((a||[])[0]||{}),houseKeys:Object.keys((h||[])[1]||{})};});
     await step('R11_chronicle_filters',async()=>{const war=await X('game:chronicle',{cat:'war',n:5}),range=await X('game:chronicle',{from:0,to:30,n:5});return{war,range};});
