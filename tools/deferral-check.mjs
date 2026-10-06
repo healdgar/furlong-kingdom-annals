@@ -2,6 +2,7 @@
 // Local fastest-mode projection/state equality and native-RAF catch-up in hardware Chrome.
 // node tools/deferral-check.mjs --baseline 75ac15d --years 2 --out /tmp/furlong-deferral
 // --variants baseline,candidate,off additionally validates defer=off; --era checks actual later-era boot.
+// Drives the main-thread reference simulation (foreground=1), not the simulation worker.
 import {spawn,execFileSync} from 'node:child_process';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
@@ -53,7 +54,9 @@ const GEOMETRY=`(()=>{const parts={walls:G.wallGrp,tracks:G.trackMesh,wood:G.tra
 async function check(variant,w){const{c,stop}=await launch(),id=`${variant}-${w.seed}-${w.coast}`,errors=[],result={id,variant,...w};try{
   await c.send('Page.enable');await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));c.on('Runtime.consoleAPICalled',e=>{if(e.type==='error')errors.push(e.args.map(a=>a.description||a.value).join(' '));});
   await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__nativeRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
-  await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant==='baseline'?'baseline.html':'candidate.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=${era}`+(variant==='off'?'&defer=off':'')});
+  // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it.
+  // Consequence: 'candidate' is now the reference driver, so the worker's own cadence and projections are not exercised here.
+  await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant==='baseline'?'baseline.html':'candidate.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=${era}`+(variant==='off'?'&defer=off':'')+'&foreground=1'});
   const t=Date.now();while(!await evaluate(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw new Error(errors.join('\n'));if(Date.now()-t>bootTimeout)throw new Error('boot timeout');await sleep(100);}
   result.bootMs=Date.now()-t;result.bootCosts=await evaluate(c,'JSON.parse(JSON.stringify(__cost))');result.gpu=await evaluate(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return gl.getParameter(e.UNMASKED_RENDERER_WEBGL);})()");assert.ok(!/SwiftShader|llvmpipe|Software/i.test(result.gpu));
   await evaluate(c,SETTLE);await evaluate(c,'ownershipTick()');result.initial=await evaluate(c,FINGERPRINT);await evaluate(c,"__cost={};cam.mode='free';setSpeed(5)");

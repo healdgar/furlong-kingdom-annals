@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Storage outcome persistence, sequence and failure checks in native Metal Chrome.
+// Drives the main-thread reference simulation (foreground=1): it asserts the foreground journal and calls simTick() directly.
 import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,7 +48,8 @@ try{
   await c.send('Page.enable');await c.send('Runtime.enable');
   c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));
   await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
-  await c.send('Page.navigate',{url:PAGE+'#s=1001&f=1001&c=sea&y=850'});
+  // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it.
+  await c.send('Page.navigate',{url:PAGE+'#s=1001&f=1001&c=sea&y=850&foreground=1'});
   const start=Date.now();while(!await ev(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw Error(errors.join('\n'));if(Date.now()-start>180000)throw Error('Boot timeout');await sleep(100);}
   await ev(c,'setSpeed(0);STORAGE_OUTCOMES.flush()');
   result.gpu=await ev(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return gl.getParameter(e.UNMASKED_RENDERER_WEBGL);})()");
@@ -73,6 +75,7 @@ try{
   assert.deepEqual(result.checks.backpressure,{blocked:true,retained:true,ready:true,pending:0});
   result.checks.modelFault=await ev(c,`(async()=>{const D=STORAGE_OUTCOMES,before=day();storageModelFault(new Error('Injected invariant failure'));const blocked=simTick()===false&&day()===before;let mutationBlocked=false,waitRejected=false;try{storageOutcomeAssert();}catch{mutationBlocked=true;}try{await D.wait();}catch{waitRejected=true;}await D.flush();let logged=false;for await(const r of D.records())if(r.event.kind==='storage-model-fault')logged=r.event.message==='Injected invariant failure';return {blocked,mutationBlocked,waitRejected,logged,visible:document.getElementById('storagefault')?.getAttribute('role')==='alert',id:D.meta.id,count:D.journal.seq};})()`);
   for(const k of ['blocked','mutationBlocked','waitRejected','logged','visible'])assert.equal(result.checks.modelFault[k],true);
+  await ev(c,"history.replaceState(null,'','#s=1001&f=1001&c=sea&y=850&foreground=1')"); // boot() rewrites the hash without foreground=1; restore it so the reload is foreground again
   await c.send('Page.reload',{ignoreCache:true});
   const reloadStart=Date.now();while(!await ev(c,`typeof W!=='undefined'&&!!W&&!document.getElementById('loading')&&STORAGE_OUTCOMES.meta.id!==${JSON.stringify(result.checks.modelFault.id)}`).catch(()=>false)){if(errors.length)throw Error(errors.join('\n'));if(Date.now()-reloadStart>180000)throw Error('Reload timeout');await sleep(100);}
   result.checks.navigationRecovery=await ev(c,`(async()=>{const old=await STORAGE_OUTCOMES.open(${JSON.stringify(result.checks.modelFault.id)});let count=0,faultLogged=false;for await(const r of old.records()){count++;if(r.event.kind==='storage-model-fault')faultLogged=true;}return {count,faultLogged,newSession:STORAGE_OUTCOMES.meta.id!==old.meta.id,modelFaultCleared:STORAGE_OUTCOMES.modelFault===null};})()`);

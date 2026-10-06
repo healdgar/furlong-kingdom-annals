@@ -2,7 +2,8 @@
 /* Matched native tick and projection CPU through two years. The isolated
    baseline snapshot repairs its known siegeArc null-target crash only.
    node tools/simulation-cpu.mjs --baseline e0cd7e5 --out /tmp/furlong-cpu
-   No source or user browser state is changed. */
+   No source or user browser state is changed.
+   Drives the main-thread reference simulation (foreground=1), not the simulation worker. */
 import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -52,7 +53,7 @@ const results=[];
 try{for(const which of modes){console.log('CPU '+which);const {c,kill}=await launch();try{
 const errors=[];await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',m=>errors.push(m.exceptionDetails.exception?.description||m.exceptionDetails.text));await c.send('Page.enable');
 await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.requestAnimationFrame=()=>0;'});
-await c.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'+which+'.html#s=1001&f=1001&c=sea'});
+/* foreground=1: reference driver (simTick() throws under the worker); 'candidate' CPU is the reference driver's, not the worker's */await c.send('Page.navigate',{url:'http://127.0.0.1:'+server.address().port+'/'+which+'.html#s=1001&f=1001&c=sea&foreground=1'});
 let ready=false;const end=Date.now()+120000;while(Date.now()<end){if(errors.length)throw Error(errors.join('\n'));ready=await ev(c,"document.getElementById('loading')===null&&typeof renderer!=='undefined'");if(ready)break;await sleep(100)}if(!ready)throw Error('boot timeout');await ev(c,'setSpeed(0)');
 const years=[];for(let year=0;year<2;year++){let simMs=0,projectionMs=0,state;for(let block=0;block<12;block++){const m=await ev(c,`(async()=>{let sim=0,projection=0;for(let i=0;i<30;i++){const t=performance.now();if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}sim+=performance.now()-t;if((i+1)%10===0){const v=performance.now();animateWorld(.1,day());projection+=performance.now()-v;}}return{sim,projection,errors:errN,day:day(),population:W.settlements.reduce((n,s)=>n+s.pop,0),people:W.settlements.reduce((n,s)=>n+(s.folk?.length||0),0),households:W.households?.size||0,buildings:W.bldList?.length||G.bldList?.length||0}})()`);state={day:m.day,population:m.population,people:m.people,households:m.households,buildings:m.buildings};simMs+=m.sim;projectionMs+=m.projection;if(m.errors)throw Error('simulation errors '+m.errors);await sleep(0)}years.push({year:year+1,simMs,projectionMs,totalMs:simMs+projectionMs,state});console.log(which,JSON.stringify(years.at(-1)))}results.push({which,sha256:createHash('sha256').update(sources[which]).digest('hex'),years,baselineRef:BASELINE,baselineCrashRepair:which==='baseline'&&baselineCrashRepair});
 }finally{kill()}}fs.writeFileSync(path.join(OUT,'results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));}finally{server.close()}

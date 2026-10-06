@@ -13,7 +13,8 @@
    Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
             --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
-            that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path */
+            that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path
+   Drives the main-thread reference simulation (foreground=1); --render frame costs are the reference driver's, not the worker's. */
 import {spawn} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
 import {inventoryAudit} from './inventory-audit.mjs';
@@ -124,7 +125,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
     let pop=0,folk=0,towns=0,walled=0,maxWall=0,grain=0,deserted=0,badPop=0;
     for(const s of W.settlements){if(!Number.isFinite(s.pop))badPop++;pop+=s.pop||0;folk+=(s.folk||[]).length;grain+=(s.stores&&s.stores.grain)||0;if(s.kind!=='village')towns++;
       if(s.wallRad){walled++;maxWall=Math.max(maxWall,(s.wallR||0)/Math.max(60,s.extentR||0));}for(const b of s.buildings)if(b.state==='ruin'&&b.deserted)deserted++;}
-    let tilled=0;if(G.land&&G.land.F)for(const f of G.land.F)if(f.state===LS.TILLED)tilled++;
+    let tilled=0;const LAND=W.land||G.land;if(LAND&&LAND.F)for(const f of LAND.F)if(f.state===LS.TILLED)tilled++; // W.land on current builds, G.land on older baselines
     const T={};for(const k in S.T){const d=S.T[k]-(T0[k]||0);if(d>0.5)T[k]=Math.round(d);}
     const out={y:Y,ad:AD(),auditDays:Math.min(aud,360),ms:Math.round(ms),msDay:+(ms/360).toFixed(2),tickMsDay:+(tickMs/360).toFixed(2),pop:Math.round(pop),folk,places:W.settlements.length,towns,walled,maxWallRatio:+maxWall.toFixed(2),badPop,
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
@@ -144,7 +145,7 @@ async function runWorld(w){
     c.on('Page.javascriptDialogOpening',()=>c.send('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{}));
     c.on('Runtime.exceptionThrown',p=>{if(errs.length<30)errs.push('exception: '+((p.exceptionDetails.exception&&p.exceptionDetails.exception.description)||p.exceptionDetails.text).slice(0,600));});
     c.on('Runtime.consoleAPICalled',p=>{if(p.type==='error'&&errs.length<30)errs.push('console: '+p.args.map(a=>a.value!==undefined?String(a.value):(a.description||'')).join(' ').slice(0,600));});
-    const hash=`#s=${w.seed}&f=${w.fate}`+(w.coast?`&c=${w.coast}`:'')+(KM?`&km=${KM}`:'')+(Y0?`&y=${Y0}`:'');
+    const hash=`#s=${w.seed}&f=${w.fate}`+(w.coast?`&c=${w.coast}`:'')+(KM?`&km=${KM}`:'')+(Y0?`&y=${Y0}`:'')+'&foreground=1'; // foreground=1: reference driver (simTick() throws under the worker)
     if(BOOTCPU>1)await c.send('Emulation.setCPUThrottlingRate',{rate:BOOTCPU});
     await c.send('Page.navigate',{url:PAGE+hash});
     let last='';for(;;){await sleep(250);if(Date.now()-t0>30*60e3)throw new Error('the world did not finish loading');
@@ -155,6 +156,7 @@ async function runWorld(w){
     log(`${id}: ${info.realm}, ${info.places} places, land ${(info.land*100).toFixed(0)}%, booted in ${(bootMs/1000).toFixed(1)} s`);
     const years=[],prof={},render=[];
     const reset=async y=>{ // each drawing scenario starts with the same undrawn history, not the previous scenario's later world
+      await ev(c,`history.replaceState(null,'',${JSON.stringify(hash)})`); // boot() rewrites the hash without foreground=1; restore it so the reload is foreground again
       await c.send('Page.reload',{ignoreCache:true});const t=Date.now();
       while(!await ev(c,"!window.__soak&&!document.getElementById('loading')&&typeof errN!=='undefined'&&!!W?.settlements").catch(()=>false)){
         if(Date.now()-t>30*60e3)throw new Error('render world did not finish loading');await sleep(250);}

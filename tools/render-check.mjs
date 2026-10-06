@@ -10,7 +10,8 @@
    --candidate-ref checks an existing commit, useful for reproducing a suspected baseline failure.
    --reel-smoke exercises the actual RAF loop for three seconds and checks projection cadence/pause.
    --woodland-density allows at most 65% more tree instances; other geometry stays unchanged.
-   --river-banks checks flat water and budgets the carved ground and recessed channel bed. */
+   --river-banks checks flat water and budgets the carved ground and recessed channel bed.
+   Drives the main-thread reference simulation (foreground=1); --reel-smoke therefore exercises the reference RAF loop, not the worker's. */
 import {spawn} from 'node:child_process';
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -320,7 +321,8 @@ async function check(which,w){
     await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__renderRAF=requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});
     await c.send('Emulation.setDeviceMetricsOverride',{width:Number(args.width||1440),height:Number(args.height||900),deviceScaleFactor:1,mobile:!!args.touch});
     if(args.touch)await c.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
-    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${args.founding||w.seed}&c=${w.coast}`});
+    // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it.
+    await c.send('Page.navigate',{url:previewURL+which+'.html'+`#s=${w.seed}&f=${args.founding||w.seed}&c=${w.coast}&foreground=1`});
     const deadline=Date.now()+120000;let ready=false;
     while(Date.now()<deadline){if(errors.length)throw new Error(errors.join('\n'));ready=await ev(c,"document.getElementById('loading')===null&&typeof renderer!=='undefined'");if(ready)break;await sleep(200);}
     if(!ready)throw new Error('boot timeout');

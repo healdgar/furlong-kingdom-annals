@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Actual-history archive checks in native, hardware-GPU-backed Chrome. No seed replay.
+// Drives the main-thread reference simulation (foreground=1): the history archive (history=full) only runs there.
 import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -67,7 +68,8 @@ for(const [seed,coast] of [[1001,'sea'],[2002,'land']]){
  const {c,kill}=await launch(),errors=[];try{
   await c.send('Page.enable');await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));
   await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
-  await c.send('Page.navigate',{url:PAGE+`#s=${seed}&f=${seed}&c=${coast}&history=full`});await ready(c);
+  // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it.
+  await c.send('Page.navigate',{url:PAGE+`#s=${seed}&f=${seed}&c=${coast}&history=full&foreground=1`});await ready(c);
   const gpu=await ev(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()");assert.ok(!/SwiftShader|llvmpipe|Software Rasterizer/i.test(gpu));
   await ev(c,`window.__oracle=${ORACLE};window.__expected=[];window.__saveExpected=async()=>{const text=__oracle(HISTORY.roots()),b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));__expected.push({seq:HISTORY.seq-1,day:day(),sha:[...new Uint8Array(b)].join(',')});};`);
   await ev(c,"setSpeed(0);HISTORY.capture('test-pause');__saveExpected()");

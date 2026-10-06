@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Map-site commission and physical custody checks in native Metal Chrome.
+// Drives the main-thread reference simulation (foreground=1), not the simulation worker.
 import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,7 +48,8 @@ try{
   await c.send('Page.enable');await c.send('Runtime.enable');
   c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));
   await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
-  await c.send('Page.navigate',{url:PAGE+'#s=1001&f=1001&c=sea&y=850'});
+  // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it.
+  await c.send('Page.navigate',{url:PAGE+'#s=1001&f=1001&c=sea&y=850&foreground=1'});
   const start=Date.now();while(!await ev(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw Error(errors.join('\n'));if(Date.now()-start>180000)throw Error('Boot timeout');await sleep(100);}
   result.gpu=await ev(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return gl.getParameter(e.UNMASKED_RENDERER_WEBGL);})()");assert.ok(!/SwiftShader|llvmpipe|Software/i.test(result.gpu));
   await ev(c,"setSpeed(0);jot({k:'sov',on:true,hi:0});setSovereign(true,0);window.__storageTest={};");

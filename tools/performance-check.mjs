@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Local, serial baseline/candidate histories and CPU timings in hardware-GPU-backed Chrome.
 // node tools/performance-check.mjs --baseline main --seeds 1001:sea,2002:land --years 10 --out /tmp/furlong-performance
-// --variants baseline,candidate,off also compares the worker-disabled synchronous fallback.
+// --variants baseline,candidate,off also compares the worker-disabled synchronous fallback (worker=off: the ROUTING worker only).
+// Drives the main-thread reference simulation (foreground=1); the simulation worker itself is not timed here.
 import {spawn,execFileSync} from 'node:child_process';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
@@ -40,7 +41,7 @@ async function launch(){const profile=fs.mkdtempSync(path.join(os.tmpdir(),'furl
 const SERIALIZE=`(()=>{const seen=new Map(),pending=[],nodes=[],omit=new Set(${JSON.stringify(['_pm','_folkIndex','_folkRevision','_householdsV','_popTotal','_popValid','routes',...(args['ignore-life-ledger']?['ev','historyCells']:[])])});
   const walk=v=>{if(v===undefined)return['undefined'];if(typeof v==='function')return['function'];if(typeof v==='number'&&!Number.isFinite(v))return['number',String(v)];if(v===null||typeof v!=='object')return v;
     if(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.nodeType)return['graphic'];if(!seen.has(v)){seen.set(v,pending.length);pending.push(v);}return['ref',seen.get(v)];};
-  const root=walk({world:W,land:{F:G.land.F,mask:G.land.mask,flood:G.land.flood,perHead:G.land.perHead},annals:allLines,journal:JOURNAL,mod:MOD,personID:PID,notableID:NID});
+  const LAND=W.land||G.land,root=walk({world:W,land:{F:LAND.F,mask:LAND.mask,flood:LAND.flood,perHead:LAND.perHead},annals:allLines,journal:JOURNAL,mod:MOD,personID:PID,notableID:NID});
   for(let i=0;i<pending.length;i++){const v=pending[i];if(ArrayBuffer.isView(v))nodes[i]=['typed',v.constructor.name,Array.from(v)];else if(v instanceof Map)nodes[i]=['map',[...v].map(([k,x])=>[walk(k),walk(x)])];else if(v instanceof Set)nodes[i]=['set',[...v].map(walk)];
     else if(Array.isArray(v))nodes[i]=['array',v.map(walk)];else nodes[i]=['object',Object.keys(v).filter(k=>!omit.has(k)&&typeof v[k]!=='function').sort().map(k=>[k,walk(v[k])])];}
   return JSON.stringify({root,nodes});})()`;
@@ -52,7 +53,8 @@ const SHORT_RUN=shortDays===null?null:`(async()=>{let tickMs=0;const start=perfo
 async function check(variant,w){const{c,stop}=await launch(),id=`${variant}-${w.seed}-${w.coast}`,errors=[],result={id,variant,...w,annual:[]};
   try{await c.send('Page.enable');await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));c.on('Runtime.consoleAPICalled',e=>{if(e.type==='error')errors.push(e.args.map(a=>a.description||a.value).join(' '));});
     await c.send('Page.addScriptToEvaluateOnNewDocument',{source:`window.FURLONG_COMMODITY_BALANCES=${!!args.commodity&&variant==='candidate'};window.requestAnimationFrame=()=>0;const nativeInterval=window.setInterval.bind(window);window.setInterval=()=>0;window.__perfBootDelays=[];let heartbeat=performance.now();window.__perfBootTimer=nativeInterval(()=>{const now=performance.now();window.__perfBootDelays.push(now-heartbeat);heartbeat=now;},20);`});
-    const started=Date.now();await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant==='baseline'?'baseline.html':'candidate.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=${era}`+(variant==='off'?'&worker=off':'')});
+    // foreground=1 selects the page's main-thread reference driver: under the default worker, simTick() throws. Pre-worker builds ignore it. Timings are the reference driver's, not the simulation worker's.
+    const started=Date.now();await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant==='baseline'?'baseline.html':'candidate.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=${era}`+(variant==='off'?'&worker=off':'')+'&foreground=1'});
     while(!await evaluate(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw new Error(errors.join('\n'));if(Date.now()-started>bootTimeout)throw new Error('boot timeout');await sleep(100);}
     result.bootMs=Date.now()-started;result.bootHeartbeat=await evaluate(c,"(()=>{clearInterval(window.__perfBootTimer);const a=window.__perfBootDelays.slice().sort((a,b)=>a-b);return{samples:a.length,p95Ms:a[Math.floor(a.length*.95)],maxMs:a.at(-1)};})()");result.browser=await c.send('Browser.getVersion');result.gpu=await evaluate(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()");assert.ok(!/SwiftShader|llvmpipe|Software Rasterizer/i.test(result.gpu));
     await evaluate(c,'setSpeed(0);ownershipTick()');result.initial=await evaluate(c,FINGERPRINT);result.bootStorageVersion=await evaluate(c,"Math.max(0,...W.settlements.map(s=>s.storage?.version||0))");result.bootWorker=await evaluate(c,"typeof ROUTING==='undefined'?null:{...ROUTING.stats,disabled:ROUTING.disabled}");

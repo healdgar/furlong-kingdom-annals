@@ -2,6 +2,7 @@
 // Local, serial baseline/candidate histories and CPU timings in hardware-GPU-backed Chrome.
 // node tools/performance-check.mjs --baseline main --seeds 1001:sea,2002:land --years 10 --out /tmp/furlong-performance
 // --variants baseline,candidate,off also compares the worker-disabled synchronous fallback.
+// Drives the main-thread reference simulation (foreground=1), not the simulation worker.
 import {spawn,execFileSync} from 'node:child_process';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
@@ -53,7 +54,7 @@ const target=Number(args.days??270);assert.ok(Number.isInteger(target)&&target>0
 async function check(variant,w){const{c,stop}=await launch(),id=`${variant}-${w.seed}-${w.coast}`,errors=[],r={id,...w,variant};try{
 await c.send('Page.enable');await c.send('Runtime.enable');c.on('Runtime.exceptionThrown',e=>errors.push(e.exceptionDetails.exception?.description||e.exceptionDetails.text));
 await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.requestAnimationFrame=()=>0;window.setInterval=()=>0;'});
-await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant+'.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=850`});const start=Date.now();
+/* foreground=1: reference driver (simTick() throws under the worker) */await c.send('Page.navigate',{url:pathToFileURL(path.join(OUT,variant+'.html')).href+`#s=${w.seed}&f=${w.seed}&c=${w.coast}&y=850&foreground=1`});const start=Date.now();
 while(!await evaluate(c,"typeof W!=='undefined'&&!!W&&!document.getElementById('loading')").catch(()=>false)){if(errors.length)throw Error(errors.join('\n'));if(Date.now()-start>bootTimeout)throw Error('boot timeout');await sleep(100);}
 r.gpu=await evaluate(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return gl.getParameter(e.UNMASKED_RENDERER_WEBGL);})()");assert.ok(!/SwiftShader|llvmpipe|Software/i.test(r.gpu));
 await evaluate(c,"setSpeed(0);jot({k:'sov',on:true,hi:0});setSovereign(true,0)");

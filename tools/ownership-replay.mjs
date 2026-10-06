@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Native-Chrome test of seed/journal save replay after household ownership changes.
+// Drives the main-thread reference simulation (foreground=1): this is the foreground journal replay, not the worker resume.
 import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,7 +46,7 @@ async function launch(){ // a headless Chrome of its own, with a throwaway profi
 const snap=`(()=>({day:day(),pop:W.settlements.map(s=>s.pop),households:[...W.households.values()].map(h=>({id:h.id,head:h.head&&h.head.id,cash:h.assets.w,debt:h.assets._debt,members:[...h.members].map(p=>p.id).sort((a,b)=>a-b),pop:[...h.population].map(([s,n])=>[W.settlements.indexOf(s),n])})),owners:W.settlements.map(s=>[...s._owners].map(([o,x])=>[o&&o.household?o.id:o==='crown'?'crown':o&&o.gn?o.id:o&&o.ch?'church':o&&o.buildings?'town':o&&o.name||'institution',x.held,x.sale,x.animals]))}))()`;
 async function ready(c){const start=Date.now();while(!await ev(c,"!document.getElementById('loading')&&typeof W!=='undefined'&&!!W?.settlements").catch(()=>false)){if(Date.now()-start>120000)throw new Error('loading timed out');await sleep(250);}}
 const result={sourceSHA256:createHash('sha256').update(source).digest('hex'),node:process.version},base='#s=688673834&f=688673834&c=sea';let code,before;
-for(const replay of [false,true]){const {c,kill}=await launch();try{await c.send('Page.enable');await c.send('Runtime.enable');await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__soakRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});await c.send('Page.navigate',{url:PAGE+base+(replay?'&save='+code:'')});await ready(c);
+for(const replay of [false,true]){const {c,kill}=await launch();try{await c.send('Page.enable');await c.send('Runtime.enable');await c.send('Page.addScriptToEvaluateOnNewDocument',{source:'window.__soakRAF=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=()=>0;'});/* foreground=1: reference driver; makeSave/JOURNAL and replaySave are foreground-only */await c.send('Page.navigate',{url:PAGE+base+(replay?'&save='+code:'')+'&foreground=1'});await ready(c);
   const gpu=await ev(c,"(()=>{const gl=renderer.getContext(),e=gl.getExtension('WEBGL_debug_renderer_info');return e?gl.getParameter(e.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})()");assert.ok(!/SwiftShader|llvmpipe|Software Rasterizer/i.test(gpu));result.gpu=gpu;
   if(!replay){await ev(c,'ownershipTick()');await ev(c,'(async()=>{for(let i=0;i<360;i++){if(simTick()===false){await STORAGE_OUTCOMES.wait();i--;continue;}if(day()%30===15||day()%360===0)await new Promise(r=>setTimeout(r,0));}})()');before=await ev(c,snap);code=await ev(c,"packSave(makeSave('ownership replay'))");}
   else{await ev(c,'ownershipTick()');const after=await ev(c,snap);result.equal=JSON.stringify(before)===JSON.stringify(after);fs.writeFileSync(OUT+'/before.json',JSON.stringify(before,null,2));fs.writeFileSync(OUT+'/after.json',JSON.stringify(after,null,2));result.day=after.day;result.errors=await ev(c,'errN');assert.equal(result.errors,0);}
