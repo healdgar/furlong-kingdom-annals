@@ -10,7 +10,7 @@ test('land projection requests coalesce without writing shader buffers during se
   const f={k:0,jx:0.2,jz:0.7,th:0.3,w:11,dom:2,kind:1,state:3,gf:2,lord:4,held:true},before=JSON.stringify(f);
   const tex=()=>({image:{data:new Uint8Array(4)},needsUpdate:false});
   const G={landView:{seedTex:tex(),dataTex:tex(),lordTex:tex(),maskTex:tex()}},W={land:{F:[f]}};
-  const c=vm.createContext({G,W,f,overlayMode:null,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))});
+  const c=vm.createContext({MODEL_ONLY:false,BACKGROUND:null,G,W,f,overlayMode:null,clamp:(v,a,b)=>Math.max(a,Math.min(b,v))});
   vm.runInContext(['writeFurlong','projectFurlong','writeLord','projectLord','projectLandscape'].map(extract).join('\n'),c);
   c.writeFurlong(f);c.writeLord(f);c.writeFurlong(f);G.landMaskDirty=true;
   assert.equal(G.landDirty.size,1);
@@ -28,7 +28,7 @@ function run(code,globals={}){
   // Fixtures supply the single model records under their new simulation owner.
   if(globals.G){globals.W??={};for(const k of ['land','bldList','rivStrips','tg','trackSet'])if(globals.G[k]!==undefined)globals.W[k]??=globals.G[k];}
   globals.MODEL_ONLY??=false;
-  const c=vm.createContext(globals);vm.runInContext(code,c);return c;}
+  globals.BACKGROUND??=null;const c=vm.createContext(globals);vm.runInContext(code,c);return c;}
 
 test('display clock clamps queued backlog, rejects nonfinite interpolation, and never writes W.clock',()=>{
   const c=run('const day=()=>W.clock.day;\n'+region('function displayFrac(', 'function entityView('),{W:{clock:{day:42,frac:0.7}},G:{clockFrac:7},clamp:(v,a,b)=>Math.max(a,Math.min(b,v))});

@@ -75,6 +75,26 @@ test('command and pause controls keep immediate request replies while watch is e
   assert.equal(f.out.filter(x=>x.type==='view').length,0);
 });
 
+test('changing publication cadence preserves the view awaiting acknowledgement',async()=>{
+  const f=hostFixture();await initialize(f);f.h.receive(msg(2,'watch',{kind:'landscape',everyDays:1}));await settle(f);
+  f.h.receive(msg(3,'advance',{days:2}));await settle(f);const view=f.out.find(x=>x.type==='view');assert.equal(view.value.day,1);
+  f.h.receive(msg(4,'watch',{kind:'landscape',everyDays:30}));await settle(f);
+  assert.equal(f.h.publication.inflight,view.sequence);
+  f.h.receive(msg(5,'view-ack',{sequence:view.sequence}));await settle(f);
+  assert.equal(reply(f,5).error,undefined);assert.equal(f.h.publication.inflight,null);
+  f.h.receive(msg(6,'advance',{days:30}));await settle(f);
+  assert.deepEqual(f.out.filter(x=>x.type==='view').map(x=>x.value.day),[1,32]);
+});
+
+test('asynchronous daily work completes before the next command or save barrier',async()=>{
+  let release,entered;const started=new Promise(r=>entered=r),gate=new Promise(r=>release=r);
+  const f=hostFixture({async tick(m){entered();await gate;m.d++;m.log.push(['tick',m.d]);return true;}},{budget:0});await initialize(f);
+  f.h.receive(msg(2,'advance',{days:1}));await runOne(f);await f.c.runNext();await started;
+  f.h.receive(msg(3,'command',{name:'after-gpu'}));f.h.receive(msg(4,'save',{name:'after-gpu'}));
+  assert.equal(f.model.d,0);release();await settle(f);
+  assert.deepEqual(f.model.log.filter(x=>['tick','command','save'].includes(x[0])),[['tick',1],['command','after-gpu'],['save',1,'after-gpu']]);
+});
+
 test('queued commands enter between whole ticks during bounded advance',async()=>{
   let host,admitted=false;const f=hostFixture({tick(m){m.d++;m.log.push(['tick',m.d]);f.c.setNow(f.c.now()+8);if(m.d===1&&!admitted){admitted=true;host.receive(msg(3,'command',{name:'between'}));}return true;}},{budget:1});host=f.h;await initialize(f);
   f.h.receive(msg(2,'advance',{days:3}));await settle(f);

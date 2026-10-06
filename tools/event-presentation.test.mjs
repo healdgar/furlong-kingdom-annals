@@ -5,12 +5,12 @@ import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const region=(a,b)=>source.slice(source.indexOf(a),source.indexOf(b,source.indexOf(a)));
-const run=(code,globals={},names='')=>vm.runInContext(code+`\n({${names}})`,vm.createContext(globals));
+const run=(code,globals={},names='')=>vm.runInContext(code+`\n({${names}})`,vm.createContext({BACKGROUND:null,MODEL_ONLY:false,WORKER_PRESENTATION:{events:[]},...globals}));
 
 test('emit admits one authoritative event and projects that same object once',()=>{
   const src=region('function emit(cat,pri,pos,text,opts){','function referenceRegex(');
   const events=[],calls=[];
-  const c=vm.createContext({MODEL_ONLY:false,W:{prehistory:false,houses:[]},day:()=>12,allLines:[],entryCount:0,dateStr:d=>`d${d}`,
+  const c=vm.createContext({BACKGROUND:null,MODEL_ONLY:false,W:{prehistory:false,houses:[]},day:()=>12,allLines:[],entryCount:0,dateStr:d=>`d${d}`,
     HISTORY:{event:(kind,payload)=>events.push([kind,payload])},
     document:{},chronicleAdd:ev=>calls.push(ev),director:{push:ev=>calls.push(ev)},fxEvent:ev=>calls.push(ev)});
   vm.runInContext(src+'\n({emit})',c);

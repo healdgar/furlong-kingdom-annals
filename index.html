@@ -1916,7 +1916,7 @@ function wallKindAt(s,a){if(!s.wallKind)return 0;const n=s.wallKind.length,f=((a
 function fortCenter(c){return c.pos||c;}
 function fortPoint(s,c,a){const C=fortCenter(c),r=wallRadAt(c,a);return{x:C.x+Math.cos(a)*r,z:C.z+Math.sin(a)*r,a,r};}
 function fortCircuits(s){const out=[];if(s.wallRad)out.push(s);if(s.cas&&s.cas.outerWall&&!s.cas.outerWall.razed)out.push(s.cas.outerWall);const R=casRing(s);if(R&&!R.razed)out.push(R);if(s.motte&&!s.motte.razed)out.push(s.motte);return out;}
-function fortGateAngles(s,c,population){if(c!==s)return c.gates||[c.gateA??Math.atan2(s.pos.z-c.z,s.pos.x-c.x)];const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);return s._gates&&s._gatesK===key?s._gates:wallGates(s,population);}
+function fortGateAngles(s,c,population){if(BACKGROUND&&s.renderGates&&c===s)return s.renderGates;if(c!==s)return c.gates||[c.gateA??Math.atan2(s.pos.z-c.z,s.pos.x-c.x)];const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);return s._gates&&s._gatesK===key?s._gates:wallGates(s,population);}
 function settleFortGates(s){if(!s.wallRad)return;const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);if(!s._gates||s._gatesK!==key){s._gates=wallGates(s);s._gatesK=key;}}
 function fortRoadBlocked(s,x,z,pad=0){ // roads and walkers share the actual curtain and its authorised apertures
   for(const c of fortCircuits(s)){if(c.razed||!c.wallRad)continue;const C=fortCenter(c),d=dist2d(x,z,C.x,C.z);if(d>(c.wallR||Math.max(...c.wallRad))+1.3+pad)continue;
@@ -6282,7 +6282,7 @@ function planBarHTML(){const P=planUI;if(!P)return;const who=P.payer>0?W.houses[
   if(mine.length)x+=`<div class="pbworks">${mine.map(q=>`${esc(q.title)} — ${q.stalled?'<span class="pbno">halted</span>':q.stage==='buy'?`buying out (${q.hit.filter(b=>b.removed).length}/${q.hit.length})`:`building ${Math.round(q.done*100)}%`}`).join('<br>')}</div>`;
   const D=P.draft;
   if(D){x+=`<div class="pbcard">${D.ok?`<b>${esc(D.title)}</b><br>${D.lines.map(esc).join('<br>')}<br><b>${D.total.toLocaleString()} gold</b> over about ${D.days} days, paid as the works go`
-      +`<div class="pbrow"><button class="pbb go" data-pb="go"${purse(P.payer)<D.first?' disabled':''}>Commission</button><button class="pbb" data-pb="no">Discard</button></div>`:`<span class="pbno">${esc(D.why)}</span>`}</div>`;}
+      +`<div class="pbrow"><button class="pbb go" data-pb="go"${!backgroundUserRequest()&&purse(P.payer)<D.first?' disabled':''}>Commission</button><button class="pbb" data-pb="no">Discard</button></div>`:`<span class="pbno">${esc(D.why)}</span>`}</div>`;}
   setHTML(document.getElementById('planbar'),x);}
 function planCmd(k){const P=planUI;if(!P)return;
   if(k==='x'){planClose();return;}
@@ -6297,7 +6297,9 @@ function planDraw(){const P=planUI;if(!P||!P.stroke||P.stroke.length<2)return;if
   m.renderOrder=9;P.line=m;scene.add(m);}
 function planDown(e){const p=groundPoint(e);if(!p)return false;planClear();planUI.draft=null;planUI.stroke=[{x:p.x,z:p.z}];planUI.painting=true;return true;}
 function planMove(e){const p=groundPoint(e),S=planUI.stroke;if(!p||!S)return;const l=S[S.length-1];if(dist2d(l.x,l.z,p.x,p.z)<3)return;S.push({x:p.x,z:p.z});planDraw();}
-function planUp(){const P=planUI;P.painting=false;if(!P.stroke||P.stroke.length<3){planClear();return;}planDraw();P.draft=planDraft(P.brush,P.stroke,P.payer);planBarHTML();}
+function planUp(){const P=planUI;P.painting=false;if(!P.stroke||P.stroke.length<3){planClear();return;}planDraw();
+  if(backgroundUserRequest()){const stroke=P.stroke,request={kind:P.brush,st:stroke.map(q=>({x:+q.x.toFixed(2),z:+q.z.toFixed(2)})),p:P.payer};workerPlanQuote(request).then(D=>{if(planUI===P&&P.stroke===stroke){P.draft=D;planBarHTML();}}).catch(e=>{if(planUI===P&&P.stroke===stroke){P.draft={ok:false,why:String(e.message||e)};planBarHTML();}});return;}
+  P.draft=planDraft(P.brush,P.stroke,P.payer);planBarHTML();}
 function rayPolyR(poly,cx,cz,a){const dx=Math.cos(a),dz=Math.sin(a);let best=0; // the farthest crossing of a ray from (cx,cz) with a closed loop
   for(let i=0,j=poly.length-1;i<poly.length;j=i++){const p=poly[j],q=poly[i],ex=q.x-p.x,ez=q.z-p.z,den=dx*ez-dz*ex;if(Math.abs(den)<1e-9)continue;
     const t=((p.x-cx)*ez-(p.z-cz)*ex)/den,u=((p.x-cx)*dz-(p.z-cz)*dx)/den;if(t>0&&u>=0&&u<=1)best=Math.max(best,t);}return best;}
@@ -6426,7 +6428,24 @@ function planDraft(kind,stroke,payer){
     return{ok:true,kind,si,grid:lines,hit,comp,land:land.c,works,total,first:Math.min(total,land.c),days:Math.round(60+len/6),
       title:`A new quarter at ${s.name}: ${lines.length} streets, ${Math.round(len)} m`,lines:[`ground bought: ${land.c.toLocaleString()} gold`,hit.length?`${hit.length} house${hit.length===1?'':'s'} in the way: ${comp.toLocaleString()}`:'',`surveying and laying the streets: ${works.toLocaleString()}`,'plots to be taken up by settlers as the town grows'].filter(Boolean)};}
   return no('Unknown brush.');}
-function planCommit(D,payer){const s=W.settlements[D.si],L=s._lay.live;
+function backgroundUserRequest(){return !MODEL_ONLY&&typeof BACKGROUND!=='undefined'&&BACKGROUND&&!(typeof backgroundApplying!=='undefined'&&backgroundApplying);}
+function workerCommandIsLocal(cmd,arg){
+  if(['a-order','a-road','a-raft','a-objective','notable','army','s-manage','storage-pick'].includes(cmd))return true;
+  if(cmd==='decree')return !!DECREES.find(d=>d.k===arg)?.place;
+  if(cmd==='lord')return ['ledger','goto','plan','seize','road','pave','village'].includes(String(arg||'').split(':')[0]);
+  return false;
+}
+async function workerPlanQuote(payload){
+  const reply=await BACKGROUND.request('view',{kind:'plan-quote',kindName:payload.kind,st:payload.st,p:payload.p});
+  if(!reply||typeof reply.ok!=='boolean')throw Error('The surveyors could not price that plan');return reply;
+}
+function planCommit(D,payer){
+  if(backgroundUserRequest()){
+    const stroke=planUI?.stroke;
+    if(!stroke?.length)throw Error('The plan brush has no committed stroke');
+    return workerSubmitCommand({k:'plan',kind:D.kind,st:stroke.map(q=>({x:+q.x.toFixed(2),z:+q.z.toFixed(2)})),p:payer});
+  }
+  const s=W.settlements[D.si],L=s._lay.live;
   const q={type:'plan',kind:D.kind,si:D.si,payer:payer!=null?payer:planUI?planUI.payer:s.owner,title:D.title,hit:D.hit.slice(),comp:D.comp,land:D.land,works:D.works,total:D.total,days:D.days,
     paid:0,done:0,stage:'buy',next:day()+3,landPaid:!D.land,start:day()};
   if(D.kind==='street')q.st=L.planStreet(D.pts,true);
@@ -6549,12 +6568,13 @@ function endGame(kind,hi,P,L){const C=W.camp;C.over=true;C.result={kind,hi,path:
     :`The years are told: AD ${AD()}. ${mine?'Your house stands highest in the chronicle.':`${who} stands highest in the chronicle; your house is outweighed.`}`;
   const rows=(L||liveHouses().map(h=>[h,legacyOf(h)]).sort((a,b)=>b[1]-a[1])).slice(0,8).map(([h,v])=>`<tr${h===me?' class="me"':''}><td>${esc(h===0?W.houses[0].name+' (the crown)':W.houses[h].name)}</td><td>${v}</td></tr>`).join('');
   emit('crown',10,W.capital.pos,`${title}. ${text}`);
-  if(MODEL_ONLY)return;
-  const el=document.getElementById('endgame');if(!el)return;
-  setHTML(el,`<div class="egbox"><h2>${esc(title)}</h2><p>${esc(text)}</p><table class="egt"><tr><th>House</th><th>Legacy</th></tr>${rows}</table>
+  const html=`<div class="egbox"><h2>${esc(title)}</h2><p>${esc(text)}</p><table class="egt"><tr><th>House</th><th>Legacy</th></tr>${rows}</table>
     <p class="egach">${achList().filter(a=>W.player.ach&&W.player.ach[a.id]).map(a=>`<span class="achip${a.pts<0?' bad':''}">${esc(a.n)}</span>`).join(' ')||'No deeds remembered.'}</p>
-    <div class="egbtns"><button class="pbb" data-eg="on">Play on</button><button class="pbb" data-eg="close">Close</button></div></div>`);
-  el.style.display='flex';setSpeed(0);}
+    <div class="egbtns"><button class="pbb" data-eg="on">Play on</button><button class="pbb" data-eg="close">Close</button></div></div>`;
+  setSpeed(0);
+  if(MODEL_ONLY){WORKER_PRESENTATION.endgame=html;return;}
+  presentEndgame(html);}
+function presentEndgame(html){const el=document.getElementById('endgame');if(el){setHTML(el,html);el.style.display='flex';}}
 /* deeds, good and ill: remembered in this game, and across games in this browser */
 const ACH=[
   ['spire','A spire for leagues','a church of yours raises a stone spire',8,()=>mineT().some(b=>b.ch&&b.ch.spire===2)],
@@ -6588,7 +6608,7 @@ function mineT(){const T=[];for(const s of mineS())for(const b of s.buildings)if
 function seatOf(){const me=campHouse();return me===0?W.capital:W.settlements[W.houses[me].seat]&&W.settlements[W.houses[me].seat].owner===me?W.settlements[W.houses[me].seat]:mineS()[0];}
 function achPoints(){const A=W.player&&W.player.ach||{};return achList().reduce((t,a)=>t+(A[a.id]?a.pts:0),0);}
 function achGet(id){const P=W.player;if(!P||!P.on||!W.camp||W.camp.over)return;P.ach=P.ach||{};if(P.ach[id])return;const a=achList().find(x=>x.id===id);if(!a)return;
-  P.ach[id]=AD();try{const K='furlong-ach',S=JSON.parse(localStorage.getItem(K)||'{}');if(!S[id])S[id]=AD();localStorage.setItem(K,JSON.stringify(S));}catch(e){}
+  P.ach[id]=AD();if(MODEL_ONLY&&WORKER_PRESENTATION.profile){const profile=WORKER_PRESENTATION.profile;if(!profile.achievements[id]){profile.achievements[id]=AD();WORKER_PRESENTATION.profileDirty=true;}}else try{const K='furlong-ach',S=JSON.parse(localStorage.getItem(K)||'{}');if(!S[id])S[id]=AD();localStorage.setItem(K,JSON.stringify(S));}catch(e){}
   emit(a.pts<0?'fates':'crown',6,seatOf()?.pos||W.capital.pos,`${a.pts<0?'Infamy':'A deed remembered'} — ${a.n}: ${a.d}. (${a.pts>0?'+':''}${a.pts} legacy)`);}
 function achYear(){if(!W.player||!W.player.on)return;const P=W.player;P.st=P.st||{};
   if(!P.achBase){P.achBase={};for(const a of achList())if(a.t){try{if(a.t())P.achBase[a.id]=1;}catch(e){}}return;} // what stood already when the game began is inherited, not earned
@@ -6751,7 +6771,7 @@ function rebuildDetails(){
       const yard=b._graveyard;
       if(yard&&!yard.removed&&!b.castle&&!b.friary){const N=yard.poly?.length||0;
         if(yard.adjunct&&N>2)for(let j=0;j<N;j++){const a=yard.poly[j],q=yard.poly[(j+1)%N],dx=q.x-a.x,dz=q.z-a.z,L=Math.hypot(dx,dz),n=Math.max(1,Math.ceil(L/2.4));for(let k=0;k<n;k++){const t=(k+0.5)/n,X=a.x+dx*t,Z=a.z+dz*t;put('box',X,hAt(X,Z)+0.28,Z,Math.atan2(dz,dx),L/n+0.08,0.56,0.42,0x777267,3);}}
-        const graves=graveyardMarkers(yard,graveyardBurials(b.s,b).length);for(const g of graves){const gy=hAt(g.x,g.z);if(g.kind==='tomb')put('box',g.x,gy+0.18,g.z,g.rot,1.05,0.28,0.68,0x89857b,3);else put('box',g.x,gy+0.52,g.z,g.rot,0.76,0.92,0.22,0xaaa69b,3);}
+        const graves=graveyardMarkers(yard,BACKGROUND?b._graveCount:graveyardBurials(b.s,b).length);for(const g of graves){const gy=hAt(g.x,g.z);if(g.kind==='tomb')put('box',g.x,gy+0.18,g.z,g.rot,1.05,0.28,0.68,0x89857b,3);else put('box',g.x,gy+0.52,g.z,g.rot,0.76,0.92,0.22,0xaaa69b,3);}
       }
     }else if(b.arch==='keep'&&b.motte){ // a timber tower: a steep shingled roof and a fighting gallery
       const[x,z]=at(b,0,0);put('box',x,b.y+h*0.78,z,b.rot,b.w*1.25,1.2,b.d*1.25,0x5f4630);put('pyr',x,b.y+h,z,b.rot,b.w*1.3,h*0.55,b.d*1.3,0x4a3a2a);
@@ -7269,7 +7289,7 @@ function buildTracks(){
 function projectTracks(){
   G.tracksDirty=false;const T=W.tg,used=W.trackSet;
   if(G.trackMesh){scene.remove(G.trackMesh);G.trackMesh.geometry.dispose();}
-  const pos=[];for(const k of used){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b],L=e.L,n=Math.max(1,Math.ceil(L/8)),ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L,hw=1.2;
+  const pos=[];for(const e of W.renderTracks||(used?[...used].map(k=>{const q=T.E.get(k);return{a:T.pts[q.a],b:T.pts[q.b],L:q.L};}):[])){const A=e.a,Bp=e.b,L=e.L,n=Math.max(1,Math.ceil(L/8)),ux=(Bp.x-A.x)/L,uz=(Bp.z-A.z)/L,hw=1.2;
     for(let q=0;q<n;q++){const t0=q/n,t1=(q+1)/n,x0=A.x+(Bp.x-A.x)*t0,z0=A.z+(Bp.z-A.z)*t0,x1=A.x+(Bp.x-A.x)*t1,z1=A.z+(Bp.z-A.z)*t1,y0=hAt(x0,z0)+0.18,y1=hAt(x1,z1)+0.18;
       pos.push(x0-uz*hw,y0,z0+ux*hw, x0+uz*hw,y0,z0-ux*hw, x1+uz*hw,y1,z1-ux*hw, x0-uz*hw,y0,z0+ux*hw, x1+uz*hw,y1,z1-ux*hw, x1-uz*hw,y1,z1+ux*hw);}}
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.computeVertexNormals();
@@ -7303,7 +7323,7 @@ function prepareTrackBridges(){
   W.trackBridgePlan=plan;
 }
 function riverSurf(x,z){let y=-1e9;if(!W.rivHash)return y;for(const o of W.rivHash.near(x,z,40))if(segDist(x,z,o.a,o.b)<o.hw+3)y=Math.max(y,o.y);return y;} // the water's surface where a stream runs
-function trackAt(x,z,tol){if(!W.trackSet||!W.tg)return false;const T=W.tg;for(const k of W.trackSet){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b];if(segDist(x,z,A,Bp)<tol)return true;}return false;}
+function trackAt(x,z,tol){if(BACKGROUND)return(W.renderTracks||[]).some(e=>segDist(x,z,e.a,e.b)<tol);if(!W.trackSet||!W.tg)return false;const T=W.tg;for(const k of W.trackSet){const e=T.E.get(k),A=T.pts[e.a],Bp=T.pts[e.b];if(segDist(x,z,A,Bp)<tol)return true;}return false;}
 function rebuildFences(){
   if(!W.land)return;
   if(!G.fenceWood)return;G.fenceDirty=false; // price() and furlongPoly() populate simulation caches: keep their original boundary
@@ -7315,7 +7335,7 @@ function prepareFences(){
   for(const f of W.land.F)if(fenceWorked(f)){furlongPoly(f);fenceStone(W.settlements[f.dom]);}
 }
 function fenceStoneView(s){return !!s&&((s.res&&s.res.stone>=6)||(s.px?.stone??price0(s,'stone'))<(s.px?.timber??price0(s,'timber'))*0.7);}
-function projectFences(){
+function projectFences(){if(BACKGROUND)return projectTransportFences();
   const F=W.land.F,mask=W.land.mask,worked=fenceWorked;let nw=0,ns=0;
   for(const f of F){if(!worked(f))continue;const P=f.poly||computeFurlongPoly(f),s=W.settlements[f.dom],stone=fenceStoneView(s),M=stone?G.fenceStone:G.fenceWood;
     for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?F[a.nb]:null;
@@ -7338,7 +7358,7 @@ function setFurlong(f,state){
 const treeSY=(k,v)=>k==='pine'?1+v*0.4:k==='small'?0.9+v*0.35:0.9+v*0.3;
 const treeSX=(k,v)=>k==='pine'?0.95+v*0.1:0.72+v*0.48;
 const treeSZ=(k,v)=>k==='pine'?1.05-v*0.1:1.24-v*0.48;
-function queueTree(t){if(G.treeInstances)(G.treesDirty||(G.treesDirty=new Set())).add(t);}
+function queueTree(t){if(MODEL_ONLY||G.treeInstances)(G.treesDirty||(G.treesDirty=new Set())).add(t);}
 function showTree(t,on){
   const v=G.treeInstances?.get(t),m=v?.m,vis=!!on&&!t.cut;if(!m)return;
   if(G.feat&&(v.shown!==false)!==vis)featTree(t,vis?1:-1);v.shown=vis;
@@ -7715,7 +7735,7 @@ function featFlush(now,catchUp=false){ // apply pending changes a few tiles at a
    the host moves on, unless the lord plants a fort there, and then the fort's
    people take it up. Every house keeps a standing host at its seat, and
    neighbours with grudges and land-hunger fight private wars over the border. */
-function writeLord(f){if(G.landView)(G.landDirty||(G.landDirty=new Set())).add(f);}
+function writeLord(f){if(MODEL_ONLY||G.landView)(G.landDirty||(G.landDirty=new Set())).add(f);}
 function projectLord(f){
   if(!W.land||!G.landView?.lordTex)return;const d=G.landView.lordTex.image.data,o=f.k*4;
   if(overlayMode==='tongue'){const s=f.dom>=0?W.settlements[f.dom]:null;d[o]=s&&s.cult?TONGUE_IDS.indexOf(s.cult)+1:0;d[o+1]=0;}
@@ -7725,7 +7745,7 @@ function projectLord(f){
    young wood by the twentieth; the wood also creeps out into abandoned ground beside it. Commons that a
    village still grazes stay open. */
 function sapling(f,on){
-  if(!on){for(const t of f.sap||[]){if(G.regrow)(G.sapRemoved||(G.sapRemoved=[])).push(t);W.sapFree.push(t.i);}f.sap=null;return;}
+  if(!on){for(const t of f.sap||[]){if(G.regrow)(G.sapRemoved||(G.sapRemoved=[])).push(t);W.sapFree.push(t.i);}f.sap=null;if(MODEL_ONLY)(G.landDirty||(G.landDirty=new Set())).add(f);return;}
   if(f.sap)return;f.sap=[];
   for(let k=0;k<40&&f.sap.length<14&&W.sapFree.length;k++){
     const x=f.x+(rand('sim')-0.5)*FG*0.9,z=f.z+(rand('sim')-0.5)*FG*0.9,c=cIdx(toCell(x),toCell(z));
@@ -7734,7 +7754,7 @@ function sapling(f,on){
   }
   growSaplings(f);
 }
-function growSaplings(f){if(G.regrow)(G.sapDirty||(G.sapDirty=new Set())).add(f);}
+function growSaplings(f){if(MODEL_ONLY)(G.landDirty||(G.landDirty=new Set())).add(f);else if(G.regrow)(G.sapDirty||(G.sapDirty=new Set())).add(f);}
 function projectSaplings(f){
   if(!f.sap||!G.regrow)return;const age=(day()-(f.wild0??day()))/360,g=clamp(0.18+age/20*0.82,0.18,1); // twenty years from thorn to wood
   for(const t of f.sap){G.regrow.count=Math.max(G.regrow.count,t.i+1);const v=hash01(t.x*3.1+t.z*7.7);setInst(G.regrow,t.i,t.x,hAt(t.x,t.z)-0.3,t.z,t.x,t.s*g*treeSX('dec',v),t.s*g*(0.8+0.3*g),t.s*g*treeSZ('dec',v));
@@ -7875,7 +7895,7 @@ function markChurchyardBuilt(s,yard){ // reserve intersected 15 m land cells and
     const x=cellX(cx),z=cellZ(cz);if(!hit(cx,cz))continue;
     const i=cIdx(cx,cz);if(mask[i*4+2]!==255){mask[i*4+2]=255;const f=furlongAt(x,z);if(f)affected.add(f);}
   }
-  for(const f of affected)refreshArea(f);if(affected.size&&G.landView?.maskTex)G.landMaskDirty=true;
+  for(const f of affected)refreshArea(f);if(affected.size&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;
   const R=Math.max(x1-x0,z1-z0)/2+3;if(W.treeHash)for(const t of W.treeHash.near((x0+x1)/2,(z0+z1)/2,R))if(!t.cut&&inPolyXZ(P,t.x,t.z)){t.cut=true;queueTree(t);}
 }
 function finishChurchyard(s,b,addStreet){const yard=b?._graveyard;if(!yard||yard.removed||!W.land?._surveyed||!b.lot?.length)return;
@@ -7889,7 +7909,7 @@ function grazeOK(x,z){const c=cIdx(toCell(x),toCell(z)),m=W.land.mask;return !re
 /* the herds on the map: each town's beasts in flocks of their own kind — sheep on the widest pasture, cattle near the
    village, swine in the wood, horses in the paddock by the town, and after harvest the flocks go onto the stubble.
    A flock keeps together and wanders its field as it grazes, inside the fence; click a beast to learn whose it is. */
-function renderHerds(){ // which flocks, in which fields: only the places about the eye, since a beast is too small to see from further off
+function renderHerds(){if(BACKGROUND){workerRefreshActors(true);return;} // which flocks, in which fields: only the places about the eye, since a beast is too small to see from further off
   if(!G.herdMesh||!W.land)return;const mon=(day()/30|0),stub=seasonIdx()>=2,fc=cam.cur.focus,RR=Math.max(1800,cam.cur.dist*2.5);G.flocks=[];
   G.herdsDirty=false;G._hPlan={x:fc.x,z:fc.z,t:performance.now(),R:RR};
   W.settlements.forEach((s,si)=>{if(!s.hm||dist2d(s.pos.x,s.pos.z,fc.x,fc.z)>RR+(s.radius||80)+FG*3)return;const F=(s.furl||[]).filter(f=>f.dom===si);
@@ -8126,7 +8146,7 @@ function spawnCarts(c){
   if(boat&&T.filter(t=>t.info.sea===c.sea&&t.info.river===c.river&&(t.info.sea||t.info.river)).length>=8)return;
   const len=polyLen(c.poly);if(!(len>1))return;
   for(let k=0;k<n;k++)T.push({cons:c,poly:c.poly,len,offset:-k*15-Math.random()*6,spd:len/Math.max(0.2,c.arriveDay-c.departDay)*(0.95+0.1*Math.random()*0.2),
-    info:{origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
+    info:{renderIndex:c.renderIndex,renderKey:c.renderKey,origin:c.origin,dest:c.dest,good:c.good,qty:c.qty/n,value:c.value/n,sea:!!c.sea,river:!!c.river,gone:false},proxy:null});
 }
 function ensureCaravanDisplay(c){const spawned=G.cartSpawned||(G.cartSpawned=new WeakSet());if(spawned.has(c))return;spawned.add(c);spawnCarts(c);}
 function trafficDistance(t,now=displayDay()){
@@ -8382,7 +8402,8 @@ function prodSprite(p,mx,s){
   const CW=8+GOODS.length*23,c=document.createElement('canvas');c.width=CW*2;c.height=208;const g=c.getContext('2d');g.scale(2,2); // drawn at twice the size, so it stays crisp enlarged
   g.fillStyle='rgba(233,220,195,0.9)';g.fillRect(0,0,CW,104);g.strokeStyle='#2B2320';g.lineWidth=2;g.strokeRect(1,1,CW-2,102);
   g.fillStyle='#2B2320';g.font='13px Georgia,serif';g.textAlign='center';g.fillText(s.name,CW/2,15);
-  GOODS.forEach((k,i)=>{const x=8+i*23,h=Math.max(1,Math.sqrt(p[k]/mx[k])*56),st=clamp((s.stores[k]||0)/Math.max(1,detailPopulation(s)*0.6),0,1)*56;
+  const stores=BACKGROUND?G.overlayData.stores[W.settlements.indexOf(s)]:s.stores;
+  GOODS.forEach((k,i)=>{const x=8+i*23,h=Math.max(1,Math.sqrt(p[k]/mx[k])*56),st=clamp((stores[k]||0)/Math.max(1,detailPopulation(s)*0.6),0,1)*56;
     g.fillStyle=GOODCOL[k];g.fillRect(x,82-h,16,h);g.fillStyle='rgba(43,35,32,0.8)';g.fillRect(x+17,82-st,3,st);
     g.fillStyle='#2B2320';g.font='10px Georgia,serif';g.fillText(k[0].toUpperCase()+k.slice(1,4),x+9,97);});
   const t=new THREE.CanvasTexture(c),sp=new THREE.Sprite(new THREE.SpriteMaterial({map:t,depthTest:false,transparent:true,sizeAttenuation:false}));
@@ -8405,8 +8426,9 @@ function setOverlay(mode){
   refreshOverlayNow(); // the player chose it: at once
 }
 function refreshOverlay(){G.ovDirty=true;} // the simulation asks; the frame loop redraws at most every 1.5 s
-function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
+function refreshOverlayNow(transported=false){G.ovDirty=false;G.ovT=performance.now();
   if(!overlayMode)return;
+  if(BACKGROUND&&!transported&&['trade','value','production','landuse'].includes(overlayMode)){const mode=overlayMode;return workerQuery('overlay:'+mode,{kind:'overlay',mode},data=>{if(overlayMode===mode){G.overlayData=data;refreshOverlayNow(true);}});}
   if(G.overlay){scene.remove(G.overlay);disposeTree(G.overlay);} // materials leaked every refresh before
   const grp=new THREE.Group();
   const disc=(s,color,op,rad)=>{
@@ -8462,17 +8484,17 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
     el.innerHTML='<b class="lh">Tongues</b>'+Object.entries(by).sort((p,q)=>q[1].pop-p[1].pop).map(([k,o])=>`<div class="li"><i style="background:#${new THREE.Color(TONGUE_PAL[k]||0x888888).getHexString()}"></i>${CULT[k].name} <small>· ${o.n} place${o.n===1?'':'s'}, ${Math.round(o.pop).toLocaleString()} souls</small></div>`).join('')
       +(mixed.length?`<div style="margin-top:6px;font-size:12px"><b>Two tongues</b>: ${mixed.slice(0,6).map(s=>{const M=tongueMix(s);return esc(s.name)+' ('+Object.keys(M).filter(k=>M[k]>0.2).map(k=>CULT[k].name+' '+Math.round(M[k]*100)+'%').join(', ')+')';}).join('; ')}</div>`:'');}
   else if(overlayMode==='trade'){ // the realm's traffic: each road as wide as its share of all journeys between places; sea lanes and river barges in blue
-    const T=roadTraffic();
+    const T=BACKGROUND?G.overlayData.traffic:roadTraffic();
     W.roads.forEach((r,ri)=>{const t=Math.sqrt(T[ri]||0);ribbon(r.path,5+t*20,new THREE.Color().setHSL(0.15-t*0.15,0.9,0.5).getHex(),0.6+t*0.35);});
     const seen=new Set();
     for(const c of W.caravans){if(!(c.sea||c.river)||!c.poly)continue;const k=c.origin+'_'+c.dest+(c.sea?'s':'r');if(seen.has(k))continue;seen.add(k);
       ribbon(c.poly,c.sea?5:3,c.sea?0x2f6fb0:0x4aa0c8,0.55,c.sea?SEA+1.5:null);}
-    for(const k in W.seaRoutes||{}){const r=W.seaRoutes[k];if(r&&!seen.has(k)){seen.add(k);ribbon(r.poly,3,0x2f6fb0,0.3,SEA+1.2);}}
+    const seaRoutes=BACKGROUND?G.overlayData.seaRoutes:W.seaRoutes;for(const k in seaRoutes||{}){const r=seaRoutes[k];if(r&&!seen.has(k)){seen.add(k);ribbon(r.poly,3,0x2f6fb0,0.3,SEA+1.2);}}
   }else if(overlayMode==='value'){ // property: what each house would let for; land: what each furlong yields and how near a buyer
-    const pv=W.bldList.map(b=>b.state==='sound'&&!b.removed?propValue(b):0),srt=pv.filter(v=>v>0).sort((a,b)=>a-b),top=srt[Math.floor(srt.length*0.97)]||1;
+    const pv=BACKGROUND?G.overlayData.buildings:W.bldList.map(b=>b.state==='sound'&&!b.removed?propValue(b):0),srt=pv.filter(v=>v>0).sort((a,b)=>a-b),top=srt[Math.floor(srt.length*0.97)]||1;
     W.bldList.forEach((b,i)=>{if(b.idx===undefined||!pv[i])return;const c=heatColor(pv[i]/top);G.bodies.setColorAt(b.idx,c);G.roofs.setColorAt(b.idx,c);});
     if(G.bodies.instanceColor)G.bodies.instanceColor.needsUpdate=true;if(G.roofs.instanceColor)G.roofs.instanceColor.needsUpdate=true;
-    if(W.land){const F=W.land.F,lv=F.map(landValue),mx=Math.max(1e-6,...lv),d=G.landView.lordTex.image.data;F.forEach((f,k)=>d[f.k*4+2]=Math.round(clamp(lv[k]/mx,0,1)*255));G.landView.lordTex.needsUpdate=true;}
+    if(W.land){const F=W.land.F,lv=BACKGROUND?G.overlayData.land:F.map(landValue),mx=Math.max(1e-6,...lv),d=G.landView.lordTex.image.data;F.forEach((f,k)=>d[f.k*4+2]=Math.round(clamp(lv[k]/mx,0,1)*255));G.landView.lordTex.needsUpdate=true;}
     { // each town lot washed in its own worth, fenced line to fenced line
       const pos=[],col=[];W.bldList.forEach((b,i)=>{if(!b.lot||b.lot.length<3||!pv[i])return;const c=heatColor(pv[i]/top),P=b.lot,y=q=>hAt(q.x,q.z)+0.7;
         for(let k=1;k<P.length-1;k++)for(const q of[P[0],P[k],P[k+1]]){pos.push(q.x,y(q),q.z);col.push(c.r,c.g,c.b);}});
@@ -8481,13 +8503,13 @@ function refreshOverlayNow(){G.ovDirty=false;G.ovT=performance.now();
   }else if(overlayMode==='landuse'){ // what the land is doing: corn, hay, vines, gardens, pasture, wood, scrub, burnt ground; the lords' home farms hatched
     const ha=new Array(10).fill(0);let dem=0;
     if(W.land){const d=G.landView.lordTex.image.data;for(const f of W.land.F){const u=landUse(f),dm=f.ten==='demesne'&&f.state===LS.TILLED?16:0;d[f.k*4+3]=u+dm;ha[u]+=f.area/1e4;if(dm)dem+=f.area/1e4;}G.landView.lordTex.needsUpdate=true;}
-    const beasts={sheep:0,cattle:0,swine:0,horses:0};for(const t of W.settlements)for(const k in beasts)beasts[k]+=t.stores[k]||0;
+    const beasts=BACKGROUND?G.overlayData.beasts:{sheep:0,cattle:0,swine:0,horses:0};if(!BACKGROUND)for(const t of W.settlements)for(const k in beasts)beasts[k]+=t.stores[k]||0;
     let el=document.getElementById('terrlegend');if(!el){el=document.createElement('div');el.id='terrlegend';document.body.appendChild(el);}
     el.innerHTML='<b class="lh">Land use</b>'+LANDUSE.map((u,i)=>i&&ha[i]>=0.5?`<div class="li"><i style="background:${u[1]}"></i>${u[0]} <small>· ${Math.round(ha[i]).toLocaleString()} ha${i===1&&dem>=0.5?`, ${Math.round(dem).toLocaleString()} of it the lords' home farms (hatched)`:''}</small></div>`:'').join('')
       +`<div style="font-size:11px;opacity:.8;margin-top:4px">At grass: ${Object.entries(beasts).filter(([,v])=>v>=1).map(([k,v])=>Math.round(v).toLocaleString()+' '+k).join(', ')||'no beasts'}</div>`;
     if(narrowUI()&&!document.getElementById('drawer').classList.contains('closed'))el.classList.add('min');
   }else if(overlayMode==='production'){ // what each place brings forth in a year, and what it holds in store
-    const P=W.settlements.map(prodOf),mx={};for(const g of GOODS)mx[g]=Math.max(1e-6,...P.map(p=>p[g]));
+    const P=BACKGROUND?G.overlayData.production:W.settlements.map(prodOf),mx={};for(const g of GOODS)mx[g]=Math.max(1e-6,...P.map(p=>p[g]));
     G.prodSprites=[];W.settlements.forEach((s,si)=>{const sp=prodSprite(P[si],mx,s);sp.position.set(s.pos.x,s.pos.y+(s.kind==='village'?70:110),s.pos.z);grp.add(sp);});
   }else if(overlayMode==='prosperity'){
     for(const s of W.settlements)disc(s,new THREE.Color().setHSL(clamp(s.prosperity/100,0,1)*0.33,0.8,0.5).getHex(),0.4);
@@ -8768,7 +8790,7 @@ function onClick(e){
     const p=groundPoint(e),mode=placeMode,arg=placeArg;
     setPlaceMode(null);
     if(p){let pkA=null;if(mode==='order'){const pk=resolvePick(e.clientX,e.clientY);if(pk&&pk.type==='army'&&pk.a)pkA=pk.a.id;}else if(mode==='objective')pkA=armyObjectivePick(resolvePick(e.clientX,e.clientY),p,arg.kind);
-      if(mode!=='storage')jot({k:'place',m:mode,x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA});doPlace(mode,arg,p,pkA);}
+      if(mode!=='storage')jot({k:'place',m:mode,a:serializePlaceArg(mode,arg),x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA});doPlace(mode,arg,p,pkA);}
     return;
   }
   const m=new THREE.Vector2((e.clientX/innerWidth)*2-1,-(e.clientY/innerHeight)*2+1);
@@ -8779,6 +8801,7 @@ function onClick(e){
   {const pk=resolvePick(e.clientX,e.clientY);if(pk)showInspect(pk);else{hideInspect();if(cam.follow)cam.follow=null;}return;}
 }
 function doPlace(mode,arg,p,pkA){ // a click on the map in a placing mode: the same in play and when a save is read again
+      if(backgroundUserRequest()&&mode!=='storage')return workerSubmitCommand({k:'place',m:mode,a:serializePlaceArg(mode,arg),x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:pkA??null});
       if(mode==='storage'){storagePreview(arg.si,arg.arch,p.x,p.z);return;}
       if(mode==='objective'){
         const a=W.armies.find(x=>x.id===arg.id&&!x.gone),t=pkA,kind=arg.kind,s=t&&W.settlements[t.si];
@@ -8924,7 +8947,7 @@ function resolvePick(cx,cy){ // what is under the cursor? returns a pick record 
 }
 function groundPick(x,z){ // what lies on the ground here: a wall, a road or street, a river, or else the land itself
   for(const s of W.settlements)for(const c of fortCircuits(s)){const C=fortCenter(c),a=Math.atan2(z-C.z,x-C.x);if(wallKindAt(c,a)!==1&&Math.abs(dist2d(x,z,C.x,C.z)-wallRadAt(c,a))<3+PICK_SLACK)return{type:'wall',s,circuit:c};}
-  for(const s of W.settlements){const near=s._lay?.placed?.near(x,z,1)||[];for(const yard of near)if(yard.arch==='churchyard'&&!yard.removed&&yard.poly&&inPolyXZ(yard.poly,x,z))return{type:'churchyard',s,b:yard.churchyardOf,yard};}
+  for(const s of W.settlements)for(const b of s.buildings||[]){const yard=b._graveyard;if(yard&&!yard.removed&&yard.poly&&inPolyXZ(yard.poly,x,z))return{type:'churchyard',s,b,yard};}
   for(const s of W.settlements)for(const st of s.streets||[]){if(st.hidden||st.kind==='edge')continue;const P=st.pts;
     for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<st.hw+1.5+PICK_SLACK)return{type:'street',s,st};}
   for(const r of W.roads){const P=r.drawn||r.path;for(let k=0;k<P.length-1;k++)if(segDist(x,z,P[k],P[k+1])<5.5+PICK_SLACK)return{type:'road',r};}
@@ -8942,6 +8965,11 @@ function riverName(st){ // rivers are named from the land they drain, the same n
   return name[0].toUpperCase()+name.slice(1);
 }
 let placeArg=null;
+function serializePlaceArg(mode,arg){
+  if(!arg)return null;
+  if(['order','objective','supplyroad','raft'].includes(mode))return mode==='objective'?{id:arg.id,kind:arg.kind}:{id:arg.id};
+  return arg;
+}
 function setPlaceHint(hint){
   const text=document.getElementById('placetext');if(text)text.textContent=String(hint||'Click the map to place').replace(/ — Esc to (cancel|stop)/g,'').replace(/click/gi,uiLayout()==='phone'||matchMedia('(pointer:coarse)').matches?'tap':'click');
 }
@@ -8967,7 +8995,7 @@ const contextUI={ready:false,kind:null,expanded:false,scroll:new Map(),side:null
 const CONTEXT_IDS={insp:'insp',drawer:'drawer',chron:'chron',plan:'planbar',petition:'petition',legend:'terrlegend',info:'infopanel',event:'eventpanel'};
 // These sheets read existing records. Opening them must not create accounts, quotes or journal entries.
 // Explanations belong to visible events, not a global notification queue.
-const eventUI={current:null,recent:[],bubble:null,hold:null,closed:new WeakSet(),position:''};
+const eventUI={current:null,recent:[],bubble:null,hold:null,closed:new WeakSet(),position:'',referenceRequest:0};
 function eventTitle(ev){return ({weather:'Weather',war:'Conflict',crown:'The Crown',folk:'Parish news',trade:'Trade',faith:'Faith',land:'The land',world:'In the realm',dynasty:'The houses'})[ev?.cat]||'In the realm';}
 function eventViewCandidate(recent,now,project,bounds,held=null){
   for(const item of [...recent].reverse()){if(item.until<=now&&item.ev!==held)continue;const p=project(item.ev.pos);
@@ -8992,7 +9020,16 @@ function eventBubbleUpdate(){
 }
 function showEventDialog(ev){
   if(!ev)return;if(inspTarget)hideInspect();eventUI.current=ev;eventUI.closed.add(ev);eventUI.hold=null;document.getElementById('eventbubble').hidden=true;
-  setHTML(document.getElementById('eventtext'),linkNames(esc(ev.text)));document.getElementById('eventdate').textContent=dateStr(ev.day)+' · '+eventTitle(ev);
+  const text=document.getElementById('eventtext');
+  if(BACKGROUND&&!backgroundApplying){
+    const request=++eventUI.referenceRequest;setHTML(text,esc(ev.text));
+    const si=ev.pos?nearestSettlementIdx(ev.pos.x,ev.pos.z):-1;
+    BACKGROUND.request('view',{kind:'ui',panel:'reference-html',items:[{text:esc(ev.text),si}]}).then(view=>{
+      if(eventUI.referenceRequest!==request||eventUI.current!==ev||contextUI.kind!=='event'||!text.isConnected)return;
+      if(typeof view?.items?.[0]==='string')setHTML(text,view.items[0]);
+    }).catch(()=>{});
+  }else setHTML(text,linkNames(esc(ev.text),eventReferenceTown(ev)));
+  document.getElementById('eventdate').textContent=dateStr(ev.day)+' · '+eventTitle(ev);
   document.getElementById('eventlocate').hidden=!ev.pos;document.getElementById('eventinspect').hidden=!ev.pos;
   contextShow('event');contextUI.lastPosition='';contextPosition();
 }
@@ -9055,6 +9092,7 @@ function infoHTML(){
   }return h;
 }
 function openInfo(kind,town=null,reference=null){
+  if(!MODEL_ONLY&&BACKGROUND)return workerOpenInfo(kind,town,reference);
   const active=document.activeElement;if(active?.closest('#hud'))contextUI.opener=active.closest('#toolmenu')?document.getElementById('menubtn'):active;else if(contextUI.kind!=='info')contextUI.opener=null;
   if(inspTarget)hideInspect();
   const refresh=kind==='accounts-refresh',content=document.getElementById('contextcontent'),scroll=refresh?content.scrollTop:0;
@@ -9064,7 +9102,7 @@ function openInfo(kind,town=null,reference=null){
   if(!document.getElementById('contextpanel').contains(document.activeElement))document.getElementById(contextUI.expanded?'contextsize':'contexttitle').focus();
 }
 function contextAnchor(pk){
-  if(!pk)return null;
+  if(!pk)return null;if(BACKGROUND&&pk._anchor)return pk._anchor;
   let p=null;
   switch(pk.type){
     case 'settlement':case 'wall':case 'beast':p=(pk.s||W.settlements[pk.si])?.pos;break;
@@ -9145,7 +9183,7 @@ function contextDismiss(){
   if(!contextUI.ready)return;
   const kind=contextUI.kind,opener=kind==='info'?contextUI.opener:null;contextUI.opener=null;contextExpand(false);contextUI.kind=null;document.getElementById('contextpanel').hidden=true;
   if(kind==='insp')hideInspect();else if(kind==='drawer')setDrawerClosed(true);else if(kind==='chron')setChronMin(true);else if(kind==='plan')planClose();else if(kind==='petition')document.getElementById('petition').classList.add('min');else if(kind==='legend')document.getElementById('terrlegend')?.classList.add('min');
-  if(kind==='event')eventUI.current=null;
+  if(kind==='event'){eventUI.current=null;eventUI.referenceRequest++;}
   (opener?.isConnected?opener:document.getElementById('menubtn')).focus();document.dispatchEvent(new Event('contextchange'));
 }
 function contextPosition(){
@@ -9232,16 +9270,15 @@ function detailHousehold(s,p){
 function detailArmy(a){return detailTable('detail-muster',`Muster · ${(a.men||[]).length}`,['Person','Origin','Arms'],(a.men||[]).map(p=>[p.merc?esc(folkName(p)):detailPerson(p),p.merc?'Sell-sword':esc(W.settlements[p.home]?.name||'—'),esc(skillWord(p.sk?.[KA]||0)||'green')]));}
 function detailPlaceBack(s){return `<nav class="detail-jumps" aria-label="Return to settlement"><button data-detail-settlement="${W.settlements.indexOf(s)}">← ${esc(s.name)}</button></nav>`;}
 function detailJumps(items){return `<nav class="detail-jumps" aria-label="Detail sections">${items.map(([id,t])=>`<button data-detail-jump="${id}">${t}</button>`).join('')}</nav>`;}
-function showInspect(pk){
-  if(pk.type==='event'){showEventDialog(pk.ev);return;}
-  const opening=document.getElementById('insp').style.display!=='flex',changed=!inspTarget||Object.keys(pk).some(k=>pk[k]!==inspTarget[k]);
-  if(opening)inspectReturn=false;
-  inspTarget=pk;
-  const el=document.getElementById('insp'),body=document.getElementById('inspbody');
-  const acts=document.getElementById('inspacts');let actsH='';
-  const title=document.getElementById('insptitle'),sub=document.getElementById('inspsub');
-  const fb=document.getElementById('inspfollow');fb.style.display='none';
-  const full=contextUI.expanded;let h='';
+function inspectorCard(pk,full=false){
+  if(!pk)return null;
+  if(pk.type==='event'){const ev=pk.ev;return ev?{title:eventTitle(ev),sub:dateStr(ev.day)+' · '+eventTitle(ev),body:esc(ev.text),actions:'',follow:null}:null;}
+  const title={innerHTML:''},sub={textContent:'',innerHTML:''},body={innerHTML:''},acts={innerHTML:''};
+  let follow=null,actsH='',h='';
+  const setHTML=(el,h)=>{el.innerHTML=h;};
+  const fb={style:{},textContent:''};
+  const flyToBtn=(button,label,fn)=>{follow={label,type:pk.type,code:inspectorPickCode(pk)};};
+  full=!!full;
   const row=(k,v)=>`<div class="row${String(v).replace(/<[^>]*>/g,'').length>26?' long':''}"><span>${k}</span><b>${v}</b></div>`; // a long value reads left to right under itself, not squeezed against its label
   if(pk.type==='settlement'){
     const s=pk.s,house=W.houses[s.owner],population=detailPopulation(s);
@@ -9424,7 +9461,7 @@ function showInspect(pk){
     setHTML(title,'The king\'s road');sub.textContent=A.name+' — '+Bs.name;
     h+=row('Length',(polyLen(r.path)/1000).toFixed(1)+' km');
     h+=row('Traffic',(r.vol||0)>3?'busy':(r.vol||0)>1?'steady':(r.vol||0)>0.2?'light':'quiet');
-    const carts=(G.traffic||[]).filter(t=>t.poly===r.path||t.info&&((t.info.origin===r.a&&t.info.dest===r.b)||(t.info.origin===r.b&&t.info.dest===r.a))).length;
+    const carts=(W.caravans||[]).filter(c=>!c.sea&&!c.river&&day()>=c.departDay&&day()<c.arriveDay&&((c.origin===r.a&&c.dest===r.b)||(c.origin===r.b&&c.dest===r.a))).length;
     if(carts)h+=row('On the road now',carts+' cart'+(carts>1?'s':''));
     const camps=W.banditCamps.filter(c=>r.path.some(q=>dist2d(q.x,q.z,c.x,c.z)<500)).length;if(camps)h+=row('Danger',`<span style="color:#c0392b">${camps} outlaw camp${camps>1?'s':''} near the road</span>`);
   }else if(pk.type==='street'){
@@ -9443,7 +9480,7 @@ function showInspect(pk){
     const towns=W.settlements.filter(o=>st&&st.pts.some(q=>dist2d(q.x,q.z,o.pos.x,o.pos.z)<o.radius+60)).map(o=>o.name);
     if(towns.length)h+=row('Towns on its banks',esc(towns.join(', ')));
     const bridges=W.roads.reduce((t,r)=>t+(r.path.some(q=>riverAt(q.x,q.z,0)&&st&&riverAt(q.x,q.z,0).a&&st.pts.includes(riverAt(q.x,q.z,0).a))?1:0),0);if(bridges)h+=row('Bridged by',bridges+' road'+(bridges>1?'s':''));
-    const boats=(G.traffic||[]).filter(t=>t.info.river).length;if(boats)h+=row('Barges on the rivers',boats);
+    const boats=(W.caravans||[]).filter(c=>c.river&&day()>=c.departDay&&day()<c.arriveDay).length;if(boats)h+=row('Barges on the rivers',boats);
   }else if(pk.type==='wall'){
     const s=pk.s,c=pk.circuit||s,kinds=[0,0,0,0];for(const k of c.wallKind||[])kinds[k]++;const n=(c.wallKind||[]).length||1;
     setHTML(title,`<img src="${sigURL(s.owner)}">`+esc((c===s?'The town walls of ':c===s.motte?'The summit wall of ':'The castle walls of ')+s.name));
@@ -9526,20 +9563,164 @@ function showInspect(pk){
     flyToBtn(fb,'Visit',()=>flyTo(pk.camp.x,pk.camp.z,260));
   }
   sub._h=null;setHTML(sub,esc(sub.textContent));
-  setHTML(body,h);setHTML(acts,actsH); // live refresh only touches the DOM when something changed
+  setHTML(body,h);setHTML(acts,actsH);
+  return{title:title.innerHTML,sub:sub.innerHTML,body:body.innerHTML,actions:acts.innerHTML,follow};
+}
+function inspectorPickCode(pk){
+  if(!pk)return null;const s=pk.s||pk.b?.s||(pk.type==='land'&&pk.f?.dom>=0?W.settlements[pk.f.dom]:null)||null,si=s?W.settlements.indexOf(s):-1;
+  if(pk.type==='settlement'){const i=W.settlements.indexOf(pk.s);return i>=0?'s'+i:null;}
+  if(pk.type==='building')return buildingReference(pk.b,pk.b.s);
+  if(pk.type==='churchyard')return graveyardReference(pk.b,pk.s);
+  if(pk.type==='notable')return'n'+pk.n.id;
+  if(pk.type==='person')return'p'+pk.p.id;
+  if(pk.type==='army')return'a'+pk.a.id;
+  if(pk.type==='camp')return'camp:'+pk.camp.id;
+  if(pk.type==='land'){
+    if(si<0&&pk.f?.k!=null)return'field:'+pk.f.k;
+    const fi=s?.furl?.indexOf(pk.f)??-1;return fi>=0?'land:'+si+':'+fi:null;
+  }
+  if(pk.type==='street'&&si>=0){const i=s.streets.indexOf(pk.st);return i>=0?'street:'+si+':'+i:null;}
+  if(pk.type==='road'){const i=W.roads.indexOf(pk.r);return i>=0?'road:'+i:null;}
+  if(pk.type==='river'){const i=W.rivStrips.indexOf(pk.st);return i>=0?'river:'+i:null;}
+  if(pk.type==='wall'&&si>=0){const k=fortCircuitKey(s,pk.circuit);return k?'wall:'+si+':'+k:null;}
+  if(pk.type==='envoy')return'envoy:'+pk.e.id;
+  if(pk.type==='caravan'){const key=pk.c.renderKey??caravanInspectionKey(pk.c);return key!=null?'caravan:k:'+encodeURIComponent(String(key)):null;}
+  if(pk.type==='dragon')return'dragon';
+  if(pk.type==='track')return'track:'+pk.x+':'+pk.z;
+  if(pk.type==='ship'){const i=pk.sh?(W.ships||[]).indexOf(pk.sh):-1;return i>=0?'ship:'+i:null;}
+  if(pk.type==='beast')return'beast:'+pk.si+':'+pk.k;
+  if(pk.type==='cairn'){const i=(W.memorials||[]).indexOf(pk.memorial);return i>=0?'cairn:'+i:null;}
+  if(pk.type==='event')return null;
+  if(pk.type==='tree')return pk.x?(isN(pk.x)?'tree:n'+pk.x.id:'tree:p'+pk.x.id):null;
+  return null;
+}
+function caravanInspectionKey(c){return c?.storageCargo?.id||[c?.origin,c?.dest,c?.departDay,c?.good,!!c?.sea,!!c?.river].join(':');}
+function workerInspectionCode(code){
+  if(typeof code!=='string'||code.length>256)throw Error('Invalid inspection code');
+  if(/^[shnap]\d+$/.test(code)||code==='dragon')return code;
+  const [kind,...parts]=code.split(':'),tail=parts.join(':');
+  const forms={
+    building:/^\d+:-?\d+(?:\.\d+)?:-?\d+(?:\.\d+)?:[a-z][a-z0-9_-]*$/,
+    graveyard:/^\d+:-?\d+(?:\.\d+)?:-?\d+(?:\.\d+)?$/,
+    street:/^\d+:\d+$/,land:/^\d+:\d+$/,camp:/^\d+$/,
+    family:/^\d+$/,household:/^\d+$/,surname:/^[^\u0000-\u001f]*$/,
+    good:/^-?\d+:[a-z][a-z0-9_-]*$/,trade:/^-?\d+:[a-z][a-z0-9_-]*$/,structure:/^-?\d+:[a-z][a-z0-9_-]*$/,
+    choose:/^[A-Za-z0-9_%-]+$/,road:/^\d+$/,river:/^\d+$/,wall:/^\d+:(?:town|outer|ward|bailey|hill|motte)$/,
+    envoy:/^\d+$/,caravan:/^(?:\d+|k:[A-Za-z0-9_.!~*'()%+-]+)$/,track:/^-?\d+(?:\.\d+)?:-?\d+(?:\.\d+)?$/,ship:/^\d+$/,
+    beast:/^\d+:(?:sheep|cattle|horses|swine)$/,cairn:/^\d+$/,tree:/^(?:[np]\d+|t\d+)$/,field:/^\d+$/
+  };
+  if(!Object.hasOwn(forms,kind)||!forms[kind].test(tail))throw Error('Unsupported inspection code');
+  return code;
+}
+function workerInspectionTarget(code){
+  code=workerInspectionCode(code);
+  const ref=referenceTarget(code);if(ref?.pick)return ref.pick;
+  if(/^h\d+$/.test(code)){const h=W.houses[+code.slice(1)],s=h&&W.settlements[h.seat],n=h&&notableById(h.head);if(n)return{type:'notable',n};if(s)return{type:'settlement',s};}
+  if(ref)return{type:'reference',code};
+  const [kind,a,b]=code.split(':');
+  if(kind==='road'){const r=W.roads[+a];if(r)return{type:'road',r};}
+  if(kind==='river'){const st=W.rivStrips[+a];if(st){const i=Math.floor((st.pts.length-1)/2),q=st.pts[i];return{type:'river',st,o:{hw:st.hw?.[i]||0,y:st.ys?.[i]||0,a:q}};}}
+  if(kind==='wall'){const s=W.settlements[+a],c=s&&fortCircuits(s).find(x=>fortCircuitKey(s,x)===b);if(c)return{type:'wall',s,circuit:c};}
+  if(kind==='envoy'){const e=(W.envoys||[]).find(x=>x.id===+a);if(e)return{type:'envoy',e};}
+  if(kind==='caravan'){const c=a==='k'?(W.caravans||[]).find(v=>String(caravanInspectionKey(v))===decodeURIComponent(b)):W.caravans?.[+a];if(c)return{type:'caravan',c};}
+  if(kind==='track')return{type:'track',x:+a,z:+b};
+  if(kind==='ship'){const sh=W.ships?.[+a];if(sh)return{type:'ship',sh};}
+  if(kind==='beast'&&BEASTS.includes(b)&&W.settlements[+a])return{type:'beast',si:+a,k:b};
+  if(kind==='field'){const f=W.land?.F?.[+a];if(f)return{type:'land',f,x:f.x,z:f.z};}
+  if(kind==='cairn'){const memorial=W.memorials?.[+a];if(memorial)return{type:'cairn',memorial};}
+  if(kind==='tree'){if(a[0]==='t'){const x=TREE.get(a);if(x)return{type:'tree',x};}const f=findPerson(+a.slice(1));if(f&&a[0]==='p')return{type:'tree',x:f.p};if(a[0]==='n'){const n=notableById(+a.slice(1));if(n)return{type:'tree',x:n};}}
+  if(code==='dragon'&&W.dragon)return{type:'dragon'};
+  throw Error('Inspection target is no longer recorded');
+}
+function workerInspectorQuery(code,full=false){
+  const target=workerInspectionTarget(code),card=inspectorCard(target,!!full),p=contextAnchor(target);
+  const scope=referenceTown(target);
+  return{...card,sub:linkNames(card.sub,scope),body:linkNames(card.body,scope),actions:linkNames(card.actions,scope),targetType:target.type,
+    anchor:p&&Number.isFinite(p.x)&&Number.isFinite(p.z)?{x:p.x,z:p.z}:null};
+}
+function workerUIQuery(payload={}){
+  const kind=payload.kind==='ui'?payload.panel:payload.kind;
+  if(kind==='reference-html'){
+    const items=Array.isArray(payload.items)?payload.items.slice(0,260):[];
+    if(items.some(x=>!x||typeof x.text!=='string'||x.text.length>4096||x.text.includes('<')))throw Error('Invalid reference text');
+    return{items:items.map(x=>{const si=Number.isInteger(x.si)&&x.si>=0&&x.si<W.settlements.length?x.si:-1;return linkNames(x.text,si>=0?W.settlements[si]:null);})};
+  }
+  if(kind==='inspect')return workerInspectorQuery(payload.code,payload.full);
+  if(kind==='crown'){
+    const expanded=contextUI.expanded,oldSection=crownSection,ledgerOpen=G.ledgerOpen,section=payload.section??payload.crownSection;
+    try{if(typeof payload.expanded==='boolean')contextUI.expanded=payload.expanded;if(typeof payload.ledgerOpen==='boolean')G.ledgerOpen=payload.ledgerOpen;if(['overview','governance','orders','houses'].includes(section))crownSection=section;return{html:linkNames(crownPanelHTML())};}
+    finally{contextUI.expanded=expanded;crownSection=oldSection;G.ledgerOpen=ledgerOpen;}
+  }
+  if(kind==='info'){
+    const prior={kind:infoUI.kind,town:infoUI.town,reference:infoUI.reference};
+    try{infoUI.kind=String(payload.infoKind||'about');infoUI.town=Number.isInteger(payload.town)?W.settlements[payload.town]||null:null;infoUI.reference=typeof payload.reference==='string'?payload.reference:null;
+      return{html:linkNames(infoHTML(),infoUI.town)};}
+    finally{Object.assign(infoUI,prior);}
+  }
+  if(kind==='petitions'){
+    const p=W.petitions?.[0],visible=!!(p&&sovOn()&&!(speedIdx===5&&!payload.open&&payload.contextKind!=='petition'));
+    return{html:visible?linkNames(petitionHTML(p,W.petitions.length-1,payload.expanded!==false),eventReferenceTown(p)):'',visible,key:p?.key||null,count:W.petitions?.length||0};
+  }
+  if(kind==='house-panel')return{houses:linkNames(housePanelHTML()),succession:linkNames(successionHTML())};
+  if(kind==='advisor-state')return ADV.state(payload.path);
+  if(kind==='advisor-find'){
+    const q=String(payload.name||'').toLowerCase();
+    return ADV.entities().filter(e=>!q||e.name.toLowerCase().includes(q)).slice(0,30);
+  }
+  if(kind==='advisor-persona')return ADV.persona();
+  if(kind==='annals')return allLines.slice(-Math.max(1,Math.min(200,+payload.count||20)));
+  if(kind==='advisor-inspect'){
+    const e=ADV.byName(payload.name);if(!e)return{error:'nothing by that name'};
+    const card=workerInspectorQuery(e.code,false),plain=s=>String(s||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p\s*>/gi,'\n').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim();
+    const links=[],rx=/<a\b([^>]*)>([\s\S]*?)<\/a>/gi;let m;while((m=rx.exec(card.body))&&links.length<60){const code=(m[1].match(/\bdata-nm="([^"]*)"/)||[])[1]||(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1]&&'p'+(m[1].match(/\bdata-pid="([^"]*)"/)||[])[1];if(code){const name=plain(m[2]);if(name&&name!=='Open the card')links.push({name,code});}}
+    return{code:e.code,card:(plain(card.title)+' — '+plain(card.sub)+'\n'+plain(card.body)).slice(0,4000),links,tools:[]};
+  }
+  throw Error('This view has not migrated to the worker');
+}
+function showInspect(pk){
+  if(MODEL_ONLY)return;
+  if(BACKGROUND&&!backgroundApplying)return workerShowInspector(pk);
+  if(pk?.type==='event'){showEventDialog(pk.ev);return;}
+  const opening=document.getElementById('insp').style.display!=='flex',changed=!inspTarget||Object.keys(pk).some(k=>pk[k]!==inspTarget[k]);
+  if(opening)inspectReturn=false;
+  inspTarget=pk;
+  const el=document.getElementById('insp'),body=document.getElementById('inspbody'),acts=document.getElementById('inspacts');
+  const title=document.getElementById('insptitle'),sub=document.getElementById('inspsub'),fb=document.getElementById('inspfollow');
+  const card=pk.workerCard||inspectorCard(pk,contextUI.expanded);
+  setHTML(title,card?.title||'—');sub._h=null;setHTML(sub,card?.sub||'');setHTML(body,card?.body||'');setHTML(acts,card?.actions||'');
+  fb.style.display=card?.follow?'block':'none';fb.textContent=card?.follow?.label||'';
+  fb.onclick=card?.follow?()=>{markManual();followInspector(pk);}:null;
   if(opening)sheet('insp');el.style.display='flex';document.body.classList.add('inspecting');document.getElementById('inspx').textContent=inspectReturn?'Back':'Close';document.getElementById('inspx').setAttribute('aria-label',inspectReturn?'Back to realm controls':'Close inspector');
   if(changed){inspectorView='details';contextUI.side=null;contextUI.scroll.delete('insp');document.getElementById('contextcontent').scrollTop=0;}setInspectorView(inspectorView);contextShow('insp');scheduleLayout();
 }
+function followInspector(pk){if(BACKGROUND&&pk._anchor&&['notable','person','tree'].includes(pk.type)){flyTo(pk._anchor.x,pk._anchor.z,90);return;}
+  if(pk.type==='settlement'){const s=pk.s;flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340);return;}
+  if(pk.type==='churchyard'){flyTo(pk.yard.x,pk.yard.z,100);return;}
+  if(pk.type==='building'){flyTo(pk.b.x,pk.b.z,60);return;}
+  if(pk.type==='notable'){goNotable(pk.n);return;}
+  if(pk.type==='army'){cam.follow=pk.a;cam.dist=260;return;}
+  if(pk.type==='caravan'){cam.follow=pk.c;cam.dist=140;return;}
+  if(pk.type==='dragon'){cam.follow=W.dragon;cam.dist=300;return;}
+  if(pk.type==='person'){
+    const p=pk.p,s=pk.s,home=detailHead(p).bh;
+    if(!p.dead)goPerson(p,s);else if(home){flyTo(home.x,home.z,60);showInspect({type:'building',b:home});}return;
+  }
+  if(pk.type==='ship'){const s=pk.sh&&W.settlements[pk.sh.port];if(s)flyTo(s.pos.x,s.pos.z,300);return;}
+  if(pk.type==='beast'){const s=W.settlements[pk.si];if(s)flyTo(s.pos.x,s.pos.z,300);return;}
+  if(pk.type==='camp')flyTo(pk.camp.x,pk.camp.z,260);
+}
+
 function flyToBtn(fb,label,fn){fb.style.display='block';fb.textContent=label;fb.onclick=()=>{markManual();fn();};}
-function hideInspect(restore=false){const hadFocus=!!document.activeElement?.closest('#insp');document.getElementById('insp').style.display='none';inspTarget=null;document.body.classList.remove('inspecting');if(contextUI.ready&&contextUI.kind==='insp'){contextExpand(false);contextUI.kind=null;document.getElementById('contextpanel').hidden=true;}if(restore&&inspectReturn){primaryPanel='drawer';setDrawerClosed(false);}inspectReturn=false;scheduleLayout();if(restore||hadFocus){const target=document.getElementById('menubtn');target?.focus();}}
+function hideInspect(restore=false){if(MODEL_ONLY)return;const hadFocus=!!document.activeElement?.closest('#insp');document.getElementById('insp').style.display='none';inspTarget=null;document.body.classList.remove('inspecting');if(contextUI.ready&&contextUI.kind==='insp'){contextExpand(false);contextUI.kind=null;document.getElementById('contextpanel').hidden=true;}if(restore&&inspectReturn){primaryPanel='drawer';setDrawerClosed(false);}inspectReturn=false;scheduleLayout();if(restore||hadFocus){const target=document.getElementById('menubtn');target?.focus();}}
 function refreshInspect(){ // live numbers; close the card when its subject has left the stage
   const pk=inspTarget;if(!pk||uiBusy())return;
   if((pk.type==='caravan'&&pk.c.gone)||(pk.type==='army'&&(pk.a||pk.army).gone)||
      (pk.type==='camp'&&!W.banditCamps.includes(pk.camp))){hideInspect();return;}
   if(pk.type==='cairn')return;
-  showInspect(pk);
+  return showInspect(pk);
 }
 function sigURL(hi){
+  if(MODEL_ONLY)return 'worker-sigil:'+hi;
   const h=W.houses[hi]||W.houses[0];
   const v=entityView(h);if(!v.sigilURL)v.sigilURL=makeSigil(h.sigilHue,h.charge).toDataURL();
   return v.sigilURL;
@@ -9864,13 +10045,13 @@ function markBuilt(x,z,r){ // houses, yards and walls: no ploughland here
   const m=W.land.mask,c0=toCell(x-r),c1=toCell(x+r),r0=toCell(z-r),r1=toCell(z+r);
   for(let cz=Math.max(0,r0);cz<=Math.min(GRID-1,r1);cz++)for(let cx=Math.max(0,c0);cx<=Math.min(GRID-1,c1);cx++)
     if(dist2d(cellX(cx),cellZ(cz),x,z)<r+CELL*0.5)m[cIdx(cx,cz)*4+2]=255;
-  if(G.landView?.maskTex)G.landMaskDirty=true;
+  if(MODEL_ONLY||G.landView?.maskTex)G.landMaskDirty=true;
   if(W.land._surveyed)for(const[dx,dz]of[[0,0],[r,0],[-r,0],[0,r],[0,-r]])furlongAt(x+dx,z+dz).dirt=1; // the furlong under a new house is measured again at the next reckoning
 }
 function markLot(P){ // a house's yard is no longer ploughland: the strips stop at its fence
   const m=W.land.mask;let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of P){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);z0=Math.min(z0,p.z);z1=Math.max(z1,p.z);}
   let ch=false;for(let x=x0+3;x<x1;x+=6)for(let z=z0+3;z<z1;z+=6)if(inPoly(P,x,z)){const cx=toCell(x),cz=toCell(z);if(!inB(cx,cz))continue;const i=cIdx(cx,cz)*4+2;if(m[i]!==255){m[i]=255;ch=true;}}
-  if(ch&&G.landView?.maskTex)G.landMaskDirty=true;}
+  if(ch&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;}
 function markSettlementBuilt(s){
   for(const b of s.buildings)markBuilt(b.x,b.z,Math.hypot(b.w,b.d)/2+8);
   if(W.land._surveyed)for(const b of s.buildings)if(b.lot?.length&&b._graveyard&&!b._graveyard.removed)markChurchyardBuilt(s,b._graveyard);
@@ -9982,7 +10163,7 @@ function refreshArea(f){ // the ploughland a furlong has left once houses, yards
     if(furlongAt(x,z)!==f)continue;const c=cIdx(toCell(x),toCell(z));if(m[c*4]&&!m[c*4+2])n++;}
   f.af=n;f.area=n*225;
 }
-function writeFurlong(f){if(G.landView)(G.landDirty||(G.landDirty=new Set())).add(f);}
+function writeFurlong(f){if(MODEL_ONLY||G.landView)(G.landDirty||(G.landDirty=new Set())).add(f);}
 
 const treeGone=(f,t)=>(f.state===LS.TILLED||f.state===LS.PASTURE||f.state===LS.BURNT||f.state===LS.SCRUB&&t.v>0.3)&&f.kind!==LK.NONE
   &&W.land.mask[cIdx(toCell(t.x),toCell(t.z))*4]>0; // steep or wet corners keep their trees
@@ -10495,6 +10676,7 @@ function tickLand(){ // monthly: the countryside follows the people
     if(s.landShort&&now-s.landShort>180&&now%90===45){let press;if(s.folk&&s.folk.length){const T=heads_(s,h=>tills(h,s)),held=T.filter(h=>h._strips>0).length;press=T.length?T.length/Math.max(1,held):0;}else{if(s._fed===undefined)carryingCap(s);press=s.pop*(s.kind==='village'?1:0.5)/Math.max(40,s._fed||40);} /* land hunger: farming households with no strip of their own to work, against those that have one (a place that buys its bread from the market is not hungry for land) */if(press>1&&chance('sim',clamp((press-1)*2.5,0,0.8)))foundDaughter(s,press);} // pressed for land with none left to take: some go to break new ground, the more the hungrier
   });
 }
+let QUERY_LAND_VALUES=null; // disposable memo for one read request; model valuation remains simulation-owned
 const LVC=16;
 function lvBin(P,sz){const M=new Map();for(const q of P){const k=Math.floor(q[0]/sz)+','+Math.floor(q[1]/sz),o=M.get(k);if(o){o[0]+=q[0]*q[2];o[1]+=q[1]*q[2];o[2]+=q[2];}else M.set(k,[q[0]*q[2],q[1]*q[2],q[2]]);}return [...M.values()].map(o=>[o[0]/o[2],o[1]/o[2],o[2]]);} // nearby places of work, or homes, taken together
 function lvJobs(s){ // where the town's work is, and how many hands each place employs
@@ -10506,7 +10688,8 @@ function lvJobs(s){ // where the town's work is, and how many hands each place e
   for(const p of s.places||[])if(p.kind==='market')J.push([p.x,p.z,10]);
   return J;}
 function lvField(s){
-  if(s._lvf&&s._lvf.y===year())return s._lvf; // valued once a year
+  const query=typeof QUERY_LAND_VALUES==='undefined'?null:QUERY_LAND_VALUES,cached=query?.get(s)||s._lvf;
+  if(cached&&cached.y===year())return cached; // valued once a year
   const R=Math.max(s.wallR||0,(s.extentR||s.radius||100))+90,x0=s.pos.x-R,z0=s.pos.z-R,n=Math.ceil(2*R/LVC),N=n*n;
   const job=new Float32Array(N),hh=new Float32Array(N),mk=new Float32Array(N),ft=new Float32Array(N),nu=new Float32Array(N);
   const J=lvBin(lvJobs(s),32),H0=[];for(const b of s.buildings)if(!b.removed&&b.state==='sound'&&RESID.has(b.arch))H0.push([b.x,b.z,1]);const H=lvBin(H0,32);
@@ -10526,7 +10709,7 @@ function lvField(s){
   for(let j=0;j<n;j++)for(let i=0;i<n;i++){const k=j*n+i,x=cx(i),z=cz(j),safe=inWalls(s,x,z)?0.3+0.25*fear:0,stink=Math.min(1,nu[k]);
     res[k]=Math.max(0.03,0.06+0.85*job[k]/mj+0.3*mk[k]/mm+safe-0.35*stink);
     biz[k]=Math.max(0.02,0.05+0.9*ft[k]*(0.4+0.6*hh[k]/mh)+0.45*mk[k]/mm+0.25*hh[k]/mh+safe*0.5-0.15*stink);}
-  return s._lvf={y:year(),n:s.buildings.length,x0,z0,cells:n,res,biz,scale:Math.pow(Math.max(20,s.pop),0.3)};}
+  const value={y:year(),n:s.buildings.length,x0,z0,cells:n,res,biz,scale:Math.pow(Math.max(20,s.pop),0.3)};if(query)query.set(s,value);else s._lvf=value;return value;}
 function lvAt(s,x,z,use){const F=lvField(s),i=clamp(Math.floor((x-F.x0)/LVC),0,F.cells-1),j=clamp(Math.floor((z-F.z0)/LVC),0,F.cells-1),k=j*F.cells+i;
   const v=use==='res'?F.res[k]:use==='biz'?F.biz[k]:Math.max(F.res[k],F.biz[k]),out=Math.max(Math.abs(x-F.x0-F.cells*LVC/2),Math.abs(z-F.z0-F.cells*LVC/2))>F.cells*LVC/2?0.3:1;
   return v*out;}
@@ -13381,6 +13564,7 @@ function actBlocked(k){ // why an act cannot be done just now (the button says s
   if(k==='assassinate')return W.monarch&&W.monarch.alive?'':'there is no monarch to strike';
   return '';}
 function doAct(act,p,opt){
+  if(backgroundUserRequest())return workerSubmitCommand({k:'place',m:act,a:null,x:+p.x.toFixed(2),z:+p.z.toFixed(2),pk:null});
   const nearS=()=>{let b=W.settlements[0],bd=1e18;for(const s of W.settlements){const d=dist2d(p.x,p.z,s.pos.x,s.pos.z);if(d<bd){bd=d;b=s;}}return b;};
   switch(act){
     case 'plague':{const s=nearS();s.infected=Math.max(s.infected,6);
@@ -13491,6 +13675,7 @@ function doAct(act,p,opt){
 
 /* ============================ MASTER TICK ================================ */
 function simTick(){
+  if(!MODEL_ONLY&&BACKGROUND)throw Error('The simulation is owned by the background worker');
   if(!storageOutcomeReady())return false; // let durable history catch up before another whole day
   W.clock.day++;
   ownershipTick();
@@ -13546,7 +13731,9 @@ function emit(cat,pri,pos,text,opts){
   return ev;
 }
 function projectEvent(ev){ // one event record feeds every visible projection; simulation never needs a renderer or a second queue
-  if(MODEL_ONLY||typeof document==='undefined')return;
+  if(MODEL_ONLY){if(WORKER_PRESENTATION.started)WORKER_PRESENTATION.events.push(ev);return;}
+  if(typeof document==='undefined')return;
+  if(ev.reign){presentReign(ev.text);return;}
   chronicleAdd(ev); // retain journal admission and autosave path
   director.push(ev);
   fxEvent(ev);
@@ -13593,7 +13780,35 @@ function buildingReference(b,s=b.s){return 'building:'+W.settlements.indexOf(s)+
 function referenceTown(pk){return pk?.s||pk?.b?.s||W.settlements[pk?.p?.si]||W.settlements[pk?.a?.at]||null;}
 function eventReferenceTown(ev){return ev?.pos?W.settlements[nearestSettlementIdx(ev.pos.x,ev.pos.z)]:null;}
 function linkRenderedReferences(el,html,scope){if(el._refHTML===html&&el._refScope===scope)return el._refResult;el._refHTML=html;el._refScope=scope;return el._refResult=linkNames(html,scope);}
-function linkAnnals(){for(const el of chronList().querySelectorAll('.centry,.creign'))if((el._annalEvent||el._annalReign)&&!el._linkedReferences){const ev=el._annalEvent;el.innerHTML=ev?'<span class="cd">'+esc(dateStr(ev.day))+'.</span> '+linkNames(esc(ev.text),eventReferenceTown(ev)):linkNames(esc(el._annalReign),null);el._linkedReferences=true;decorateControls(el);}}
+function linkAnnals(){
+  const list=chronList(),rows=[];
+  for(const el of list.querySelectorAll('.centry,.creign')){
+    if(el.style.display==='none')continue;
+    if(!(el._annalEvent||el._annalReign)||el._linkedReferences||el._linkingReferences)continue;
+    const ev=el._annalEvent,raw=ev?ev.text:el._annalReign,text=esc(raw);
+    if(text.length>4096){el._linkedReferences=true;continue;}
+    const si=ev?.pos?nearestSettlementIdx(ev.pos.x,ev.pos.z):-1;
+    rows.push({el,ev,reign:ev?null:el._annalReign,text,si,beforeHTML:el.innerHTML});if(rows.length>=260)break;
+  }
+  if(!rows.length)return;
+  if(!BACKGROUND){for(const r of rows){r.el.innerHTML=r.ev?'<span class="cd">'+esc(dateStr(r.ev.day))+'.</span> '+linkNames(r.text,r.si>=0?W.settlements[r.si]:null):linkNames(r.text,null);r.el._linkedReferences=true;decorateControls(r.el);}return;}
+  const token=G._annalsReferenceRequest||(G._annalsReferenceRequest={busy:false});if(token.busy)return;token.busy=true;
+  for(const r of rows)r.el._linkingReferences=true;
+  let succeeded=false;
+  BACKGROUND.request('view',{kind:'ui',panel:'reference-html',items:rows.map(({text,si})=>({text,si}))}).then(view=>{
+    if(!Array.isArray(view?.items))return;
+    succeeded=true;
+    rows.forEach((r,i)=>{
+      const el=r.el,stillCurrent=r.ev?el._annalEvent===r.ev:el._annalReign===r.reign;
+      if(!stillCurrent||!el.isConnected||el.parentElement!==list||el.innerHTML!==r.beforeHTML||contextUI.kind!=='chron'||document.getElementById('chron').classList.contains('min'))return;
+      const html=view.items[i];if(typeof html!=='string')return;
+      el.innerHTML=r.ev?'<span class="cd">'+esc(dateStr(r.ev.day))+'.</span> '+html:html;el._linkedReferences=true;decorateControls(el);
+    });
+  }).catch(()=>{}).finally(()=>{
+    for(const r of rows)r.el._linkingReferences=false;token.busy=false;
+    if(succeeded&&contextUI.kind==='chron'&&!document.getElementById('chron').classList.contains('min'))linkAnnals();
+  });
+}
 function referenceTitle(code){const [kind,si,key]=String(code||'').split(':');if(kind==='family')return W.fams[+si]?.n+' family';if(kind==='surname')return decodeURIComponent(si)+' family';if(kind==='household'){const h=W.households?.get(si);return (h?.head?famName(h.head)||folkName(h.head):si)+' household';}if(kind==='choose')return 'Choose a reference';if(kind==='good'||kind==='trade')return key[0].toUpperCase()+key.slice(1);if(kind==='structure')return ARCH[key]?.[4]||key;return 'Reference';}
 function referenceInfoHTML(){
   const code=infoUI.reference,[kind,id,key]=code.split(':'),s=infoUI.town,towns=s?[s]:W.settlements;
@@ -13620,6 +13835,7 @@ function referenceTarget(code){const [kind,si,bi]=code.split(':'),s=W.settlement
   return null;
 }
 function goPerson(p,s){ // fly to wherever this person is now (walking the streets, on the road, at home) and keep them in view
+  if(BACKGROUND&&!backgroundApplying)return p?.id!=null?workerGoName('p'+p.id):undefined;
   if(!p)return;markManual();const now=displayDay();
   const tr=(W.travellers||[]).find(t=>t.p===p&&now>=t.depart&&now<t.arrive);
   let at=null;if(tr){const q=polyPos(tr.poly,clamp((now-tr.depart)/Math.max(0.01,tr.arrive-tr.depart),0,1));if(q)at={x:q.x,z:q.z};}
@@ -13641,9 +13857,9 @@ function notableWhere(n){ // with the host they command, otherwise in the keep o
   const a=W.armies.find(a=>!a.gone&&a.commander===n.id);if(a)return{army:a};
   if(n.role==='Bandit King'){const camp=(W.banditCamps||[]).find(c=>c.kingId===n.id);return camp?{x:camp.x,z:camp.z,camp}:null;}
   const r=notableResidence(n);if(!r)return null;const p=r.b||r.s.pos;return{x:p.x,z:p.z,s:r.s,b:r.b,secure:r.secure,lines:r.lines};}
-function goNotable(n){markManual();const w=notableWhere(n);if(!w)return;
+function goNotable(n){if(BACKGROUND&&!backgroundApplying)return n?.id!=null?workerGoName('n'+n.id):undefined;markManual();const w=notableWhere(n);if(!w)return;
   if(w.army){const p=armyDisplayPos(w.army);flyTo(p.x,p.z,260);cam.follow=w.army;}else flyTo(w.x,w.z,220);}
-function goName(code){ // fly to it and open its card
+function goName(code){if(BACKGROUND)return workerGoName(code); // fly to it and open its card
   if(!code)return;
   if(code.includes(':')){const target=referenceTarget(code);if(target){const pos=contextAnchor(target.pick);if(pos){markManual();flyTo(pos.x,pos.z,260);}showInspect(target.pick);}else if(/^(household|family|surname|choose|good|trade|structure):/.test(code)){const si=+code.split(':')[1];openInfo('reference',/^(good|trade|structure):/.test(code)?W.settlements[si]||null:null,code);}return;}
   const t=code[0],v=+code.slice(1);markManual();
@@ -13652,9 +13868,9 @@ function goName(code){ // fly to it and open its card
   else if(t==='n'){const n=notableById(v);if(n){goNotable(n);showInspect({type:'notable',n});}}
   else if(t==='a'){const a=W.armies.find(x=>x.id===v&&!x.gone);if(a){const p=armyDisplayPos(a);flyTo(p.x,p.z,260);cam.follow=a;showInspect({type:'army',a});}}
   else if(t==='p'){const f=findPerson(v);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}}}
-if(!MODEL_ONLY)document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#crownchip')&&W&&W.monarch&&W.monarch.alive){goNotable(W.monarch);showInspect({type:'notable',n:W.monarch});return;}
-  const tq=e.target.closest&&e.target.closest('a.tr');if(tq){e.stopPropagation();e.preventDefault();const x=TREE.get(tq.dataset.tree);if(x)showInspect({type:'tree',x});return;}
-  const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();const f=findPerson(+q.dataset.pid);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}return;}
+if(!MODEL_ONLY)document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('#crownchip')&&W&&W.monarch&&W.monarch.alive){if(BACKGROUND)workerGoName('n'+W.monarch.id);else{goNotable(W.monarch);showInspect({type:'notable',n:W.monarch});}return;}
+  const tq=e.target.closest&&e.target.closest('a.tr');if(tq){e.stopPropagation();e.preventDefault();if(BACKGROUND){workerGoName('tree:'+tq.dataset.tree);return;}const x=TREE.get(tq.dataset.tree);if(x)showInspect({type:'tree',x});return;}
+  const q=e.target.closest&&e.target.closest('a.pp');if(q){e.stopPropagation();e.preventDefault();if(BACKGROUND){workerGoName('p'+q.dataset.pid);return;}const f=findPerson(+q.dataset.pid);if(f){goPerson(f.p,f.s);showInspect({type:'person',p:f.p,s:f.s,t:f.t});}return;}
   const a=e.target.closest&&e.target.closest('a.nm');if(!a)return;e.stopPropagation();e.preventDefault();goName(a.dataset.nm);},true);
 function chronicleAdd(ev){
   const el=document.createElement('div');
@@ -13675,7 +13891,10 @@ function reignHeader(n){
   const ORD=['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth'];
   const t=`Here begin the years of ${n.sex==='f'?'Queen':'King'} ${n.name}${num>1?', '+(ORD[num-1]||num+'th')+' of that name':''}.`;
   allLines.push('\n=== '+t+' ===\n');
-  if(MODEL_ONLY)return;
+  if(MODEL_ONLY){WORKER_PRESENTATION.events.push({day:day(),cat:'crown',pri:0,text:t,reign:true});return;}
+  presentReign(t);
+}
+function presentReign(t){
   const el=document.createElement('div');el.className='creign';el._annalReign=t;el.innerHTML=linkNames(esc(t));decorateControls(el);
   const list=chronList(),stick=list.scrollTop+list.clientHeight>list.scrollHeight-60;
   list.appendChild(el);
@@ -13784,7 +14003,7 @@ let uiHover=false;
 function uiBusy(){return uiHover||uiDownAt>0&&performance.now()-uiDownAt<1500||!!document.activeElement?.matches('#dbody input,#dbody select,#dbody textarea,#inspscroll input,#inspscroll select,#inspscroll textarea');} // don't rebuild a button mid-click, or under a pointer resting on it
 function realmPop(popOf){return W.settlements.reduce((t,s)=>t+(popOf?popOf(s):s.pop),0);}
 function setHTML(el,h){
-  if(el&&W?.settlements&&['inspbody','inspsub','inspacts','infobody','dbody','petition','eventtext','eventbubbletext'].includes(el.id)){const scope=el.id==='infobody'?infoUI.town:el.id==='eventtext'?eventReferenceTown(eventUI.current):el.id==='eventbubbletext'?eventReferenceTown(eventUI.bubble):referenceTown(inspTarget);h=linkRenderedReferences(el,h,scope);}
+  if(!BACKGROUND&&el&&W?.settlements&&['inspbody','inspsub','inspacts','infobody','dbody','petition','eventtext','eventbubbletext'].includes(el.id)){const scope=el.id==='infobody'?infoUI.town:el.id==='eventtext'?eventReferenceTown(eventUI.current):el.id==='eventbubbletext'?eventReferenceTown(eventUI.bubble):referenceTown(inspTarget);h=linkRenderedReferences(el,h,scope);}
   if(el&&el._h!==h){
   const focused=el.contains(document.activeElement)?document.activeElement:null,keys=['id','data-cmd','data-arg','data-cview','data-nm','data-pid','data-detail-jump','data-detail-building','data-detail-settlement'],identity=focused?keys.map(k=>[k,focused.getAttribute(k)]).filter(([k,v])=>v!==null):[];
   const open=[...el.querySelectorAll('details[data-keep-open][open]')].map(d=>d.dataset.keepOpen);el.innerHTML=h;el._h=h;
@@ -13793,8 +14012,8 @@ function setHTML(el,h){
 }}
 function cdLeft(k){return Math.max(0,Math.ceil((W.player.cd[k]||0)-day()));}
 function setCd(k,d){W.player.cd[k]=day()+d;}
-function bestLegacy(){try{return +localStorage.getItem('annals-best-'+SEED)||0;}catch(e){return 0;}}
-function saveBest(v){try{if(v>bestLegacy())localStorage.setItem('annals-best-'+SEED,String(v));}catch(e){}}
+function bestLegacy(){if(MODEL_ONLY&&WORKER_PRESENTATION.profile)return WORKER_PRESENTATION.profile.best;try{return +localStorage.getItem('annals-best-'+SEED)||0;}catch(e){return 0;}}
+function saveBest(v){if(MODEL_ONLY&&WORKER_PRESENTATION.profile){if(v>WORKER_PRESENTATION.profile.best){WORKER_PRESENTATION.profile.best=v;WORKER_PRESENTATION.profileDirty=true;}return;}try{if(v>bestLegacy())localStorage.setItem('annals-best-'+SEED,String(v));}catch(e){}}
 
 /* ---- petitions ---- */
 function petition(p){
@@ -13817,6 +14036,7 @@ function runPetition(p,i){
   if(o.act)o.act();
 }
 function answerPetition(i){
+  if(backgroundUserRequest())return workerSubmitCommand({k:'pet',i});
   const p=W.petitions[0];if(!p)return;
   const o=p.opts[i];if(!o||(o.cost&&purse(p.to|0)<o.cost))return;
   W.petitions.shift();runPetition(p,i);afterPetition();
@@ -13828,15 +14048,20 @@ function afterPetition(){
 }
 function renderPetition(open=false){
   if(MODEL_ONLY)return;
+  if(BACKGROUND)return workerRenderPetition(open);
   const el=document.getElementById('petition'),p=W.petitions[0];
   if(!p||!sovOn()){el.style.display='none';el._h='';document.getElementById('petitionbtn').hidden=true;if(contextUI.ready&&contextUI.kind==='petition')contextDismiss();return;}
   const more=W.petitions.length-1;document.getElementById('petitionbtn').hidden=false;document.getElementById('petitionbtn').textContent='Petitions ('+W.petitions.length+')';
   if(speedIdx===5&&!open&&contextUI.kind!=='petition'){el.style.display='none';el._key=null;return;} // keep the badge and council deadlines; build the sheet only on request or after slowing
-  setHTML(el,`<h4><button id="petitionfold" aria-expanded="${!el.classList.contains('min')}">${esc(p.title)}</button>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${linkNames(esc(p.text))}</div>`+petitionContext(p)+
+  setHTML(el,petitionHTML(p,more,!el.classList.contains('min')));
+  if(el._key!==p.key){el._key=p.key;el.classList.remove('min');el.querySelector('#petitionfold')?.setAttribute('aria-expanded','true');sheet('petition');}el.style.display='block';
+}
+function petitionHTML(p,more=0,expanded=true){
+  if(!p)return '';
+  return `<h4><button id="petitionfold" aria-expanded="${!!expanded}">${esc(p.title)}</button>${p.pos?'<a data-pv="1">show me</a>':''}</h4><div class="pt">${linkNames(esc(p.text))}</div>`+petitionContext(p)+
     p.opts.map((o,i)=>`<button class="cbtn" data-pi="${i}" ${o.cost&&purse(p.to|0)<o.cost?'disabled':''}><span>${esc(o.label)}</span>`+
       `<span class="cost">${o.cost?o.cost.toLocaleString()+' gold':''}</span></button>`).join('')+
-    `<div class="pf">If you are silent, ${(p.to|0)>0?'your steward':'the council'} decides on ${dateStr(p.due)}${more?` · ${more} more petition${more>1?'s':''} waiting`:''}.</div>`);
-  if(el._key!==p.key){el._key=p.key;el.classList.remove('min');el.querySelector('#petitionfold')?.setAttribute('aria-expanded','true');sheet('petition');}el.style.display='block';
+    `<div class="pf">If you are silent, ${(p.to|0)>0?'your steward':'the council'} decides on ${dateStr(p.due)}${more?` · ${more} more petition${more>1?'s':''} waiting`:''}.</div>`;
 }
 function petitionContext(p){ // who and where the question touches, each a link to it on the map, with what bears on the answer
   const txt=(p.title||'')+' '+(p.text||''),hit=[],used=new Set();
@@ -14243,7 +14468,9 @@ const STORAGE_UI=new WeakMap(); // surveys are UI state; only a committed choice
 function storageWorksHTML(s){const si=W.settlements.indexOf(s),R=s.storageReport,Q=STORAGE_UI.get(s);return `<div class="dhead" style="margin-top:8px">Storage commission</div><div class="note">Choose a building, then its site on the map. Compare access to fields and markets before commissioning it. Capacity opens after paid construction.</div><label>Building <select id="storage-arch-${si}">${Object.entries(STORAGE_TYPES).map(([k,t])=>`<option value="${k}"${Q?.arch===k?' selected':''}>${k[0].toUpperCase()+k.slice(1)} · ${t.capacity} loads</option>`).join('')}</select></label>${cbtn('storage-pick',si,Q?'Choose another site':'Choose site on map',0,'','Surveys terrain, occupied ground and street access.')}<div id="storage-quote-${si}">${storageQuoteHTML(Q)}</div>${R?`<div class="note">Exposed: ${R.exposed.toFixed(1)} load-volume; hauled today: ${R.moved.toFixed(1)} loads for ${R.handlingCost.toFixed(3)} crowns.</div>`:''}`;}
 function storageQuoteHTML(Q){if(!Q)return '';if(!Q.ok)return `<div class="note" role="status">${esc(Q.reason)}</div>`;const command=encodeURIComponent(JSON.stringify({si:Q.si,arch:Q.arch,x:Q.x,z:Q.z,payer:Q.payer}));return `<div class="note" role="status">${Q.capacity} load-volume; estimated ${Math.round(Q.cost)} crowns including ${Math.round(Q.land)} for ground; ${Q.timber} timber and ${Q.stone} stone; ${Q.days} paid working days. Market: ${Math.round(Q.marketDistance)} m; fields: ${Number.isFinite(Q.productionDistance)?Math.round(Q.productionDistance)+' m':'unreachable'}. Handling: ${Q.handlingPerLoad.toFixed(3)} crowns per load to market.</div>${cbtn('storage-commission',command,'Commission this site',0,'','The site is rechecked; construction pays for materials and daily wages.')}`;}
 function storagePick(si){if(REPLAYING)return;const s=W.settlements[si],arch=document.getElementById('storage-arch-'+si)?.value;if(!s||!sovOn()||s.owner!==plyH()||!STORAGE_TYPES[arch])return;setPlaceMode('storage',{si,arch},`Choose a ${arch} site near ${s.name} — Esc to cancel`);}
-function storagePreview(si,arch,x,z){const s=W.settlements[si];if(!s||!sovOn()||s.owner!==plyH())return;STORAGE_UI.set(s,{arch,...storageSiteQuote(si,arch,x,z,plyH())});showInspect({type:'settlement',s});setInspectorView('orders');}
+async function storagePreview(si,arch,x,z){const s=W.settlements[si];if(!s||!sovOn()||s.owner!==plyH())return;if(backgroundUserRequest()){
+    try{await BACKGROUND.request('view',{kind:'storage-preview',si,arch,x,z});await showInspect({type:'settlement',s});setInspectorView('orders');}catch(e){storageFaultNotice(String(e.message||e));}return;}
+  STORAGE_UI.set(s,{arch,...storageSiteQuote(si,arch,x,z,plyH())});showInspect({type:'settlement',s});setInspectorView('orders');}
 function storagePlayerCommission(arg){let choice;try{choice=JSON.parse(decodeURIComponent(arg));}catch{return false;}const s=choice&&Number.isInteger(choice.si)&&W.settlements[choice.si];if(!s||!sovOn()||choice.payer!==plyH()||s.owner!==choice.payer||!Object.hasOwn(STORAGE_TYPES,choice.arch)||!Number.isFinite(choice.x)||!Number.isFinite(choice.z))return false;const project=storageCommission(storageSiteQuote(choice.si,choice.arch,choice.x,choice.z,choice.payer));if(project)STORAGE_UI.delete(s);return project;}
 function worksHTML(s){const si=W.settlements.indexOf(s),w=s.works||{};let x='<div class="dhead" style="margin-top:6px">Works</div>';
   for(const[k,l,c,d]of WORKS){const done=k==='clearing'?s.clearUntil>day():w[k];x+=cbtn('s-work',si+':'+k,l,c,done?(k==='clearing'?'under way':'built'):'',d);}return x+storageWorksHTML(s);}
@@ -14383,6 +14610,7 @@ function dynastyChanged(oldName,winner){
 }
 
 function setSovereign(on,hi){
+  if(backgroundUserRequest())return workerSubmitCommand({k:'sov',on, ...(hi===undefined?{}:{hi})});
   if(!W||!W.player)return;
   const P=W.player;hi=on?Math.max(0,hi==null?(P.house|0):hi|0):P.house|0;
   if(on&&hi>0&&(!W.houses[hi]||W.houses[hi].exiled||!W.settlements.some(s=>s.owner===hi)))return; // a house must hold land to be played
@@ -14477,7 +14705,7 @@ function lordCmd(cmd,arg){
   const hi=plyH();if(!(hi>0))return;const{h,own,seat,si}=lordHouse();if(!seat||h.exiled)return;
   const P=W.player;
   switch(cmd){
-    case 'ledger':P.ledgerOpen=!P.ledgerOpen;break;
+    case 'ledger':G.ledgerOpen=!G.ledgerOpen;break;
     case 'royalmatch':{if(h.claim||cdLeft('l_rmatch'))return;const a=royalSingle(),b=a&&houseSingle(hi,a.sex);if(!a||!b||!spend(hi,500))return;setCd('l_rmatch',360);book(h,'dowry',-500);W.treasury+=500;
       if(chance('sim',clamp((h.loyalty-35)/50,0.05,0.9))){a.spouse=b.id;b.spouse=a.id;h.claim=true;h.loyalty=clamp(h.loyalty+10,0,100);W.capital.festivalUntil=day()+3;
         emit('crown',6,W.capital.pos,`A royal match: ${fullTitle(a)} weds ${fullTitle(b)} of ${h.name}. Royal blood will run in their line.`,{festival:true});}
@@ -14622,9 +14850,11 @@ function drawerVisible(){
 function refreshCrownPanel(force=false){
   if(MODEL_ONLY)return;
   if(drawerTab!=='crown'||!force&&(!drawerVisible()||uiBusy()))return;
+  if(BACKGROUND)return workerRefreshCourt(force);
   setHTML(document.getElementById('dbody'),crownPanelHTML());
 }
 function runCmd(cmd,arg){
+  if(backgroundUserRequest()&&!workerCommandIsLocal(cmd,arg))return workerSubmitCommand({k:'c',c:cmd,a:arg});
   switch(cmd){
     case 'sov-on':setSovereign(true,0);break;
     case 'sov-house':setSovereign(true,+arg);break;
@@ -14643,14 +14873,14 @@ function runCmd(cmd,arg){
     case 's-relief':case 's-garrison':case 's-callout':case 's-levy':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
     case 'a-order':case 'a-road':case 'a-raft':case 'a-objective':case 'a-hold':case 'a-release':case 'a-disband':case 'a-split':case 'a-merge':case 'a-garrison':armyCmd(cmd.slice(2),arg);break;
   }
-  uiDownAt=0;
-  refreshCrownPanel();refreshInspect();updateHUD();renderPetition();
+  if(!MODEL_ONLY){uiDownAt=0;refreshCrownPanel();refreshInspect();updateHUD();renderPetition();}
 }
 /* =========================================================================
    CONTROL PANEL & HUD
    ========================================================================= */
 function setSpeed(i){
   i=Math.round(+i);if(!(i>=0&&i<SPEEDS.length))return;
+  if(backgroundUserRequest())return workerSetSpeed(i);
   if(i>0)sovPausedFrom=0; // the player chose a speed: don't override it when petitions clear
   if(speedIdx!==0)lastSpeed=speedIdx;
   const wasReeling=VISUAL.fast(),wasReelSpeed=speedIdx===5;speedIdx=i;if(MODEL_ONLY)return;
@@ -14683,13 +14913,13 @@ const OVERLAYS=[['territory','Territories'],['tongue','Tongues'],['trade','Trade
 let drawerTab='crown',crownSection='overview',inspectorView='details',inspectReturn=false,primaryPanel='map',activeUIDialog=null;
 function rulerRevenueHTML(lord){
   const h=W.houses[plyH()],v=lord?Math.round((h.dues||1)*100):Math.round(MOD.tax),key=lord?'dues':'tax',id=lord?'lorddues':'sovtax',label=lord?'Tenant dues':'Crown tax rate',min=lord?50:5,max=lord?160:30,step=lord?5:1;
-  return `<section class="ruler-revenue" aria-label="Revenue controls"><div class="slrow"><label for="${id}"><span>${label}</span><b data-rate-value>${v}%${lord?' of customary dues':''}</b></label><input aria-label="${label}" type="range" id="${id}" data-ruler-rate="${key}" min="${min}" max="${max}" step="${step}" value="${v}"><label for="${id}-number">Set ${label.toLowerCase()} (%)</label><input aria-label="Set ${label.toLowerCase()} (%)" id="${id}-number" data-ruler-rate="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${v}" style="width:90px;min-height:44px;font:inherit"></div><p class="note">${lord?'100% means customary dues, not all household income. Heavier dues raise rents in kind and unrest; lighter dues ease them. The Crown sets its own tax, currently '+Math.round(MOD.tax)+'%.':'Changes the existing hearth tax and trade tolls throughout the realm. Higher rates breed unrest and sour the houses.'}</p>${lord?`<button class="wbtn" data-cmd="lord" data-arg="ledger">${W.player.ledgerOpen?'Hide':'Explain'} your house accounts</button>${W.player.ledgerOpen?houseDetailHTML(plyH(),contextUI.expanded):''}`:'<button class="wbtn" data-info="accounts">Open kingdom accounts</button>'}</section>`;
+  return `<section class="ruler-revenue" aria-label="Revenue controls"><div class="slrow"><label for="${id}"><span>${label}</span><b data-rate-value>${v}%${lord?' of customary dues':''}</b></label><input aria-label="${label}" type="range" id="${id}" data-ruler-rate="${key}" min="${min}" max="${max}" step="${step}" value="${v}"><label for="${id}-number">Set ${label.toLowerCase()} (%)</label><input aria-label="Set ${label.toLowerCase()} (%)" id="${id}-number" data-ruler-rate="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${v}" style="width:90px;min-height:44px;font:inherit"></div><p class="note">${lord?'100% means customary dues, not all household income. Heavier dues raise rents in kind and unrest; lighter dues ease them. The Crown sets its own tax, currently '+Math.round(MOD.tax)+'%.':'Changes the existing hearth tax and trade tolls throughout the realm. Higher rates breed unrest and sour the houses.'}</p>${lord?`<button class="wbtn" data-cmd="lord" data-arg="ledger">${G.ledgerOpen?'Hide':'Explain'} your house accounts</button>${G.ledgerOpen?houseDetailHTML(plyH(),contextUI.expanded):''}`:'<button class="wbtn" data-info="accounts">Open kingdom accounts</button>'}</section>`;
 }
 function setRulerRate(key,value){
   if(!Number.isFinite(value)||!sovOn()||(typeof document!=='undefined'&&document.body?.classList.contains('watch')))return null;
   let v;
-  if(key==='tax'&&crownOn()){v=Math.round(clamp(value,5,30));if(MOD.tax===v)return v;MOD.tax=v;}
-  else if(key==='dues'&&lordOn()){const h=W.houses[plyH()];if(!h||h.exiled)return null;v=Math.round(clamp(value,50,160)/5)*5;if((h.dues??1)===v/100)return v;h.dues=v/100;}
+  if(key==='tax'&&crownOn()){v=Math.round(clamp(value,5,30));if(MOD.tax===v)return v;if(backgroundUserRequest()){workerSubmitCommand({k:'set',n:'tax',v});return v;}MOD.tax=v;}
+  else if(key==='dues'&&lordOn()){const h=W.houses[plyH()];if(!h||h.exiled)return null;v=Math.round(clamp(value,50,160)/5)*5;if((h.dues??1)===v/100)return v;if(backgroundUserRequest()){workerSubmitCommand({k:'set',n:'dues',v:v/100});return v;}h.dues=v/100;}
   else return null;
   jot({k:'set',n:key,v:key==='dues'?v/100:v});return v;
 }
@@ -14802,7 +15032,7 @@ function initAccessibleUI(){
     const custom=e.target.closest('[role=button]');if(custom&&(e.key==='Enter'||e.key===' ')){e.preventDefault();custom.click();return;}
     const tab=e.target.closest('[role=tab]');if(tab&&['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){const tabs=[...tab.closest('[role=tablist]').querySelectorAll('[role=tab]')].filter(b=>!b.hidden),i=tabs.indexOf(tab);const n=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;e.preventDefault();tabs[n].click();tabs[n].focus();}
   },true);
-  document.getElementById('dbody').addEventListener('click',e=>{const b=e.target.closest('[data-cview]');if(b){crownSection=b.dataset.cview;setHTML(document.getElementById('dbody'),crownPanelHTML());document.getElementById('dbody').scrollTop=0;document.getElementById('contextcontent').scrollTop=0;document.getElementById('court-'+crownSection)?.focus();}});
+  document.getElementById('dbody').addEventListener('click',e=>{const b=e.target.closest('[data-cview]');if(b){crownSection=b.dataset.cview;if(BACKGROUND)workerRefreshCourt(true);else setHTML(document.getElementById('dbody'),crownPanelHTML());document.getElementById('dbody').scrollTop=0;document.getElementById('contextcontent').scrollTop=0;document.getElementById('court-'+crownSection)?.focus();}});
   document.getElementById('inspnav').addEventListener('click',e=>{const b=e.target.closest('[data-iview]');if(b){setInspectorView(b.dataset.iview);document.getElementById('inspscroll').scrollTop=0;}});
   document.getElementById('drawerclose').onclick=()=>{setDrawerClosed(true);document.getElementById('drawertoggle').focus();};
   document.getElementById('menubtn').onclick=()=>{const b=document.getElementById('menubtn'),open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));document.getElementById('toolmenu').hidden=!open;};
@@ -14825,6 +15055,7 @@ function buildDrawer(tab){
   const body=document.getElementById('dbody');
   body.innerHTML='';body._h='';drawerTab=tab;
   const sealed=sovOn();
+  if(tab==='crown'&&BACKGROUND){workerRefreshCourt(true);return;}
   if(tab==='crown'){setHTML(body,crownPanelHTML());return;}
   if(tab==='rates'){
     if(sealed)body.insertAdjacentHTML('beforeend','<div class="note">Providence’s dials are sealed while you rule. '+(lordOn()?'Set your tenant dues in the Crown tab; realm taxes are set by the sovereign.':'Set Crown tax in the Crown tab.')+'</div>');
@@ -14833,15 +15064,15 @@ function buildDrawer(tab){
       row.innerHTML=`<label><span>${label}</span><b id="rv_${key}">${MOD[key]}</b></label>`;
       const inp=document.createElement('input');inp.type='range';
       inp.setAttribute('aria-label',label);inp.min=min;inp.max=max;inp.step=key==='tax'?1:(max-min)/100;inp.value=MOD[key];inp.disabled=sealed;
-      inp.addEventListener('input',()=>{MOD[key]=+inp.value;jot({k:'set',n:'mod:'+key,v:MOD[key]});
-        document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(MOD[key])+'%':('×'+(+inp.value).toFixed(2));});
+      inp.addEventListener('input',()=>{const v=+inp.value;if(backgroundUserRequest())applySetting('mod:'+key,v);else{MOD[key]=v;jot({k:'set',n:'mod:'+key,v});}
+        document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(v)+'%':('×'+v.toFixed(2));});
       row.appendChild(inp);body.appendChild(row);
       document.getElementById('rv_'+key).textContent=key==='tax'?Math.round(MOD[key])+'%':('×'+(+MOD[key]).toFixed(2));
     }
     const mr=document.createElement('div');mr.className='slrow';
     mr.innerHTML=`<label><span>Myth</span><b id="rv_myth">${['Off','Low','High'][MOD.myth]}</b></label>`;
     const mi=document.createElement('input');mi.type='range';mi.setAttribute('aria-label','Myth');mi.min=0;mi.max=2;mi.step=1;mi.value=MOD.myth;mi.disabled=sealed;
-    mi.addEventListener('input',()=>{MOD.myth=+mi.value;document.getElementById('rv_myth').textContent=['Off','Low','High'][MOD.myth];});
+    mi.addEventListener('input',()=>{const v=+mi.value;if(backgroundUserRequest())applySetting('mod:myth',v);else{MOD.myth=v;jot({k:'set',n:'mod:myth',v});}document.getElementById('rv_myth').textContent=['Off','Low','High'][v];});
     mr.appendChild(mi);body.appendChild(mr);
   }else if(tab==='acts'){
     if(sealed)body.insertAdjacentHTML('beforeend','<div class="note">Acts of Providence are withheld while you rule — lay down the crown to wield them again.</div>');
@@ -14897,7 +15128,12 @@ function buildDrawer(tab){
 function refreshHousePanel(force=false){
   if(MODEL_ONLY)return;
   if(drawerTab!=='world'||!force&&!drawerVisible())return;
+  if(BACKGROUND)return workerRefreshHousePanel(force);
   const hp=document.getElementById('housepanel');if(!hp)return;
+  setHTML(hp,housePanelHTML());
+  const sp=document.getElementById('succpanel');if(sp)setHTML(sp,successionHTML());
+}
+function housePanelHTML(){
   let h='';
   W.houses.forEach((house,hi)=>{
     if(hi===0)return;
@@ -14905,18 +15141,17 @@ function refreshHousePanel(force=false){
       <span class="hname" style="flex:0 0 92px;overflow:hidden;white-space:nowrap;">${esc(house.name.replace('House ',''))}</span>
       <div class="hbar"><div style="width:${house.exiled?0:Math.round(house.loyalty)}%"></div></div>${hi>0&&!house.exiled&&house.gold!==undefined?`<span style="font-size:11px;margin-left:6px;color:${house.gold<0?'#c0392b':'inherit'}" title="The house's purse">${Math.round(house.gold).toLocaleString()}g</span>`:''}</div>`;
   });
-  setHTML(hp,h);
-  const sp=document.getElementById('succpanel');
-  if(sp){
-    const m=W.monarch;let s='';
-    if(m){
-      const heirs=m.heirs.map(notableById).filter(n=>n&&n.alive).sort((a,b)=>b.age-a.age);
-      s+=`<div class="succline pk" data-cmd="notable" data-arg="${m.id}">♛ ${esc(fullTitle(m))}, age ${ageOf(m)}</div>`;
-      if(heirs.length)heirs.forEach((n,i)=>{s+=`<div class="succline pk" data-cmd="notable" data-arg="${n.id}">${i+1}. ${esc(fullTitle(n))}, age ${ageOf(n)}</div>`;});
-      else s+='<div class="succline" style="color:var(--red)">No heir of the body — the succession is uncertain.</div>';
-    }
-    setHTML(sp,s);
+  return h;
+}
+function successionHTML(){
+  const m=W.monarch;let s='';
+  if(m){
+    const heirs=m.heirs.map(notableById).filter(n=>n&&n.alive).sort((a,b)=>b.age-a.age);
+    s+=`<div class="succline pk" data-cmd="notable" data-arg="${m.id}">♛ ${esc(fullTitle(m))}, age ${ageOf(m)}</div>`;
+    if(heirs.length)heirs.forEach((n,i)=>{s+=`<div class="succline pk" data-cmd="notable" data-arg="${n.id}">${i+1}. ${esc(fullTitle(n))}, age ${ageOf(n)}</div>`;});
+    else s+='<div class="succline" style="color:var(--red)">No heir of the body — the succession is uncertain.</div>';
   }
+  return s;
 }
 function initUI(){
   document.getElementById('chrontitle').textContent='The Annals of '+W.name;
@@ -14964,6 +15199,7 @@ function initUI(){
     document.querySelectorAll('#chronfilters .f').forEach(x=>{x.classList.toggle('on',x===f);x.setAttribute('aria-pressed',String(x===f));});
     chronFilter=f.dataset.f;
     document.querySelectorAll('.centry').forEach(e=>{e.style.display=(chronFilter==='all'||e.dataset.cat===chronFilter)?'':'none';});
+    if(!chron.classList.contains('min'))linkAnnals();
   }));
   document.getElementById('btnexport').addEventListener('click',async()=>{
     const head=`THE ANNALS OF ${W.name.toUpperCase()}\nset down by the chroniclers · seed ${SEED}\n\n`,text=head+allLines.join('\n');
@@ -15232,7 +15468,7 @@ function updateHUD(){
 /* =========================================================================
    PER-FRAME WORLD ANIMATION
    ========================================================================= */
-function musterPos(s,a){ // where a host lies at a town: open ground outside it, near a road, clear of houses and water
+function musterPos(s,a){if(BACKGROUND&&a.renderMuster)return a.renderMuster; // where a host lies at a town: open ground outside it, near a road, clear of houses and water
   const v=entityView(s);if(!v.muster||v.musterY!==year()){const R=Math.max(s.wallR||0,s.extentR||s.radius||90)+55;let best=null,bs=-1e9;
     for(let k=0;k<24;k++){const an=k/24*Math.PI*2,x=s.pos.x+Math.cos(an)*R,z=s.pos.z+Math.sin(an)*R;
       if(!planCellOK(x,z)||riverAt(x,z,15))continue;let near=1e9;for(const b of s.buildings)if(!b.removed){const d=dist2d(b.x,b.z,x,z);if(d<near)near=d;}
@@ -15266,7 +15502,7 @@ function siegePts(a,s,A,n,us){ // the lines: strung round the walls facing them,
     for(let t=0;t<12;t++){const x=C.x+Math.cos(an)*rr,z=C.z+Math.sin(an)*rr;if(!s.buildings.some(b=>!b.removed&&Math.abs(b.x-x)<Math.max(b.w,b.d)*0.6+2&&Math.abs(b.z-z)<Math.max(b.w,b.d)*0.6+2))break;rr+=8;}
     out.push({x:C.x+Math.cos(an)*rr,z:C.z+Math.sin(an)*rr,a:an});}
   v.spK=key;v.sp=out;return out;}
-function entryPath(s){ // from the actual broken circuit to its courtyard or the town market
+function entryPath(s){if(BACKGROUND)return s.renderEntry||[s.pos]; // from the actual broken circuit to its courtyard or the town market
   const v=entityView(s),c=s.takenCircuit||s,C=fortCenter(c),an=c.breachA??s.breachA??0,key=C.x+':'+C.z+':'+an;
   if(v.entry&&v.entryK===key)return v.entry;const g=streetGraph(s),r=wallRadAt(c,an),gx=C.x+Math.cos(an)*(r+12),gz=C.z+Math.sin(an)*(r+12);
   const mk=c===s?(s.places||[]).find(p=>p.kind==='market')||s.pos:casKeep(s)||C,a=nearestNode(g,gx,gz),b=nearestNode(g,mk.x,mk.z),P=streetPath(g,a,b);
@@ -15683,7 +15919,7 @@ function animateWorld(dt,now){
   {
     let nearest=null,nd=1e18;
     for(const s of W.settlements){const dd=dist2d(cam.cur.focus.x,cam.cur.focus.z,s.pos.x,s.pos.z);if(dd<nd){nd=dd;nearest=s;}}
-    if(nearest&&cam.cur.dist<700&&nd<(nearest.extentR||nearest.radius)+160&&nearest.folk&&nearest.folk.length){ // seen from a fair height, not only from the street
+    if(BACKGROUND){renderTransportCitizens(nearest,nd);}else if(nearest&&cam.cur.dist<700&&nd<(nearest.extentR||nearest.radius)+160&&nearest.folk&&nearest.folk.length){ // seen from a fair height, not only from the street
       const s=nearest;
       const fresh=G.citList.length===0||G.citList[0].s!==s;if(fresh){G.citList=townsfolkFor(s);warmWalkers(G.citList);}
       const viewDay=displayDay(),run=fresh||G.walkDay===undefined?0:Math.max(0,viewDay-G.walkDay)*DAYSEC,fr=displayFrac(),vs=clamp(cam.cur.dist/220,1,2.6);G.walkDay=viewDay;let k=0;G.citIdx=[]; // only elapsed calendar time advances this disposable walking projection
@@ -15761,8 +15997,8 @@ function animate(t){
   const now=t/1000;
   const rawDt=lastT?now-lastT:0.016; // the true frame interval, for the performance monitor
   let dt=Math.min(0.1,now-lastT||0.016);lastT=now;
-  const tb=performance.now(),ticks=advanceSimulation(dt,tb),tSim=performance.now();
-  if(SPEEDS[speedIdx]>0)G.clockFrac=clamp(simAccum,0,0.999); // queued whole days are not interpolation
+  const tb=performance.now(),ticks=BACKGROUND?0:advanceSimulation(dt,tb),tSim=performance.now();
+  if(SPEEDS[speedIdx]>0&&!BACKGROUND)G.clockFrac=clamp(simAccum,0,0.999); // queued whole days are not interpolation
   // cinematic sun: a full day/night cycle every ~150 real seconds while running,
   // decoupled from sim speed so high speeds don't strobe the lighting
   if(SPEEDS[speedIdx]>0)G.visT=(G.visT??W.visT??0.38)+dt/150;
@@ -16241,8 +16477,71 @@ function storageOutcomeAssert(){if(STORAGE_OUTCOMES.modelFault)throw STORAGE_OUT
 function storageOutcomeReady(){return !STORAGE_OUTCOMES.modelFault&&(!STORAGE_OUTCOMES.journal||STORAGE_OUTCOMES.journal.ready);}
 function storageFaultNotice(message){if(MODEL_ONLY)return;const el=document.getElementById('storagefault')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'storagefault'}));el.setAttribute('role','alert');el.style.cssText='position:fixed;inset:auto 12px 12px;z-index:2000;padding:12px;background:#481c16;color:#fff';el.textContent=message;}
 function storageModelFault(error){if(STORAGE_OUTCOMES.modelFault)return;const e=error instanceof Error?error:new Error(String(error));STORAGE_OUTCOMES.modelFault=e;if(STORAGE_OUTCOMES.journal&&!STORAGE_OUTCOMES.journal.fault){STORAGE_OUTCOMES.journal.append({kind:'storage-model-fault',day:day(),message:e.message});STORAGE_OUTCOMES.schedule();}setSpeed(0);storageFaultNotice('Storage accounting failed. The game is paused and its recorded history is retained.');console.error('Storage accounting paused:',e);}
-if(!MODEL_ONLY)window.FURLONG_STORAGE_LOG=STORAGE_OUTCOMES;
-if(!MODEL_ONLY)addEventListener('pagehide',()=>{STORAGE_OUTCOMES.flush().catch(()=>{});});
+// Read-only archive facade; the worker alone owns the live journal.
+const STORAGE_ARCHIVE_DB = (() => {
+  let pending;
+  return async function storageArchiveDB(){
+    if(!pending){
+      pending=(async()=>{
+        // Avoid indexedDB.open creating a fresh empty database when history is absent.
+        if(typeof indexedDB.databases==='function'&&!(await indexedDB.databases()).some(x=>x.name==='furlong-storage-outcomes'))return null;
+        const db=await new Promise((resolve,reject)=>{
+          const r=indexedDB.open('furlong-storage-outcomes');
+          r.onupgradeneeded=()=>{r.transaction.abort();reject(Error('Storage history database is absent'));};
+          r.onerror=()=>reject(r.error||Error('Storage history database could not be opened'));
+          r.onblocked=()=>reject(Error('Storage history database is blocked'));
+          r.onsuccess=()=>resolve(r.result);
+        });
+        if(!db.objectStoreNames.contains('games')||!db.objectStoreNames.contains('chunks')){db.close();throw Error('Storage history schema is incomplete');}
+        db.onversionchange=()=>db.close();return db;
+      })().catch(e=>{pending=null;throw e;});
+    }
+    return pending;
+  };
+})();
+function storageArchiveGet(db,store,key){return new Promise((resolve,reject)=>{const r=db.transaction(store,'readonly').objectStore(store).get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error||Error('Storage history read failed'));});}
+function storageArchiveAll(db,store){return new Promise((resolve,reject)=>{const r=db.transaction(store,'readonly').objectStore(store).getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error||Error('Storage history read failed'));});}
+function storageArchiveHex(bytes){return [...new Uint8Array(bytes)].map(n=>n.toString(16).padStart(2,'0')).join('');}
+async function* storageArchiveRecords(db,meta,endSeq=meta.lastSeq){
+  let expected=0,previous=null;
+  for(let chunk=0;chunk<=meta.lastChunk;chunk++){
+    const entry=await storageArchiveGet(db,'chunks',[meta.id,chunk]);
+    if(!entry||entry.first!==expected||entry.previous!==previous)throw Error('Storage outcome chunk gap');
+    const buffer=await new Response(entry.blob.stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    const hash=storageArchiveHex(await crypto.subtle.digest('SHA-256',buffer));if(hash!==entry.hash)throw Error('Storage outcome checksum differs');
+    const rows=entry.encoding==='native-storage-v3'
+      ?(outcomeBinaryValidate(buffer,entry.first,entry.last),outcomeBinaryDecode(buffer).map(row=>({seq:row.seq,event:outcomeTransportRestore(row.event)})))
+      :outcomeRecords(new TextDecoder().decode(buffer));
+    for(const row of rows){if(expected>endSeq)return;if(row.seq!==expected++)throw Error('Storage outcome record gap');yield row;}
+    if(expected-1!==entry.last)throw Error('Storage outcome chunk length differs');previous=entry.hash;
+  }
+  if(expected<=endSeq)throw Error('Storage outcome tail missing');
+}
+async function* storageArchiveEffects(db,meta,endSeq=meta.lastSeq){
+  let seq=0;for await(const row of storageArchiveRecords(db,meta,endSeq)){
+    const parts=typeof storageTransactionPrimitives==='function'?storageTransactionPrimitives(row.event):null;
+    if(parts===null)yield{seq:seq++,event:row.event};else for(const event of parts)yield{seq:seq++,event};
+  }
+}
+function storageArchiveStream(db,meta,endSeq=meta.lastSeq){
+  let iterator,header=false;return new ReadableStream({async pull(controller){try{
+    if(!header){header=true;iterator=storageArchiveRecords(db,meta,endSeq);controller.enqueue(new TextEncoder().encode(outcomeJSON({format:'furlong-storage-outcomes',meta,endSeq})+'\n'));return;}
+    const next=await iterator.next();if(next.done)controller.close();else controller.enqueue(new TextEncoder().encode(outcomeJSON(next.value)+'\n'));
+  }catch(error){controller.error(error);}}});
+}
+function backgroundStorageLog(){
+  const flush=async()=>{if(!BACKGROUND)return STORAGE_OUTCOMES.flush();const status=await BACKGROUND.request('flush');WORKER_PRESENTATION.storageStatus=status;return status;};
+  const status=()=>BACKGROUND?{...(WORKER_PRESENTATION.storageStatus||{})}:STORAGE_OUTCOMES.status();
+  async function saved(){if(!BACKGROUND)return STORAGE_OUTCOMES.saved();const db=await STORAGE_ARCHIVE_DB();return db?storageArchiveAll(db,'games'):[];}
+  async function open(id){if(!BACKGROUND)return STORAGE_OUTCOMES.open(id);const db=await STORAGE_ARCHIVE_DB();if(!db)throw Error('Storage history has not begun');const meta=await storageArchiveGet(db,'games',id);if(!meta)throw Error('Unknown storage history');return{meta,lastChunk:meta.lastChunk,records:endSeq=>storageArchiveRecords(db,meta,endSeq),storageRecords:endSeq=>storageArchiveEffects(db,meta,endSeq),stream:endSeq=>storageArchiveStream(db,meta,endSeq)};}
+  async function* records(endSeq){if(!BACKGROUND){yield* STORAGE_OUTCOMES.records(endSeq);return;}const boundary=await flush();const db=await STORAGE_ARCHIVE_DB();if(!db)return;const meta=await storageArchiveGet(db,'games',boundary.id);if(meta)yield* storageArchiveRecords(db,meta,endSeq??Math.min(meta.lastSeq,boundary.records-1));}
+  async function* storageRecords(endSeq){if(!BACKGROUND){yield* STORAGE_OUTCOMES.storageRecords(endSeq);return;}const boundary=await flush();const db=await STORAGE_ARCHIVE_DB();if(!db)return;const meta=await storageArchiveGet(db,'games',boundary.id);if(meta)yield* storageArchiveEffects(db,meta,endSeq??Math.min(meta.lastSeq,boundary.records-1));}
+  function stream(){if(!BACKGROUND)return STORAGE_OUTCOMES.stream();let reader,initialized=false;return new ReadableStream({async pull(c){try{if(!initialized){initialized=true;const boundary=await flush();const id=boundary.id,db=await STORAGE_ARCHIVE_DB(),meta=db&&await storageArchiveGet(db,'games',id);if(!meta)throw Error('Storage history has not begun');reader=storageArchiveStream(db,meta,Math.min(meta.lastSeq,boundary.records-1)).getReader();}const n=await reader.read();if(n.done)c.close();else c.enqueue(n.value);}catch(e){c.error(e);}}});}
+  return{status,flush,saved,open,records,storageRecords,stream};
+}
+
+if(!MODEL_ONLY)window.FURLONG_STORAGE_LOG=backgroundStorageLog();
+if(!MODEL_ONLY)addEventListener('pagehide',()=>{(BACKGROUND&&!BACKGROUND.closed?BACKGROUND.request('flush'):STORAGE_OUTCOMES.flush()).catch(()=>{});});
 function beginChronicle(){
   // opening entries
   allLines.push('THE ANNALS OF '+W.name.toUpperCase());
@@ -16252,7 +16551,259 @@ function beginChronicle(){
   emit('crown',3,W.capital.pos,`${fullTitle(m0)}, ${m0.traits.join(' and ')}, holds the throne at ${W.capital.name}. ${W.settlements.length-1} towns and villages owe fealty, and the five great houses keep their seats.`);
   W.openingYaw=rand('sim')*Math.PI*2;
 }
-// SIMULATION WORKER HOST BEGIN — sole model owner; no automatic UI cutover.
+/* PRESENTATION TRANSPORT — geometry and visible actors, never economic accounts.
+   These records are disposable. The worker retains W, RNG and journals. */
+let BACKGROUND=null,backgroundApplying=false;
+const WORKER_PRESENTATION={events:[],camera:null,started:false,revision:0,buildingCount:0,towns:0,profile:null,profileDirty:false,endgame:null};
+function visualScalars(o){const out={};for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(o||{})))if(!k.startsWith('_')&&Object.hasOwn(d,'value')&&(d.value===null||['number','string','boolean'].includes(typeof d.value)))out[k]=d.value;return out;}
+function visualGeometry(value,seen=new Set()){
+  if(value===null||['number','string','boolean'].includes(typeof value))return value;
+  if(!value||typeof value!=='object'||value instanceof Map||value instanceof Set||value.household||value._hh||seen.has(value))return undefined;
+  if(ArrayBuffer.isView(value))return value.slice();
+  seen.add(value);const out=Array.isArray(value)?[]:{};
+  for(const [k,d]of Object.entries(Object.getOwnPropertyDescriptors(value))){if(!Object.hasOwn(d,'value')||['s','churchyardOf','title','storage','ledger','holdings','account','ownerAccount','beneficiary','head','p','men','riders','crew'].includes(k)||k.startsWith('_'))continue;const v=visualGeometry(d.value,seen);if(v!==undefined)out[k]=v;}
+  seen.delete(value);return out;
+}
+function visualRecord(o,fields){const out=visualScalars(o);for(const k of fields.split(' '))if(o?.[k]!==undefined)out[k]=visualGeometry(o[k]);return out;}
+function visualPerson(p){return p?{id:p.id,si:p.si,sx:p.sx,dead:!!p.dead}:null;}
+function visualBuilding(b){const out=visualRecord(b,'ch lot roofPlan wheel mill waterwheel dam _graveyard');if(typeof b.ownerId==='number'||typeof b.ownerId==='string')out.ownerId=b.ownerId;out.si=W.settlements.indexOf(b.s);if(b._graveyard){out._graveyard=visualGeometry(b._graveyard);out._graveCount=graveyardBurials(b.s,b).length;}return out;}
+function visualSettlement(s,structures){const out=visualRecord(s,'pos keepPos lake motte bailey castle cas citadel tg wallRad wallDmg wallBuild gateAngles wallGates ramparts breaches takenCircuit');out.pop=detailPopulation(s);out.si=W.settlements.indexOf(s);out.folk=[];out.renderGates=fortGateAngles(s,s);if(s.takenBy&&s.breachUntil>day())out.renderEntry=visualGeometry(entryPath(s));out.fires=(s.fires||[]).map(b=>b.idx);if(structures){out.buildings=s.buildings.map(b=>b.idx);out.streets=visualGeometry(s.streets||[]);out.places=visualGeometry(s.places||[]);out.furl=(s.furl||[]).map(f=>f.k);out.remnants=visualGeometry(s.remnants||[]);}return out;}
+function visualField(f){const out=visualRecord(f,'poly sap');for(const k of ['own','wk'])if(typeof f[k]==='number'||typeof f[k]==='string')out[k]=f[k];out.treeRefs=f.trees.map(t=>({kind:t.k,index:t.i}));return out;}
+function workerTrackSegments(){return [...(W.trackSet||[])].map(k=>{const e=W.tg.E.get(k);return{a:{x:W.tg.pts[e.a].x,z:W.tg.pts[e.a].z},b:{x:W.tg.pts[e.b].x,z:W.tg.pts[e.b].z},L:e.L};});}
+function workerFenceSegments(){const out=[];for(const f of W.land.F){if(!fenceWorked(f))continue;const P=f.poly||computeFurlongPoly(f),stone=fenceStoneView(W.settlements[f.dom]);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?W.land.F[a.nb]:null,ta=W.tg?.V.get(tgKey(a)),tb=W.tg?.V.get(tgKey(b)),lane=W.trackSet&&ta!==undefined&&tb!==undefined&&W.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);if(!lane){if(g&&fenceWorked(g)&&g.dom===f.dom&&(g.state===LS.PASTURE)===(f.state===LS.PASTURE))continue;if(g&&fenceWorked(g)&&g.k<f.k)continue;}out.push({a:{x:a.x,z:a.z},b:{x:b.x,z:b.z},x:f.x,z:f.z,lane:!!lane,stone});}}return out;}
+function workerPresentation(bootstrap=false){
+  const P=WORKER_PRESENTATION,newBuildings=P.buildingCount!==W.bldList.length,newTowns=P.towns!==W.settlements.length;
+  const structures=bootstrap||G.structuresDirty||G.roadsDirty||G.wallsDirty||newBuildings||newTowns;
+  const details=bootstrap||G.detDirty,walls=bootstrap||G.wallsDirty,roads=bootstrap||G.roadsDirty;
+  const out={protocol:1,revision:++P.revision,day:day(),speed:speedIdx,mod:{...MOD},world:visualRecord(W,'clock weather comet war feuds player vic reignNum stats'),houses:W.houses.map(h=>visualRecord(h,'sigilHue charge grudges pacts')),monarch:visualRecord(W.monarch,'traits heirs'),settlements:W.settlements.map(s=>visualSettlement(s,structures)),capital:W.settlements.indexOf(W.capital),events:P.events.splice(0),commands:JOURNAL.length,entries:entryCount,storageStatus:STORAGE_OUTCOMES.status()};
+  if(P.endgame){out.endgame=P.endgame;P.endgame=null;}if(P.profileDirty){out.profile=visualGeometry(P.profile);P.profileDirty=false;}
+  out.petitions=W.petitions.map(p=>({key:p.key,title:p.title,pos:visualGeometry(p.pos),due:p.due}));
+  out.armies=W.armies.map(a=>{const b=visualRecord(a,'field poly battlePos siegeArc seaLeg raft campaign supplyPath objective');b.men=[];b.foe=a.foe?{id:a.foe.id}:null;b.joined=a.joined?{id:a.joined.id,foe:a.joined.foe?{id:a.joined.foe.id}:null}:null;const s=W.settlements[a.at];if(s)b.renderMuster=musterPos(s,a);return b;});
+  out.caravans=(W.caravans||[]).map((c,i)=>({...visualRecord(c,'poly'),qty:c.qty,renderKey:c.storageCargo?.id||[c.origin,c.dest,c.departDay,c.good,!!c.sea,!!c.river].join(':'),renderIndex:i}));
+  out.envoys=(W.envoys||[]).map(e=>visualRecord(e,'poly'));
+  out.travellers=(W.travellers||[]).map(t=>({...visualRecord(t,'poly'),renderKey:t.p.id+':'+t.depart,p:visualPerson(t.p)}));
+  out.ships=(W.ships||[]).map(s=>visualRecord(s,'poly berth'));
+  out.banditCamps=(W.banditCamps||[]).map(c=>({...visualRecord(c,''),men:(c.men||[]).slice(0,12).map(visualPerson)}));
+  out.dragon=W.dragon?visualRecord(W.dragon,'path pos lair'):null;out.memorials=visualGeometry(W.memorials||[]);
+  const changedBuildings=bootstrap?W.bldList:new Set([...(G.buildingDirty||[]),...W.bldList.slice(P.buildingCount)]);
+  if(!bootstrap&&details)for(const b of W.bldList)if(b.arch==='temple')changedBuildings.add(b);
+  if(bootstrap||changedBuildings.size)out.buildings=[...changedBuildings].map(visualBuilding);
+  if(roads){out.roads=W.roads.map(r=>({...visualRecord(r,'path drawn bridges'),renderKey:r.a+':'+r.b}));out.bridges=visualGeometry(W.bridges);}
+  out.projects=(W.projects||[]).map(q=>({...visualRecord(q,'cut st sts rad place'),P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null}));
+  if(bootstrap){out.static={};for(const k of ['h','water','biome','moist','dom','roadCells'])if(W[k])out.static[k]=W[k].slice();out.static.rivStrips=visualGeometry(W.rivStrips);out.static.riverPaths=visualGeometry(W.riverPaths);out.static.treeSpots=visualGeometry(W.treeSpots);out.fields=W.land.F.map(visualField);out.mask=W.land.mask.slice();out.flood=W.land.flood.slice();}
+  else if(G.landDirty?.size)out.fields=[...G.landDirty].map(visualField);
+  // Mask rebuilding is structural, not daily. Transfer the immutable display copy.
+  if(!bootstrap&&G.landMaskDirty)out.mask=W.land.mask.slice();
+  if(bootstrap||G.tracksDirty){out.tracks=workerTrackSegments();out.trackBridgePlan=visualGeometry(W.trackBridgePlan||[]);}
+  if(bootstrap||G.fenceDirty)out.fences=workerFenceSegments();
+  if(G.treesDirty?.size)out.trees=[...G.treesDirty].map(t=>({kind:t.k,index:t.i,cut:!!t.cut}));
+  out.dirty={structures,buildings:bootstrap||newBuildings,walls,details,roads,labels:bootstrap||newTowns,herds:bootstrap||G.herdsDirty,orders:bootstrap||G.ordersDirty,armies:bootstrap||G.armyFlagsDirty};
+  P.buildingCount=W.bldList.length;P.towns=W.settlements.length;P.started=true;
+  for(const k of ['structuresDirty','roadsDirty','wallsDirty','detDirty','buildingsDirty','tracksDirty','fenceDirty','landMaskDirty','herdsDirty','ordersDirty','armyFlagsDirty'])G[k]=false;G.buildingDirty?.clear();G.landDirty?.clear();G.treesDirty?.clear();return out;
+}
+function presentationTransfers(value,out=[],seen=new Set()){if(!value||typeof value!=='object'||seen.has(value))return out;seen.add(value);if(ArrayBuffer.isView(value)){if(!seen.has(value.buffer)){seen.add(value.buffer);out.push(value.buffer);}return out;}for(const v of Object.values(value))presentationTransfers(v,out,seen);return out;}
+function workerOverlayQuery(mode){
+  if(mode==='trade')return{day:day(),traffic:[...roadTraffic()],seaRoutes:visualGeometry(W.seaRoutes||{})};
+  if(mode==='value')return{day:day(),buildings:W.bldList.map(b=>b.state==='sound'&&!b.removed?propValue(b):0),land:W.land.F.map(landValue)};
+  if(mode==='production')return{day:day(),production:W.settlements.map(prodOf),stores:W.settlements.map(s=>Object.fromEntries(GOODS.map(g=>[g,s.stores[g]||0])))};
+  if(mode==='landuse'){const beasts={sheep:0,cattle:0,swine:0,horses:0};for(const s of W.settlements)for(const k in beasts)beasts[k]+=s.stores[k]||0;return{day:day(),beasts};}
+  throw Error('Unknown overlay');
+}
+function reconcileVisualList(old,records,key='id'){const previous=new Map(old.map(o=>[o[key],o]));const live=new Set(records.map(r=>r[key]));for(const o of old)if(!live.has(o[key]))o.gone=true;return records.map(r=>{const match=previous.get(r[key])||{};Object.assign(match,r);return match;});}
+function installPresentation(packet){
+  if(packet.revision<=(G.workerRevision||0))return;G.workerRevision=packet.revision;WORKER_PRESENTATION.storageStatus=packet.storageStatus;backgroundApplying=true;
+  try{
+    if(packet.static){W={...packet.static,land:{F:[],mask:packet.mask,flood:packet.flood},bldList:[],settlements:[],notables:[],fams:[],roads:[],armies:[],caravans:[],ships:[],banditCamps:[]};SEED=packet.world.seed;FATE=packet.world.fate;START_AD=BACKGROUND.options.startAD;}
+    const previousPlayer=W.player;
+    Object.assign(W,packet.world);MOD=packet.mod;W.monarch=packet.monarch;W.player=packet.world.player;W.houses=packet.houses;W.petitions=packet.petitions;W._commandCount=packet.commands;entryCount=packet.entries??entryCount;if(packet.static)allLines=['THE ANNALS OF '+W.name.toUpperCase()];
+    if(typeof document!=='undefined'){const on=!!W.player?.on;document.body.classList.toggle('sov',on);if(on&&document.body.classList.contains('watch'))toggleWatch();if(previousPlayer&&previousPlayer.on!==on){if(on){markManual();if(document.getElementById('drawer').classList.contains('closed'))toggleDrawer();selectTab('crown');}else if(placeMode)setPlaceMode(null);}}
+    for(const r of packet.settlements){const s=W.settlements[r.si]||(W.settlements[r.si]={buildings:[],streets:[],places:[],furl:[],folk:[],dead:[],fires:[]});const {buildings,fires,furl,...scalar}=r;Object.assign(s,scalar);s._buildingIds=buildings||s._buildingIds;s._fireIds=fires;s._furlIds=furl||s._furlIds;}
+    W.capital=W.settlements[packet.capital];if(packet.static){W.rivHash=makeHash(40);for(const st of W.rivStrips||[])for(let k=0;k<st.pts.length-1;k++){const o={a:st.pts[k],b:st.pts[k+1],hw:st.hw[k],y:st.ys[k],x:st.pts[k].x,z:st.pts[k].z};W.rivHash.add(o,dist2d(o.a.x,o.a.z,o.b.x,o.b.z)+o.hw);}}
+    if(packet.fields)for(const f of packet.fields){const o=W.land.F[f.k]||(W.land.F[f.k]={}),oldSap=o.sap||[];Object.assign(o,f);if(f.sap){o.sap=f.sap.map(t=>Object.assign(oldSap.find(p=>p.i===t.i&&p.x===t.x&&p.z===t.z)||{},t));(G.sapDirty||(G.sapDirty=new Set())).add(o);}for(const t of oldSap)if(!o.sap?.includes(t))(G.sapRemoved||(G.sapRemoved=[])).push(t);o.trees=(f.treeRefs||[]).map(t=>W.treeSpots[t.kind]?.[t.index]).filter(Boolean);(G.landDirty||(G.landDirty=new Set())).add(o);}
+    if(packet.mask){W.land.mask.set(packet.mask);G.landMaskDirty=true;}
+    if(packet.buildings){for(const b of packet.buildings){const o=W.bldList[b.idx]||(W.bldList[b.idx]={});Object.assign(o,b);o.s=W.settlements[b.si];if(o._graveyard)o._graveyard.churchyardOf=o;(G.buildingDirty||(G.buildingDirty=new Set())).add(o);}for(const s of W.settlements){s.buildings=(s._buildingIds||[]).map(i=>W.bldList[i]);s.furl=(s._furlIds||[]).map(i=>W.land.F[i]);}}
+    for(const s of W.settlements)s.fires=(s._fireIds||[]).map(i=>W.bldList[i]).filter(Boolean);
+    for(const k of ['armies','caravans','envoys','travellers','ships','banditCamps'])W[k]=reconcileVisualList(W[k]||[],packet[k]||[],k==='caravans'?'renderKey':k==='travellers'?'renderKey':'id');
+    if(packet.dragon){if(!W.dragon||W.dragon.name!==packet.dragon.name){if(W.dragon)W.dragon.gone=true;W.dragon={};}Object.assign(W.dragon,packet.dragon);}else{if(W.dragon)W.dragon.gone=true;W.dragon=null;}W.memorials=packet.memorials;if(packet.roads){W.roads=reconcileVisualList(W.roads||[],packet.roads,'renderKey');W.bridges=packet.bridges;}W.projects=packet.projects;
+    if(packet.tracks){W.renderTracks=packet.tracks;W.trackBridgePlan=packet.trackBridgePlan;G.tracksDirty=true;}if(packet.fences){W.renderFences=packet.fences;G.fenceDirty=true;}
+    for(const q of packet.trees||[]){const t=W.treeSpots[q.kind]?.[q.index];if(t){t.cut=q.cut;(G.treesDirty||(G.treesDirty=new Set())).add(t);}}
+    for(const [k,v]of Object.entries(packet.dirty))if(v)G[{structures:'structuresDirty',buildings:'buildingsDirty',walls:'wallsDirty',details:'detDirty',roads:'roadsDirty',labels:'labelsDirty',herds:'herdsDirty',orders:'ordersDirty',armies:'armyFlagsDirty'}[k]]=true;
+    G.campMeshesDirty=true;G.cairnDirty=true;G.clockFrac=W.clock.frac||0;setSpeed(packet.speed);
+    if(packet.endgame)presentEndgame(workerHTML(packet.endgame));
+    if(packet.profile)try{const key='annals-best-'+SEED;if(packet.profile.best>(+localStorage.getItem(key)||0))localStorage.setItem(key,String(packet.profile.best));const earned=JSON.parse(localStorage.getItem('furlong-ach')||'{}');for(const [id,date]of Object.entries(packet.profile.achievements))if(!earned[id])earned[id]=date;localStorage.setItem('furlong-ach',JSON.stringify(earned));}catch(_){}
+    for(const ev of packet.events){allLines.push(ev.reign?'\n=== '+ev.text+' ===\n':'['+dateStr(ev.day)+'] '+ev.text);if(scene)projectEvent(ev);else(G.bootEvents||(G.bootEvents=[])).push(ev);}
+  }finally{backgroundApplying=false;}
+}
+
+/*
+ * Ephemeral renderer DTO builders. Concatenate after the simulation helpers in
+ * simulationWorkerModel; never return references into W, household graphs, or G.
+ */
+function workerRenderFinite(n,fallback=0){return Number.isFinite(n)?n:fallback;}
+function workerRenderPoint(p){return p&&Number.isFinite(p.x)&&Number.isFinite(p.z)?{x:p.x,z:p.z}:null;}
+function workerRenderPath(path){return Array.isArray(path)?path.map(workerRenderPoint).filter(Boolean):[];}
+
+function workerRenderCitizens(si,options={}){
+  const s=W.settlements?.[si];if(!s||!Array.isArray(s.folk))return{si,day:workerRenderFinite(day()),people:[]};
+  const focus=workerRenderPoint(options.focus)||workerRenderPoint(s.pos)||{x:0,z:0};
+  const frac=Number.isFinite(options.frac)?clamp(options.frac,0,0.999):displayFrac();
+  const now=workerRenderFinite(day())+frac;
+  const scratch=G._workerCitizenPlans||(G._workerCitizenPlans=new Map());
+  const signature=day()+':'+seasonIdx();
+  let entry=scratch.get(si),fresh=!entry||entry.s!==s||entry.signature!==signature;
+  const oldFocus=cam.cur.focus,hadClock=Object.hasOwn(G,'clockFrac'),oldClock=G.clockFrac;
+  try{
+    // townsfolkFor is the canonical semantic planner. Give it a headless-safe
+    // focus and colour value while retaining its internal graph only in scratch.
+    cam.cur.focus=focus;G.clockFrac=frac;
+    let colorDescriptor=null;
+    if(typeof THREE==='undefined'){
+      colorDescriptor=Object.getOwnPropertyDescriptor(globalThis,'THREE');
+      class PlanColor{
+        constructor(hex=0xffffff){this.hex=hex>>>0;this.gain=1;}
+        multiplyScalar(v){this.gain*=Number.isFinite(v)?v:1;return this;}
+      }
+      globalThis.THREE={Color:PlanColor};
+    }
+    try{
+      if(fresh){const people=townsfolkFor(s);warmWalkers(people);entry={s,signature,people,day:now};scratch.set(si,entry);}
+    }finally{
+      if(colorDescriptor)Object.defineProperty(globalThis,'THREE',colorDescriptor);else if(typeof THREE!=='undefined'&&THREE?.Color?.name==='PlanColor')delete globalThis.THREE;
+    }
+    if(!fresh){
+      const dt=Math.max(0,now-workerRenderFinite(entry.day,now));
+      for(const c of entry.people)stepWalker(c,dt*DAYSEC,frac);
+      entry.day=now;
+    }
+    const people=[];
+    for(const c of entry.people){
+      const p=c.p,col=c.col,route=workerRenderPath(c.route),fw=c.fw?{
+        A:workerRenderPoint(c.fw.A),B:workerRenderPoint(c.fw.B),flip:!!c.fw.flip,run:!!c.fw.run
+      }:null;
+      people.push({id:p.id,name:folkName(p),surname:famName(p),sex:p.sx||null,appearance:p.sx||null,
+        role:p.tr||null,age:workerRenderFinite(ageYrs(p)),si:p.si,
+        x:workerRenderFinite(c.x),z:workerRenderFinite(c.z),yaw:workerRenderFinite(c.ry),
+        scale:workerRenderFinite(c.sc,1),colour:{hex:Number.isFinite(col?.hex)?col.hex:null,
+          gain:workerRenderFinite(col?.gain,1)},time:workerRenderFinite(c.t),until:workerRenderFinite(c.until),
+        state:String(c.state||''),goal:String(c.goal||''),doing:String(c.doing||''),out:!!c.out,walking:!!c.walking,
+        route,routeIndex:Number.isInteger(c.ri)?c.ri:0,furrow:fw});
+    }
+    return{si,day:now,frac,people};
+  }finally{
+    cam.cur.focus=oldFocus;if(hadClock)G.clockFrac=oldClock;else delete G.clockFrac;
+  }
+}
+
+function workerRenderHerds(center,range=1800){
+  const focus=workerRenderPoint(center)||{x:0,z:0};
+  const R=typeof range==='object'?workerRenderFinite(range.R,1800):workerRenderFinite(range,1800);
+  if(!W.land||!Array.isArray(W.settlements))return{center:focus,range:R,day:workerRenderFinite(day()),flocks:[]};
+  const mon=(day()/30|0),stub=seasonIdx()>=2,plans=[],emitted={sheep:0,cattle:0,horses:0,swine:0};
+  const draw=typeof HERDDRAW==='object'?HERDDRAW:{sheep:{per:8,cap:3000},cattle:{per:2,cap:1600},horses:{per:1.5,cap:700},swine:{per:4,cap:1400}};
+  W.settlements.forEach((s,si)=>{
+    if(!s.hm||dist2d(s.pos.x,s.pos.z,focus.x,focus.z)>R+(s.radius||80)+FG*3)return;
+    const F=(s.furl||[]).filter(f=>f.dom===si),past=F.filter(f=>f.state===LS.PASTURE||f.state===LS.WILD).sort((a,b)=>b.area-a.area);
+    const stubble=stub?F.filter(f=>f.state===LS.TILLED&&f.kind!==LK.VINE):[],wood=F.filter(f=>f.state===LS.WOOD);
+    const near=A=>[...A].sort((a,b)=>dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
+    const used=new Set(),r=nameRng(si*977+mon*31),take=list=>{for(const f of list)if(!used.has(f)){used.add(f);return f;}return list[0]||null;};
+    const choice={sheep:[...past,...stubble],cattle:[...near(past),...near(stubble)],swine:wood.length?wood:near(past),horses:near(past)};
+    for(const k of['horses','cattle','sheep','swine']){
+      const D=draw[k];let n=Math.min(D.cap-emitted[k],Math.round((s.stores?.[k]||0)/D.per));if(n<=0)continue;
+      while(n>0){const size=Math.min(n,k==='sheep'?30:k==='swine'?16:k==='cattle'?14:8);n-=size;const f=take(choice[k]);
+        let P=null;if(f){const fp=f.poly||computeFurlongPoly(f);P=insetPoly(fp,5);if(!Array.isArray(P)||P.length<3)P=null;}
+        let c0=null;for(let t=0;t<40&&!c0;t++){
+          const x=P?f.x+(r()-0.5)*FG*0.8:s.pos.x+(r()-0.5)*((s.radius||60)*2+120);
+          const z=P?f.z+(r()-0.5)*FG*0.8:s.pos.z+(r()-0.5)*((s.radius||60)*2+120);
+          if((!P||inPolyXZ(P,x,z))&&grazeOK(x,z)&&(P||dist2d(x,z,s.pos.x,s.pos.z)>(s.radius||60)+10))c0={x,z};
+        }
+        if(!c0)continue;
+        const mem=[];for(let q=0;q<size;q++){
+          const a=r()*6.283,d=Math.sqrt(r())*(3+Math.sqrt(size)*2.2),ox=Math.cos(a)*d,oz=Math.sin(a)*d;
+          let x=c0.x+ox,z=c0.z+oz;if((P&&!inPolyXZ(P,x,z))||!grazeOK(x,z)){x=c0.x;z=c0.z;}
+          const coat=r();mem.push({ox,oz,x,z,phase:r()*6.283,yaw:r()*6.283,coat,born:workerRenderFinite(herdVisualAge(si,k,coat)),walk:0,graze:0});
+        }
+        plans.push({kind:k,si,center:{x:c0.x,z:c0.z},seed:workerRenderFinite(r()*1000),boundary:workerRenderPath(P),members:mem});emitted[k]+=mem.length;
+      }
+    }
+  });
+  return{center:focus,range:R,day:workerRenderFinite(day()),month:mon,flocks:plans};
+}
+
+function workerRenderCampActors(center,range=1500){
+  const focus=workerRenderPoint(center)||{x:0,z:0};
+  const R=typeof range==='object'?workerRenderFinite(range.R,1500):workerRenderFinite(range,1500);
+  const palette=[0x7a3b2e,0x3e5a7a,0x5b6b3a,0x8a7a5a,0x6b4a6e,0xa88b4a,0x4a4a4a,0x9a5a3a,0xb8ae98],actors=[];
+  for(const camp of W.banditCamps||[]){
+    if(!Number.isFinite(camp.x)||!Number.isFinite(camp.z)||dist2d(camp.x,camp.z,focus.x,focus.z)>R)continue;
+    const members=(camp.men||[]).slice(0,12),turn=hash01((camp.id||1)*43.7)*Math.PI*2;
+    for(let k=0;k<members.length;k++){
+      const p=members[k];if(!p||p.dead)continue;
+      const a=turn+k*2.399963,r=13.5+(k%3)*1.35;
+      actors.push({campId:camp.id,id:p.id,name:folkName(p),surname:famName(p),sex:p.sx||null,
+        appearance:p.sx||null,role:p.tr||null,si:p.si,x:camp.x+Math.cos(a)*r,z:camp.z+Math.sin(a)*r,
+        yaw:-(a+Math.PI)+Math.PI/2,scale:p.sx==='f'?0.96:1,
+        colour:{hex:palette[(p.id||k)%palette.length],gain:0.85+hash01((p.id||k)*17.3)*0.3}});
+    }
+  }
+  return{center:focus,range:R,actors};
+}
+
+/* Foreground adapters submit intent; they never execute a daily transaction. */
+function workerNotice(error){backgroundApplying=true;try{setSpeed(0);}finally{backgroundApplying=false;}if(BACKGROUND&&!BACKGROUND.closed)BACKGROUND.request('pause').catch(()=>{});console.error('Background simulation:',error);storageFaultNotice('The simulation is paused: '+String(error.message||error)+'. Save or reload the last committed game.');}
+function workerHTML(html){return String(html||'').replace(/worker-sigil:(\d+)/g,(_,hi)=>sigURL(+hi));}
+function workerQuery(key,payload,install){
+  const pending=BACKGROUND.reads||(BACKGROUND.reads=new Map());if(pending.has(key))return pending.get(key);
+  const query=BACKGROUND.request('view',payload).then(install).catch(error=>{console.error('Game query:',error);return null;}).finally(()=>pending.delete(key));pending.set(key,query);return query;
+}
+async function workerSubmitCommand(entry){
+  try{const reply=await BACKGROUND.request('command',entry);await workerRefreshLandscape();refreshCrownPanel(true);refreshInspect();renderPetition();return reply;}
+  catch(error){storageFaultNotice(String(error.message||error));return{accepted:false,error:String(error.message||error)};}
+}
+async function workerSetSpeed(index){
+  index=Math.round(+index);if(index<0||index>=SPEEDS.length)return;
+  try{await BACKGROUND.request(index===0?'pause':'speed',{index});await BACKGROUND.request('watch',{kind:'landscape',everyDays:index===5?30:1});await workerRefreshLandscape();}
+  catch(error){workerNotice(error);}
+}
+async function workerRefreshLandscapeBootstrap(){installPresentation(await BACKGROUND.request('view',{kind:'bootstrap'}));}
+function workerRefreshLandscape(){return workerQuery('landscape',{kind:'landscape'},packet=>{installPresentation(packet);updateHUD();});}
+function workerRefreshCourt(force=false){if(drawerTab!=='crown'||!force&&(!drawerVisible()||uiBusy()))return;return workerQuery('court',{kind:'ui',panel:'crown',expanded:contextUI.expanded,section:crownSection,ledgerOpen:G.ledgerOpen},view=>{if(drawerTab==='crown')setHTML(document.getElementById('dbody'),workerHTML(view.html));});}
+function workerRefreshHousePanel(force=false){if(drawerTab!=='world'||!force&&!drawerVisible())return;return workerQuery('houses',{kind:'ui',panel:'house-panel'},view=>{if(drawerTab!=='world')return;setHTML(document.getElementById('housepanel'),workerHTML(view.houses));setHTML(document.getElementById('succpanel'),workerHTML(view.succession));});}
+function workerOpenInfo(kind,town=null,reference=null){
+  const refresh=kind==='accounts-refresh',content=document.getElementById('contextcontent'),scroll=refresh?content.scrollTop:0;
+  if(!refresh){infoUI.kind=kind;infoUI.town=town;infoUI.reference=reference;contextUI.scroll.delete('info');}hideInspect();
+  return workerQuery('info:'+infoUI.kind+':'+reference,{kind:'ui',panel:'info',infoKind:infoUI.kind,town:town?W.settlements.indexOf(town):null,reference:infoUI.reference},view=>{setHTML(document.getElementById('infobody'),workerHTML(view.html));contextShow('info');contextExpand(infoUI.kind==='accounts'||infoUI.kind==='reference');content.scrollTop=scroll;});
+}
+function workerRenderPetition(open=false){
+  const el=document.getElementById('petition'),button=document.getElementById('petitionbtn');button.hidden=!W.petitions.length||!sovOn();button.textContent='Petitions ('+W.petitions.length+')';
+  if(!W.petitions.length||!sovOn()||speedIdx===5&&!open&&contextUI.kind!=='petition'){el.style.display='none';return;}
+  return workerQuery('petitions',{kind:'ui',panel:'petitions',open,contextKind:contextUI.kind,expanded:!el.classList.contains('min')},view=>{if(!view.visible){el.style.display='none';return;}setHTML(el,workerHTML(view.html));if(el._key!==view.key){el._key=view.key;el.classList.remove('min');sheet('petition');}el.style.display='block';});
+}
+function workerShowInspector(pk){
+  const code=pk.workerCode||inspectorPickCode(pk);if(!code){if(pk.type==='event')return showEventDialog(pk.ev);return;}
+  inspTarget=pk;const full=contextUI.expanded;
+  return workerQuery('inspect:'+code+':'+full,{kind:'inspect',code,full},card=>{if(inspTarget!==pk)return;pk.workerCode=code;pk.workerCard={...card,title:workerHTML(card.title),sub:workerHTML(card.sub),body:workerHTML(card.body),actions:workerHTML(card.actions)};pk._anchor=card.anchor;backgroundApplying=true;try{showInspect(pk);}finally{backgroundApplying=false;}});
+}
+async function workerGoName(code){
+  if(/^(household|family|surname|choose|good|trade|structure):/.test(code)){const si=+code.split(':')[1];return openInfo('reference',W.settlements[si]||null,code);}
+  const pk={type:'reference',workerCode:code};await workerShowInspector(pk);if(pk._anchor){markManual();flyTo(pk._anchor.x,pk._anchor.z,260);}
+}
+function workerRefreshActors(herds=false){
+  if(!BACKGROUND||!cam.cur.focus)return;const focus={x:cam.cur.focus.x,z:cam.cur.focus.z};let si=-1,d=Infinity;for(let i=0;i<W.settlements.length;i++){const s=W.settlements[i],v=dist2d(s.pos.x,s.pos.z,focus.x,focus.z);if(v<d){d=v;si=i;}}
+  if(cam.cur.dist>=700||d>(W.settlements[si]?.extentR||W.settlements[si]?.radius||0)+160)si=-1;
+  return workerQuery('actors',{kind:'actors',si,focus,range:Math.max(1800,cam.cur.dist*2.5),herds},packet=>{G.workerCitizens=packet.citizens;G.clockFrac=packet.fraction||0;G.walkDay=packet.day+(packet.fraction||0);if(packet.herds){G.herdsDirty=false;G._hPlan={x:focus.x,z:focus.z,R:packet.herds.range,t:performance.now()};G.flocks=packet.herds.flocks.map(f=>({k:f.kind,si:f.si,P:f.boundary,c0:f.center,cx:f.center.x,cz:f.center.z,seed:f.seed,mem:f.members.map(m=>({...m,ph:m.phase,rot:m.yaw}))}));}});
+}
+function renderTransportCitizens(nearest,d){
+  const now=performance.now(),si=W.settlements.indexOf(nearest),prior=G.workerActorFocus,close=nearest&&cam.cur.dist<700&&d<(nearest.extentR||nearest.radius)+160;
+  if((!prior||dist2d(prior.x,prior.z,cam.cur.focus.x,cam.cur.focus.z)>30||now-prior.t>(speedIdx===5?1000:150))&&!BACKGROUND.reads?.has('actors')){G.workerActorFocus={x:cam.cur.focus.x,z:cam.cur.focus.z,t:now};workerRefreshActors();}
+  const list=close&&G.workerCitizens?.si===si?G.workerCitizens.people:[];let k=0;G.citIdx=[];const vs=clamp(cam.cur.dist/220,1,2.6);
+  for(const c of list){if(!c.out||k>=160)continue;const p={id:c.id,si:c.si,sx:c.sex},y=surfY(c.x,c.z)+.28,sc=c.scale*vs;setInst(G.citizens,k,c.x,y,c.z,c.yaw,sc,sc,sc);setInst(G.citKit,k,c.x,y,c.z,c.yaw,sc,sc,sc);G.citizens.setColorAt(k,new THREE.Color(c.colour.hex).multiplyScalar(c.colour.gain));G.citIdx[k]={p,s:nearest,x:c.x,z:c.z,out:c.out};k++;}
+  G.citizens.count=G.citKit.count=k;G.citizens.instanceMatrix.needsUpdate=G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
+}
+function projectTransportFences(){
+  let nw=0,ns=0;for(const e of W.renderFences||[]){const a=e.a,b=e.b;let ax=a.x,az=a.z,bx=b.x,bz=b.z;if(e.lane){const L=dist2d(ax,az,bx,bz)||1,nx=-(bz-az)/L,nz=(bx-ax)/L,sg=(e.x-ax)*nx+(e.z-az)*nz>0?1:-1;ax+=nx*sg*2;az+=nz*sg*2;bx+=nx*sg*2;bz+=nz*sg*2;}const L=dist2d(ax,az,bx,bz);if(L<1)continue;const n=Math.ceil(L/4.5),rot=-Math.atan2(bz-az,bx-ax),sl=L/n,M=e.stone?G.fenceStone:G.fenceWood;for(let q=0;q<n;q++){const t=(q+.5)/n,x=ax+(bx-ax)*t,z=az+(bz-az)*t,c=cIdx(toCell(x),toCell(z));if(W.water[c]||!W.land.mask[c*4]||W.land.mask[c*4+2])continue;const x0=ax+(bx-ax)*q/n,z0=az+(bz-az)*q/n,x1=ax+(bx-ax)*(q+1)/n,z1=az+(bz-az)*(q+1)/n,y0=hAt(x0,z0),y1=hAt(x1,z1),pt=Math.atan2(y1-y0,sl),sx=Math.hypot(sl,y1-y0);if(e.stone){if(ns>=M.instanceMatrix.count)break;setInstTilt(M,ns++,x,(y0+y1)/2-.1,z,rot,0,pt,sx,1,1);}else{if(nw>=M.instanceMatrix.count)break;setInst(G.fencePost,nw,x0,y0-.05,z0,rot,1,1,1);setInstTilt(M,nw++,x,(y0+y1)/2-.05,z,rot,0,pt,sx,1,1);}}}G.fenceWood.count=G.fencePost.count=nw;G.fenceStone.count=ns;for(const m of [G.fenceWood,G.fenceStone,G.fencePost])m.instanceMatrix.needsUpdate=true;
+}
+
+// SIMULATION WORKER HOST BEGIN — sole model owner; foreground receives display projections.
 class SimulationWorkerHost{
   constructor(model,send,{now=()=>performance.now(),schedule=(fn,ms)=>setTimeout(fn,ms),cancel=id=>clearTimeout(id),budget=8}={}){
     this.model=model;this.send=send;this.now=now;this.schedule=schedule;this.cancel=cancel;this.budget=budget;
@@ -16275,7 +16826,7 @@ class SimulationWorkerHost{
       this.ready=true;this.model.speed(0);this.lastTime=this.now();this.reply(message,this.model.view('summary'));return;
     }
     if(!this.ready)throw Error('Simulation worker is not initialized');
-    if(this.fault&&!['view','save','flush','close'].includes(type))throw this.fault;
+    if(this.fault&&!['view','save','save-record','flush','close'].includes(type))throw this.fault;
     switch(type){
       case 'advance':
         if(!Number.isSafeInteger(payload.days)||payload.days<1||payload.days>360000)throw Error('Invalid day count');
@@ -16288,11 +16839,12 @@ class SimulationWorkerHost{
         this.model.speed(0);this.accum=0;if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
       case 'command':
         // Validation precedes journal admission; every accepted command runs once.
-        this.model.validate(payload);try{this.model.command(payload);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day()});return;
-      case 'view':this.reply(message,await this.model.view(payload.kind||'summary',payload));return;
+        {const prepared=this.model.validate(payload);try{this.model.command(payload,prepared);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day()});return;}
+      case 'view':this.reply(message,await this.model.view(payload.kind||'summary',{...payload,fraction:Math.max(0,Math.min(.999,this.accum))}));return;
+      case 'save-record':this.reply(message,await this.model.saveRecord(payload));return;
       case 'watch':
         if(payload.enabled===false){this.publication=null;this.reply(message,{day:this.model.day()});return;}
-        {const everyDays=payload.everyDays??30;if(!Number.isInteger(everyDays)||everyDays<1||everyDays>360)throw Error('Invalid view interval');this.publication={everyDays,next:this.model.day()+everyDays,inflight:null};this.reply(message,{day:this.model.day(),everyDays});return;}
+        {const everyDays=payload.everyDays??30;if(!Number.isInteger(everyDays)||everyDays<1||everyDays>360)throw Error('Invalid view interval');const p=this.publication||{inflight:null};Object.assign(p,{kind:payload.kind||'summary',everyDays,next:this.model.day()+everyDays});this.publication=p;this.reply(message,{day:this.model.day(),everyDays});return;}
       case 'view-ack':
         if(!this.publication){this.reply(message,{stale:true});return;}
         if(payload.sequence!==this.publication.inflight)throw Error('Simulation view acknowledgement differs');this.publication.inflight=null;await this.publish();this.reply(message,{day:this.model.day()});return;
@@ -16303,7 +16855,7 @@ class SimulationWorkerHost{
       default:throw Error('Unknown simulation request');
     }
   }
-  async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next)return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view('summary')});}
+  async publish(){const p=this.publication;if(!p||p.inflight!==null||this.model.day()<p.next)return;p.next=this.model.day()+p.everyDays;p.inflight=++this.viewSequence;this.send({protocol:1,type:'view',sequence:p.inflight,value:await this.model.view(p.kind)});}
   async pump(){
     if(this.busy||this.closed)return;this.busy=true;const start=this.now();
     try{
@@ -16314,7 +16866,7 @@ class SimulationWorkerHost{
           this.accum=reeling?0:Math.min(45+rate*.25,this.accum+Math.max(0,now-this.lastTime)*rate/1000);this.lastTime=now;
           if(!this.advance&&!reeling&&this.accum<1)break;
           await this.model.wait();if(this.queue.length)continue;
-          try{if(this.model.tick()===false)break;}catch(error){this.fail(error);break;}
+          try{if(await this.model.tick()===false)break;}catch(error){this.fail(error);break;}
           if(this.publication&&this.publication.inflight===null&&this.model.day()>=this.publication.next)await this.publish(); // at most one unacknowledged, replaceable display batch
           if(this.advance){if(this.model.day()>=this.advance.target){this.reply(this.advance,{day:this.model.day(),complete:true});this.advance=null;}}
           else this.accum=Math.max(0,this.accum-1);
@@ -16325,27 +16877,184 @@ class SimulationWorkerHost{
     }catch(error){this.fail(error);}finally{this.busy=false;if(!this.closed&&(this.queue.length||this.ready&&!this.fault&&(this.advance||this.model.rate()>0)))this.wake(this.queue.length||this.advance||this.model.reeling?.()===true?0:8);}
   }
 }
+// Worker boundary for the six player-command journal records.
+// Validation is side-effect-free and must run before jot().
+function workerCommandInt(n,min,max){return Number.isInteger(n)&&n>=min&&n<=max;}
+function workerCommandPoint(p){return p&&typeof p==='object'&&Number.isFinite(p.x)&&Number.isFinite(p.z);}
+function workerCommandString(v){return typeof v==='string'&&v.length<=256;}
+function workerCommandTarget(e){
+  if(!e||typeof e!=='object')throw Error('Invalid simulation command');
+  switch(e.k){
+    case 'sov':
+      if(typeof e.on!=='boolean'||e.hi!==undefined&&!workerCommandInt(e.hi,0,Math.max(0,W.houses.length-1)))throw Error('Invalid ruler command');
+      if(e.on){const hi=e.hi==null?(W.player?.house|0):e.hi;if(hi>0&&(!W.houses[hi]||W.houses[hi].exiled||!W.settlements.some(s=>s.owner===hi)))throw Error('Unavailable ruler');}
+      return 'worker';
+    case 'pet':
+      if(!workerCommandInt(e.i,0,Number.MAX_SAFE_INTEGER))throw Error('Invalid petition command');
+      {const p=W.petitions?.[0],o=p?.opts[e.i];if(!o||o.cost&&purse(p.to|0)<o.cost)throw Error('Invalid petition answer');}
+      return 'worker';
+    case 'set':
+      if(typeof e.n!=='string'||!Number.isFinite(e.v))throw Error('Invalid setting command');
+      if(e.n==='tax'){if(e.v<5||e.v>30)throw Error('Invalid setting value');}
+      else if(e.n==='dues'){if(e.v<0.5||e.v>1.6)throw Error('Invalid setting value');}
+      else if(e.n==='mod:myth'){if(!Number.isInteger(e.v)||e.v<0||e.v>2)throw Error('Invalid setting value');}
+      else if(e.n.startsWith('mod:')){const rate=RATES.find(x=>x[0]===e.n.slice(4));if(!Object.hasOwn(MOD,e.n.slice(4))||!rate||e.v<rate[2]||e.v>rate[3])throw Error('Invalid setting value');}
+      else throw Error('Invalid setting command');
+      return 'worker';
+    case 'plan':
+      if(!['street','quarter','stopup','razewall','raze','square','wall'].includes(e.kind)||!Array.isArray(e.st)||!e.st.length||e.st.length>20000||!e.st.every(workerCommandPoint)||!workerCommandInt(e.p,0,Math.max(0,W.houses.length-1)))throw Error('Invalid plan command');
+      return 'worker';
+    case 'place': {
+      const modes=['objective','supplyroad','raft','order','charter','road1','road2','pave','buyland','seize','clear','lroad1','lroad2','lpave','lvillage',...ACTS.map(x=>x[0])];
+      if(!modes.includes(e.m)||!Number.isFinite(e.x)||!Number.isFinite(e.z)||e.pk!=null&&!(e.m==='order'&&workerCommandId(e.pk)||e.m==='objective'&&workerCommandPick(e.pk)))throw Error('Invalid place command');
+      if(Object.hasOwn(e,'a')&&!workerCommandPlaceArg(e.m,e.a))throw Error('Invalid place command argument');
+      if(e.m==='order'&&e.pk!=null&&!W.armies.some(a=>a.id===e.pk&&!a.gone))throw Error('Unknown army target in place command');
+      return 'worker';
+    }
+    case 'c': {
+      if(!workerCommandString(e.c)||e.a!=null&&!workerCommandString(e.a))throw Error('Invalid player command');
+      const c=e.c,a=e.a??'';
+      // These commands only establish an interface state or a pending map pick.
+      // Keep them on the main thread; the following committed place record is
+      // self-contained and can be applied by the worker.
+      if(['a-order','a-road','a-raft','a-objective','decree'].includes(c)&&
+          (c!=='decree'||DECREES.find(d=>d.k===a)?.place))return 'main';
+      if(c==='lord'){
+        const [verb,arg]=a.split(':');
+        if(['ledger','goto','plan','seize','road','pave','village'].includes(verb))return 'main';
+        if(!['feast','muster','dismiss','gift','aid','declare','feud','incite','peace','rebel','royalmatch'].includes(verb))throw Error('Unsupported lord command');
+        if(['feud','incite','peace'].includes(verb)&&!workerCommandIndexText(arg,W.houses.length))throw Error('Invalid lord command target');
+        return 'worker';
+      }
+      if(['sov-on','sov-off','sov-house'].includes(c)){
+        if(c==='sov-house'&&!workerCommandIndexText(a,W.houses.length))throw Error('Invalid ruler command');
+        return 'worker';
+      }
+      if(c==='pause-toggle')return 'worker';
+      if(c==='camp-len'){if(!['100','200','400'].includes(a))throw Error('Invalid camp length');return 'worker';}
+      if(c==='storage-commission'){workerCommandStorageArg(a);return 'worker';}
+      if(['notable','army','s-manage','storage-pick'].includes(c))return 'main';
+      if(c==='s-work'){
+        const [si,k,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||!WORKS.some(w=>w[0]===k))throw Error('Invalid works command');return 'worker';
+      }
+      if(/^s-(relief|garrison|callout|levy|walls|seal|suppress)$/.test(c)){
+        if(!workerCommandIndexText(a,W.settlements.length))throw Error('Invalid settlement command');return 'worker';
+      }
+      if(/^a-(split|merge|hold|release|disband|garrison)$/.test(c)){
+        if(!workerCommandArmyArg(a,c==='a-merge'))throw Error('Invalid army command');return 'worker';
+      }
+      if(c==='decree'){
+        const d=DECREES.find(x=>x.k===a);if(!d||d.place)throw Error('Unsupported decree command');return 'worker';
+      }
+      if(/^h-(honour|hostage|match|attaint)$/.test(c)){
+        if(!workerCommandIndexText(a,W.houses.length)||+a===0)throw Error('Invalid house command');return 'worker';
+      }
+      throw Error('This command has not migrated to the worker');
+    }
+    default: throw Error('This command has not migrated to the worker');
+  }
+}
+function workerCommandIndexText(s,n){return typeof s==='string'&&/^\d+$/.test(s)&&+s<n;}
+function workerCommandArmyArg(s,second){const p=String(s).split(':');return p.length===(second?2:1)&&p.every(x=>/^\d+$/.test(x)&&workerCommandId(+x))&&W.armies.some(a=>a.id===+p[0]&&!a.gone)&&(!second||W.armies.some(a=>a.id===+p[1]&&!a.gone));}
+function workerCommandId(n){return Number.isSafeInteger(n)&&n>=0;}
+function workerCommandStorageArg(s){
+  let q;try{q=JSON.parse(decodeURIComponent(s));}catch{throw Error('Invalid storage commission');}
+  if(!q||!workerCommandInt(q.si,0,W.settlements.length-1)||!Object.hasOwn(STORAGE_TYPES,q.arch)||
+      !Number.isFinite(q.x)||!Number.isFinite(q.z)||!workerCommandInt(q.payer,0,Math.max(0,W.houses.length-1))||
+      q.payer!==plyH()||W.settlements[q.si].owner!==q.payer||!sovOn())throw Error('Invalid storage commission');
+}
+function workerCommandPick(p){return p&&typeof p==='object'&&['settlement','building','wall'].includes(p.type)&&workerCommandInt(p.si,0,W.settlements.length-1)&&
+  (p.type!=='building'||workerCommandString(p.arch)&&Number.isFinite(p.x)&&Number.isFinite(p.z))&&
+  (p.type!=='wall'||workerCommandString(p.circuit)&&Number.isFinite(p.angle));}
+function workerCommandPlaceArg(mode,a){
+  if(mode==='order'||mode==='objective'||mode==='supplyroad'||mode==='raft'){
+    if(mode==='order'&&a&&workerCommandId(a.id))return true; // stable id and legacy army object
+    if(mode!=='order'&&mode!=='objective'&&a&&workerCommandId(a.id))return true;
+    return mode==='objective'&&a&&Number.isInteger(a.id)&&['capture','pillage','depose','demolish','destroy','devastate'].includes(a.kind)||
+      mode==='supplyroad'&&a&&Number.isInteger(a.id)||mode==='raft'&&a&&Number.isInteger(a.id);
+  }
+  if(mode==='charter')return Number.isFinite(a)&&a>=0;
+  if(mode==='road1')return a==null||a==='road'; // the first click ignores the decree's legacy mode argument
+  if(mode==='road2'||mode==='lroad2')return workerCommandInt(typeof a==='number'?a:+a,0,W.settlements.length-1);
+  if(['pave','buyland','seize','clear'].includes(mode))return a==null||a===mode;
+  return a==null;
+}
+function workerCommandApply(e,prepared=workerCommandValidate(e)){
+  const target=prepared.target;if(target==='main')throw Error('Command requires the main-thread interface');
+  jot({...e});
+  switch(e.k){
+    case 'c': return workerCommandApplyClick(e.c,e.a);
+    case 'sov': return setSovereign(e.on,e.hi);
+    case 'pet': return answerPetition(e.i);
+    case 'set': return applySetting(e.n,e.v);
+    case 'place': {
+      setPlaceMode(null);return doPlace(e.m,prepared.arg,{x:e.x,z:e.z},e.pk??null);
+    }
+    case 'plan': return planCommit(prepared.draft,e.p);
+  }
+}
+function workerCommandValidate(e){const target=workerCommandTarget(e);if(target==='main')return{target};
+  if(e.k==='place'){if(!Object.hasOwn(e,'a'))throw Error('Place command lacks its explicit argument');return{target,arg:workerCommandRestorePlaceArg(e.m,e.a)};}
+  if(e.k==='plan'){const draft=planDraft(e.kind,e.st,e.p);if(!draft.ok)throw Error('Plan is not valid: '+draft.why);if(purse(e.p)<draft.first)throw Error('There is not enough in that purse to begin the work');return{target,draft};}
+  return{target};}
+function workerCommandPlanQuote(payload){
+  const kinds=['street','quarter','stopup','razewall','raze','square','wall'];
+  if(!payload||!kinds.includes(payload.kind)||!Array.isArray(payload.st)||payload.st.length<3||payload.st.length>5000||!payload.st.every(workerCommandPoint)||!workerCommandInt(payload.p,0,Math.max(0,W.houses.length-1)))throw Error('Invalid plan survey');
+  const D=planDraft(payload.kind,payload.st,payload.p),quote={ok:!!D.ok,kind:payload.kind};
+  if(!D.ok){quote.why=String(D.why||'The plan cannot be made here.').slice(0,300);return quote;}
+  if(!['total','first','days'].every(key=>Number.isFinite(D[key])))throw Error('Invalid plan quote');
+  quote.title=String(D.title||'').slice(0,240);quote.total=Math.max(0,Math.round(D.total));quote.first=Math.max(0,Math.round(D.first));quote.days=Math.max(0,Math.round(D.days));
+  quote.lines=(Array.isArray(D.lines)?D.lines:[]).slice(0,8).map(x=>String(x).slice(0,240));return quote;
+}
+function workerCommandStoragePreview(payload){
+  if(!payload||!workerCommandInt(payload.si,0,W.settlements.length-1)||!Object.hasOwn(STORAGE_TYPES,payload.arch)||!Number.isFinite(payload.x)||!Number.isFinite(payload.z))throw Error('Invalid storage survey');
+  const s=W.settlements[payload.si],payer=plyH();if(!sovOn()||s.owner!==payer)throw Error('You cannot survey storage for this town');
+  STORAGE_UI.set(s,{arch:payload.arch,...storageSiteQuote(payload.si,payload.arch,payload.x,payload.z,payer)});return{ok:true,si:payload.si};
+}
+function workerCommandRestorePlaceArg(mode,arg){
+  if(arg==null)return null;
+  if(['order','objective','supplyroad','raft'].includes(mode)){
+    const a=W.armies.find(x=>x.id===arg.id&&!x.gone);if(!a)throw Error('Unknown army in place command');
+    return mode==='order'?a:mode==='objective'?{id:a.id,kind:arg.kind}:a;
+  }
+  return arg;
+}
+function workerCommandApplyClick(cmd,arg){
+  return runCmd(cmd,arg??'');
+}
+
 function simulationWorkerModel(){return{
   async init(options,progress){
     if(!Number.isInteger(options.seed)||options.seed<0||options.seed>0xffffffff||!Number.isInteger(options.fate)||options.fate<0||options.fate>0xffffffff)throw Error('Invalid realm seeds');
     if(!STORAGE_OUTCOMES.journal)await STORAGE_OUTCOMES.begin({source:options.source});
+    WORKER_PRESENTATION.started=true;
+    if(options.profile){WORKER_PRESENTATION.profile={best:Number.isFinite(options.profile.best)?Math.max(0,options.profile.best):0,achievements:{...options.profile.achievements}};}
     await startSimulation({...options,outcomeJournal:STORAGE_OUTCOMES.journal,progress});
     if(options.resume){const save=await unpackSave(options.resume);if(save.hash!==worldHash())throw Error('Save belongs to another realm');await replaySave(save,progress);}
   },
   day:()=>day(),rate:()=>SPEEDS[speedIdx]||0,reeling:()=>speedIdx===5,speed:index=>setSpeed(index),tick:()=>simTick(),wait:()=>STORAGE_OUTCOMES.wait(),
   validate(command){
-    if(command.k==='set'){if(typeof command.n!=='string'||!Number.isFinite(command.v)||!(command.n==='tax'||command.n==='dues'||command.n.startsWith('mod:')&&Object.hasOwn(MOD,command.n.slice(4))))throw Error('Invalid setting');}
-    else if(command.k==='sov'){if(typeof command.on!=='boolean'||command.hi!==undefined&&(!Number.isInteger(command.hi)||command.hi<0||command.hi>=W.houses.length))throw Error('Invalid ruler');}
-    else if(command.k==='pet'){const p=W.petitions[0];if(!p||!Number.isInteger(command.i)||command.i<0||command.i>=p.opts.length)throw Error('Invalid petition answer');}
-    else throw Error('This command has not migrated to the worker');
+    const prepared=workerCommandValidate(command);if(prepared.target==='main')throw Error('Command requires the main-thread interface');return prepared;
   },
-  command(command){jot({...command});if(command.k==='set')applySetting(command.n,command.v);else if(command.k==='sov')setSovereign(command.on,command.hi);else answerPetition(command.i);},
+  command(command,prepared){return workerCommandApply(command,prepared||workerCommandValidate(command));},
   view(kind,payload={}){
+    const prior=QUERY_LAND_VALUES;QUERY_LAND_VALUES=['inspect','ui','plan-quote','overlay','actors'].includes(kind)?new Map():prior;
+    try{
+    if(kind==='bootstrap')return workerPresentation(true);
+    if(kind==='landscape')return workerPresentation();
+    if(kind==='inspect')return workerInspectorQuery(payload.code,!!payload.full);
+    if(kind==='ui')return workerUIQuery({...payload,kind:payload.panel});
+    if(kind==='plan-quote')return workerCommandPlanQuote({...payload,kind:payload.kindName});
+    if(kind==='storage-preview')return workerCommandStoragePreview(payload);
+    if(kind==='overlay')return workerOverlayQuery(payload.mode);
+    if(kind==='actors'){const si=Number.isInteger(payload.si)?payload.si:-1;return{day:day(),fraction:payload.fraction,citizens:si>=0?workerRenderCitizens(si,{focus:payload.focus,frac:payload.fraction}):null,herds:payload.herds?workerRenderHerds(payload.focus,payload.range):null};}
     if(kind==='summary')return{day:day(),ad:AD(),realm:W.name,treasury:W.treasury,speed:speedIdx,settlements:W.settlements.map((s,id)=>({id,name:s.name,owner:s.owner,pop:s.pop,hunger:s.hunger})),journal:STORAGE_OUTCOMES.status()};
     if(kind==='household'){const h=W.households.get(payload.id);if(!h)throw Error('Unknown household');return{id:h.id,head:h.head?.id??null,members:[...h.members].map(p=>p.id),purse:h.assets.w,debt:h.assets._debt,hunger:h.hunger,pantry:W.settlements.flatMap((s,si)=>{const held=s._owners?.get(h)?.held;return held?[{si,goods:{...held}}]:[];})};}
-    if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT();
+    if(kind==='audit'&&typeof globalThis.FURLONG_WORKER_AUDIT==='function')return globalThis.FURLONG_WORKER_AUDIT(payload);
     throw Error('This view has not migrated to the worker');
+    }finally{QUERY_LAND_VALUES=prior;}
   },
+  async saveRecord(payload){if(!payload||!workerSaveNameValid(payload.name)||payload.cam!=null&&!workerSaveCameraValid(payload.cam))throw Error('Invalid save record');await STORAGE_OUTCOMES.flush();const o=makeSave(payload.name);if(payload.cam)o.cam={x:payload.cam.x,z:payload.cam.z,d:payload.cam.d,yaw:payload.cam.yaw};return o;},
   async save(name){return packSave(makeSave(name));},
   async flush(){await STORAGE_OUTCOMES.flush();return STORAGE_OUTCOMES.status();}
 };}
@@ -16355,12 +17064,13 @@ function simulationWorkerRuntime(){
   channel.port1.onmessage=({data})=>{const task=tasks.get(data);if(!task)return;tasks.delete(data);task.fn();};
   const schedule=(fn,ms)=>{const id=++next,task={fn,timer:null};tasks.set(id,task);if(ms)task.timer=setTimeout(()=>channel.port2.postMessage(id),ms);else channel.port2.postMessage(id);return id;};
   const cancel=id=>{const task=tasks.get(id);if(task?.timer!==null)clearTimeout(task?.timer);tasks.delete(id);};
-  const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message),{schedule,cancel});onmessage=event=>host.receive(event.data);return host;
+  const host=new SimulationWorkerHost(simulationWorkerModel(),message=>postMessage(message,presentationTransfers(message)),{schedule,cancel});onmessage=event=>host.receive(event.data);return host;
 }
 class SimulationWorkerClient{
-  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;
-    worker.onmessage=({data})=>{if(this.closed||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='view'){Promise.resolve().then(()=>this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);data.error?request.reject(Error(data.error)):request.resolve(data.value);};
-    const fail=error=>{this.closed=true;for(const request of this.pending.values())request.reject(error);this.pending.clear();this.onfault?.(error);};worker.onerror=event=>fail(Error(event.message||'Simulation worker failed'));worker.onmessageerror=()=>fail(Error('Simulation worker reply could not be read'));
+  constructor(worker){this.worker=worker;this.requestSequence=0;this.pending=new Map();this.closed=false;this.onprogress=null;this.onfault=null;this.onview=null;this.displayDelivery=Promise.resolve();
+    const deliver=fn=>{const next=this.displayDelivery.then(fn);this.displayDelivery=next.catch(()=>{});return next;};
+    worker.onmessage=({data})=>{if(this.closed||!data||data.protocol!==1)return;if(data.type==='progress'){this.onprogress?.(data);return;}if(data.type==='view'){deliver(()=>this.closed?undefined:this.onview?.(data.value)).then(()=>{if(!this.closed)return this.request('view-ack',{sequence:data.sequence});}).catch(error=>this.onfault?.(error));return;}if(data.type==='fault'){this.fault=Error(data.error);this.onfault?.(this.fault);return;}const request=this.pending.get(data.replyTo);if(!request)return;this.pending.delete(data.replyTo);if(data.error)request.reject(Error(data.error));else if(data.value?.revision&&data.value?.settlements)deliver(()=>request.resolve(data.value));else request.resolve(data.value);};
+    const fail=error=>{this.closed=true;for(const request of this.pending.values())request.reject(error);this.pending.clear();worker.terminate();this.onfault?.(error);};worker.onerror=event=>fail(Error(event.message||'Simulation worker failed'));worker.onmessageerror=()=>fail(Error('Simulation worker reply could not be read'));
   }
   request(type,payload={}){if(this.closed)return Promise.reject(Error('Simulation worker is closed'));if(this.pending.size>=64)return Promise.reject(Error('Simulation request queue is full'));const id=++this.requestSequence;return new Promise((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.worker.postMessage({protocol:1,id,type,payload});}catch(error){this.pending.delete(id);reject(error);}});}
   async close(){try{return await this.request('close');}finally{this.closed=true;this.worker.terminate();for(const request of this.pending.values())request.reject(Error('Simulation worker closed'));this.pending.clear();}}
@@ -16370,7 +17080,7 @@ function createSimulationWorker(options){
   const scripts=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain'),source=scripts.find(s=>s.textContent.includes('function simTick('))?.textContent;
   if(!source)throw Error('Simulation source is unavailable');
   const hash=options.hash??`#s=${options.seed}&f=${options.fate}${options.coast?'&c='+options.coast:''}&y=${options.startAD??850}`;
-  const prefix='globalThis.FURLONG_HEADLESS=true;globalThis.FURLONG_OPTIONS='+JSON.stringify({hash,build:buildId()})+';\n';
+  const prefix='globalThis.FURLONG_HEADLESS=true;globalThis.KA_MAPS='+JSON.stringify(REALMAPS)+';globalThis.FURLONG_OPTIONS='+JSON.stringify({hash,build:buildId()})+';\n';
   const url=URL.createObjectURL(new Blob([prefix,source,'\nsimulationWorkerRuntime();'],{type:'text/javascript'}));let worker;try{worker=new Worker(url);}finally{URL.revokeObjectURL(url);}
   const client=new SimulationWorkerClient(worker);client.ready=client.request('init',{...options,source:scripts.map(s=>s.textContent).join('\n')});return client;
 }
@@ -16385,12 +17095,13 @@ async function startSimulation(options={}){
 async function advancePrehistory(progress){
   if(START_AD<=W.startAD)return;
   W.prehistory=true;const target=(START_AD-W.startAD)*360;let yieldAt=performance.now()+40;
-  try{while(day()<target){if(HISTORY.fault)throw HISTORY.fault;await STORAGE_OUTCOMES.wait();simTick();
+  try{while(day()<target){if(HISTORY.fault)throw HISTORY.fault;await STORAGE_OUTCOMES.wait();await simTick();
     if(performance.now()>=yieldAt){if(progress)await progress(`The centuries pass… AD ${AD()} — ${W.settlements.length} places, ${Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)).toLocaleString()} souls`,0.97*day()/target,0);else await new Promise(r=>setTimeout(r,0));yieldAt=performance.now()+40;}}
   }finally{W.prehistory=false;}
   for(const s of W.settlements)s.pop0=s.pop;
 }
 async function boot(){
+  const foreground=/(?:[#&])foreground=1(?:&|$)/.test(location.hash);
   {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
@@ -16403,34 +17114,39 @@ async function boot(){
   const progress=(txt,f,delay=30)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
     return new Promise(r=>setTimeout(r,delay));};
   await progress('Forging the realm…',0.02);
-  await generateWorld(seed,progress);
-  await STORAGE_OUTCOMES.begin();
+  if(!foreground){
+    let profile={best:0,achievements:{}};try{profile={best:+localStorage.getItem('annals-best-'+seed)||0,achievements:JSON.parse(localStorage.getItem('furlong-ach')||'{}')};}catch(_){}
+    const options={seed,fate:FATE,coast:COAST_PREF,startAD:START_AD,hash:location.hash,resume:RESUME_CODE,profile};
+    BACKGROUND=createSimulationWorker(options);BACKGROUND.options=options;BACKGROUND.onprogress=m=>progress(m.text,m.fraction,0);BACKGROUND.onfault=workerNotice;BACKGROUND.onview=packet=>{installPresentation(packet);if(G.workerSaveYear!==year()){G.workerSaveYear=year();if(G.workerSaveYear>1)autosave();}};
+    await BACKGROUND.ready;RESUMED=!!RESUME_CODE;await workerRefreshLandscapeBootstrap();
+  }else{await generateWorld(seed,progress);await STORAGE_OUTCOMES.begin();}
   // 3D labels are baked to canvases once: wait (briefly) for the manuscript face so they don't bake in the fallback
   try{if(document.fonts)await Promise.race([document.fonts.load('24px "IM Fell English"'),new Promise(r=>setTimeout(r,2500))]);}catch(e){}
-  initializeSimulation();
+  if(!BACKGROUND)initializeSimulation();
   initGraphics();VISUAL.reset();
   buildTerrain();buildFields();lastSeasonKey='';updateTerrainColors(0,0);buildTrees();buildBuildings();buildLabels();buildAgents();buildParticles();buildFx();buildDynamic();
   // The exhaustive recorder is still too costly for normal fast-forward.
   // Life ledgers are always complete; opt in locally to audit the archive.
-  if(HISTORY.requested)try{await HISTORY.begin();}catch(e){HISTORY.fail(e);throw e;}
-  if(START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
+  if(HISTORY.requested&&!BACKGROUND)try{await HISTORY.begin();}catch(e){HISTORY.fail(e);throw e;}
+  if(!BACKGROUND&&START_AD>W.startAD){ // the same history, run forward unseen to the year play begins
     await advancePrehistory(progress);
     buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();lastSeasonKey='';
   }
-  initUI();initInput();
-  beginChronicle();
+  initUI();initInput();for(const ev of G.bootEvents||[])projectEvent(ev);G.bootEvents=[];
+  if(!BACKGROUND)beginChronicle();
   // camera opening: establish over capital
   cam.focus.set(W.capital.pos.x,W.capital.pos.y,W.capital.pos.z);
   cam.cur.focus.copy(cam.focus);
   cam.dist=3200*MAPK;cam.cur.dist=4200*MAPK;cam.yaw=W.openingYaw;cam.cur.yaw=cam.yaw-0.4;
   cam.mode=matchMedia('(prefers-reduced-motion:reduce)').matches?'free':'director';
-  if(RESUME_CODE){try{const o=await unpackSave(RESUME_CODE);await replaySave(o,progress);setSpeed(0);}catch(e){console.error(e);emit('crown',4,W.capital.pos,'The save could not be read; a fresh chronicle begins from the same seed.');}}
+  if(RESUME_CODE&&BACKGROUND){try{const saved=await unpackSave(RESUME_CODE);if(saved.cam)restoreSavedCamera(saved.cam);}catch(e){console.warn('annals: could not restore the saved camera',e);}}
+  if(RESUME_CODE&&!BACKGROUND){try{const o=await unpackSave(RESUME_CODE);await replaySave(o,progress);setSpeed(0);}catch(e){console.error(e);emit('crown',4,W.capital.pos,'The save could not be read; a fresh chronicle begins from the same seed.');}}
   if(!RESUMED){const L=savesList();if(L.length){const o=L[0];emit('crown',3,W.capital.pos,`💾 Your last game, ${o.realm} in AD ${o.ad} (${o.who}), can be resumed from the 💾 menu.`);}}
   document.getElementById('loading').style.opacity='0';
   setTimeout(()=>document.getElementById('loading').remove(),900);
   {const hm=location.hash.match(/[#&]h=(\d+)/);if(hm&&!RESUMED)setTimeout(()=>{jot({k:'sov',on:true,hi:+hm[1]});setSovereign(true,+hm[1]);},1000);} // #…&h=2: begin as that house (0 the crown)
   if(HISTORY.active)HISTORY.capture('boot-ready');
-  await STORAGE_OUTCOMES.flush();
+  if(BACKGROUND){await BACKGROUND.request('watch',{kind:'landscape',everyDays:RESUME_CODE?1:1});if(!RESUME_CODE)await workerSetSpeed(1);}else await STORAGE_OUTCOMES.flush();
   requestAnimationFrame(animate);
 }
 /* =========================================================================
@@ -16439,44 +17155,51 @@ async function boot(){
    day: the same realm, to the man. Small enough to share as a code or a link.
    ========================================================================= */
 let JOURNAL=[],REPLAYING=false,RESUME_CODE=null,RESUMED=false;
-function jot(e){if(REPLAYING||!W||W.prehistory)return;e.d=day();const L=JOURNAL[JOURNAL.length-1];
+function jot(e){if(!MODEL_ONLY&&typeof BACKGROUND!=='undefined'&&BACKGROUND||REPLAYING||!W||W.prehistory)return;e.d=day();const L=JOURNAL[JOURNAL.length-1];
   if(e.k==='set'&&L&&L.k==='set'&&L.n===e.n&&L.d===e.d){L.v=e.v;return;} // a slider dragged: only where it came to rest that day
   JOURNAL.push(e);}
-function applySetting(n,v){if(n==='tax')MOD.tax=v;else if(n==='dues'){const h=W.houses[plyH()];if(h)h.dues=v;}else if(n.startsWith('mod:'))MOD[n.slice(4)]=v;}
+function applySetting(n,v){if(backgroundUserRequest()&&!REPLAYING)return workerSubmitCommand({k:'set',n,v});if(n==='tax')MOD.tax=v;else if(n==='dues'){const h=W.houses[plyH()];if(h)h.dues=v;}else if(n.startsWith('mod:'))MOD[n.slice(4)]=v;}
 function replayEntry(e){try{switch(e.k){
   case 'c':runCmd(e.c,e.a);break;
   case 'sov':setSovereign(e.on,e.hi);break;
   case 'pet':answerPetition(e.i);break;
   case 'set':applySetting(e.n,e.v);break;
-  case 'place':{const m=e.m,arg=placeArg;setPlaceMode(null);doPlace(m,arg,{x:e.x,z:e.z},e.pk);break;}
+  case 'place':{const m=e.m,arg=Object.hasOwn(e,'a')?workerCommandRestorePlaceArg(m,e.a):placeArg;setPlaceMode(null);doPlace(m,arg,{x:e.x,z:e.z},e.pk);break;}
   case 'plan':{const D=planDraft(e.kind,e.st,e.p);if(D.ok)planCommit(D,e.p);break;}}}
   catch(err){console.warn('annals: a command could not be given again',e,err);}}
-function worldHash(){return (MODEL_ONLY?WORLD_PARAMS:location.hash).replace(/^#/,'').split('&').filter(p=>p&&!/^(h|save|perf)(=|$)/.test(p)).join('&');}
+function worldHash(){return (MODEL_ONLY?WORLD_PARAMS:location.hash).replace(/^#/,'').split('&').filter(p=>p&&!/^(h|save|perf|foreground)(=|$)/.test(p)).join('&');}
 function buildId(){if(MODEL_ONLY)return globalThis.FURLONG_OPTIONS?.build??'dev';const el=document.getElementById('buildstamp');return el?el.textContent.trim():'dev';}
-function makeSave(name){commoditySettleAll();return{v:1,name:name||'',hash:worldHash(),build:buildId(),day:day(),ad:AD(),realm:W.name,saved:Date.now(),
+function makeSave(name){if(!workerSaveNameValid(name))throw Error('Invalid save name');commoditySettleAll();return{v:1,name:name||'',hash:worldHash(),build:buildId(),day:day(),ad:AD(),realm:W.name,saved:Date.now(),
   who:sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle',cam:MODEL_ONLY?null:{x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)},j:JOURNAL};}
 const b64u=s=>btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),unb64u=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');return atob(s+'==='.slice((s.length+3)%4));};
+function workerSaveNameValid(name){return name==null||typeof name==='string'&&name.length<=60;}
+function workerSaveCameraValid(c){return !!c&&typeof c==='object'&&!Array.isArray(c)&&Number.isFinite(c.x)&&Number.isFinite(c.z)&&Number.isFinite(c.d)&&c.d>0&&c.d<=1e7&&Number.isFinite(c.yaw);}
+function validateSaveDocument(o){if(!o||typeof o!=='object'||Array.isArray(o)||o.name!==undefined&&!workerSaveNameValid(o.name)||o.cam!=null&&!workerSaveCameraValid(o.cam))throw Error('Invalid save record');return o;}
+function restoreSavedCamera(c){if(!workerSaveCameraValid(c))throw Error('Invalid saved camera');cam.focus.set(c.x,hAt(c.x,c.z),c.z);cam.cur.focus.copy(cam.focus);cam.dist=cam.cur.dist=c.d;cam.yaw=cam.cur.yaw=c.yaw;cam.mode='free';}
 async function packSave(o){const s=JSON.stringify(o);
   try{if(globalThis.CompressionStream){const buf=new Uint8Array(await new Response(new Blob([s]).stream().pipeThrough(new globalThis.CompressionStream('deflate-raw'))).arrayBuffer());let b='';for(let i=0;i<buf.length;i+=8192)b+=String.fromCharCode.apply(null,buf.subarray(i,i+8192));return 'F1'+b64u(b);}}catch(e){}
   return 'J1'+b64u(unescape(encodeURIComponent(s)));}
-async function unpackSave(code){code=String(code||'').trim().replace(/^[\s\S]*[#&]save=/,'').replace(/[&\s][\s\S]*$/,'');const kind=code.slice(0,2),bin=unb64u(code.slice(2));
-  if(kind==='F1'){const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new globalThis.DecompressionStream('deflate-raw'))).text());}
-  if(kind==='J1')return JSON.parse(decodeURIComponent(escape(bin)));throw new Error('That is not a Furlong save.');}
+async function unpackSave(code){code=String(code||'').trim().replace(/^[\s\S]*[#&]save=/,'').replace(/[&\s][\s\S]*$/,'');const kind=code.slice(0,2),bin=unb64u(code.slice(2));let o;
+  if(kind==='F1'){const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);o=JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new globalThis.DecompressionStream('deflate-raw'))).text());}
+  else if(kind==='J1')o=JSON.parse(decodeURIComponent(escape(bin)));else throw new Error('That is not a Furlong save.');return validateSaveDocument(o);}
 const SAVEK='furlong-saves';
 function savesList(){try{return JSON.parse(localStorage.getItem(SAVEK)||'[]');}catch(e){return[];}}
 function savesPut(L){try{localStorage.setItem(SAVEK,JSON.stringify(L));return true;}catch(e){return false;}}
-function saveNow(name,auto){const o=makeSave(name);o.auto=!!auto;o.id=auto?'auto:'+o.hash:'s'+Date.now();
+async function workerCaptureSave(name){const camera={x:+cam.focus.x.toFixed(1),z:+cam.focus.z.toFixed(1),d:Math.round(cam.dist),yaw:+cam.yaw.toFixed(3)};return BACKGROUND.request('save-record',{name:name||'',cam:camera});}
+async function saveNow(name,auto){const o=backgroundUserRequest()?await workerCaptureSave(name):makeSave(name);o.auto=!!auto;o.id=auto?'auto:'+o.hash:'s'+Date.now();
   const L=savesList().filter(x=>x.id!==o.id);L.unshift(o);while(L.length>14){let k=-1;for(let i=L.length-1;i>=0;i--)if(!L[i].auto){k=i;break;}L.splice(k>=0?k:L.length-1,1);}
   return savesPut(L)?o:null;}
 async function resumeSave(o){const code=await packSave(o);location.hash='#'+o.hash+'&save='+code;location.reload();}
-function autosave(){if(REPLAYING||!W||W.prehistory)return;saveNow('',true);}
+let autosaveInFlight=null,autosaveAgain=false;
+function autosave(){if(REPLAYING||!W||W.prehistory)return Promise.resolve();if(autosaveInFlight){autosaveAgain=true;return autosaveInFlight;}
+  autosaveInFlight=(async()=>{do{autosaveAgain=false;try{await saveNow('',true);}catch(e){console.warn('annals: autosave failed',e);}}while(autosaveAgain&&!REPLAYING&&W&&!W.prehistory);})().finally(()=>{autosaveInFlight=null;});return autosaveInFlight;}
 async function shelf(){try{if(!window.claude||!claude.use)return null;return await claude.use('db');}catch(e){return null;}}
 function saveUI(){const el=document.getElementById('savebox');if(el.style.display==='flex'){el.style.display='none';return;}el.style.display='flex';saveUIRender();}
 function saveUIRender(msg){const el=document.getElementById('savebox'),L=savesList(),when=t=>new Date(t).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
   const row=(o,i)=>`<div class="sv"><div class="sn"><b>${esc(o.auto?'Autosave':o.name||o.realm)}</b> · AD ${o.ad} · ${esc(o.who)}<br><small>${esc(o.realm)} · ${when(o.saved)} · ${o.j.length} command${o.j.length===1?'':'s'}${o.build!==buildId()?' · older build':''}</small></div>
     <button class="pbb" data-sv="load:${i}">Resume</button><button class="pbb" data-sv="code:${i}">Share</button><button class="pbb" data-sv="file:${i}" aria-label="Download ${esc(o.auto?'Autosave':o.name||o.realm)}">⇩</button><button class="pbb" data-sv="del:${i}" aria-label="Delete ${esc(o.auto?'Autosave':o.name||o.realm)}" title="Delete">✕</button></div>`;
   el.innerHTML=`<div class="egbox"><h2>Save · Resume · Share</h2>
-    <div class="note">${esc(W.name)}, AD ${AD()} · ${esc(sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle')} · ${JOURNAL.length} command${JOURNAL.length===1?'':'s'} given</div>
+    <div class="note">${esc(W.name)}, AD ${AD()} · ${esc(sovOn()?(plyH()===0?'the crown':W.houses[plyH()].name):'the chronicle')} · ${BACKGROUND?W._commandCount:JOURNAL.length} command${(BACKGROUND?W._commandCount:JOURNAL.length)===1?'':'s'} given</div>
     <div class="row"><input type="text" id="svname" aria-label="Save name" placeholder="Name this save" style="flex:1" maxlength="60"><button class="pbb" data-sv="save">Save</button><button class="pbb" data-sv="sharenow">Share this game</button></div>
     ${msg?`<div class="note" style="opacity:1;color:#e0c070;margin:4px 0">${msg}</div>`:''}
     <div>${L.length?L.map(row).join(''):'<div class="note">No saves kept in this browser yet. The game saves itself each year.</div>'}</div>
@@ -16488,10 +17211,10 @@ function saveUIRender(msg){const el=document.getElementById('savebox'),L=savesLi
 async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=document.getElementById('savebox');
   if(k==='close'){el.style.display='none';return;}
   if(k==='openfile'){document.getElementById('svfile').click();return;}
-  if(k==='save'){const nm=(document.getElementById('svname')||{}).value||'';const s=saveNow(nm.trim(),false);saveUIRender(s?'Saved.':'This browser will not keep it (a private window, or storage is full): use Share and keep the code.');return;}
+  if(k==='save'){const nm=(document.getElementById('svname')||{}).value||'';const s=await saveNow(nm.trim(),false);saveUIRender(s?'Saved.':'This browser will not keep it (a private window, or storage is full): use Share and keep the code.');return;}
   if(k==='load'&&o){await resumeSave(o);return;}
   if(k==='del'&&o){L.splice(+i,1);savesPut(L);saveUIRender();return;}
-  if(k==='code'||k==='sharenow'){const code=await packSave(k==='code'?o:makeSave((document.getElementById('svname')||{}).value||''));const link=location.href.replace(/#.*$/,'')+'#'+(k==='code'?o.hash:worldHash())+'&save='+code;
+  if(k==='code'||k==='sharenow'){const code=await packSave(k==='code'?o:await (backgroundUserRequest()?workerCaptureSave((document.getElementById('svname')||{}).value||''):makeSave((document.getElementById('svname')||{}).value||'')));const link=location.href.replace(/#.*$/,'')+'#'+(k==='code'?o.hash:worldHash())+'&save='+code;
     let ok=false;try{await navigator.clipboard.writeText(code);ok=true;}catch(e){}
     saveUIRender(`${ok?'The save code is copied.':'Copy the save code below.'} Anyone can paste it into <b>Load a shared game</b>; where the game is opened from a file or a server, the link works too.<textarea rows="3" style="width:100%;margin-top:4px" aria-label="Shared save code" readonly onclick="this.select()">${code}</textarea>
       <div class="row"><button class="pbb" data-sv="post:${k==='code'?i:'now'}">Post it to this page's shared shelf</button></div><small style="word-break:break-all;opacity:.6">${esc(link.length<400?link:link.slice(0,120)+'…')}</small>`);return;}
@@ -16500,7 +17223,7 @@ async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=docum
     const A=document.createElement('a');A.href=URL.createObjectURL(new Blob([code],{type:'text/plain'}));A.download=filename;A.click();setTimeout(()=>URL.revokeObjectURL(A.href),2000);return;}
   if(k==='loadcode'){try{const o2=await unpackSave((document.getElementById('svcode')||{}).value);await resumeSave(o2);}catch(e){saveUIRender('That is not a save code: '+esc(e.message));}return;}
   if(k==='post'){const db=await shelf();if(!db){saveUIRender('This page has no shared shelf here (open it on claude.ai to share that way); the code works anywhere.');return;}
-    const s=i==='now'?makeSave((document.getElementById('svname')||{}).value||''):L[+i];try{await db.collection('saves').add({name:s.name||'',realm:s.realm,ad:s.ad,who:s.who,build:s.build,at:Date.now(),code:await packSave(s)});saveUIRender('Posted: anyone who opens this page can resume it from <b>Shared on this page</b>.');}
+    const s=i==='now'?(backgroundUserRequest()?await workerCaptureSave((document.getElementById('svname')||{}).value||''):makeSave((document.getElementById('svname')||{}).value||'')):L[+i];try{await db.collection('saves').add({name:s.name||'',realm:s.realm,ad:s.ad,who:s.who,build:s.build,at:Date.now(),code:await packSave(s)});saveUIRender('Posted: anyone who opens this page can resume it from <b>Shared on this page</b>.');}
     catch(e){saveUIRender('It could not be posted ('+esc(e.code||e.message||'refused')+'); the code still works.');}return;}
   if(k==='shelf'){const db=await shelf(),box=document.getElementById('svshelf');if(!db){box.innerHTML='<div class="note">No shared shelf here (it works when the game is opened on claude.ai).</div>';return;}
     try{const q=await db.collection('saves').orderBy('at','desc').limit(30).get();window._shelf=q.docs.map(d=>d.data());
@@ -16510,12 +17233,12 @@ async function saveAct(a){const[k,i]=a.split(':'),L=savesList(),o=L[+i],el=docum
 if(!MODEL_ONLY)document.addEventListener('click',e=>{const b=e.target.closest('[data-sv]');if(b){e.stopPropagation();saveAct(b.dataset.sv);}});
 async function replaySave(o,progress){ // grow the days again, giving each command on the day it was given
   REPLAYING=true;const J=o.j||[],d0=day(),tgt=o.day;let i=0,n=0;
-  try{while(true){await STORAGE_OUTCOMES.wait();while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;simTick();
+  try{while(true){await STORAGE_OUTCOMES.wait();while(i<J.length&&J[i].d<=day())replayEntry(J[i++]);if(day()>=tgt)break;await simTick();
     if(++n%60===0&&progress)await progress(`Reading the annals again… AD ${AD()} of ${o.ad}`,clamp((day()-d0)/Math.max(1,tgt-d0),0,1));}
   }finally{REPLAYING=false;}
   JOURNAL=J.slice();RESUMED=true;setPlaceMode(null);
   if(!MODEL_ONLY){buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();VISUAL.settle();lastSeasonKey='';
-    if(o.cam){cam.focus.set(o.cam.x,hAt(o.cam.x,o.cam.z),o.cam.z);cam.cur.focus.copy(cam.focus);cam.dist=cam.cur.dist=o.cam.d;cam.yaw=cam.cur.yaw=o.cam.yaw;cam.mode='free';}}
+    if(o.cam)restoreSavedCamera(o.cam);}
   emit('crown',4,W.capital.pos,`The annals are taken up again in AD ${AD()}${o.name?` (“${o.name}”)`:''}.`+(o.build!==buildId()?' This save was made in another build of the game: the realm may have unfolded differently.':''));}
 /* ============================ THE ADVISOR'S DOOR ============================
    The whole game as three tools for any agent, on any model: search(q), discover(scope), execute(tool, args).
@@ -16623,14 +17346,54 @@ const ADV={muted:false,
       else{if(args.value===undefined)return{error:'give a value',tool:(({_el,...x})=>x)(t)};el.value=args.value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}
       const r={ok:true,news:allLines.slice(n0).slice(-5)};if(placeMode)r.needsPlace='call game:place with {at: a place name or {x,z}}: '+(document.getElementById('placehint').textContent||'');return r;}
     finally{if(sc.startsWith('drawer:')&&drawerTab!==was&&!name.startsWith('drawer:'+drawerTab))selectTab(was);}},
-  call(op,args){try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):op==='rules'?(document.getElementById('advrules')||{}).textContent||'':{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}},
+  call(op,args){
+    if(BACKGROUND)return ADV.workerCall(op,args||{});
+    try{if(!W)return{error:'the realm is still being made'};const r=op==='search'?ADV.search(args&&args.q):op==='discover'?ADV.discover(args&&args.scope):op==='execute'?ADV.execute(args&&args.tool,args&&args.args):op==='rules'?(document.getElementById('advrules')||{}).textContent||'':{error:'unknown op'};return{result:r};}catch(e){return{error:String(e&&e.message||e)};}
+  },
+  async workerCall(op,args){
+    try{
+      if(!W)return{error:'the realm is still being made'};
+      const view=(panel,payload={})=>BACKGROUND.request('view',{kind:'ui',panel,...payload});
+      let result;
+      if(op==='search'){
+        const q=String(args.q||'').toLowerCase(),Q=q.split(/\s+/).filter(Boolean),hit=t=>Q.every(w=>t.toLowerCase().includes(w));
+        const local=ADV.discover().tools.filter(t=>hit([t.name,t.label,t.help||'',t.why||''].join(' '))).map(t=>({tool:t.name,label:t.label,disabled:t.disabled||undefined}));
+        const entities=await view('advisor-find',{name:q});
+        result=[...local,...entities.filter(e=>!q||e.name.toLowerCase().includes(q)).map(e=>({thing:e.name,kind:e.kind,code:e.code}))].slice(0,60);
+      }else if(op==='discover')result=ADV.discover(args.scope);
+      else if(op==='rules')result=(document.getElementById('advrules')||{}).textContent||'';
+      else if(op==='execute'){
+        const name=args.tool,a=args.args||{};
+        if(name==='game:state')result=await view('advisor-state',{path:a.path});
+        else if(name==='game:find')result=await view('advisor-find',{name:a.name});
+        else if(name==='game:persona')result=await view('advisor-persona');
+        else if(name==='game:chronicle')result=await view('annals',{count:a.n});
+        else if(name==='game:inspect'){
+          result=await view('advisor-inspect',{name:a.name});
+          if(result&&!result.error){await workerGoName(result.code);result.tools=ADV.discover('card').tools;}
+        }else if(name==='game:place'){
+          if(!placeMode)return{error:'nothing is waiting for a place'};
+          let at=a.at;
+          if(typeof at==='string'){
+            const matches=await view('advisor-find',{name:at}),q=at.toLowerCase(),e=matches.find(x=>x.name.toLowerCase()===q)||matches.find(x=>x.name.toLowerCase().includes(q));
+            if(!e||e.code[0]!=='s')return{error:'no such place: '+at};
+            const s=W.settlements[+e.code.slice(1)];if(!s)return{error:'that place has no current map position'};at={x:s.pos.x,z:s.pos.z};
+          }
+          if(!at||!Number.isFinite(+at.x)||!Number.isFinite(+at.z))return{error:'give a place name or finite {x,z} coordinates'};
+          const mode=placeMode,arg=serializePlaceArg(mode,placeArg),reply=await workerSubmitCommand({k:'place',m:mode,a:arg,x:+at.x,z:+at.z,pk:null});
+          result=reply?.accepted===false?{error:reply.error||'the place could not be made'}:{ok:true,done:mode,news:reply?.news||[]};
+        }else result=ADV.execute(name,a);
+      }else return{error:'unknown op'};
+      return{result};
+    }catch(e){return{error:String(e&&e.message||e)}}
+  },
   ws:null,
   connect(code){code=String(code||'').trim().toUpperCase();const m=code.match(/^[A-Z]{5}(\d)$/);if(!m){ADV.status('A pairing code is five letters and a digit, as your agent gave it.');return;}
     if(ADV.ws)try{ADV.ws.onclose=null;ADV.ws.close();}catch(_){}ADV.status('Connecting…');const ws=new WebSocket(`ws://127.0.0.1:${7357+ +m[1]}/?code=${code}`);ADV.ws=ws;let opened=false; // the code's last digit is the bridge's port: one try, straight to it
     const slow=setTimeout(()=>{if(ADV.ws===ws&&!opened)ADV.status('Still trying… Is the bridge running (ask your agent anything), and is the code the one it gave?');},5000);
     ws.onopen=()=>{opened=true;clearTimeout(slow);setTimeout(()=>{if(ADV.ws===ws)ADV.status('Connected: your advisor can see the realm.');},300);}; /* a bridge with another code lets us in, then says so */ws.onerror=()=>{};
     ws.onclose=e=>{clearTimeout(slow);if(ADV.ws!==ws)return;ADV.ws=null;ADV.status(e.code===4003?'That bridge has another code: use the one your agent gave last.':opened?'Disconnected: the advisor bridge stopped. Ask your agent for a new code.':'No advisor bridge answered. Is it running? Ask your agent anything to start it, then use the code it gives.');};
-    ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}const r=ADV.call(m.op,m.args);ws.send(JSON.stringify({id:m.id,...r},(k,v)=>v instanceof Element?undefined:v));};},
+    ws.onmessage=ev=>{let m;try{m=JSON.parse(ev.data);}catch(_){return;}Promise.resolve(ADV.call(m.op,m.args)).then(r=>{if(ADV.ws===ws&&ws.readyState===1)ws.send(JSON.stringify({id:m.id,...r},(k,v)=>typeof Element!=='undefined'&&v instanceof Element?undefined:v));});}},
   status(t){const el=document.getElementById('advstat');if(el)el.textContent=t;const b=document.getElementById('advbtn');if(b)b.classList.toggle('on',!!(ADV.ws&&ADV.ws.readyState===1));},
   claudeDialog(box){ // played inside Claude: the advisor talks in the page, on the viewer's own Claude account (an agent app on the viewer's computer cannot reach a page sealed inside Claude)
     box.style.display='flex';const st=ADVCHAT.state,P=ADV.persona();
@@ -16740,15 +17503,15 @@ state:'none',ready:null,
       for(const l of src.split('\n')){const m=l.match(/^<<<FILE (.+)>>>$/);if(m){push();head=m[1];continue;}if(/^#{1,3} /.test(l)){push();head=l.replace(/^#+ /,'');}else buf.push(l);}push();return out;})());
     const W2=String(q||'').toLowerCase().split(/\s+/).filter(w=>w.length>2);if(!W2.length)return[];
     return R.map(d=>({d,s:W2.reduce((t,w)=>t+(d.section.toLowerCase().includes(w)?3:0)+(d.text.toLowerCase().split(w).length-1),0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,3).map(({d})=>({rules:d.section,text:d.text.slice(0,1500)}));},
-  toolList(){const run=(op,args)=>{const r=ADV.call(op,args);if(r.error)throw new Error(r.error);return ADVCHAT.clip(r.result);};
+  toolList(){const run=async(op,args)=>{const r=await ADV.call(op,args);if(r.error)throw new Error(r.error);return ADVCHAT.clip(r.result);};
     return[
-      {name:'search',description:'Search the game: its controls (buttons, sliders, lists), the places, houses and people of the realm, and the rules. Returns matches.',inputSchema:{type:'object',properties:{query:{type:'string'}},required:['query']},execute:i=>ADVCHAT.clip({game:ADV.search(String(i.query||'')),rules:ADVCHAT.rules(i.query)})},
+      {name:'search',description:'Search the game: its controls (buttons, sliders, lists), the places, houses and people of the realm, and the rules. Returns matches.',inputSchema:{type:'object',properties:{query:{type:'string'}},required:['query']},execute:async i=>ADVCHAT.clip({game:(await ADV.call('search',{q:String(i.query||'')})).result,rules:ADVCHAT.rules(i.query)})},
       {name:'state',description:'Read the realm: path "realm", "settlements", "settlement:<name>", "houses", "house:<name>", "monarch", "player", "armies", "wars", "victory", "prices:<place>" or "rates". Returns JSON.',inputSchema:{type:'object',properties:{path:{type:'string'}}},execute:i=>run('execute',{tool:'game:state',args:{path:String(i.path||'realm')}})},
       {name:'inspect',description:'Open the card of a place, house or person by name (the camera flies there) and return what it says and the buttons on it.',inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name']},execute:i=>run('execute',{tool:'game:inspect',args:{name:String(i.name||'')}})},
       {name:'chronicle',description:'The latest entries of the annals, newest last.',inputSchema:{type:'object',properties:{n:{type:'number'}}},execute:i=>run('execute',{tool:'game:chronicle',args:{n:Math.min(40,Number(i.n)||15)}})},
       {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "drawer:crown", "drawer:rates", "drawer:acts", "drawer:over", "drawer:world", "card", "petition", "plan"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
       {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: place name} to finish an act that wants a place. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
-  brief(){const P=ADV.persona(),st=ADV.state('realm'),ch=allLines.slice(-6).join('\n');
+  async brief(){let P,st,ch;if(BACKGROUND){[P,st,ch]=await Promise.all([BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}),BACKGROUND.request('view',{kind:'ui',panel:'advisor-state',path:'realm'}),BACKGROUND.request('view',{kind:'ui',panel:'annals',count:6})]);ch=ch.join('\n');}else{P=ADV.persona();st=ADV.state('realm');ch=allLines.slice(-6).join('\n');}
     return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
 Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to. Write in Markdown. Whenever you name a place, house, lord, host or any of the folk, make it a link the player can click to go there: [[Name]] with the name exactly as the tools give it, or [words](game:CODE) with the code the tools give (s… places, h… houses, n… lords and ladies, a… hosts, p… the folk; inspect lists a card's links with their codes).${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
 
@@ -16763,7 +17526,7 @@ ${ch}`;},
       document.getElementById('achsend').onclick=()=>ADVCHAT.send();
       document.getElementById('achstop').onclick=()=>{if(ADVCHAT.busy)ADVCHAT.busy.abort();};
       document.getElementById('achin').addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ADVCHAT.send();}});}
-    const P=ADV.persona();document.getElementById('achwho').textContent=P.name?`${P.name}, ${P.role}`:'The game master';
+    const head=document.getElementById('achwho');if(BACKGROUND)BACKGROUND.request('view',{kind:'ui',panel:'advisor-persona'}).then(P=>{if(head)head.textContent=P.name?`${P.name}, ${P.role}`:'The game master';});else{const P=ADV.persona();head.textContent=P.name?`${P.name}, ${P.role}`:'The game master';}
     document.getElementById('achaccount').textContent=ADVCHAT.provider!=='Claude'?'Uses your '+ADVCHAT.provider+' key · '+ADVCHAT.apiModel:'Uses your own Claude account';
     el.style.display='flex';document.getElementById('achin').focus();},
   code(name){ // the code of a thing named in the realm (place, house, lord, host, or one of the folk), or null
@@ -16794,7 +17557,7 @@ ${ch}`;},
     ADVCHAT.bubble('me',q);ADVCHAT.turns.push({role:'user',content:q});while(ADVCHAT.turns.length>16)ADVCHAT.turns.splice(0,2); // the oldest exchanges drop away; the brief is written fresh each time
     const out=ADVCHAT.bubble('ai','Thinking…'),ctl=new AbortController();ADVCHAT.busy=ctl;document.getElementById('achstop').style.display='';document.getElementById('achsend').disabled=true;
     const opts={cache:false,modelTier:'default',signal:ctl.signal,onText:({text})=>{out.innerHTML=ADVCHAT.md(text);document.getElementById('achlog').scrollTop=1e9;}};if(ADVCHAT.tools)opts.tools=ADVCHAT.toolList();
-    try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
+    try{const{text,truncated}=await ADVCHAT.sample([{role:'user',content:await ADVCHAT.brief()},...ADVCHAT.turns],opts); // the standing brief leads, written fresh from the realm each time
       out.innerHTML=ADVCHAT.md(text)+(truncated?'<p><i>(cut short: ask for less at a time)</i></p>':'');ADVCHAT.turns.push({role:'assistant',content:text});}
     catch(e){if(ctl.signal.aborted){if(out.isConnected)out.remove();if(ADVCHAT.busy===ctl)ADVCHAT.turns.pop();return;}const code=e&&e.code;out.innerHTML=e&&e.text?ADVCHAT.md(e.text):'';
       const why={api_key_invalid:ADVCHAT.provider+' did not accept this key. Open Advisor to change it.',api_credit:ADVCHAT.provider+' needs more API credits. Check your API billing.',api_limit:ADVCHAT.provider+' API quota or rate limit reached. Check your API billing and try later.',api_access:'This key cannot use the requested model. Check its project permissions.',api_model:'That model was not found. Change the model in Advisor.',api_request:ADVCHAT.provider+' rejected the request. Check that the model supports tools and that the key can use it.',api_network:e.message,api_response:e.message,api_incomplete:e.message,api_tool_limit:e.message,cancelled:'',not_granted:'You did not allow this page to use Claude. Reload the page to be asked again.',sampling_disabled:'Claude is not available for your account here.',rate_limited:'Too many questions just now, or your Claude usage limit: try again in a while.',session_expired:'Sign in to Claude again, then ask.',refused:'Your advisor will not answer that; ask another way.',prompt_too_large:'The talk has grown too long: press New.',tools_unavailable:'This view cannot let your advisor look at the realm.'}[code]??(ADVCHAT.provider!=='Claude'?'Something went wrong reaching '+ADVCHAT.provider+'; try again.':'Something went wrong reaching Claude; try again.');
@@ -16802,7 +17565,7 @@ ${ch}`;},
     finally{if(ADVCHAT.busy===ctl){ADVCHAT.busy=null;const stop=document.getElementById('achstop'),send=document.getElementById('achsend');if(stop)stop.style.display='none';if(send)send.disabled=false;}}}};
 if(!MODEL_ONLY){
 ADVCHAT.ready=ADVCHAT.init().finally(()=>{if(ADVCHAT.state==='pending')ADVCHAT.state='none';});
-window.FURLONG={search:q=>ADV.call('search',{q}).result,discover:s=>ADV.call('discover',{scope:s}).result,execute:(t,a)=>ADV.call('execute',{tool:t,args:a}).result};
+window.FURLONG={search:async q=>(await ADV.call('search',{q})).result,discover:async s=>(await ADV.call('discover',{scope:s})).result,execute:async(t,a)=>(await ADV.call('execute',{tool:t,args:a})).result};
 for(const n of ['simTick','runCmd','answerPetition','setSovereign','doPlace','planCommit','applySetting'])historyBind(n);
 for(const type of ['click','input','change','keydown','pointerup'])document.addEventListener(type,()=>{
   if(HISTORY.active&&!HISTORY.depth&&!HISTORY.fault)queueMicrotask(()=>{if(!HISTORY.fault)HISTORY.capture('input:'+type);});

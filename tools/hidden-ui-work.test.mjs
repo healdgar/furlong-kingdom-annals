@@ -12,11 +12,11 @@ function fixture({classes=[],contextReady=false,contextKind=null}={}){
   const document={body:{classList:{contains:k=>classes.includes(k)}},getElementById:node};
   node('contextpanel').hidden=!(contextReady&&contextKind==='drawer');
   const W=new Proxy({monarch:null,houses:[null,{name:'House Alder',head:3,loyalty:61,gold:120,exiled:false}]},{get(target,key,receiver){if(key==='houses')houseReads++;return Reflect.get(target,key,receiver);}});
-  const C=vm.createContext({MODEL_ONLY:false,WORLD_PARAMS:typeof hash==='string'?hash:'',document,contextUI:{ready:contextReady,kind:contextKind,side:null,expanded:false,scroll:new Map()},CONTEXT_IDS:{drawer:'drawer'},drawerTab:'crown',uiBusy:()=>false,W,
+  const C=vm.createContext({BACKGROUND:null,G:{ledgerOpen:false},MODEL_ONLY:false,WORLD_PARAMS:typeof hash==='string'?hash:'',document,contextUI:{ready:contextReady,kind:contextKind,side:null,expanded:false,scroll:new Map()},CONTEXT_IDS:{drawer:'drawer'},drawerTab:'crown',uiBusy:()=>false,W,
     crownPanelHTML:()=>{crownCalls++;return `crown-${houseReads}`;},setHTML:(el,html)=>{writes.push([el.id,html]);el.innerHTML=html;},sigURL:i=>`sig-${i}`,esc:String,notableById:()=>null,
     contextSync(){},contextPosition(){},
   });
-  vm.runInContext([fn('drawerVisible'),fn('refreshCrownPanel'),fn('refreshHousePanel'),fn('contextShow')].join('\n'),C);
+  vm.runInContext([fn('drawerVisible'),fn('refreshCrownPanel'),fn('refreshHousePanel'),fn('housePanelHTML'),fn('successionHTML'),fn('contextShow')].join('\n'),C);
   return{C,node,writes,counts:()=>({crownCalls,houseReads})};
 }
 

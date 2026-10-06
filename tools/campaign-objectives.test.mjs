@@ -10,7 +10,7 @@ const extract=name=>{
 };
 function fixture(){
   const W={settlements:[],houses:[]},events=[];
-  const c=vm.createContext({W,events,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
+  const c=vm.createContext({BACKGROUND:null,backgroundUserRequest:()=>false,W,events,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
     emit:(...x)=>events.push(x),inRebellion:()=>false,fortCircuits:s=>s.circuits||[],casRing:s=>s.bailey||s.hillCastle||s.ward||null,
     fortCenter:x=>x.pos||x,activeFort:s=>s.active||null,siegeRadius:()=>80,
     hash01:()=>0.5,fortPoint:(s,c,a)=>({x:c.x+Math.cos(a)*(c.wallR||c.r||20),z:c.z+Math.sin(a)*(c.wallR||c.r||20)}),
@@ -34,7 +34,7 @@ test('campaign objective selection records stable target keys and normalizes set
 
 test('placing a campaign objective at peace declares the existing feud before marching',()=>{
   const src=extract('doPlace'),s={owner:2,name:'Fordham',pos:{x:10,z:20}},a={id:5,house:1,at:0,name:'Host'};let war=false,orders=0;
-  const c=vm.createContext({W:{armies:[a],settlements:[s],houses:[{},{},{seat:0}],war:null},plyH:()=>1,atWar:()=>war,
+  const c=vm.createContext({BACKGROUND:null,backgroundUserRequest:()=>false,W:{armies:[a],settlements:[s],houses:[{},{},{seat:0}],war:null},plyH:()=>1,atWar:()=>war,
     startFeud:(x,y,by)=>{assert.deepEqual([x,y,by],[1,2,1]);war=true;},startWar:()=>{throw Error('private lords use the existing feud lifecycle');},
     orderArmy:()=>{orders++;return true;},emit:()=>{}});
   vm.runInContext(src+';globalThis.place=doPlace;',c);
@@ -57,7 +57,7 @@ test('inner-wall demolition keeps storming the outer circuit instead of extendin
   const wall=(x,r)=>({x,z:0,r,wallRad:new Float32Array(32).fill(r),walls:1,wallDmg:new Float32Array(32)});
   const outer=wall(0,50),inner=wall(1,22),s={pos:{x:0,z:0},owner:2,active:outer,circuits:[outer,inner],bailey:inner,walls:1,garrison:0,militia:0,pop:30,stores:{grain:0}};
   const a={id:1,house:1,at:0,home:0,state:'siege',hold:true,strength:100,morale:70,supply:30,siegeUntil:0,name:'Host',objective:{kind:'demolish',si:0,circuit:'bailey',angle:Math.PI/2}};
-  const c=vm.createContext({W:{armies:[a],settlements:[s],houses:[{},{}],war:null},G:{},MOD:{},Math,Float32Array,
+  const c=vm.createContext({BACKGROUND:null,backgroundUserRequest:()=>false,W:{armies:[a],settlements:[s],houses:[{},{}],war:null},G:{},MOD:{},Math,Float32Array,
     day:()=>0,armySimPos:()=>({x:0,z:0}),armyLand:()=>{},musterSync:()=>{},activeFort:x=>x.active,fortCircuitFor:(x,key)=>key==='bailey'?x.bailey:x,
     siegeArc:(army)=>{army.siegeArc={c:0,w:0.3,circuit:outer,R:80};},siegeEngines:()=>1,clamp:(x,l,h)=>Math.max(l,Math.min(h,x)),damageWalls:()=>{},siegeGate:()=>null,
     chance:()=>true,notableById:()=>null,generalship:()=>1,defenceOf:()=>1,fortCenter:x=>x.pos,emit:()=>{},
@@ -77,7 +77,7 @@ test('destroying a selected building after the final defence burns it, then with
   const b={arch:'hall',x:3,z:4,state:'sound'},s={pos:{x:0,z:0},owner:2,name:'Fordham',buildings:[b],fires:[],stores:{grain:0},pop:40,prosperity:60,walls:0,garrison:0,militia:0};
   const a={id:1,house:1,at:0,home:0,state:'siege',hold:true,strength:100,morale:70,supply:30,siegeUntil:0,name:'Host',objective:{kind:'destroy',si:0,arch:'hall',x:3,z:4}};
   let captures=0;
-  const c=vm.createContext({W:{armies:[a],settlements:[s],houses:[{},{}],war:null},G:{},MOD:{},Math,Float32Array,
+  const c=vm.createContext({BACKGROUND:null,backgroundUserRequest:()=>false,W:{armies:[a],settlements:[s],houses:[{},{}],war:null},G:{},MOD:{},Math,Float32Array,
     day:()=>0,armySimPos:()=>({x:0,z:0}),armyLand:()=>{},activeFort:()=>null,siegeArc:()=>{},siegeEngines:()=>1,
     clamp:(x,l,h)=>Math.max(l,Math.min(h,x)),chance:()=>true,notableById:()=>null,generalship:()=>1,defenceOf:()=>1,
     hostileTo:()=>false,houseAtWar:()=>false,atWar:()=>false,emit:()=>{},takeSettlement:()=>captures++,
@@ -92,7 +92,7 @@ test('destroying a selected building after the final defence burns it, then with
 test('army logistics orders reuse the canonical paid road and raft actions',()=>{
   const src=extract('doPlace'),calls=[];
   const army={id:7,house:1,at:0},a={owner:1,pos:{x:0,z:0},radius:80},b={owner:1,pos:{x:500,z:0},radius:80};
-  const c=vm.createContext({W:{armies:[army],settlements:[a,b]},plyH:()=>1,nearestSettlementIdx:()=>1,dist2d:(x,z,X,Z)=>Math.hypot(x-X,z-Z),
+  const c=vm.createContext({BACKGROUND:null,backgroundUserRequest:()=>false,W:{armies:[army],settlements:[a,b]},plyH:()=>1,nearestSettlementIdx:()=>1,dist2d:(x,z,X,Z)=>Math.hypot(x-X,z-Z),
     emit:(...x)=>calls.push(['emit',...x]),orderRoad:(...x)=>calls.push(['road',...x]),buildArmyRaft:(...x)=>{calls.push(['raft',...x]);return true;}});
   vm.runInContext(src+';globalThis.place=doPlace;',c);
   c.place('supplyroad',{id:7},{x:500,z:0},null);c.place('raft',{id:7},{x:250,z:0},null);

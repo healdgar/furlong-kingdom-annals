@@ -1,81 +1,50 @@
-# Simulation worker roadmap
+# Simulation worker and GPU boundaries
 
-The target is one worker-owned authoritative `W`, RNG streams and outcome journals. The foreground thread owns input, UI and Three.js; it submits ordered commands and consumes bounded, disposable views. Do not copy the full world each day. Until the default cutover, the playable daily tick remains foreground work. Fixtures and boundary probes do not establish a worker-ready game.
+The default game now has one worker-owned simulation: `W`, household accounts, pantry, hunger, debt, RNG streams, commands and outcome journals. The foreground owns input, dialogs, camera and Three.js. Its `W` is a disposable display projection, containing no household, ownership-account or storage-ledger graphs. `#foreground=1` retains the diagnostic reference driver.
 
-## 1. Full-source worker host and protocol — implemented; UI cutover pending
+## Completed boundaries
 
-- [x] Host the real game source in one worker; initialize the world, RNG and journal there.
-- [x] Define versioned messages for initialization, commands, view publication, save/replay, faults and shutdown.
-- [x] Keep exactly one authoritative `W`; retain ordered simulation phases and RNG draw order.
-- [x] Publish bounded summaries every 30 simulated days, with one unacknowledged view and latest-day coalescing. Commands and requested views reply at the next completed daily boundary. Landscape buffers remain pending.
-- [x] Isolate each realm in its own client/worker instance; reject duplicate/out-of-order requests and incorrect view acknowledgements. Sticky faults stop mutations; closed clients reject pending work. No automatic foreground recovery.
+- [x] Full-source worker boot, generation and prehistory; progress messages keep loading UI independent.
+- [x] Ordered command lane for all six journal classes: clicks, ruler selection, petitions, settings, placements and plans. Validate before recording; apply each accepted command once between complete days. Map picking and brush previews remain UI state.
+- [x] Inspectors, accounts, ruler panels, petitions, narrative links and advisor reads query the worker. Stable entity IDs replace live model references. Visible panels request their own bounded results.
+- [x] Economic overlays query worker calculations; foreground overlays draw returned values.
+- [x] Rendering bootstrap transfers copied terrain buffers and public geometry. Later packets contain existing dirty fields/buildings and structural changes, rather than daily copies of the economy or complete geometry.
+- [x] Citizens and livestock use numeric worker plans. Renderer objects and walking interpolation remain disposable; simulation RNG does not drive display animation.
+- [x] Stable display identities preserve camera following, army markers, roads, dragons and saplings. Accessor-backed population and title IDs have explicit scalar projections.
+- [x] Annals and reign headings, ruler transitions, campaign-end dialogs and local achievement/best-score persistence cross explicit presentation boundaries.
+- [x] Worker-owned save capture, existing save format, replay and continuation. Browser camera/preferences and save shelf remain local UI data.
+- [x] Journal backpressure precedes each daily transaction. Save/close await settlement. Page hiding requests a worker flush.
+- [x] Faults pause mutation and retain read/save access where possible. Client transport failures reject pending work; recovery explicitly reloads a committed save, without creating a second authority.
+- [x] Uncapped Reel driver; actual landscape publications every 30 days, immediate refresh on pause/orders, one unacknowledged publication with coalescing. Pushed and requested display packets install in transport order, preserving every dirty delta. Camera/input do not execute simulation ticks.
+- [x] Awaitable complete-day barrier in the worker driver, prehistory and replay. Future asynchronous GPU phases must finish inside that barrier before commands, saves or subsequent days run.
 
-## 2. Command lane — pending
+Read helpers can warm the existing derived `s._sg` street graph. Valuation reads use a disposable memo for the current request and cannot prime the annual simulation-owned `s._lvf` grid. Early UI priming previously changed later rents and demographics, breaking save replay. Queries reuse an already valid model valuation but leave model valuation admission to simulation. No additional maintained economic index or journal record is introduced.
 
-- [ ] Route every player mutation through a sequenced command queue, applied atomically between days. Preserve input order and same-day revisions.
-- [ ] Keep commands usable while paused and at life pace; acknowledge accepted, rejected and completed commands with their sequence and revision.
-- [ ] Remove direct UI writes to `W`; migrate all order, petition, planning, construction and save/import ingress.
-- [ ] Define backpressure and failure behavior for queued commands without dropping accepted outcomes.
+## Remaining GPU/performance work
 
-## 3. Read and inspection boundary — pending
+These are acceleration experiments, not unfinished ownership boundaries:
 
-- [ ] Move inspectors, queries, HUD summaries and advisor inputs onto published views or explicit worker queries.
-- [ ] Keep query results read-only, versioned and bounded; return only the requested projection.
-- [ ] Replace UI dependence on live `W` references, closures and mutable caches. Keep query caches disposable and outside authoritative history.
-- [ ] Verify that opening, closing or polling UI has no canonical state or RNG writes.
+- Adopt a production GPU kernel only after matched whole-year timing includes upload, readback and CPU finishing costs. No production GPU economy kernel is enabled by this cutover.
+- Keep ordered daily pantry, hunger, debt and economic outcomes exact. Do not skip daily settlement or add indexes/copies merely to exercise the GPU.
+- Measure later-year cost growth and a complete 850-to-1066 run on the drawn game. Worker ownership improves responsiveness; it does not itself reduce tick CPU work or prove practical century throughput.
 
-## 4. Rendering bootstrap and dirty projection — pending
+The existing annual land-value WebGPU probe uses real Apple Metal hardware. Seed 1001 measured warm CPU/GPU medians of 6.3/1.7 ms, with 141 ms cold setup. Player seed 287970763 measured 8.1/2.0 ms. These save only about 5–6 ms per annual calculation and are diagnostic, never installed in authoritative `W`; they do not establish a whole-game speedup.
 
-- [ ] Build the initial static rendering projection from bounded worker output after world initialization; keep Three.js objects on the foreground thread.
-- [ ] Replace projection callbacks that inspect `W` with explicit dirty-region/data messages. Coalesce replaceable visual updates by world revision.
-- [ ] Transfer only compact numeric geometry inputs or output buffers; avoid structured-cloning `W`, `Map`/`Set` graphs, caches or per-day full geometry.
-- [ ] Keep historical outcomes and required state transitions lossless even when visual updates coalesce.
-- [ ] Verify initial map parity and dirty rebuilds for terrain, settlements, land, roads, walls, buildings and actors.
+## Validation
 
-## 5. Persistence, replay and failure semantics — pending
+Validation records are frozen local source snapshots, with SHA-256 identities. The repository harnesses are reusable:
 
-- [x] Run save capture, replay and journal settlement against the worker-owned authority; preserve existing formats. Native eight-day save plus eight-day continuation matches the foreground reference. Longer continuation/migration coverage remains pending.
-- [x] Reuse native outcome-journal backpressure before starting each whole day; flush on save/shutdown. Rendering may skip obsolete views; journals may not.
-- [ ] Define recovery for worker error, message decode failure, save failure and interrupted shutdown. A restart must restore one authority from a committed save/journal boundary.
-- [ ] Verify save/reload and replay equivalence, journal completeness, RNG continuation and no duplicate command application.
+- `tools/simulation-worker-host.test.mjs`: FIFO ordering, asynchronous daily barriers, pacing, publication acknowledgements, queue limits, journal backpressure, save and fault behavior.
+- `tools/simulation-worker-boundaries.test.mjs`: private-graph exclusion, packet-owned transfer buffers, deterministic actor planning, dirty projections, population/title accessors, ruler UI, army flags, campaign-end/profile delivery and foreground tick rejection.
+- `tools/simulation-worker-check.mjs --days 8 --views true`: full native source, worker/reference canonical graph and RNG parity, eight-day save/replay plus eight-day continuation, inspectors/accounts/actors/economic overlay output parity.
+- `tools/simulation-worker-play-check.mjs`: owned Chrome profile and local frozen source; drawn boot, ruler/tax controls, inspectors, nine overlays, Reel/pause/normal/life transitions, delayed publication acknowledgement, save/reload/camera/continuation, campaign end and local profile persistence. Console errors and worker faults fail the check.
 
-## 6. Parity and responsiveness gates — pending
+Validated production HTML SHA-256: `9b8cc31045e0be212430d9f06e71df0695d1a2612b96f08dbb56540ef2125f93`. Local evidence remains under `/tmp`, outside the deployed repository.
 
-- [ ] Compare the same full source and seeds between foreground reference and worker runs: canonical `W`, all RNG streams, journal, layouts, save/replay and subsequent draws.
-- [ ] Check money conservation and pantry, hunger and debt settlement at the same boundaries; retain existing failures as failures.
-- [ ] Exercise commands while paused, at life pace and during fast-forward; test stale views, queue pressure and worker faults.
-- [ ] Measure matched real drawn runs on the target browser/device, including frame stalls, input latency, worker CPU, projection time and persistence pressure. Include later-year cost growth.
-- [ ] Require practical responsiveness improvement with no semantic drift before default cutover. Report undrawn tick throughput separately.
+- Broad regression suite: 1,013/1,013, including display-delivery ordering and valuation-cache isolation; the separately run full-source simulation boundary test also passed.
+- Native seed 1001: full graph/RNG/save/replay/continuation and view-output parity passed (`/tmp/furlong-worker-final-native-20261005-query`). This predecessor snapshot differed only in transport error notification. Eight-day worker/reference timings were 362/366 ms; maximum worker-page heartbeat interval was 19 ms.
+- Native player seed 287970763/fate 370450810: final-source full graph/RNG/save/replay/continuation and view-output parity passed (`/tmp/furlong-worker-final-player-native-20261005`). Eight-day worker/reference timings were 512/508 ms; worker-page heartbeat maximum was 18 ms.
+- Drawn Chrome: `/tmp/furlong-worker-play-1791269827192/results.json`, production baseline matching the SHA above. The instrumented snapshot has a separate hash because it adds test-only audit hooks. Nine overlays, ruler tax controls, 103-day Reel advance, zero ticks after pause, day-126 exact save replay, day-129 continuation, campaign end and local profile persistence passed without runtime/console errors or worker faults.
+- Independent 128-day no-UI versus UI-read comparison matched RNG, population, people and buildings after fixing valuation cache admission.
 
-## 7. Reel throughput and GPU gate — in progress
-
-- [x] Worker Reel (index 5) runs at sustainable throughput without a days-per-second cap. Normal speeds and life pace retain their clock rates.
-- [x] Yield via posted tasks between complete daily transactions, avoiding the nested-timer clamp; accept pause/orders without breaking a daily transaction.
-- [ ] Wire this driver into the playable game after its command/read/projection boundary is complete. The current playable Reel remains the foreground driver.
-- [ ] Publish actual landscape deltas every 30 simulated days during Reel; summary cadence alone is not landscape integration. Keep camera/input independent and refresh immediately on pause/inspection/orders.
-- [x] Measure a real WebGPU compute candidate, including upload, readback and CPU finish work; exclude software adapters and report startup separately.
-- [ ] Adopt GPU kernels only when matched whole-year timing benefits. Keep ordered pantry/hunger/debt settlement exact on the worker CPU. Do not add per-day copies/indexes or approximate all daily transactions to claim GPU use.
-- [ ] Measure 850-to-1066 elapsed time and later-year growth on the final drawn game. No practical-century runtime has been demonstrated by this checkpoint.
-
-## 8. Default cutover — pending
-
-- [ ] Make the worker path the default only after all preceding gates pass on the integrated source.
-- [ ] Retain an explicit diagnostic foreground/reference mode and worker-disabled comparison until the cutover is established.
-- [ ] Confirm fresh generation, shared prehistory, normal play, accelerated play, commands, inspection, rendering, save/replay and fault recovery on the default path.
-- [ ] Update status and evidence to the tested source hash. Until then, the playable daily tick runs on the foreground thread and the worker is not ready for default use.
-
-## Checkpoint evidence
-
-Source `index.html` SHA-256: `48cb6a8a93ef1a2b61e9604211d04e7f06b7d63e334a757f6197e1d84c197237`.
-
-- `node --test tools/simulation-worker-host.test.mjs`: 21 protocol/pacing/backpressure/fault tests pass, including uncapped Reel, pause and no backlog after leaving Reel.
-- `node tools/simulation-worker-check.mjs --days 8 --out /tmp/furlong-worker-uncapped-native` (before transport-counter rename; final-source evidence below): native Chrome, separate temporary browser/profile; generated world at seed 1001/fate 42, sea, AD 850. Worker and reference match the diagnostic W graph, RNG, households, population, commands, annals, settings and storage sequence after eight days and after save/replay plus eight more days. This is a short boundary test, not century or integrated-render validation.
-- Initial eight days: worker 360 ms, foreground 356 ms. Headless-page maximum UI heartbeat gap: worker 17 ms, foreground 357 ms. Resume eight days: 229/224 ms; heartbeat 18/224 ms. Responsiveness improved; tick throughput was essentially unchanged. These are undrawn fixtures, not live game FPS.
-- `node tools/simulation-worker-check.mjs --gpu-only true --out /tmp/furlong-gpu-land-values-probe`: Apple Metal hardware, 12 settlements / 13,395 cells. Complete warm annual field calculation: CPU median 6.3 ms, GPU median 1.7 ms; cold adapter/pipeline setup 141 ms. Maximum absolute field differences: res 0.000004053, biz 0.000001669. GPU output is diagnostic only and is never installed in W. The 3.7x kernel gain saves about 4.6 ms per annual rebuild in this fixture; it does not establish a whole-year speedup.
-
-`tools/gpu-land-value-probe.mjs` is a test-side candidate, not a production GPU path. The existing playable boot/animate path has not switched to the simulation worker. Command ingress, inspectors, rendering bootstrap/deltas and recovery must be completed before default cutover.
-
-- Fresh player-seed GPU probe (`/tmp/furlong-gpu-land-values-player-seed`, seed 287970763/fate 370450810; newly generated AD 850, not the running player's later state): 15 settlements / 17,455 cells, warm CPU median 8.1 ms versus GPU 2.0 ms, 4.05x annual-kernel gain. Adapter/pipeline setup 3 ms with system GPU caches warm; do not substitute that for cold setup. Maximum errors: res 0.000003695, biz 0.000002503. About 6.1 ms saved per annual rebuild, still no whole-year speed claim.
-- Full suite initially: 996/998 pass. The new transport counter hit a generic entity-ID tripwire and was renamed. The storage architecture tripwire predated the deployed 48c2b35 site/payment fixes; its complete diff was reviewed and the pin renewed. Its new read-only worker pantry view is independently source-pinned. The 91 affected protocol/notable/storage/route checks now pass; no quantity/history writer was changed by the worker foundation.
-
-- Final-source native check (`/tmp/furlong-worker-final-parity`, source hash above): eight days 359 ms worker / 358 ms foreground, heartbeat 18/358 ms; save/replay continuation eight days 227/224 ms, heartbeat 17/224 ms. Both boundary comparisons pass and all four outcome journals settle without pending bytes/chunks or faults. No simulation throughput gain is claimed.
+Worker ownership establishes independent execution and ordering. Native timings show no tick CPU reduction; drawn frame timing under concurrent test load is not a performance measure. Century throughput and production GPU kernels remain to be validated.

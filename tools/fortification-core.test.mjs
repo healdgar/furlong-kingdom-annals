@@ -17,7 +17,7 @@ const core=['entityView','polyLengthView','wallRadAt','wallKindAt','casRing','ca
 function fixture(){
   let now=0;
   const c=vm.createContext({
-    WALLN:32,CELL:27,SIZE:108,GRID:5,MOTTEH:11,
+    BACKGROUND:null,WALLN:32,CELL:27,SIZE:108,GRID:5,MOTTEH:11,
     RESID:new Set(['house','store']),
     clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),lerp:(a,b,t)=>a+(b-a)*t,
     dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),hash01:n=>{const x=Math.sin(n*12.9898)*43758.5453;return x-Math.floor(x);},
@@ -51,7 +51,7 @@ function castle(){
 
 test('an ordinary siege of an unfortified town needs no wall objective',()=>{
   const s={pos:{x:0,z:0}},a={id:17,strength:60,_ppos:{x:100,z:0}};
-  const ctx=vm.createContext({s,a,W:{settlements:[s]},activeFort:()=>null,siegeRadius:()=>90,
+  const ctx=vm.createContext({BACKGROUND:null,s,a,W:{settlements:[s]},activeFort:()=>null,siegeRadius:()=>90,
     clamp:(v,l,h)=>Math.max(l,Math.min(h,v)),hash01:()=>0.5});
   vm.runInContext(extract('siegeArc')+'\nsiegeArc(a,s)',ctx);
   assert.equal(a.siegeArc.c,0);
@@ -61,7 +61,7 @@ test('an ordinary siege of an unfortified town needs no wall objective',()=>{
 
 test('gate inspection reads current geometry without populating canonical caches',()=>{
   const s={pos:{x:0,z:0},wallRad:[20],wallR:20,streets:[]};let scans=0;
-  const ctx=vm.createContext({s,wallGates:()=>{scans++;return[0.3];}});
+  const ctx=vm.createContext({BACKGROUND:null,s,wallGates:()=>{scans++;return[0.3];}});
   vm.runInContext(extract('fortGateAngles')+'\n'+extract('settleFortGates'),ctx);
   assert.deepEqual(Array.from(ctx.fortGateAngles(s,s)),[0.3]);
   assert.equal(s._gates,undefined);assert.equal(s._gatesK,undefined);
