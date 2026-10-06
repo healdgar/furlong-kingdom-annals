@@ -58,6 +58,9 @@ test('another realm, an explicit save, a new game and Reforge are never overridd
   for(const other of ['#s=1001&f=43&y=850&c=sea','#s=1002&f=42&y=850&c=sea','#s=1001&f=42&y=1066&c=sea','#s=1001&f=42&y=850&c=land','#s=1001&f=42&y=850&c=sea&km=12','#s=1001&f=42&y=850&c=sea&map=britain','#s=1001&f=42&y=850'])
     assert.equal(s.run(`tabSessionResume(${JSON.stringify(other)})`),null,other);
   assert.equal(s.run(`tabSessionResume(${JSON.stringify(HASH+'&save=F1abc')})`),null,'a link with a save opens that save');
+  for(const flag of ['&fresh=1','&foreground=1']) // a fresh game on request, and the reference driver the harnesses reload in one tab
+    assert.equal(s.run(`tabSessionResume(${JSON.stringify(HASH+flag)})`),null,flag);
+  assert.ok(s.run(`tabSessionResume(${JSON.stringify(HASH)})`),'the plain link still resumes');
   // a save opened in this tab: its link wins, and it becomes the tab's game (a refresh mid-load opens it again)
   const savedRecord=record(500);const code=await s.run(`packSave(${JSON.stringify(savedRecord)})`);
   const boot=await s.run(`tabSessionBoot(${JSON.stringify(HASH+'&save='+code)},${JSON.stringify(code)})`);

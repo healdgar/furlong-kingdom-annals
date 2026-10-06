@@ -309,7 +309,8 @@ Acts are sealed while you rule; the crown's own levers take their place:
   the browser (and made each year and when you leave the page); *Share* gives
   a short code (or a link) anyone can load, a file, or posts it to the page's
   shared shelf on claude.ai. A save from an older build may unfold
-  differently.
+  differently. Refreshing the page takes up the game this tab was playing;
+  a link with a save, another realm, or `&fresh=1` starts anew.
 - **The great houses**: honour them, take a hostage (they are far less likely
   to rise for two years), arrange a royal match, or attaint them for
   treason — seize their lands on success, civil war on failure.

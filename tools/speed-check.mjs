@@ -83,7 +83,8 @@ async function main(){
   const SRC=fs.readFileSync(path.join(ROOT,'index.html'),'utf8'),MARK='function simulationWorkerRuntime(){';if(!SRC.includes(MARK))throw Error('index.html lacks the worker runtime marker');
   const PROBED=SRC.replace(MARK,INJECT+MARK),sha=s=>createHash('sha256').update(s).digest('hex');
   fs.writeFileSync(path.join(OUT,'index.snapshot.html'),SRC);const probing=PAUSES.length&&MODES.includes('probe');if(probing)fs.writeFileSync(path.join(OUT,'index.pause-probe.html'),PROBED);
-  const hash=`#s=${SEED}&f=${FATE}&c=${COAST}`,PAGE=pathToFileURL(path.join(OUT,'index.snapshot.html')).href+hash,PROBE_PAGE=pathToFileURL(path.join(OUT,'index.pause-probe.html')).href+hash;
+  // fresh=1: each run boots a new game; without it a reload in this tab takes up the game it was playing (#5).
+  const hash=`#s=${SEED}&f=${FATE}&c=${COAST}&fresh=1`,PAGE=pathToFileURL(path.join(OUT,'index.snapshot.html')).href+hash,PROBE_PAGE=pathToFileURL(path.join(OUT,'index.pause-probe.html')).href+hash;
   const R={schema:1,started:new Date().toISOString(),indexSHA256:sha(SRC),pauseProbeSHA256:probing?sha(PROBED):null,harnessSHA256:sha(fs.readFileSync(fileURLToPath(import.meta.url))),node:process.version,platform:`${process.platform}/${process.arch}`,cpus:os.cpus().length,
     loadavgStart:os.loadavg(),options:{speeds:SPEEDS,pauseSpeeds:PAUSES,pauseModes:MODES,seconds:SEC,everyMs:EVERY,warmupS:WARM,seed:SEED,fate:FATE,coast:COAST,pauseAtS:PAUSE_AT,naturalTimeoutMs:NAT,learnMs:LEARN},speeds:[],pause:[]};
   const {c,b,kill}=await launch(CHROME),E={exceptions:[],console:[],faults:[]};
