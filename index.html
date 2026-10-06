@@ -4577,7 +4577,7 @@ function planWalk(c,to,goal){ // the way: out of the door to the nearest street,
   c.ri=0;c.state='walk';c.goal=goal;c.walking=true;c.out=true;
   const st=P&&P.length>1?g.N[P[Math.floor(P.length/2)]].st:null;c.via=st?(st.name||STREET_NAME[st.kind]||'the street'):'';
   c.doing=`walking ${goal==='home'?'home':goal==='market'?'to market':goal==='church'?'to mass':goal==='wedding'?`to the wedding of ${folkName(c.wedW.a)} and ${folkName(c.wedW.b)}`:goal==='visit'?`to visit ${c.p.sx==='f'?'her':'his'} mother`:goal==='tavern'?'to the tavern':'to work'}${c.via?' by '+c.via.toLowerCase():''}`;}
-function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true second at life pace); fr: the hour of the day
+function stepWalker(c,dt,fr,D=day()){ // dt: seconds of the calendar's own time (a true second at life pace); fr: the hour of the day; D: its day (the worker walks the folk a little past the calendar's)
   c.t+=dt;if(!dt)return;
   const H=(c.p.id*7919%1000)/1000,out0=0.23+H*0.05,mkt=0.48+H*0.06,home0=0.72+H*0.06,night=fr<out0-0.02||fr>=0.86; // each keeps their own hours
   if(c.state==='walk'){let m=c.pace*dt;
@@ -4592,22 +4592,22 @@ function stepWalker(c,dt,fr){ // dt: seconds of the calendar's own time (a true 
       else if(c.goal==='visit'){c.state='visit';c.out=false;c.doing=`visiting ${c.p.sx==='f'?'her':'his'} mother, ${folkName(c.visitOf)}`;c.until=c.t+(30+H*40)*WS;}
       else{c.state='work';c.out=!c.workIn;c.doing=c.what;}}
     return;}
-  const sunday=day()%7===0,wed=c.church&&(c.s._weds||[]).find(w=>w.d===day()&&(w.a===c.p||w.b===c.p||detailHead(w.a)===detailHead(c.p)||detailHead(w.b)===detailHead(c.p)||w.a.ma===c.p||w.b.ma===c.p));
-  if(c.state==='home'&&!night&&c.dayDone!==day()){
-    if((sunday||wed)&&c.church&&c.chDay!==day()&&fr<0.5){c.chDay=day();c.wedW=wed||null;planWalk(c,c.church,wed?'wedding':'church');return;} // to mass, or to a wedding
-    if(fr<home0){const m=c.p.ma;if(ageYrs(c.p)>=18&&m&&!m.dead&&m.si===c.p.si&&c.visDay!==day()&&(c.p.id+day())%(sunday?5:23)===0&&detailHead(m).bh){c.visDay=day();const hb=detailHead(m).bh;c.visitOf=m;planWalk(c,{x:hb.x,z:hb.z},'visit');return;} // Sunday afternoons are for mothers
-      if(sunday){c.dayDone=day();return;} // the Lord's day: no work
+  const sunday=D%7===0,wed=c.church&&(c.s._weds||[]).find(w=>w.d===D&&(w.a===c.p||w.b===c.p||detailHead(w.a)===detailHead(c.p)||detailHead(w.b)===detailHead(c.p)||w.a.ma===c.p||w.b.ma===c.p));
+  if(c.state==='home'&&!night&&c.dayDone!==D){
+    if((sunday||wed)&&c.church&&c.chDay!==D&&fr<0.5){c.chDay=D;c.wedW=wed||null;planWalk(c,c.church,wed?'wedding':'church');return;} // to mass, or to a wedding
+    if(fr<home0){const m=c.p.ma;if(ageYrs(c.p)>=18&&m&&!m.dead&&m.si===c.p.si&&c.visDay!==D&&(c.p.id+D)%(sunday?5:23)===0&&detailHead(m).bh){c.visDay=D;const hb=detailHead(m).bh;c.visitOf=m;planWalk(c,{x:hb.x,z:hb.z},'visit');return;} // Sunday afternoons are for mothers
+      if(sunday){c.dayDone=D;return;} // the Lord's day: no work
       planWalk(c,c.work,'work');}return;}
   if(c.state==='church'&&c.t>=c.until){planWalk(c,sunday&&!c.wedW?c.home:c.work,sunday&&!c.wedW?'home':'work');return;}
   if(c.state==='visit'&&c.t>=c.until){planWalk(c,sunday?c.home:c.work,sunday?'home':'work');return;}
   if(c.state==='home')return;
-  if(c.state==='tavern'){if(fr>=0.84||night){c.dayDone=day();planWalk(c,c.home,'home');}return;} // home when the tavern shuts
+  if(c.state==='tavern'){if(fr>=0.84||night){c.dayDone=D;planWalk(c,c.home,'home');}return;} // home when the tavern shuts
   const hd=detailHead(c.p),poor=(hd.w||0)<0;
   if(fr>=home0+(poor&&ageYrs(c.p)>=16?0.05:0)||night){ // home at dusk: the poor work on a while; a man with coin to spare and a taste for company stops at the tavern first
-    const spare=(hd.w||0)>foodYr(),bent=0.2+0.15*clamp(trait(c.p,GB)-trait(c.p,GD),-1,1.5),roll=((c.p.id*2654435761+day()*40503)>>>0)/4294967296;
-    if(c.tavern&&!night&&!sunday&&spare&&ageYrs(c.p)>=18&&(c.p.sx==='m'||roll<0.3)&&roll<bent&&c.tavDay!==day()){c.tavDay=day();planWalk(c,c.tavern,'tavern');return;}
-    c.dayDone=day();planWalk(c,c.home,'home');return;}
-  if(c.state==='work'&&fr>=mkt&&c.p.id%3===0&&ageYrs(c.p)>=14&&c.mktDay!==day()){c.mktDay=day();planWalk(c,c.mk,'market');return;}
+    const spare=(hd.w||0)>foodYr(),bent=0.2+0.15*clamp(trait(c.p,GB)-trait(c.p,GD),-1,1.5),roll=((c.p.id*2654435761+D*40503)>>>0)/4294967296;
+    if(c.tavern&&!night&&!sunday&&spare&&ageYrs(c.p)>=18&&(c.p.sx==='m'||roll<0.3)&&roll<bent&&c.tavDay!==D){c.tavDay=D;planWalk(c,c.tavern,'tavern');return;}
+    c.dayDone=D;planWalk(c,c.home,'home');return;}
+  if(c.state==='work'&&fr>=mkt&&c.p.id%3===0&&ageYrs(c.p)>=14&&c.mktDay!==D){c.mktDay=D;planWalk(c,c.mk,'market');return;}
   if(c.state==='market'&&c.t>=c.until){planWalk(c,c.work,'work');return;}
   if(c.state==='errand'&&c.t>=c.until){planWalk(c,c.work,'work');return;}
   if(c.state==='work'&&c.chores&&c.t>=(c.nextChore||0)){ // the round of chores: out every couple of hours on some errand, and home again
@@ -16990,6 +16990,20 @@ function workerRenderPoint(p){return p&&Number.isFinite(p.x)&&Number.isFinite(p.
 function workerRenderPath(path){return Array.isArray(path)?path.map(workerRenderPoint).filter(Boolean):[];}
 
 const WALKER_CARRY=['x','z','ry','t','state','until','route','ri','out','walking','goal','doing','via','dayDone','chDay','wedW','visDay','visitOf','tavDay','mktDay','nextChore','errWhat']; // a walker's day so far
+// The townsfolk's walk (#2). The worker walks them a frame of the chosen pace at a time, as the main-thread screen walked
+// them, a little ahead of the calendar, and keeps each step's place: a reply carries the steps from a little before the
+// reading to past the next reply, and the screen goes between them by its own clock (trackAt). Display only.
+const WALK_TRACK={ahead:0.4,behind:0.15,most:60,fine:8}; // seconds of pace walked ahead of the reading and kept behind it; most frames one reply walks; the fastest pace (days a second) walked frame by frame
+function workerWalkSample(c){(c._tr||(c._tr=[])).push(workerRenderFinite(c.x),workerRenderFinite(c.z),workerRenderFinite(c.ry),(c.out?1:0)|(c.walking?2:0));}
+function workerWalkOn(entry,now,frac){
+  const rate=speedIdx===5?0:SPEEDS[speedIdx]||0,fine=rate>0&&rate<=WALK_TRACK.fine,h=rate/60,T=entry.times;
+  const restart=at=>{entry.day=at;T.length=0;T.push(at);for(const c of entry.people){c._tr=[];workerWalkSample(c);}};
+  if(fine&&entry.day>now+2*WALK_TRACK.ahead*rate)restart(now); // walked far ahead at a faster pace: they go on from there
+  if(now>entry.day&&(!fine||now-entry.day>WALK_TRACK.most*h)){const dt=(now-entry.day)*DAYSEC;for(const c of entry.people)stepWalker(c,dt,frac,day());restart(now);} // paused, too fast to follow, or long away: one stride to now
+  if(fine)for(let n=0,end=now+WALK_TRACK.ahead*rate;entry.day<end&&n<WALK_TRACK.most;n++){const t=entry.day+h,D=Math.floor(t);for(const c of entry.people){stepWalker(c,h*DAYSEC,t-D,D);workerWalkSample(c);}entry.day=t;T.push(t);}
+  if(rate>0){const keep=now-WALK_TRACK.behind*rate;let cut=0;while(cut<T.length-1&&T[cut+1]<=keep)cut++;if(cut){T.splice(0,cut);for(const c of entry.people)c._tr.splice(0,cut*4);}}
+}
+function workerWalkTrack(c){const R=c._tr||[];for(let i=4;i<R.length;i++)if(R[i]!==R[i&3])return Float32Array.from(R);return Float32Array.from(R.slice(0,4));} // one place for those who stand
 function workerRenderCitizens(si,options={}){
   const s=W.settlements?.[si];if(!s||!Array.isArray(s.folk))return{si,day:workerRenderFinite(day()),people:[]};
   const focus=workerRenderPoint(options.focus)||workerRenderPoint(s.pos)||{x:0,z:0};
@@ -17013,31 +17027,26 @@ function workerRenderCitizens(si,options={}){
       globalThis.THREE={Color:PlanColor};
     }
     try{
-      if(fresh){const people=townsfolkFor(s),was=entry?.s===s?new Map(entry.people.map(c=>[c.p.id,c])):null,dt=was?Math.max(0,now-workerRenderFinite(entry.day,now))*DAYSEC:0,born=[];
-        for(const c of people){const o=was?.get(c.p.id);if(!o){born.push(c);continue;}for(const k of WALKER_CARRY)if(Object.hasOwn(o,k))c[k]=o[k];stepWalker(c,dt,frac);} // the day turns, the folk walk on: only those new to the plan start from their doors
-        warmWalkers(born);entry={s,signature,people,day:now};scratch.set(si,entry);}
+      if(fresh){const people=townsfolkFor(s),was=entry?.s===s?new Map(entry.people.map(c=>[c.p.id,c])):null,born=[],same=(a,b)=>a&&b&&a.x===b.x&&a.z===b.z;
+        for(const c of people){const o=was?.get(c.p.id);if(!o){born.push(c);continue;}for(const k of WALKER_CARRY)if(Object.hasOwn(o,k))c[k]=o[k];c._tr=o._tr;if(c.fw&&o.fw&&same(c.fw.A,o.fw.A)&&same(c.fw.B,o.fw.B))c.fw.flip=o.fw.flip;} // the day turns, the folk walk on from where their steps had brought them: only those new to the plan start from their doors
+        warmWalkers(born);const T=was?entry.times:[now];for(const c of born){c._tr=[];for(let i=0;i<T.length;i++)workerWalkSample(c);}
+        entry={s,signature,people,day:was?entry.day:now,times:T};scratch.set(si,entry);}
     }finally{
       if(colorDescriptor)Object.defineProperty(globalThis,'THREE',colorDescriptor);else if(typeof THREE!=='undefined'&&THREE?.Color?.name==='PlanColor')delete globalThis.THREE;
     }
-    if(!fresh){
-      const dt=Math.max(0,now-workerRenderFinite(entry.day,now));
-      for(const c of entry.people)stepWalker(c,dt*DAYSEC,frac);
-      entry.day=now;
-    }
+    workerWalkOn(entry,now,frac);
     const people=[];
     for(const c of entry.people){
-      const p=c.p,col=c.col,route=workerRenderPath(c.route),fw=c.fw?{
-        A:workerRenderPoint(c.fw.A),B:workerRenderPoint(c.fw.B),flip:!!c.fw.flip,run:!!c.fw.run
-      }:null;
+      const p=c.p,col=c.col;
       people.push({id:p.id,name:folkName(p),surname:famName(p),sex:p.sx||null,appearance:p.sx||null,
         role:p.tr||null,age:workerRenderFinite(ageYrs(p)),si:p.si,
         x:workerRenderFinite(c.x),z:workerRenderFinite(c.z),yaw:workerRenderFinite(c.ry),
         scale:workerRenderFinite(c.sc,1),colour:{hex:Number.isFinite(col?.hex)?col.hex:null,
           gain:workerRenderFinite(col?.gain,1)},time:workerRenderFinite(c.t),until:workerRenderFinite(c.until),pace:workerRenderFinite(c.pace),
         state:String(c.state||''),goal:String(c.goal||''),doing:String(c.doing||''),out:!!c.out,walking:!!c.walking,
-        route,routeIndex:Number.isInteger(c.ri)?c.ri:0,furrow:fw});
+        track:workerWalkTrack(c)});
     }
-    return{si,day:now,frac,people};
+    return{si,day:entry.day,frac,times:Float64Array.from(entry.times),people}; // day: where the walkers' own state (time, doing) stands
   }finally{
     cam.cur.focus=oldFocus;if(hadClock)G.clockFrac=oldClock;else delete G.clockFrac;
   }
@@ -17152,16 +17161,14 @@ function presStep(now=performance.now()){
     v=lag>SCREEN_CLOCK.jump?target:v+dt*rate*clamp(1+lag/SCREEN_CLOCK.ease,0.5,2);}
   else if(speedIdx!==5&&P.av>v)v=P.av; // paused: a reading further on (a bounded advance) is taken at once; Reel holds to the reported day
   P.d=d;return P.v=Math.max(P.v,d,Math.min(v,d+1+SCREEN_CLOCK.slack*rate));}
-// Where a townsman is m metres of his own walking after (m<0: before) the worker saw him: along his route, or on toward
-// the end of his furrow. What he does at the end of it the next reply tells.
-function walkerAt(c,m){
-  let x=c.x,z=c.z,yaw=c.yaw,i=c.routeIndex|0;const R=c.route;if(!c.walking||!m||!Number.isFinite(m))return{x,z,yaw};
-  if(c.state==='walk'&&R?.length>1){
-    if(m>0)while(m>0&&i<R.length-1){const b=R[i+1],d=Math.hypot(b.x-x,b.z-z);if(d>1e-6)yaw=-Math.atan2(b.z-z,b.x-x)+Math.PI/2;if(d<=m){x=b.x;z=b.z;i++;m-=d;}else{x+=(b.x-x)/d*m;z+=(b.z-z)/d*m;m=0;}}
-    else for(m=-m;m>0&&i>=0;){const a=R[i],d=Math.hypot(a.x-x,a.z-z);if(d<=m){x=a.x;z=a.z;i--;m-=d;}else{x+=(a.x-x)/d*m;z+=(a.z-z)/d*m;m=0;}}}
-  else if(c.state==='work'&&c.furrow?.A&&c.furrow?.B&&m>0){const F=c.furrow,T=F.flip?F.A:F.B,d=Math.hypot(T.x-x,T.z-z),s=Math.min(d,m*(F.run?0.6:0.3)); // up the furrow at the plough's pace, or a child's run
-    if(d>1e-6){yaw=-Math.atan2(T.z-z,T.x-x)+Math.PI/2;x+=(T.x-x)/d*s;z+=(T.z-z)/d*s;}}
-  return{x,z,yaw};}
+// Where a townsman is at the screen's day v, from the steps of his walk the worker kept (T: their days, R: x, z, yaw and
+// whether he is out of doors and walking, four to a step): between the two steps either side of v, as the main-thread
+// screen walked him a frame at a time; before the first, at the first; past the last, where the last left him.
+function trackAt(T,R,v){
+  const n=Math.min(T?.length|0,(R?.length|0)>>2);if(!n)return null;let i=0,f=0;
+  if(n>1&&v>T[0]){if(v>=T[n-1])i=n-1;else{let lo=0,hi=n-1;while(hi-lo>1){const m=(lo+hi)>>1;if(T[m]<=v)lo=m;else hi=m;}i=lo;f=(v-T[i])/(T[i+1]-T[i]);}}
+  const a=i*4,b=f>0?a+4:a,s=R[(f<0.5?a:b)+3];
+  return{x:R[a]+(R[b]-R[a])*f,z:R[a+1]+(R[b+1]-R[a+1])*f,yaw:R[b+2],out:!!(s&1),walking:!!(s&2)};}
 // A new plan of the herds keeps each flock still in its field where it has wandered to, beasts and all; only a flock
 // put in another field, or a beast new to the plan, starts from the plan's places.
 function reconcileFlocks(old,plans){
@@ -17199,8 +17206,8 @@ function workerRefreshActors(herds=false){
 function renderTransportCitizens(nearest,d){
   const now=performance.now(),si=W.settlements.indexOf(nearest),prior=G.workerActorFocus,close=nearest&&cam.cur.dist<700&&d<(nearest.extentR||nearest.radius)+160;
   if((!prior||dist2d(prior.x,prior.z,cam.cur.focus.x,cam.cur.focus.z)>30||now-prior.t>(speedIdx===5?1000:150))&&!BACKGROUND.reads?.has('actors')){G.workerActorFocus={x:cam.cur.focus.x,z:cam.cur.focus.z,t:now};workerRefreshActors();}
-  const list=close&&G.workerCitizens?.si===si?G.workerCitizens.people:[];let k=0;G.citIdx=[];const vs=clamp(cam.cur.dist/220,1,2.6),run=list.length?(displayDay()-G.workerCitizens.day)*DAYSEC:0; // calendar seconds since the worker saw them
-  for(const c of list){if(!c.out||k>=160)continue;const w=walkerAt(c,run*(c.pace||0)),bob=c.walking&&speedIdx===LIFE?Math.abs(Math.sin((c.time+run)*8.5))*0.06:0,p={id:c.id,si:c.si,sx:c.sex},y=surfY(w.x,w.z)+.28+bob,sc=c.scale*vs;if(cam.follow&&cam.follow.pid===c.id)cam.follow.pos={x:w.x,z:w.z,y};setInst(G.citizens,k,w.x,y,w.z,w.yaw,sc,sc,sc);setInst(G.citKit,k,w.x,y,w.z,w.yaw,sc,sc,sc);G.citizens.setColorAt(k,new THREE.Color(c.colour.hex).multiplyScalar(c.colour.gain));G.citIdx[k]={p,s:nearest,x:w.x,z:w.z,out:c.out};k++;}
+  const list=close&&G.workerCitizens?.si===si?G.workerCitizens.people:[];let k=0;G.citIdx=[];const vs=clamp(cam.cur.dist/220,1,2.6),v=displayDay(),run=list.length?(v-G.workerCitizens.day)*DAYSEC:0; // calendar seconds since the worker's walkers stood where it last left them
+  for(const c of list){const w=k<160&&trackAt(G.workerCitizens.times,c.track,v);if(!w?.out)continue;const bob=w.walking&&speedIdx===LIFE?Math.abs(Math.sin((c.time+run)*8.5))*0.06:0,p={id:c.id,si:c.si,sx:c.sex},y=surfY(w.x,w.z)+.28+bob,sc=c.scale*vs;if(cam.follow&&cam.follow.pid===c.id)cam.follow.pos={x:w.x,z:w.z,y};setInst(G.citizens,k,w.x,y,w.z,w.yaw,sc,sc,sc);setInst(G.citKit,k,w.x,y,w.z,w.yaw,sc,sc,sc);G.citizens.setColorAt(k,new THREE.Color(c.colour.hex).multiplyScalar(c.colour.gain));G.citIdx[k]={p,s:nearest,x:w.x,z:w.z,out:true};k++;}
   G.citizens.count=G.citKit.count=k;G.citizens.instanceMatrix.needsUpdate=G.citKit.instanceMatrix.needsUpdate=true;if(G.citizens.instanceColor)G.citizens.instanceColor.needsUpdate=true;
 }
 function projectTransportFences(){

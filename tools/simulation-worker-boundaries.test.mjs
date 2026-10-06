@@ -91,7 +91,7 @@ test('production presentation packet keeps render references and transfers packe
 test('production citizen-plan adapter calls canonical walker helpers, scales elapsed days, and leaves RNG alone',()=>{
   const c=context();
   vm.runInContext(`
-    const p={id:4,si:0,sx:'f',tr:'weaver'},s={folk:[p],pos:{x:1,z:2}};W.settlements=[s];
+    var SPEEDS=[0,0.5,2,8,30,360,1/1800];const p={id:4,si:0,sx:'f',tr:'weaver'},s={folk:[p],pos:{x:1,z:2}};W.settlements=[s];
     let draws=0;const RS={test:{state:()=>draws}};G._walkerCalls=[];
     const folkName=()=>"Ada Weaver",famName=()=>"Weaver",ageYrs=()=>24;
     function townsfolkFor(){G._planned=(G._planned||0)+1;return [{s,p,g:null,home:{x:1,z:2},work:{x:3,z:4},workIn:false,what:'weaving',fw:null,chores:false,door:null,mk:{x:1,z:2},church:null,tavern:null,pace:2,sc:1,col:new THREE.Color(0x123456).multiplyScalar(.9),x:1,z:2,ry:0,t:0,state:'work',until:0,route:[{x:1,z:2},{x:3,z:4}],ri:0,out:true,walking:true,goal:'work',doing:'weaving'}]}
@@ -105,10 +105,35 @@ test('production citizen-plan adapter calls canonical walker helpers, scales ela
   const call=vm.runInContext('G._walkerCalls[0]',c),expected=vm.runInContext('DAYSEC*.1',c);assert.ok(Math.abs(call.dt-expected)<1e-10);assert.equal(call.frac,.3);
   assert.ok(Math.abs(second.people[0].time-first.people[0].time-expected)<1e-10);
   assert.equal(second.people[0].colour.hex,0x123456);assert.equal(second.people[0].surname,'Weaver');
-  assert.deepEqual(Array.from(second.people[0].route,p=>[p.x,p.z]),[[1,2],[3,4]]);auditDTO(second);
+  assert.deepEqual([...second.times],[7.3]);assert.equal(second.day,7.3);assert.deepEqual([...second.people[0].track],[1,2,0,3],'paused: one place, out of doors and walking');auditDTO(second);
   for(const [start,end]of [['function townsfolkFor(','function planWalk('],['function stepWalker(','function rockNear(']]){
     const semantic=extract(start,end);assert.doesNotMatch(semantic,/\brand\s*\(|Math\.random\s*\(/,'canonical visual semantics must remain deterministic');
   }
+});
+
+test('the citizen plan walks the folk a frame of the pace at a time, ahead of the reading, and carries their steps over the turn of the day',()=>{
+  const c=context();
+  vm.runInContext(`
+    var SPEEDS=[0,0.5,2,8,30,360,1/1800];speedIdx=1;const s={folk:[{id:4,si:0,sx:'f',tr:'weaver'},{id:5,si:0,sx:'m',tr:'smith'}],pos:{x:1,z:2}};W.settlements=[s];G._calls=[];
+    const folkName=()=>"Ada",famName=()=>"Weaver",ageYrs=()=>24;
+    function townsfolkFor(){G._planned=(G._planned||0)+1;return s.folk.filter(p=>p.id!==5||G._planned>1).map(p=>({s,p,g:null,fw:p.id===4?{A:{x:0,z:0},B:{x:0,z:9},flip:false}:null,pace:2,sc:1,col:new THREE.Color(0x123456),x:1,z:2,ry:0,t:0,state:'work',until:0,route:null,ri:0,out:true,walking:true,goal:'work',doing:'weaving'}))}
+    function warmWalkers(L){for(const w of L)w.x=50}
+    function stepWalker(w,dt,fr,D){G._calls.push({dt,fr,D});w.t+=dt;w.x+=1;if(w.fw)w.fw.flip=!w.fw.flip}
+  `,c);
+  const h=0.5/60,first=vm.runInContext('workerRenderCitizens(0,{frac:.9})',c),calls=vm.runInContext('G._calls',c);
+  assert.ok(calls.length>=24&&calls.every(k=>Math.abs(k.dt-100*h)<1e-9),'a frame of the pace at a time');
+  assert.ok(first.times.length===calls.length+1&&first.times.at(-1)>=7.9+0.4*0.5-1e-9,'ahead of the reading');
+  const steps1=calls.length;assert.deepEqual([first.people[0].track[0],first.people[0].track.at(-4)],[50,50+steps1],'warmed to the hour, then walked on');
+  assert.ok(calls.filter(k=>k.D===8).length>0&&calls.every(k=>k.D===Math.floor(7.9+(calls.indexOf(k)+1)*h+1e-12)&&k.fr>=0&&k.fr<1),'past midnight, the next day\'s hours');
+  vm.runInContext('W.clock.day=8;G._calls.length=0',c);
+  const next=vm.runInContext('workerRenderCitizens(0,{frac:.05})',c),A=next.people.find(p=>p.id===4),B=next.people.find(p=>p.id===5);
+  assert.equal(vm.runInContext('G._planned',c),2,'the day turns: a new plan');
+  assert.ok(next.times[0]<=8.05&&next.times[0]>=8.05-0.15*0.5-h,'steps kept a little behind the reading');
+  for(let i=1;i<next.times.length;i++)assert.ok(Math.abs(next.times[i]-next.times[i-1]-h)<1e-9,'one walk, unbroken by the new plan');
+  const steps2=vm.runInContext('G._calls.length',c)/2;assert.equal(A.track.length,4*next.times.length);assert.equal(B.track.length,4*next.times.length);
+  assert.equal(A.track.at(-4),50+steps1+steps2,'the old hand goes on where his steps had brought him');assert.deepEqual([B.track[0],B.track.at(-4)],[50,50+steps2],'the new hand starts where the plan puts him');
+  assert.equal(vm.runInContext('G._workerCitizenPlans.get(0).people.find(w=>w.p.id===4).fw.flip',c),(steps1+steps2)%2===1,'the furrow turned as it was walked');
+  auditDTO(next);
 });
 
 test('landscape packets omit unchanged structure bodies and publish one dirty building',()=>{
