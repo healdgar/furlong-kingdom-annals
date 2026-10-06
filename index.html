@@ -12202,6 +12202,7 @@ function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stret
   // A walker that carries `_em` (a Map) remembers each lattice edge's clearance. The lattice is the even integers, so every box shares its edges; the first and last edges (off the lattice) are never stored. Armies carry none.
   const step=2,x0=Math.floor((Math.min(p.x,q.x)-pad)/step)*step,z0=Math.floor((Math.min(p.z,q.z)-pad)/step)*step,
     nx=Math.ceil((Math.abs(q.x-p.x)+pad*2)/step)+1,nz=Math.ceil((Math.abs(q.z-p.z)+pad*2)/step)+1,N=nx*nz;if(N>50000)return null;
+  {const B=a._em&&a._em.boxes;if(B)B.push(x0,z0,x0+(nx-1)*step,z0+(nz-1)*step);} // the box searched, for the route memory (armyLandPath's log)
   const point=k=>({x:x0+(k%nx)*step,z:z0+Math.floor(k/nx)*step}),idx=v=>Math.round((v.z-z0)/step)*nx+Math.round((v.x-x0)/step),start=idx(p),end=idx(q),g=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1),closed=new Uint8Array(N),heap=[];
   const score=k=>dist2d(point(k).x,point(k).z,q.x,q.z),push=(k,f)=>{heap.push([k,f]);let n=heap.length-1;while(n){const j=(n-1)>>1;if(heap[j][1]<=f)break;[heap[n],heap[j]]=[heap[j],heap[n]];n=j;}},pop=()=>{const out=heap[0],v=heap.pop();if(heap.length){heap[0]=v;let n=0;for(;;){let j=n,l=n*2+1,r=l+1;if(l<heap.length&&heap[l][1]<heap[j][1])j=l;if(r<heap.length&&heap[r][1]<heap[j][1])j=r;if(j===n)break;[heap[n],heap[j]]=[heap[j],heap[n]];n=j;}}return out[0];};
   g[start]=0;push(start,score(start));let visited=0;
@@ -12210,16 +12211,108 @@ function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stret
   }
   if(start!==end&&prev[end]<0)return null;const out=[q];for(let k=prev[end];k>=0&&k!==start;k=prev[k])out.push(point(k));out.push(p);out.reverse();return out;
 }
-function armyLandPath(a,P){ // validate an existing road or field route; repair only obstructed spans
-  if(!P||P.length<2)return null;const out=[P[0]];
+function armyLandPath(a,P,log){ // validate an existing road or field route; repair only obstructed spans
+  // log: given by the route memory, null or an object noting each span tried, each detour box searched (armyDetour adds them) and each span's new corners
+  if(!P||P.length<2)return null;
+  if(log===undefined&&!a._em&&!a.settlement&&!a.placed&&ARMY_ROUTES.on)return armyRouteRecall(a,P); // a host's own search: remembered while all it read is unchanged
+  const out=[P[0]];
   // Nothing moves during the call, so the wider detour boxes and later spans reuse the lattice edges already tried (the walker's `_em`, which an army has none of otherwise) and the cell scopes.
-  const memo=!a._em;if(memo){a._em=new Map();a._em.scopes=new Map();a._em.circuits=new Map();}
+  const memo=!a._em;if(memo){a._em=new Map();a._em.scopes=new Map();a._em.circuits=new Map();if(log)a._em.boxes=log.boxes;}
   try{
   for(let k=1;k<P.length;k++){const p=out[out.length-1],q=P[k];if(p.sea&&q.sea){out.push(q);continue;}
+    if(log)log.spans.push(k);
     if(armySegmentClear(a,p,q)){out.push(q);continue;}
-    let detour=null;for(const pad of[24,64,144]){detour=armyDetour(a,p,q,pad);if(detour)break;}if(!detour)return null;out.push(...detour.slice(1));}
+    let detour=null;for(const pad of[24,64,144]){detour=armyDetour(a,p,q,pad);if(detour)break;}if(!detour)return null;out.push(...detour.slice(1));
+    if(log&&detour.length>2){const c=[];for(let i=1;i<detour.length-1;i++)c.push(detour[i].x,detour[i].z);log.corners.set(k,c);}}
   return out;
   }finally{if(memo)delete a._em;}
+}
+/* The route memory. A host that cannot get through asks for the same road day after day, and the search for a way
+   round is long; its answer changes only when something the search read has changed. So an answer that needed a detour
+   search is kept with a copy of all it read (armyRouteRead): the host's fording depth, road-only crossing and raft; the
+   ground and domain cells under every span and search box; the river and road lines there; and each place whose domain
+   those cells lie in, with its lake, buildings, walls and breaches, gates, earthworks, and whether its gates stand open
+   to this host. The answer is given again only while that copy equals the world exactly: any difference (a bridge built,
+   a wall breached, a war made or ended, a raft finished) searches afresh at once. A search also stores the bounds of the
+   roads it looks at (onRoad); a remembered answer stores them on the same roads (those up to onRoad.reach), as the
+   search would. The memory is derived state and lives outside the world: it is never saved, sent to the screen or
+   replayed, and a loaded game, starting with it empty, finds the same answers. */
+const ARMY_ROUTES={on:true,verify:false,memory:new WeakMap(),hits:0,misses:0,kept:0,readMax:0}; // verify (tests): search afresh at every recall and throw on any difference
+let ROUTE_READ=new Float64Array(8192),ROUTE_N=0,ROUTE_MARK=null,ROUTE_STAMP=0,ROUTE_CELLS=new Int32Array(1024),ROUTE_NC=0,ROUTE_I0=0,ROUTE_I1=0,ROUTE_J0=0,ROUTE_J1=0;
+function routeW(v){if(ROUTE_N===ROUTE_READ.length){const B=new Float64Array(ROUTE_N*2);B.set(ROUTE_READ);ROUTE_READ=B;}ROUTE_READ[ROUTE_N++]=v;}
+function routeList(L){if(!L){routeW(-1);return;}routeW(L.length);for(let i=0;i<L.length;i++)routeW(L[i]);} // absent, or its length and values
+function routeCell(x){return Math.floor(clamp((x+SIZE/2)/CELL,0,GRID-1.001));} // the first cell hAt reads for x
+function routeMark(x0,z0,x1,z1){ // the cells a read anywhere in the box can consult (hAt's cell and the next; toCell's 3x3), with a cell to spare
+  const i0=Math.max(0,routeCell(x0)-2),i1=Math.min(GRID-1,routeCell(x1)+3),j0=Math.max(0,routeCell(z0)-2),j1=Math.min(GRID-1,routeCell(z1)+3);
+  for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const c=j*GRID+i;if(ROUTE_MARK[c]===ROUTE_STAMP)continue;ROUTE_MARK[c]=ROUTE_STAMP;
+    if(ROUTE_NC===ROUTE_CELLS.length){const B=new Int32Array(ROUTE_NC*2);B.set(ROUTE_CELLS);ROUTE_CELLS=B;}ROUTE_CELLS[ROUTE_NC++]=c;
+    if(i<ROUTE_I0)ROUTE_I0=i;if(i>ROUTE_I1)ROUTE_I1=i;if(j<ROUTE_J0)ROUTE_J0=j;if(j>ROUTE_J1)ROUTE_J1=j;}
+}
+function routeHas(x0,z0,x1,z1){ // does the box touch a marked cell? (every point read lies two cells or more inside the marked ones)
+  const i0=clamp(Math.floor((x0+SIZE/2)/CELL),0,GRID-1),i1=clamp(Math.floor((x1+SIZE/2)/CELL),0,GRID-1),j0=clamp(Math.floor((z0+SIZE/2)/CELL),0,GRID-1),j1=clamp(Math.floor((z1+SIZE/2)/CELL),0,GRID-1);
+  for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)if(ROUTE_MARK[j*GRID+i]===ROUTE_STAMP)return true;return false;
+}
+function routeSettlement(a,s){ // all armyObstacle and fortGround read of a place
+  routeW(s.owner===a.house||!hostileTo(a,s)?1:0); // its gates open to this host
+  const L=s.lake;if(L){const poly=L.poly;routeW(1);routeW(L.y);routeW(poly?poly.length:-1);if(poly)for(const q of poly){routeW(q.x);routeW(q.z);}}else routeW(0);
+  const placed=s._lay?.placed;if(placed){const cs=placed.near?.cell,at=ROUTE_N;let n=0;routeW(cs);routeW(0); // its buildings, in the cells armyObstacle reads
+    for(const[key,list]of placed.historyCells){const i=Math.round(key/100003),j=key-i*100003;if(!routeHas(i*cs,j*cs,i*cs+cs,j*cs+cs))continue;n++;routeW(key);routeW(list.length);
+      for(const b of list){if(b.removed||b.state==='gone'||b.arch==='churchyard'){routeW(0);continue;}routeW(1);routeW(b.x);routeW(b.z);routeW(b.rot||0);routeW(b.w);routeW(b.d);}}
+    ROUTE_READ[at+1]=n;}else routeW(-1);
+  const C=fortCircuits(s);routeW(C.length);
+  for(const c of C){if(!c.wallRad){routeW(0);continue;}const O=fortCenter(c),B=c.wallBuild,D=c.wallDmg;routeW(1);routeW(c===s.motte?1:0);routeW(O.x);routeW(O.z);routeList(c.wallRad);routeList(c.wallKind);
+    if(B){routeW(1);routeW(B.a0);routeW(wallProg(c));}else routeW(0);
+    if(D){routeW(D.length);for(let k=0;k<D.length;k++){const v=+D[k];routeW(v!==v?2:v>=0.65?1:0);}}else routeW(-1); // a breach: damage of 0.65 or more (wallDmgAt takes the greater of two)
+    routeList(fortGateAngles(s,c));}
+  const m=s.motte;if(m){ // fortGround: the motte's mound and ditch, and a castle ring's ditch beyond it
+    routeW(1);routeW(m.x);routeW(m.z);routeW(m.r);routeW(m.summitR??Math.min(8.4,m.r*0.4));routeW(m.topY??(hAt(m.x,m.z)+(m.height??MOTTEH)));routeW(m.gateA??0);
+    const i0=routeCell(m.x-m.r-1),i1=Math.min(GRID-1,routeCell(m.x+m.r+1)+1),j0=routeCell(m.z-m.r-1),j1=Math.min(GRID-1,routeCell(m.z+m.r+1)+1);
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++)routeW(W.h[j*GRID+i]); // the ground about the mound, where motteSurface reads its rim
+    const b=casRing(s);if(b&&b!==m){routeW(1);routeW(b.x);routeW(b.z);routeW(b.wallR||b.r);if(b.wallRad){routeW(1);routeList(b.wallRad);}else{routeW(0);routeW(b.wallR||b.summitR||b.r||((b.coreR||70)+14));}routeList(fortGateAngles(s,b));}else routeW(0);
+  }else routeW(0);
+}
+function armyRouteRead(a,P,log){ // write into ROUTE_READ everything the search of P that left this log could have read; returns the count
+  if(!ROUTE_MARK)ROUTE_MARK=new Uint32Array(GRID*GRID);ROUTE_STAMP++;ROUTE_N=0;ROUTE_NC=0;ROUTE_I0=GRID;ROUTE_I1=-1;ROUTE_J0=GRID;ROUTE_J1=-1;
+  for(const k of log.spans){const p=P[k-1],q=P[k],n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)/(CELL*0.5)));for(let t=0;t<=n;t++){const x=lerp(p.x,q.x,t/n),z=lerp(p.z,q.z,t/n);routeMark(x,z,x,z);}} // each span's straight test
+  const X=log.boxes;for(let i=0;i<X.length;i+=4)routeMark(X[i],X[i+1],X[i+2],X[i+3]); // each detour box searched
+  routeW(a.waterClearance??0.4);routeW(a.requireRoadCrossing?1:0);
+  const r=a.raft;if(r&&r.readyDay<=day()){routeW(1);routeW(r.a.x);routeW(r.a.z);routeW(r.b.x);routeW(r.b.z);routeW(r.hw);}else routeW(0);
+  const H=W.h,D=W.dom;routeW(D?1:0);routeW(ROUTE_NC);for(let k=0;k<ROUTE_NC;k++){const c=ROUTE_CELLS[k];routeW(H[c]);if(D)routeW(D[c]);}
+  if(D){const seen=new Set();for(let k=0;k<ROUTE_NC;k++){const si=D[ROUTE_CELLS[k]];if(si==null||si<0||seen.has(si))continue;seen.add(si);const s=W.settlements[si];if(s){routeW(1);routeSettlement(a,s);}else routeW(0);}}
+  const V=W.rivHash;if(V){const cs=V.near?.cell,at=ROUTE_N;let n=0;routeW(cs);routeW(0); // the river lines riverAt can meet
+    for(const[key,list]of V.historyCells){const i=Math.round(key/100003),j=key-i*100003;if(!routeHas(i*cs,j*cs,i*cs+cs,j*cs+cs))continue;n++;routeW(key);routeW(list.length);for(const o of list){routeW(o.a.x);routeW(o.a.z);routeW(o.b.x);routeW(o.b.z);routeW(o.hw);routeW(o.y);}}
+    ROUTE_READ[at+1]=n;}else routeW(-1);
+  const R=W.roads||[],X0=ROUTE_I0*CELL-SIZE/2,X1=(ROUTE_I1+1)*CELL-SIZE/2,Z0=ROUTE_J0*CELL-SIZE/2,Z1=(ROUTE_J1+1)*CELL-SIZE/2;routeW(R.length); // onRoad tests every road's bounds, and reads the line of those near
+  for(const rd of R){const Q=rd.open||rd.path;if(!Q||Q.length<2){routeW(0);continue;}const bb=rd._bb||roadBounds(Q);routeW(1);routeW(bb[0]);routeW(bb[1]);routeW(bb[2]);routeW(bb[3]);
+    if(bb[2]+6<X0||bb[0]-6>X1||bb[3]+6<Z0||bb[1]-6>Z1){routeW(0);continue;}routeW(Q.length);for(const p of Q){routeW(p.x);routeW(p.z);}}
+  return ROUTE_N;
+}
+function roadBounds(P){return P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]);} // onRoad's own reduction
+function armyRouteSameRead(S,n){const T=ROUTE_READ;for(let i=0;i<n;i++){const x=S[i],y=T[i];if(x!==y){if(x===x||y===y)return false;}else if(x===0&&1/x!==1/y)return false;}return true;} // equal as Object.is
+function armyRouteKey(P){const K=new Float64Array(P.length*3);for(let i=0;i<P.length;i++){K[i*3]=P[i].x;K[i*3+1]=P[i].z;K[i*3+2]=P[i].sea?1:0;}return K;}
+function armyRouteSameKey(K,P){if(K.length!==P.length*3)return false;for(let i=0;i<P.length;i++){const p=P[i];if(!Object.is(K[i*3],p.x)||!Object.is(K[i*3+1],p.z)||K[i*3+2]!==(p.sea?1:0))return false;}return true;}
+function armyRouteReplay(P,e){if(!e.ok)return null;const out=[P[0]];for(let k=1;k<P.length;k++){const c=e.log.corners.get(k);if(c)for(let i=0;i<c.length;i+=2)out.push({x:c[i],z:c[i+1]});out.push(P[k]);}return out;} // the same points, made as the search makes them
+function armyRouteRecall(a,P){
+  const M=ARMY_ROUTES;for(const p of P)if(!Number.isFinite(p.x)||!Number.isFinite(p.z))return armyLandPath(a,P,null);
+  let list=M.memory.get(a);
+  if(list)for(let i=0;i<list.length;i++){const e=list[i];if(!armyRouteSameKey(e.key,P))continue;
+    const n=armyRouteRead(a,P,e.log);if(n===e.read.length&&armyRouteSameRead(e.read,n)){M.hits++;if(M.verify)return armyRouteVerify(a,P,e);armyRouteBounds(e.reach);return armyRouteReplay(P,e);}
+    list.splice(i,1);break;} // something it read has changed: search afresh
+  M.misses++;onRoad.reach=-1;const log={spans:[],boxes:[],corners:new Map()},out=armyLandPath(a,P,log),reach=onRoad.reach;
+  if(log.boxes.length){const n=armyRouteRead(a,P,log);if(!list)M.memory.set(a,list=[]);list.unshift({key:armyRouteKey(P),log,read:ROUTE_READ.slice(0,n),reach,ok:!!out});if(list.length>2)list.length=2;M.kept++;if(n>M.readMax)M.readMax=n;} // only a search that had to go round something is worth keeping
+  return out;
+}
+function armyRouteBounds(reach){const R=W.roads||[];for(let i=0;i<=reach&&i<R.length;i++){const r=R[i],Q=r.open||r.path;if(Q&&Q.length>=2&&!r._bb)r._bb=roadBounds(Q);}} // the bounds onRoad stores on the roads it looks at
+function armyRouteVerify(a,P,e){ // ARMY_ROUTES.verify: search afresh and insist that the answer, the search itself, what it read and the roads' stored bounds all agree
+  const R=W.roads||[],before=R.map(r=>r._bb),want=R.map((r,i)=>{const Q=r.open||r.path;return !r._bb&&i<=e.reach&&Q&&Q.length>=2?JSON.stringify(roadBounds(Q)):r._bb;}),kept=armyRouteReplay(P,e);
+  onRoad.reach=-1;const log={spans:[],boxes:[],corners:new Map()},fresh=armyLandPath(a,P,log);
+  const same=(x,y)=>x.length===y.length&&x.every((v,i)=>Object.is(v,y[i]));let bad=null;
+  if(!fresh!==!kept||fresh&&(fresh.length!==kept.length||fresh.some((q,i)=>!Object.is(q.x,kept[i].x)||!Object.is(q.z,kept[i].z)||(P.includes(q)||P.includes(kept[i]))&&q!==kept[i])))bad='the path';
+  else if(onRoad.reach!==e.reach||R.some((r,i)=>before[i]?r._bb!==before[i]:typeof want[i]==='string'?JSON.stringify(r._bb)!==want[i]:!!r._bb))bad='the roads\' stored bounds';
+  else if(!same(log.spans,e.log.spans)||!same(log.boxes,e.log.boxes)||log.corners.size!==e.log.corners.size||[...log.corners].some(([k,c])=>!e.log.corners.has(k)||!same(c,e.log.corners.get(k))))bad='the search';
+  else{const n=armyRouteRead(a,P,log);if(n!==e.read.length||!armyRouteSameRead(e.read,n))bad='what it read';}
+  if(bad)throw Error(`Route memory: ${bad} differs from a fresh search (${a.name||'host '+a.id}, day ${day()})`);
+  return fresh;
 }
 function armyReach(a,p,pts,pad,cap){ // every lattice node a walker can reach from p inside the union of the detour boxes of pts (null if too large to say)
   // Sound by construction: pad exceeds every detour pad (144), so the box holds each armyDetour box for p→pts[i]; the edge test and neighbourhood are armyDetour's; so any node its search settles is marked here.
@@ -13587,8 +13680,11 @@ function ruralSite(s,h){ // where this household's work lies out of the place: i
   if(h.tr==='fisher'&&h.bh){const w=waterNear(s,h.bh);return w?{x:w.x,z:w.z,ha:0,own:1,kind:'water'}:null;}
   return null;}
 function onRoad(x,z,pad,waterOnly=false){ // on a built highway; crossings require its centreline to enter water
-  for(const r of W.roads||[]){const P=r.open||r.path;if(!P||P.length<2)continue;const bb=r._bb||(r._bb=P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
-    const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5){if(!waterOnly)return true;const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L,0,1);if(riverAt(a.x+dx*t,a.z+dz*t,0))return true;}}return false;}
+  // onRoad.reach: the furthest road looked at (each look may store that road's bounds), for the route memory
+  const R=W.roads||[];for(let i=0;i<R.length;i++){const r=R[i],P=r.open||r.path;if(!P||P.length<2)continue;const bb=r._bb||(r._bb=P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]));
+    const m=pad+6;if(x<bb[0]-m||x>bb[2]+m||z<bb[1]-m||z>bb[3]+m)continue;for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<pad+5){if(!waterOnly){if(i>onRoad.reach)onRoad.reach=i;return true;}const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L,0,1);if(riverAt(a.x+dx*t,a.z+dz*t,0)){if(i>onRoad.reach)onRoad.reach=i;return true;}}}
+  if(R.length-1>onRoad.reach)onRoad.reach=R.length-1;return false;}
+onRoad.reach=-1;
 // Reuse built tracks and the town's highways at construction time; traversal scratch is discarded.
 function ruralRoadAccess(s,p){
   const roadJoin=q=>{if(streetAccessAt(s,q))return true;

@@ -6,7 +6,8 @@ const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath'];
 const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
 function fixture(){const W={settlements:[],rivHash:{},roads:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
- const c=vm.createContext({W,G,SIZE:2000,CELL:10,SEA_SURFACE:.5,COG_MPD:100,PORT_DELAY:2,MARCH_MPD:40,
+ const c=vm.createContext({W,G,ARMY_ROUTES:{on:false},SIZE:2000,CELL:10,SEA_SURFACE:.5, // stub ground: the route memory (army-route-memory.test) needs the real raster
+ COG_MPD:100,PORT_DELAY:2,MARCH_MPD:40,
  hAt:()=>10,fortGround:()=>10,riverAt:()=>null,day:()=>5,
  toCell:x=>Math.max(0,Math.min(19,Math.floor((x+100)/10))),inB:(i,j)=>i>=0&&j>=0&&i<20&&j<20,cIdx:(i,j)=>j*20+i,
  dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),emit:()=>{},houseAcct:id=>id,buyBuildingMaterial:()=>0,
