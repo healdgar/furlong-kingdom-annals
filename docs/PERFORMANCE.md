@@ -6,7 +6,7 @@ The app remains a single HTML file with no build step.
 
 ## Fast-forward limits and next work
 
-The fastest player speed requests 360 days/second. `animate` executes daily ticks
+Reel years (speed 5) requests 360 days/second. `animate` executes daily ticks
 on the main thread for up to 28 ms per frame, then animates the world, rebuilds
 dirty geometry, refreshes UI and renders. A slow single tick can exceed that
 budget. Later-era generation also executes every day, although it omits the

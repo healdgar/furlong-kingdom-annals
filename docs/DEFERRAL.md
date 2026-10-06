@@ -1,6 +1,6 @@
 # Fastest-speed visual deferral
 
-Only player speed 5 (360 days/second) coalesces graphics. Slower speeds, map generation and
+Only Reel years (speed 5, 360 days/second nominal) coalesces graphics. Slower speeds, map generation and
 later-era prehistory retain existing behavior. Every simulation day and life event remains.
 `&defer=off` disables this feature; captured before boot normalizes the link.
 
