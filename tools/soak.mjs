@@ -11,7 +11,7 @@
 
    node tools/soak.mjs --seeds 11,22,33 --coast sea,land --years 100 --par 6 --out /tmp/soak
    Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
-            --km N  --y AD (start year: older history replayed first)  --profile year,year  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
+            --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
             that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path */
 import {spawn} from 'node:child_process';
@@ -243,7 +243,8 @@ function report(R){
   const bad=R.filter(r=>r.errs&&r.errs.length);if(bad.length)md+=`\n## Errors\n\n`+bad.map(r=>`- ${r.id}:\n`+r.errs.map(e=>'  - '+e.replace(/\n/g,' ').slice(0,300)).join('\n')).join('\n')+'\n';
   return md;}
 
-const worlds=[];for(const s of seeds)for(const co of coasts)worlds.push({seed:s,fate:s,coast:co});
+const fateOverride=A.fate===undefined?null:Number(A.fate);if(fateOverride!==null&&(!Number.isInteger(fateOverride)||fateOverride<0||fateOverride>0xffffffff))throw new Error('invalid fate seed');
+const worlds=[];for(const s of seeds)for(const co of coasts)worlds.push({seed:s,fate:fateOverride??s,coast:co});
 log(`soak: ${worlds.length} worlds × ${YEARS} years, ${PAR} at a time → ${OUT}`);
 const results=[],queue=worlds.slice();
 await Promise.all(Array.from({length:Math.min(PAR,worlds.length)},async()=>{while(queue.length){const w=queue.shift();results.push(await runWorld(w));

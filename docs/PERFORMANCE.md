@@ -50,6 +50,38 @@ Remaining architectural work, in order:
 Daily pantry, hunger and debt settlement remains required. Monthly and annual
 decisions should run only when due; no coarser approximation is enabled here.
 
+## Failed army retreat retries, 5 October 2026
+
+A 32.9-second main-thread profile of the running `48c2b35` release, seed
+287970763 / fate 370450810, found `tickMilitary` at 62.9% inclusive CPU and
+`armyDetour` at 62.4%. Two hungry armies repeatedly tried an impassable retreat.
+These nested percentages overlap. Journal-worker CPU was outside this profile.
+
+Failed automatic retreats now reuse `holdUntil` to retry after 30 days, retaining
+any longer hold. Explicit orders remain immediate. Failed moves preserve the
+field position and do not announce successful foraging. Roads and paid sea
+crossings remain available from a field position; the army joins the nearest
+origin-side land segment through a physically checked connector. If the road
+route fails or is absent, passable cross-country travel remains possible at
+`FIELD_MPD`. Both routes retain river, building, wall and slope checks. No new
+maintained index or event was added. Automatic retries see changed obstacles
+on the next retry; a new explicit order can retry immediately.
+
+Nine focused regression tests cover cooldown, longer holds, queued orders,
+changed passability, field position, terrain fallback and charged sea crossings.
+A matched synthetic Node/V8 kernel fixture over 60 days reduced failed orders
+from 60 to 2, detour calls from 180 to 12 and segment checks from 1,500 to 100.
+It uses the actual terrain-search kernel with a synthetic impassable cliff;
+these are fixture results, not whole-game timing or long-run clearance.
+
+The final game source (SHA256
+`b666e678300c24f59a68830a7450d08b1d269811ae0359fa0a6d08cc3c4c6c77`)
+also passed a three-year native Chrome run with the same map/fate seeds:
+2,160 independent inventory checks, zero simulation errors, zero annual money
+residuals, and complete journal settlement. This does not reproduce the live
+year-five army state or establish later-year throughput. All 39 focused army,
+campaign, routing and old-search guard tests pass.
+
 ## Algorithms
 
 - Settlement population totals are computed lazily from the household ledger. Ledger set/delete/clear

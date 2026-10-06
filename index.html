@@ -11788,16 +11788,27 @@ function armyDestination(a,s,p){const c=hostileTo(a,s)&&activeFort(s);if(c){cons
 function armyRouteBlocked(a){const p=armySimPos(a);a.field={x:p.x,z:p.z};a.fieldTo=null;a.chase=null;a.state='idle';a.why='no passable route: a bridge, ford, or breach is needed';return false;}
 function armyMarchPath(a,P,speed,checked=false){const poly=checked?P:armyLandPath(a,P);if(!poly)return armyRouteBlocked(a);a.poly=poly;let T=0;const tf=[0];for(let k=1;k<poly.length;k++){const d=dist2d(poly[k-1].x,poly[k-1].z,poly[k].x,poly[k].z);T+=poly[k].sea&&poly[k-1].sea?d*speed/COG_MPD:d;if(poly[k].sea!==poly[k-1].sea)T+=PORT_DELAY*speed/MARCH_MPD/2;tf.push(T);}
   a.tf=poly.some(q=>q.sea)?tf.map(t=>t/Math.max(1,T)):null;a.departDay=day();a.arriveDay=day()+T/speed;a.state='march';return true;}
+function armyRoadDeparture(from,P){
+  let point=P[0],next=1,best=Infinity;
+  // Join the origin-side land route without returning through the town centre
+  // or attaching beyond a sea crossing. Every connector is validated below.
+  for(let k=1;k<P.length;k++){const p=P[k-1],q=P[k];if(p.sea||q.sea)break;const dx=q.x-p.x,dz=q.z-p.z,L=dx*dx+dz*dz||1,t=clamp(((from.x-p.x)*dx+(from.z-p.z)*dz)/L,0,1),x=p.x+dx*t,z=p.z+dz*t,d=dist2d(from.x,from.z,x,z);if(d<best){best=d;point={x,z};next=k;}}
+  return best<0.01?[from,...P.slice(next)]:[from,point,...P.slice(next)];
+}
 function marchArmy(a,toS){
   const t=W.settlements[toS];if(!t)return armyRouteBlocked(a);const from=armySimPos(a),goal=armyDestination(a,t,from);if(!goal)return armyRouteBlocked(a);
-  let r;if(a.field){r={poly:[from,goal]};}else{r=route(a.at,toS,true);if(!r)return armyRouteBlocked(a);r={...r,poly:r.poly.length?r.poly.slice():[from,goal]};r.poly[0]=from;r.poly[r.poly.length-1]=goal;}
-  const poly=armyLandPath(a,r.poly);if(!poly)return armyRouteBlocked(a);r={...r,poly};
+  // A blocked order leaves a field position; it must not discard roads and
+  // bridges on the next retreat. Validate the connection from that position.
+  let r=route(a.at,toS,true),poly=null,fieldRoute=false;if(r){r={...r,poly:r.poly.length?r.poly.slice():[from,goal]};if(a.field)r.poly=armyRoadDeparture(from,r.poly);else r.poly[0]=from;r.poly[r.poly.length-1]=goal;poly=armyLandPath(a,r.poly);}
+  // Roads are preferred, not compulsory. An army may cross passable open
+  // country when no usable road route exists; rivers and obstacles still apply.
+  if(!poly){fieldRoute=true;poly=armyLandPath(a,[from,goal]);r={poly};}if(!poly)return armyRouteBlocked(a);r={...r,poly};
   if(r.sea){ // the host must take ship: transports chartered at so much a man for each crossing
     const cost=Math.round((80+a.strength*0.6*(r.seaLen/1500))*PL());
     if(spend(a.house,cost)){const P=W.settlements[a.at];payAmong(P?heads_(P,h=>h.tr==='boatman'||h.tr==='fisher'):[],cost,null,'shipping');}else{a.state='idle';if(!a._noShips||day()-a._noShips>90){a._noShips=day();emit('war',4,W.settlements[a.at].pos,`${a.name} lies at ${W.settlements[a.at].name}: ${houseName(a.house)} cannot pay for the ships to carry it over the water.`);}return;}
     if(a.house>0)book(W.houses[a.house],'shipping',-cost);
     if(!W.prehistory)emit('war',5,W.settlements[a.at].pos,vary('embark',[()=>`${a.name} takes ship for ${W.settlements[toS].name}; ${cost.toLocaleString()} crowns for the hire of the transports.`,()=>`Cogs are hired at ${cost.toLocaleString()} crowns to carry ${a.name} over the water toward ${W.settlements[toS].name}.`,()=>`${a.name} embarks, horses and all, for ${W.settlements[toS].name}.`]));}
-  a.target=toS;a.fieldTo=null;if(armyMarchPath(a,r.poly,a.field?FIELD_MPD:MARCH_MPD,true)){a.field=null;return true;}return false;
+  a.target=toS;a.fieldTo=null;if(armyMarchPath(a,r.poly,a.field||fieldRoute?FIELD_MPD:MARCH_MPD,true)){a.field=null;return true;}return false;
 }
 function marchToPoint(a,x,z){
   const from=armySimPos(a);if(!armyMarchPath(a,[from,{x,z}],FIELD_MPD))return false;
@@ -11872,9 +11883,9 @@ function tickMilitary(){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
     armyLand(a);
     if(a.supply<=0){a.supply=0;a.strength*=0.995;a.morale=Math.max(20,a.morale-0.3);}
-    if(a.supply<18&&a.state==='idle'&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house)){ // hungry: fall back on its own granaries
+    if(a.supply<18&&a.state==='idle'&&a.nextOrder==null&&!(a.why==='no passable route: a bridge, ford, or breach is needed'&&a.holdUntil>now)&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house)){ // hungry: fall back on its own granaries
       let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
-      if(best>=0){marchArmy(a,best);a.why='its wagons empty, it falls back to forage';if(a.house===plyH()||chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);continue;}}
+      if(best>=0){if(marchArmy(a,best)){a.why='its wagons empty, it falls back to forage';if(a.house===plyH()||chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);}else if(a.why==='no passable route: a bridge, ford, or breach is needed')a.holdUntil=Math.max(a.holdUntil||0,now+30);continue;}}
     if(a.state==='idle'&&!a.field&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
       if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.tf=null;a.state='march';a.departDay=a.arriveDay=now;}
       else if(!a.hold){routHome(a,'too few to take the town');if(a.gone)continue;} // too few to try it: back to its own
