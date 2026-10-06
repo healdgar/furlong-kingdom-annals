@@ -16993,17 +16993,24 @@ const WALKER_CARRY=['x','z','ry','t','state','until','route','ri','out','walking
 // The townsfolk's walk (#2). The worker walks them a frame of the chosen pace at a time, as the main-thread screen walked
 // them, a little ahead of the calendar, and keeps each step's place: a reply carries the steps from a little before the
 // reading to past the next reply, and the screen goes between them by its own clock (trackAt). The walk keeps to whichever
-// of the two clocks is further on: the screen's runs ahead of the reading by up to a reply's latency, and after a slower pace
-// is chosen it may stand far ahead (a hundredth of a day at Fast is half a minute of life pace). Display only.
+// of the two clocks is further on (the screen's runs a reply's latency ahead of the reading). Each step also keeps where the
+// walkers' day stood, so that when a slower pace is chosen (at life pace, Normal's 0.4 s ahead is ten minutes) the walk goes
+// back to the first step past the screen and on from there at the new pace, rather than leaping to where it had got.
+// Display only.
 const WALK_TRACK={ahead:0.4,behind:0.15,most:60,fine:8}; // seconds of pace walked ahead of the reading and kept behind it; most frames one reply walks; the fastest pace (days a second) walked frame by frame
 function workerWalkSample(c){(c._tr||(c._tr=[])).push(workerRenderFinite(c.x),workerRenderFinite(c.z),workerRenderFinite(c.ry),(c.out?1:0)|(c.walking?2:0));}
 function workerWalkOn(entry,now,frac,view=now){
-  const rate=speedIdx===5?0:SPEEDS[speedIdx]||0,fine=rate>0&&rate<=WALK_TRACK.fine,h=rate/60,T=entry.times,lo=Math.min(now,view),hi=Math.max(now,view);
-  const restart=at=>{entry.day=at;T.length=0;T.push(at);for(const c of entry.people){c._tr=[];workerWalkSample(c);}};
-  if(fine&&entry.day>hi+5*WALK_TRACK.ahead*rate)restart(hi); // walked more than two seconds of the new pace ahead at a faster one: they go on from there (nearer, they walk out the steps already taken)
-  if(hi>entry.day&&(!fine||hi-entry.day>WALK_TRACK.most*h)){const D=hi===now?day():Math.floor(hi),dt=(hi-entry.day)*DAYSEC;for(const c of entry.people)stepWalker(c,dt,hi===now?frac:hi-D,D);restart(hi);} // paused, too fast to follow, or long away: one stride
-  if(fine)for(let n=0,end=hi+WALK_TRACK.ahead*rate;entry.day<end&&n<WALK_TRACK.most;n++){const t=entry.day+h,D=Math.floor(t);for(const c of entry.people){stepWalker(c,h*DAYSEC,t-D,D);workerWalkSample(c);}entry.day=t;T.push(t);}
-  if(rate>0){const keep=lo-WALK_TRACK.behind*rate;let cut=0;while(cut<T.length-1&&T[cut+1]<=keep)cut++;if(cut){T.splice(0,cut);for(const c of entry.people)c._tr.splice(0,cut*4);}}
+  const rate=speedIdx===5?0:SPEEDS[speedIdx]||0,fine=rate>0&&rate<=WALK_TRACK.fine,h=rate/60,T=entry.times,M=entry.marks||(entry.marks=[]),lo=Math.min(now,view),hi=Math.max(now,view),F=WALKER_CARRY.length;
+  const mark=()=>{const m=new Map();for(const c of entry.people)m.set(c.p.id,[...WALKER_CARRY.map(k=>c[k]),c.fw?c.fw.flip:null]);M.push({day:entry.day,m});};
+  const keep=()=>{for(const c of entry.people)workerWalkSample(c);T.push(entry.day);mark();};
+  const restart=at=>{entry.day=at;T.length=0;M.length=0;for(const c of entry.people)c._tr=[];keep();};
+  if(!M.length)mark();
+  if(fine&&entry.day>hi+2*WALK_TRACK.ahead*rate){ // walked further ahead at a faster pace than this one wants: back to the first step past the screen (the screen goes on to it as it was drawn), and on from there at this pace
+    let k=0;while(k<M.length-1&&M[k].day<hi)k++;const i=T.lastIndexOf(M[k].day);
+    if(i<0)restart(hi);else{const m=M[k].m;for(const c of entry.people){const r=m.get(c.p.id);if(r){for(let j=0;j<F;j++)c[WALKER_CARRY[j]]=r[j];if(c.fw&&r[F]!==null)c.fw.flip=r[F];}c._tr.length=4*(i+1);}T.length=i+1;M.length=k+1;entry.day=T[i];}}
+  if(hi>entry.day&&(!fine||hi-entry.day>WALK_TRACK.most*h)){const D=hi===now?day():Math.floor(hi),dt=(hi-entry.day)*DAYSEC;for(const c of entry.people)stepWalker(c,dt,hi===now?frac:hi-D,D);if(fine){entry.day=hi;keep();}else restart(hi);} // paused, too fast to follow, or long away: one stride (that the screen goes along, at a pace it can follow)
+  if(fine)for(let n=0,end=hi+WALK_TRACK.ahead*rate;entry.day<end&&n<WALK_TRACK.most;n++){const t=entry.day+h,D=Math.floor(t);for(const c of entry.people)stepWalker(c,h*DAYSEC,t-D,D);entry.day=t;keep();}
+  if(rate>0){const from=lo-WALK_TRACK.behind*rate;let cut=0;while(cut<T.length-1&&T[cut+1]<=from)cut++;if(cut){T.splice(0,cut);for(const c of entry.people)c._tr.splice(0,cut*4);}while(M.length>1&&M[0].day<T[0])M.shift();}
 }
 function workerWalkTrack(c){const R=c._tr||[];for(let i=4;i<R.length;i++)if(R[i]!==R[i&3])return Float32Array.from(R);return Float32Array.from(R.slice(0,4));} // one place for those who stand
 function workerRenderCitizens(si,options={}){
@@ -17032,7 +17039,7 @@ function workerRenderCitizens(si,options={}){
       if(fresh){const people=townsfolkFor(s),was=entry?.s===s?new Map(entry.people.map(c=>[c.p.id,c])):null,born=[],same=(a,b)=>a&&b&&a.x===b.x&&a.z===b.z;
         for(const c of people){const o=was?.get(c.p.id);if(!o){born.push(c);continue;}for(const k of WALKER_CARRY)if(Object.hasOwn(o,k))c[k]=o[k];c._tr=o._tr;if(c.fw&&o.fw&&same(c.fw.A,o.fw.A)&&same(c.fw.B,o.fw.B))c.fw.flip=o.fw.flip;} // the day turns, the folk walk on from where their steps had brought them: only those new to the plan start from their doors
         warmWalkers(born);const T=was?entry.times:[now];for(const c of born){c._tr=[];for(let i=0;i<T.length;i++)workerWalkSample(c);}
-        entry={s,signature,people,day:was?entry.day:now,times:T};scratch.set(si,entry);}
+        entry={s,signature,people,day:was?entry.day:now,times:T,marks:was?entry.marks:[]};scratch.set(si,entry);}
     }finally{
       if(colorDescriptor)Object.defineProperty(globalThis,'THREE',colorDescriptor);else if(typeof THREE!=='undefined'&&THREE?.Color?.name==='PlanColor')delete globalThis.THREE;
     }
@@ -17130,7 +17137,7 @@ async function workerSetSpeedNow(index){
 }
 // The worker's reply is the speed now. A packet cut before it (an older pull, a pushed view still being laid out) keeps its
 // geometry but cannot put the old speed back; only a packet of a later revision speaks for the speed (installPresentation).
-function workerSpeedReply(reply){if(!reply||!Number.isInteger(reply.speed))return;G.speedRevision=Math.max(G.speedRevision||0,reply.revision||0);backgroundApplying=true;try{setSpeed(reply.speed);}finally{backgroundApplying=false;}}
+function workerSpeedReply(reply){if(!reply||!Number.isInteger(reply.speed))return;G.speedRevision=Math.max(G.speedRevision||0,reply.revision||0);backgroundApplying=true;try{setSpeed(reply.speed);}finally{backgroundApplying=false;}presRepace(reply.reading);}
 async function workerRefreshLandscapeBootstrap(){installPresentation(await BACKGROUND.request('view',{kind:'bootstrap'}));}
 // Every caller gets a packet cut after its own request: one already on the wire is followed by (at most) one more.
 function workerRefreshLandscape(){
@@ -17148,11 +17155,20 @@ function installClock(c){
 }
 // SCREEN MOTION BEGIN — the screen's own clock, walkers and flocks between the worker's readings. Display only: nothing here goes back to the worker.
 // Each reading (a day's clock message, an actors reply) says how far the calendar had run at an instant. Between them the
-// screen runs on at the chosen pace and eases toward the latest reading at half to twice that pace; it never runs back,
-// jumps only forward and only when well behind, and runs at most a day and a little past the last day reported.
+// screen runs on at the chosen pace and eases toward the latest reading at half to twice that pace; it never runs back (save
+// at a change of pace, by what it ran past the worker's reading of the change: presRepace), jumps only forward and only when
+// well behind, and runs at most a day and a little past the last day reported.
 const SCREEN_CLOCK={ease:0.5,jump:0.5,slack:0.25}; // seconds of pace: to make up a difference; furthest behind before a jump; a reply's latency the screen may run past the reported day
 function presAnchor(v,at){if(!Number.isFinite(v))return;const now=performance.now(),t=Number.isFinite(at)?Math.min(now,at-performance.timeOrigin):now;if(G.pres&&t<G.pres.at)return; // older than the reading in hand (or than a change of pace): no news
   G.pres=Object.assign(G.pres||{v},{av:v,at:t});}
+// A change of pace, read at the instant the worker took it up (the reply to a speed or a pause). The screen ran on at the
+// old pace while the word came back; it takes back what it ran past the reading (a frame or two of the old pace, no more)
+// and goes on from there at the new, rather than begin a slower pace far ahead of the calendar and creep at half of it
+// until the calendar comes up (at life pace, a hundredth of a day is a quarter of an hour).
+function presRepace(c){
+  const P=G.pres;if(!P||!c||!Number.isFinite(c.day))return;const now=performance.now(),t=Number.isFinite(c.at)?Math.min(now,c.at-performance.timeOrigin):now,rate=speedIdx===5?0:SPEEDS[speedIdx]||0;
+  const av=c.day+(c.frac||0),target=av+(now-t)/1000*rate,past=(now-t)/1000*(P.rate||0);
+  if(P.v>target)P.v=Math.max(target,P.v-past,day());if(t>=P.at){P.av=av;P.at=t;}P.rate=rate;}
 function presStep(now=performance.now()){
   const d=day(),rate=speedIdx===5?0:SPEEDS[speedIdx]||0;let P=G.pres;
   if(!P||P.d>d)P=G.pres={v:d,av:d,at:now}; // a new realm or a loaded save starts the clock afresh
@@ -17223,6 +17239,7 @@ class SimulationWorkerHost{
     this.queue=[];this.lastId=0;this.ready=false;this.closed=false;this.busy=false;this.timer=null;this.advance=null;this.fault=null;this.accum=0;this.lastTime=now();this.publication=null;this.viewSequence=0;
   }
   reply(message,value,error){this.send({protocol:1,replyTo:message.id,...(error?{error:String(error.message||error)}:{value})});}
+  paced(){return{...this.model.view('summary'),reading:{day:this.model.day(),frac:this.accum,at:this.model.clock?.()?.at}};} // a change of pace answered with the calendar at its instant
   // the part of the next day that wall time has earned by now (the pump banks it at its next turn); Reel runs on whole days
   part(){return this.model.reeling?.()===true?0:Math.max(0,Math.min(.999,this.accum+Math.max(0,this.now()-this.lastTime)*this.model.rate()/1000));}
   receive(message){
@@ -17253,9 +17270,9 @@ class SimulationWorkerHost{
         this.advance={...message,target:this.model.day()+payload.days};return;
       case 'speed':
         if(!Number.isInteger(payload.index)||payload.index<0||payload.index>6)throw Error('Invalid simulation speed');
-        if(this.advance)throw Error('A bounded advance is running');{const part=this.part();this.model.speed(payload.index);this.accum=part;}this.lastTime=this.now();this.reply(message,this.model.view('summary'));return; // a new pace keeps the part-day already run, as the foreground driver does
+        if(this.advance)throw Error('A bounded advance is running');{const part=this.part();this.model.speed(payload.index);this.accum=part;}this.lastTime=this.now();this.reply(message,this.paced());return; // a new pace keeps the part-day already run, as the foreground driver does
       case 'pause':
-        this.accum=this.part();this.model.speed(0);if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.model.view('summary'));return;
+        this.accum=this.part();this.model.speed(0);if(this.advance){this.reply(this.advance,{day:this.model.day(),complete:false});this.advance=null;}this.reply(message,this.paced());return;
       case 'command':
         // Validation precedes journal admission; every accepted command runs once.
         {const prepared=this.model.validate(payload);let done;try{done=this.model.command(payload,prepared);}catch(error){this.fail(error);throw error;}this.reply(message,{day:this.model.day(),...(done&&typeof done==='object'?done:{})});return;}

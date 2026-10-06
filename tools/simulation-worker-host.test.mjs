@@ -168,6 +168,7 @@ test('a new pace or a pause keeps the part-day already run, and every reading ca
   assert.equal(f.h.part(),0.5);
   f.h.receive(msg(4,'speed',{index:2}));await runOne(f);assert.equal(f.h.accum,0.5,'a new pace keeps it');assert.equal(f.model.d,0);
   f.c.setNow(f.c.now()+100);f.h.receive(msg(5,'pause'));await runOne(f);assert.ok(Math.abs(f.h.accum-0.7)<1e-9,'so does a pause');
+  assert.deepEqual([reply(f,4).value.reading.day,reply(f,4).value.reading.frac],[0,0.5],'the reply to a new pace reads the calendar at its instant');assert.ok(Math.abs(reply(f,5).value.reading.frac-0.7)<1e-9,'and so does the reply to a pause');
   f.c.setNow(f.c.now()+5000);f.h.receive(msg(6,'view',{kind:'actors'}));await runOne(f);assert.ok(Math.abs(reply(f,6).value.fraction-0.7)<1e-9,'paused, the reading stands still');
   f.h.receive(msg(7,'speed',{index:1}));await runOne(f);f.c.setNow(f.c.now()+200);f.h.receive(msg(8,'view',{kind:'actors'}));await runOne(f);
   assert.ok(Math.abs(reply(f,8).value.fraction-0.8)<1e-9,'a reading counts the time since the pump last banked it');

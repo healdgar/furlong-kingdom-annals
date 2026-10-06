@@ -74,6 +74,21 @@ test('no blip after a speed change or a command: the packet\'s missing fraction 
   s.day=0;s.frame();assert.ok(s.v<1,'a new realm starts the clock afresh');
 });
 
+test('a change of pace runs from the worker\'s reading of it: no creeping at half the new pace after a slower one, at life pace above all',()=>{
+  for(const [from,mid] of [[2,null],[1,null],[1,0]]){
+    const s=screen({speed:from,day:100,frac:0.7});let anchor={t:s.c.t,v:100.7},rate=SPEEDS[from],n=0;const truth=t=>anchor.v+(t-anchor.t)/1000*rate;
+    const each=t=>{s.day=Math.floor(truth(t));if(n++%9===0)s.read(truth(t));};s.run(600,each);
+    const change=(speed,lateMs)=>{const ts=s.c.t-lateMs,was=s.v;anchor={t:ts,v:truth(ts)};rate=SPEEDS[speed];s.speed=speed; // the worker took up the pace lateMs ago
+      s.c.presRepace({day:Math.floor(anchor.v),frac:anchor.v%1,at:s.c.performance.timeOrigin+ts});
+      assert.ok(s.v<=was&&was-s.v<=SPEEDS[from]*lateMs/1000+1e-12,`from ${from} to ${speed}: takes back no more than it ran past the reading (${was-s.v} days)`);
+      assert.ok(Math.abs(s.v-truth(s.c.t))<1e-6*SPEEDS[from],`from ${from} to ${speed}: on the worker's calendar at once (${s.v} against ${truth(s.c.t)})`);};
+    if(mid!==null){change(mid,14);s.run(1000,each);}
+    change(6,mid===null?14:0);s.frames.length=0;s.run(3000,each);
+    assert.ok(steps(s.frames).every(d=>Math.abs(d-rate/60)<0.02*rate/60),`${from}${mid===null?'':'→pause'}→Life: steady at life pace, not half of it`);
+    assert.ok(Math.abs(s.v-truth(s.c.t))<rate/60,'and on the calendar');
+  }
+});
+
 test('a walker between the steps the worker kept: in between them, at the first before it, at the last past it',()=>{
   const c=vm.createContext({Math,Number});vm.runInContext(block.replace(/const SCREEN_CLOCK[\s\S]*?(?=\/\/ Where a townsman)/,''),c);
   const T=Float64Array.from([10,10.5,11]),R=Float32Array.from([0,0,0,0, 4,0,1,3, 4,8,2,1]);
@@ -172,17 +187,35 @@ test('at life pace the walk keeps to the screen\'s clock, ahead of the reading a
   }
 });
 
-test('the walk kept: ahead of the reading at every pace, one stride when paused or too fast to follow, afresh after a slower pace',()=>{
+// Life as the player reaches it: from the pace a realm starts at, from a pause, and from Fast. The screen's clock takes up
+// the new pace at the worker's reading of the change (presRepace), so here both run on the same clock.
+test('into life pace from Normal, from a pause and from Fast: no leap at the change, and walking every frame after it',()=>{
+  for(const route of [[[1,120],[6,240]],[[1,120],[0,60],[6,240]],[[2,120],[6,240]]]){
+    const {c,clone}=town(route[0][0]),people=clone(),t0=100.6,entry={people,day:t0,times:[t0]};for(const w of people)c.workerWalkSample(w);
+    let v=t0,packet=null,pending=null,f=0;const drawn=[],clock=[];
+    const reply=()=>{c.clock.day=Math.floor(v);c.workerWalkOn(entry,v,v-Math.floor(v),v);return{times:Float64Array.from(entry.times),tracks:people.map(w=>c.workerWalkTrack(w))};};
+    for(const [speed,frames] of route){c.speedIdx=speed;for(let k=0;k<frames;k++,f++){
+      if(pending){packet=pending;pending=null;}if(f%9===0){pending=reply();if(!packet){packet=pending;pending=null;}}
+      v+=SPEEDS[speed]/60;clock.push(v);drawn.push({speed,at:packet.tracks.map(R=>c.trackAt(packet.times,R,v))});}}
+    const name=route.map(r=>r[0]).join('→');let still=0,walking=0;
+    for(let k=1;k<drawn.length;k++)for(let i=0;i<people.length;i++){const a=drawn[k-1].at[i],b=drawn[k].at[i];if(!a.out||!b.out)continue;const d=Math.hypot(b.x-a.x,b.z-a.z);
+      assert.ok(d<=3*(clock[k]-clock[k-1])*c.DAYSEC+1e-6,`${name} frame ${k} walker ${i}: ${d} m in a frame of ${(clock[k]-clock[k-1])*c.DAYSEC} s`);
+      if(drawn[k].speed===6&&b.walking){walking++;if(d<1e-4)still++;}}
+    assert.ok(walking>100&&still===0,`${name}: at life pace every walker walking moves every frame (${still} still of ${walking})`);
+  }
+});
+
+test('the walk kept: ahead of the reading at every pace, one stride when paused or too fast to follow, taken up again after a slower pace',()=>{
   for(const speed of [1,2,3,6]){const {c,clone}=town(speed),people=clone(),rate=SPEEDS[speed],entry={people,day:100.3,times:[100.3]};for(const w of people)c.workerWalkSample(w);
     c.workerWalkOn(entry,100.3,0.3);const T=entry.times;assert.ok(T.at(-1)>=100.3+0.4*rate-1e-9&&T.length>=25&&T.length<=26,`speed ${speed}: ${T.length} steps`);
     for(let i=1;i<T.length;i++)assert.ok(Math.abs(T[i]-T[i-1]-rate/60)<1e-12,'a frame of the pace apart');
     for(const w of people)assert.equal(w._tr.length,4*T.length,'a place for every step');
     c.workerWalkOn(entry,100.3+0.15*rate,0.3);assert.ok(entry.times[0]<=100.3+0.15*rate-0.15*rate+1e-12,'steps kept behind the reading for a screen a little late');}
   const {c,clone}=town(1),people=clone(),entry={people,day:100.3,times:[100.3]};for(const w of people)c.workerWalkSample(w);
-  c.speedIdx=3;c.workerWalkOn(entry,100.3,0.3);assert.ok(entry.day>103);
-  c.speedIdx=1;c.workerWalkOn(entry,100.31,0.31);assert.ok(Math.abs(entry.times[0]-100.31)<1e-12&&entry.day>=100.51-1e-9,'walked days ahead at the faster pace: they go on from there at the slower');
-  {const {c,clone}=town(2),people=clone(),entry={people,day:100.3,times:[100.3]};for(const w of people)c.workerWalkSample(w);c.workerWalkOn(entry,100.3,0.3);const head=entry.day,n=entry.times.length;
-    c.speedIdx=1;c.workerWalkOn(entry,100.31,0.31);assert.deepEqual([entry.day,entry.times.length],[head,n],'from Fast to Normal: the steps already taken are walked out, without a jump');}
+  c.speedIdx=3;c.workerWalkOn(entry,100.3,0.3);assert.ok(entry.day>103);const was=entry.times.slice(0,2),track=people.map(w=>w._tr.slice(0,8));
+  c.speedIdx=1;c.workerWalkOn(entry,100.31,0.31);const T=entry.times;
+  assert.deepEqual(T.slice(0,2),was,'walked days ahead at Very fast: back to the first step past the screen, as it was drawn');assert.deepEqual(people.map(w=>w._tr.slice(0,8)),track);
+  for(let i=2;i<T.length;i++)assert.ok(Math.abs(T[i]-T[i-1]-0.5/60)<1e-12,'and on from there a frame of Normal at a time');assert.ok(T.at(-1)>=100.51-1e-9&&T.at(-1)<100.6);
   c.speedIdx=0;const day=entry.day,n=entry.times.length;c.workerWalkOn(entry,day-0.1,0.1);assert.equal(entry.day,day);assert.equal(entry.times.length,n,'paused, nothing moves');
   c.workerWalkOn(entry,day+5.5,0.5);assert.deepEqual([entry.day,entry.times.length],[day+5.5,1],'a bounded advance: one stride');
   c.speedIdx=4;c.workerWalkOn(entry,day+6.25,0.25);assert.deepEqual([entry.day,entry.times.length],[day+6.25,1],'too fast to follow: one stride a reply');
