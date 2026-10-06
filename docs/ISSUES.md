@@ -12,7 +12,7 @@ Status: **open**, **investigating**, **in progress**, **queued** (waiting on ano
 |---|---|---|---|
 | 1 | Garden lots and fences break into long spokes across the fields after play | in progress | `settleParcels` changes `b.lot` but never republishes the building; the screen joins stale outlines. Boundary fix. |
 | 2 | Animation is blocky at every speed since the worker move | investigating | The screen's clock only advances when a packet arrives. Fix after #1: continuous screen clock plus interpolation. |
-| 3 | Streets built through houses | investigating | Either a road-building path ignores houses, or the worker demolishes them and the screen is never told. Rule: demolish (with compensation) or route around. |
+| 3 | Streets built through houses | queued (after #1) | Verified simulation bug: back lanes (`branch` → `walk`) never test standing houses, so lane mouths cut through frontage houses; 10–19 overlaps per world at start, 34–45 by year 2 as reserved lanes open. Display is fine. Tested fix rejects blocked lanes (overlaps → 0, ~10% fewer houses at start); try moving blocked mouths to frontage gaps first to keep density. Changes generated towns for every seed. |
 | 4 | Loading pauses at "Raising timber and stone" | investigating | All settlement layouts run in one synchronous loop with no progress updates. Measuring which part is slow. |
 | 5 | Refresh restarts the game at AD 850 | queued (after #1) | Boot rewrites the link without the save. Resume the session's save on reload; autosave on `pagehide`. |
 | 6 | Resuming a save replays every day (minutes for late games) | queued (after #8) | Snapshots of worker state in IndexedDB; the journal save stays the permanent format. |
