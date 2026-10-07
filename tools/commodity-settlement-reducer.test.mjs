@@ -61,7 +61,7 @@ test('location removal is allowed only after its balances are cleared',()=>{
   assert.deepEqual(r.snapshot()[0].locations,[]);
 });
 
-test('bad order, unknown locations, duplicate rows, and invalid quantities reject atomically',()=>{
+test('bad order, unknown locations, duplicate rows, and invalid quantities reject atomically',async t=>{
   const cases=[
     ['before mismatch',{deltas:[{...row('granary','grain','household:1','held',9,8)}]},/before mismatch/],
     ['delta arithmetic',{deltas:[{...row('granary','grain','household:1','held',10,8),delta:-1}]},/arithmetic/],
@@ -73,7 +73,7 @@ test('bad order, unknown locations, duplicate rows, and invalid quantities rejec
     ['revision duplicate',{revision:1},/revision/],
     ['day reversal',{day:9,revision:2},/backward/],
   ];
-  for(const[name,extra,pattern]of cases)test(name,()=>{
+  for(const[name,extra,pattern]of cases)await t.test(name,()=>{ // awaited: Node 22 cancels a subtest its parent outlives
     const r=seed(),before=structuredClone(r.snapshot());
     assert.throws(()=>r.apply(event(0,11,2,extra)),pattern);
     assert.deepEqual(r.snapshot(),before,'failed event must leave all balances, metadata, flows, and ordering unchanged');
