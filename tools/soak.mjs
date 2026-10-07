@@ -7,18 +7,21 @@
    hunger weighted by people); food and tilled land per head; money in every purse against the money the flow book
    says came in, went out, was declared prepaid or paid to nobody (the residual is a mismatch between purse changes and the flow book);
    walls far wider than their towns; deserted houses; time per day and per part of the day (each tick timed);
-   heap. A CPU profile of one year gives the hottest functions.
+   heap. CPU profiles of the first, middle and last years (by default) rank the functions and the parts of the day
+   by CPU in ms per simulated day; each world's ranking joins a running hot list (tools/soak-results/hotlist.json),
+   and the summary shows the top ten with the change since that world's previous run.
 
    node tools/soak.mjs --seeds 11,22,33 --coast sea,land --years 100 --par 6 --out /tmp/soak
    Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
-            --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
+            --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year (0: none)  --profile-interval µs (1000)  --hotlist file (0: none)  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
             that makes or loses it, for the first N days)  --inventory 1 (independent daily matching)  --out dir  --chrome path
    Drives the main-thread reference simulation (foreground=1); --render frame costs are the reference driver's, not the worker's. */
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
 import {inventoryAudit} from './inventory-audit.mjs';
 import {finishJournal,assertJournalComplete} from './soak-journal.mjs';
+import {DAY_PARTS,scoreProfile,compactScore,formatScore,updateHotlist,hotlistReport} from './cpu-score.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
@@ -32,7 +35,7 @@ if(A.help){console.log(fs.readFileSync(fileURLToPath(import.meta.url),'utf8').sp
 const seeds=(A.seeds||'688673834').split(',').map(Number),coasts=A.coast?A.coast.split(','):[null];
 const YEARS=+(A.years||50),PAR=+(A.par||Math.max(1,Math.min(6,os.cpus().length>>1))),KM=A.km?+A.km:null,Y0=A.y?+A.y:null;
 const RENDER=A.render!==undefined?new Set(A.render.split(',').map(Number)):null,DEVICES=(A.devices||'laptop,phone').split(','),CPUS=(A.cpu||'1,4').split(',').map(Number),SPEEDS_=(A.speeds||'1,4,5').split(',').map(Number),BOOTCPU=+(A['boot-cpu']||1);
-const AUDIT=+(A.audit||0),PROFILE=new Set((A.profile||String(Math.max(1,YEARS))).split(',').map(Number));
+const AUDIT=+(A.audit||0),PROFILE=new Set((A.profile||[1,Math.ceil(YEARS/2),YEARS].join(',')).split(',').map(Number)),PROFILE_US=+(A['profile-interval']||1000);
 const OUT=path.resolve(A.out||path.join(os.tmpdir(),'furlong-soak-'+new Date().toISOString().replace(/[:.]/g,'-')));
 const CHROME=A.chrome||['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/Applications/Chromium.app/Contents/MacOS/Chromium','/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser'].find(p=>fs.existsSync(p));
 if(!CHROME){console.error('no Chrome found: pass --chrome <path>');process.exit(2);}
@@ -41,6 +44,9 @@ if(fs.existsSync(OUT)&&fs.readdirSync(OUT).some(n=>/\.(jsonl|cpuprofile)$/.test(
 if(CPUS.some(n=>!(n>=1))||DEVICES.some(d=>!['laptop','phone'].includes(d))||SPEEDS_.some(n=>!Number.isInteger(n)||n<0||n>5)||RENDER&&[...RENDER].some(n=>!Number.isInteger(n)||n<0||n>YEARS))throw new Error('invalid rendering options');
 fs.mkdirSync(OUT,{recursive:true});
 const SOURCE=fs.readFileSync(path.join(ROOT,'index.html'));fs.writeFileSync(path.join(OUT,'index.snapshot.html'),SOURCE);
+const HOTLIST=A.hotlist==='0'?null:path.resolve(A.hotlist||path.join(ROOT,'tools/soak-results/hotlist.json'));
+const COMMIT=(()=>{try{const sha=execFileSync('git',['-C',ROOT,'rev-parse','--short','HEAD'],{stdio:['ignore','pipe','ignore']}).toString().trim();
+  const dirty=execFileSync('git',['-C',ROOT,'status','--porcelain','--','index.html'],{stdio:['ignore','pipe','ignore']}).toString().trim();return sha+(dirty?'+dirty':'');}catch{return null;}})();
 const PAGE=pathToFileURL(path.join(OUT,'index.snapshot.html')).href;
 const provenance={schema:2,startedUTC:new Date().toISOString(),harnessSHA256:createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url))).digest('hex'),sourceSHA256:createHash('sha256').update(SOURCE).digest('hex'),node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,chrome:CHROME,args:process.argv.slice(2)};
 fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(provenance,null,2));
@@ -87,9 +93,9 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
       if(s.hunger>0.4&&s.pop>100){const need=Math.max(0,s.pop*(NEED.grain+NEED.fish)-(s._homeDay||0));
         if(s.stores.fish+s.stores.grain>=need)S.F.hungryWithFoodDays++;
         if(s.stores.fish>=need){S.F.hungryWithFishDays++;if(S.foodExamples.length<8&&!S.foodExamples.some(x=>x.name===s.name))S.foodExamples.push({name:s.name,ad:AD(),day:day(),pop:Math.round(s.pop),hunger:s.hunger,fish:s.stores.fish,grain:s.stores.grain,larderFish:s._lard?.fish||0,larderGrain:s._lard?.grain||0});}}});return r;};
-  const TICKS=${JSON.stringify(['tickWeather','tickEconomy','tickPopulation','tickPolitics','tickMilitary','tickDomains','tickThreats','tickGrowth','tickLand','tickHistory','tickProjects','tickFolk','tickLivestock','tickShips','tickStone','tickTravel','tickErrands','tickMetro','tickTenure','tickStreets','tickChurches','tickCastles','tickCourts','tickInfill','tickSettlers','tickRepairs','tickVictory','tickWallWorks','tickGarrisons','tickCallToArms','tickMigration','tickMarket','tickHouseholds','tickWays','tickTitles','tickSovereign'])};
+  const TICKS=${JSON.stringify(DAY_PARTS)};
   for(const n of TICKS){const f=window[n];if(typeof f!=='function')continue;window[n]=function(){
-    const t=performance.now(),m0=S.audit?money().t:0,f0=S.audit?flows():null;
+    const m0=S.audit?money().t:0,f0=S.audit?flows():null,t=performance.now(); // the purse census is not the part's own time
     try{return f.apply(this,arguments);}finally{S.T[n]=(S.T[n]||0)+performance.now()-t;
       if(S.audit){const r=money().t-m0-gap(f0,flows()).expect;if(Math.abs(r)>1e-6){const L=S.L[n]||(S.L[n]={r:0,days:0});L.r+=r;L.days++;}}}};}
   S.L={};
@@ -137,7 +143,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   window.__soak=S;return new Promise(resolve=>RAF(()=>resolve('ok')));})()`;
 
 async function runWorld(w){
-  const id=`s${w.seed}${w.coast?'-'+w.coast:''}`,file=path.join(OUT,id+'.jsonl');fs.writeFileSync(file,'');
+  const id=`s${w.seed}${w.coast?'-'+w.coast:''}`,file=path.join(OUT,id+'.jsonl'),load0=os.loadavg()[0];fs.writeFileSync(file,'');
   const errs=[],t0=Date.now(),phases=[];let c,kill=()=>{};
   try{({c,kill}=await launch());
     const browser=await c.send('Browser.getVersion');fs.writeFileSync(path.join(OUT,id+'.browser.json'),JSON.stringify(browser,null,2));
@@ -182,9 +188,9 @@ async function runWorld(w){
     };
     if(RENDER&&RENDER.has(0))await measure(0);
     for(let y=1;y<=YEARS;y++){
-      const profile=PROFILE.has(y);if(profile){await c.send('Profiler.setSamplingInterval',{interval:500});await c.send('Profiler.start');}
+      const profile=PROFILE.has(y);if(profile){await c.send('Profiler.setSamplingInterval',{interval:PROFILE_US});await c.send('Profiler.start');}
       const stepStart=Date.now(),r=await ev(c,`__soak.year(${y===1?AUDIT:0})`);r.driverMs=Date.now()-stepStart;years.push(r);fs.appendFileSync(file,JSON.stringify(r)+'\n');
-      if(profile){const p=(await c.send('Profiler.stop')).profile;fs.writeFileSync(path.join(OUT,id+'-y'+y+'.cpuprofile'),JSON.stringify(p));prof[y]=topFunctions(p);}
+      if(profile){const p=(await c.send('Profiler.stop')).profile;fs.writeFileSync(path.join(OUT,id+'-y'+y+'.cpuprofile'),JSON.stringify(p));prof[y]={...topFunctions(p),score:compactScore(scoreProfile(p,{days:360}))};}
       fs.writeFileSync(path.join(OUT,id+'.summary.json'),JSON.stringify(summarize(w,id,info,bootMs,phases,years,prof,errs),null,1));
       if(RENDER&&RENDER.has(y))await measure(y);
       if(y%10===0||y===YEARS||r.dErr)log(`${id}: AD ${r.ad} pop ${r.pop} places ${r.places} famine days ${r.famDays} residual ${r.residual} ${r.msDay} ms/day${r.dErr?' ERRORS '+r.dErr+(r.faults?.length?' — new: '+r.faults.map(f=>`${f.part} day ${f.day}: ${f.error}`).join('; '):''):''}`);
@@ -194,7 +200,7 @@ async function runWorld(w){
     assertJournalComplete(finalJournal);
     fs.writeFileSync(path.join(OUT,id+'.summary.json'),JSON.stringify({...summarize(w,id,info,bootMs,phases,years,prof,errs),finalJournal},null,1));
     if(render.length)fs.writeFileSync(path.join(OUT,id+'.render.json'),JSON.stringify(render,null,1));
-    return Object.assign(summarize(w,id,info,bootMs,phases,years,prof,errs),{render,finalJournal});
+    return Object.assign(summarize(w,id,info,bootMs,phases,years,prof,errs),{render,finalJournal,load:[load0,os.loadavg()[0]]});
   }catch(e){log(`${id}: FAILED ${e.message}`);return {id,seed:w.seed,coast:w.coast,failed:e.message,errs};}
   finally{kill();}}
 
@@ -218,7 +224,7 @@ function summarize(w,id,info,bootMs,phases,Y,prof,errs){
       paidToNobody:Y.reduce((t,y)=>t+y.paidToNobody,0)},
     food:Object.fromEntries(['fishProduced','fishBought','grainBought','fishEaten','grainEaten','hungryWithFoodDays','hungryWithFishDays'].map(k=>[k,+(Y.reduce((t,y)=>t+(y.food?.[k]||0),0)).toFixed(3)])),foodExamples:Y.at(-1)?.foodExamples||[],
     routes:Object.fromEntries(['calls','cold','unreachable'].map(k=>[k,Y.reduce((t,y)=>t+(y.routes?.[k]||0),0)])),
-    perf:{tickMsDayFirst10:+avg(first,y=>y.tickMsDay).toFixed(2),tickMsDayLast10:+avg(lastY,y=>y.tickMsDay).toFixed(2),msDayFirst10:+avg(first,y=>y.msDay).toFixed(2),msDayLast10:+avg(lastY,y=>y.msDay).toFixed(2),heapMBEnd:L.heapMB,
+    perf:{tickMsDayFirst10:+avg(first,y=>y.tickMsDay).toFixed(2),tickMsDayLast10:+avg(lastY,y=>y.tickMsDay).toFixed(2),msDayFirst10:+avg(first,y=>y.msDay).toFixed(2),msDayLast10:+avg(lastY,y=>y.msDay).toFixed(2),msDayByYear:Y.map(y=>y.msDay),heapMBEnd:L.heapMB,
       ticks:Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>[k,+(v/tt*100).toFixed(1)]),profile:prof},
     leaks:Y[0]&&Y[0].leaks,errN,errs:errs.slice(0,10),firstFault:Y.find(y=>y.firstFault)?.firstFault||null,faults:Y.flatMap(y=>y.faults||[]).slice(0,40),checks,pass:Object.values(checks).every(Boolean)};}
 
@@ -236,8 +242,9 @@ function report(R){
   const T={};for(const r of ok)for(const [k,v] of r.perf.ticks)T[k]=(T[k]||0)+v/ok.length;
   const broken=R.filter(r=>r.firstFault);if(broken.length)md+=`\n## Faults (the run carried on; each world is no baseline after its first fault)\n\n`+broken.map(r=>`- ${r.id}: from day ${r.firstFault.day}, ${r.firstFault.part}: ${r.firstFault.error}`+(r.faults.length>1?` (and ${r.faults.length-1} more distinct)`:'')).join('\n')+'\n';
   md+=`\n## Where a day's time goes (share of tick time, mean over worlds)\n\n`+Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>`- ${k}: ${v.toFixed(1)}%`).join('\n')+'\n';
-  const P={};for(const r of ok)for(const y in r.perf.profile)for(const [k,ms,p] of r.perf.profile[y].top)P[k]=(P[k]||0)+p/ok.length/Object.keys(r.perf.profile).length;
-  md+=`\n## Hottest functions (CPU profile, self time)\n\n`+Object.entries(P).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([k,v])=>`- ${k}: ${v.toFixed(1)}%`).join('\n')+'\n';
+  const scored=ok.filter(r=>r.hot);
+  if(scored.length)md+=`\n## CPU by function and part of the day (ms per simulated day; the hot list)\n\nSampled CPU profiles of whole years (every ${PROFILE_US} µs). Own time is a function's own code; total time includes what it calls. '(outside the day)' is work between days (the harness, journal flushes, deferred land work); '(harness)' is the harness's and runtime's own code. Profiled years run a few per cent slower.${HOTLIST?` Hot list: ${HOTLIST}.`:''}\n\n`+
+    scored.map(r=>r.hot.report+'\n'+formatScore(r.hot.last,{top:15,title:`${r.id}, year ${r.hot.lastYear} in full`})).join('\n')+'\n';
   if(ok.some(r=>r.food))md+=`\n## Fish and provisioning\n\n| world | GPU | fish produced | fish bought by households | fish eaten | high-hunger place-days with a day's fish still in storage |\n|---|---|---|---|---|---|\n`+ok.map(r=>`| ${r.id} | ${r.gpu} | ${Math.round(r.food.fishProduced)} | ${Math.round(r.food.fishBought)} | ${Math.round(r.food.fishEaten)} | ${r.food.hungryWithFishDays} |`).join('\n')+'\n';
   const lk={};for(const r of ok)for(const k in r.leaks||{})lk[k]=(lk[k]||0)+r.leaks[k].r;
   if(Object.keys(lk).length)md+=`\n## Money-flow reconciliation residual, by part of the day (audit of the first ${AUDIT} days, all worlds)\n\n`+Object.entries(lk).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,12).map(([k,v])=>`- ${k}: ${Math.round(v)}`).join('\n')+'\n';
@@ -255,5 +262,11 @@ await Promise.all(Array.from({length:Math.min(PAR,worlds.length)},async()=>{whil
   fs.writeFileSync(path.join(OUT,'summary.json'),JSON.stringify(results,null,1));}}));
 results.sort((a,b)=>worlds.findIndex(w=>`s${w.seed}${w.coast?'-'+w.coast:''}`===a.id)-worlds.findIndex(w=>`s${w.seed}${w.coast?'-'+w.coast:''}`===b.id));
 fs.writeFileSync(path.join(OUT,'summary.json'),JSON.stringify(results,null,1));
+for(const r of results){if(r.failed||!r.perf?.profile)continue; // each world's CPU score joins the hot list
+  const ages=Object.entries(r.perf.profile).filter(([,p])=>p.score).map(([y,p])=>{return {year:+y,days:p.score.days,msDay:p.score.msDay,wallMsDay:r.perf.msDayByYear?.[+y-1]??null,parts:p.score.parts,self:p.score.self,total:p.score.total,where:p.score.where};}).sort((a,b)=>a.year-b.year);
+  if(!ages.length)continue;
+  const rec={at:new Date().toISOString(),tool:'soak',world:r.id+(r.fate!==r.seed?'-f'+r.fate:''),seed:r.seed,fate:r.fate,coast:r.coast,build:provenance.sourceSHA256.slice(0,12),commit:COMMIT,load:r.load||null,fault:r.firstFault?{day:r.firstFault.day,part:r.firstFault.part}:null,args:provenance.args,ages};
+  let prev=null;if(HOTLIST)try{prev=updateHotlist(HOTLIST,rec);}catch(e){log('hot list not updated: '+e.message);}
+  const lastYear=ages.at(-1).year;r.hot={report:hotlistReport(rec,prev),last:r.perf.profile[lastYear].score,lastYear};}
 const md=report(results)+(results.some(r=>!r.failed)?`\nBoot: `+results.filter(r=>!r.failed).map(r=>`${r.id} ${(r.bootMs/1000).toFixed(1)} s${BOOTCPU>1?' (cpu ×'+BOOTCPU+')':''}`).join(', ')+'\n':'');fs.writeFileSync(path.join(OUT,'summary.md'),md);console.log('\n'+md);
 process.exit(results.every(r=>r.pass)?0:1);

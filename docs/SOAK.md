@@ -38,11 +38,19 @@ The `fishBought` and `grainBought` counters cover `clearMarket` orders. They exc
 
 The frame loop is suppressed before boot. The harness yields after monthly land work so deferred tracks and fences finish before subsequent days use them. It also flushes the annual autosave. This avoids year-sized batches of delayed land callbacks. Undrawn histories are useful comparisons; equivalence to continuously rendered play is a separate check.
 
-`msDay` includes measurement overhead, timer yields and deferred land work. `tickMsDay` measures the daily tick calls alone. The first `--audit` days additionally census purses around every phase, so their timing includes audit overhead. CPU profiles include work executed between the start and stop commands, including deferred callbacks. Parallel run timings describe that workload on this host.
+`msDay` includes measurement overhead, timer yields and deferred land work. `tickMsDay` measures the daily tick calls alone. The first `--audit` days additionally census purses around every phase; that census is in `msDay` but not in the time of each part of the day. CPU profiles include work executed between the start and stop commands, including deferred callbacks. Parallel run timings describe that workload on this host.
 
 Famine days per place-year use the actual daily number of places; villages count in both numerator and denominator. Famine flags are narrower than hunger: the game only declares a new famine above 100 people. Before the baseline purse census, the harness registers household accounts and counts any remaining unmigrated personal purse. Each household balance is counted once. Drawing scenarios also assert finite frame measurements, finite population and zero simulation errors.
 
 Money fails reconciliation if any year's residual exceeds 0.01 coin. This is a bookkeeping check: prepaid wages labelled as payments without a payer can create a residual without losing actual coin. Netting residuals across years would hide cancelling faults.
+
+## CPU score and the hot list
+
+Every soak profiles the first, middle and last years unless `--profile` names others (`--profile 0`: none), sampling every 1,000 µs (`--profile-interval`). Each profiled year is scored by `tools/cpu-score.mjs`: CPU in ms per simulated day by part of the day (the outermost part of `simTick` on the stack), by function's own time and by its total time (what it calls included, each function once per sample). The game's own functions are named by their name, or name@line where two share a name; the harness's and runtime's code is `(harness)`, work between days `(outside the day)`; idle time is left out. Profiled years run a few per cent slower.
+
+Each world's scores are added to the hot list, `tools/soak-results/hotlist.json` (`--hotlist file`, `--hotlist 0`: none): one record per run and world with the build, commit, load, first fault and the scores at each profiled year, thirty runs kept per world. The summary shows each world's top ten functions and parts at every profiled year with the change since that world's previous run, what left the top ten, and the full ranking of the last profiled year. A run that faulted is no baseline after its first fault; the table says so. Fixes go after the top of that list, and the next run shows whether the cost fell.
+
+`tools/model-run.cjs` plays the same simulation in Node without Chrome (the reference model, as `tools/simulation-boundary.mjs` loads it) and scores its profiles the same way, under tool `node` in the hot list: by default the first, middle and last 360-day years of a run. It also measures windows (`--every`, `--measure`, `--phases 1`), takes identity digests (`--digest`), and counts instructions with `--ru` (a helper that reads `proc_pid_rusage`). Node and Chrome timings differ, so the hot list compares each tool with itself.
 
 ## Local evidence
 
@@ -51,7 +59,7 @@ Money fails reconciliation if any year's residual exceeds 0.01 coin. This is a b
 - `<world>.browser.json`: Chrome version and protocol information.
 - `<world>.jsonl`: one completed year's measurements per line.
 - `<world>.summary.json`: updated after each completed year.
-- `<world>-y<N>.cpuprofile`: raw DevTools CPU profile.
+- `<world>-y<N>.cpuprofile`: raw DevTools CPU profile; its score is in the summary under `perf.profile`.
 - `<world>.render.json`: drawing measurements, saved after each scenario.
 - `summary.json` and `summary.md`: completed-run results.
 
