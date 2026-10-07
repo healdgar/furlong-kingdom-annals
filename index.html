@@ -12763,6 +12763,7 @@ function hostileTo(a,s){ // is settlement s held by an enemy of army a (in the r
 function liftSiege(a){
   a.siegeArc=null;W.settlements.forEach(x=>{if(x.siegeBy&&x.siegeBy.army===a)x.siegeBy=null;});
 }
+function armyLegs(P){const tf=[0];let T=0,sea=false;for(let k=1;k<P.length;k++){const d=dist2d(P[k-1].x,P[k-1].z,P[k].x,P[k].z);if(P[k].sea)sea=true;T+=P[k].sea&&P[k-1].sea?d*MARCH_MPD/COG_MPD:d;if(P[k].sea!==P[k-1].sea)T+=PORT_DELAY/2;tf.push(T);}return{T,tf:sea?tf.map(v=>v/Math.max(1,T)):null};} // a route's length in a day's march on the road, and its time fractions when part goes by ship (as route() reckons them)
 function routHome(a,why){ // back to its own: beaten, starved, or the war over (why: told to the player, shown on the host's card)
   if(why){a.why=why;if(a.house===plyH()&&!W.prehistory){const hs=W.settlements[a.home];emit('war',4,a._spos||null,`${a.name} turns for ${hs?hs.name:'home'}: ${why}.`);}}
   if(!W.settlements[a.home]||W.settlements[a.home].owner!==a.house){ // its home has fallen: flee to the nearest place still its own
@@ -12771,7 +12772,9 @@ function routHome(a,why){ // back to its own: beaten, starved, or the war over (
     if(best<0){disbandArmy(a);return;}a.home=best;
   }
   const r=route(a.at,a.home,true);
-  if(r&&r.poly.length>1){a.state='rout';a.target=a.home;a.poly=r.poly;a.tf=r.tf||null;a.departDay=day();a.arriveDay=day()+(r.tlen||r.len)/900;}
+  if(r&&r.poly.length>1){const p=armySimPos(a),t=W.settlements[a.at];let P=r.poly,tf=r.tf||null,T=r.tlen||r.len;
+    if(t&&dist2d(p.x,p.z,t.pos.x,t.pos.z)>1){P=armyRoadDeparture(p,r.poly);const L=armyLegs(P);T=L.T;tf=L.tf;} // from where it stands (a camp, a siege line, a field of battle, the road), not from the town it is reckoned at
+    a.state='rout';a.target=a.home;a.poly=P;a.tf=tf;a.departDay=day();a.arriveDay=day()+T/900;a.field=null;a.fieldTo=null;}
   else{a.state='idle';armySetSettlement(a,a.home);}
 }
 function resumeAfterBattle(a){
