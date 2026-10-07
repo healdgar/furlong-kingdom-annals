@@ -13757,9 +13757,16 @@ function dayHands(s,heads,also){const out=[];for(const h of heads){if(h.dead||h.
 function payAmong(list,v,payer,why){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
-  if(!(cost>0)||!s)return;let B=workers_(s,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher'),C=workers_(s,h=>h.tr==='carter');
-  if(!B.length){const U=s._unmet||(s._unmet={});U.mason=(U.mason||0)+cost*0.4;U.carpenter=(U.carpenter||0)+cost*0.35;const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>workers_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=workers_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=workers_(o,h=>h.tr==='carter');}}
-  if(!B.length)B=workers_(s,()=>true);const H=hungryHands(s),lab=H.length?cost*0.25:0; /* the labourers who dig and carry for the masons: the hungry of the place, hired by the day (#23; paid in coin: works are paid from a purse, and the payer's corn may be the very load being carted) */
+  if(!(cost>0)||!s)return;
+  // Within one storage tick (its route batch) the place's builders and carters stand as they are: they are found once
+  // and kept for its other carriage bills (#15); a bill still notes the masons a builderless place wants.
+  const Q=typeof STORAGE_ROUTE_BATCHES!=='undefined'?STORAGE_ROUTE_BATCHES.get(s):null;let K=Q?.works;
+  const want=()=>{const U=s._unmet||(s._unmet={});U.mason=(U.mason||0)+cost*0.4;U.carpenter=(U.carpenter||0)+cost*0.35;};
+  if(!K){let B=workers_(s,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher'),C=workers_(s,h=>h.tr==='carter');const own=B.length>0;
+    if(!own){want();const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>workers_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=workers_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=workers_(o,h=>h.tr==='carter');}}
+    if(!B.length)B=workers_(s,()=>true);K={own,B,C};if(Q)Q.works=K;}
+  else if(!K.own)want();
+  const {B,C}=K,H=hungryHands(s),lab=H.length?cost*0.25:0; /* the labourers who dig and carry for the masons: the hungry of the place, hired by the day (#23; paid in coin: works are paid from a purse, and the payer's corn may be the very load being carted) */
   payAmong(B,(cost-lab)*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,(cost-lab)*0.25,payer,why);if(lab>0)payAmong(H,lab,payer,why);}
 function levy(s,v,to,why){ // a rate laid on the households by their means; returns what was gathered
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why);}return got;}
