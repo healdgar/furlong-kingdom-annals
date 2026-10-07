@@ -56,6 +56,8 @@ Medieval institutions the world lacks (scan of building types, trades and terms,
 | 41 | The knightly world | planned | Tournaments, orders of chivalry, mercenary companies, crusades, scutage. |
 | 42 | Bondage and freedom | planned | Villeins exist; manumission, flight to a town (a year and a day), free and unfree status. |
 | 43 | The craft ladder | planned | Apprentice, journeyman, master; guild entry. Apprenticeship exists. |
+| 46 | The Church as an institution | planned | The realm-spanning structure above parishes and abbeys: the papacy (privileges, papal tenths, Peter's Pence), bishops and dioceses (cathedral chapters, church courts for marriage and wills), the orders (Cistercian General Chapter abroad). Real holders and real flows, some leaving the realm (user decision 12, docs/SYSTEMS.md). |
+| 47 | Crusades and foreign wars | planned | Something a ruler or lord can undertake: hosts raised, shipped and paid abroad, with costs, spoils, absence and return (user decision 9). |
 | 44 | Technology | proposed | Inventions of the period pegged to their historical years: on their own a realm gets them about a generation late; patronage of learning, contact and wealth bring them on time; never before history. Proposal: `docs/TECH-TREE.md`. |
 
 ## Tooling

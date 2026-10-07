@@ -855,3 +855,18 @@ Era gates, following the kept historical gates:
 10. **Era gates.** Hard historical years (the table above), or arrival through #44's learning?
 11. **Parks, warrens and dovecotes.** They are the lord's own table, not income. Do they need a new good (game) for the hall, or can they wait?
 12. **New owners in the census.** Should abbeys and guilds appear as holders of their own in the money census and the accounts panel, or be folded into "church" and "town funds"?
+
+## Decisions (user, 2026-10-07)
+
+1. **Abbeys follow the Cistercian model** (#35). Founded on lords' grants for prayers and burial, mostly marginal land (moor, marsh, waste) cleared into granges worked by lay brothers (conversi) and hired hands. Wool is the great trade, often sold years ahead, with real risk of debt when scab or murrain takes the flock. Mills and tanneries for their own use, fishponds and fisheries (no meat of four-footed beasts), an almonry at the gate and hospitality. Papal privilege frees self-worked land from tithe; the order visits its own houses (mother and daughter houses, the yearly General Chapter abroad). Early statutes forbid villages, serfs, rents and tithes; leasing granges for rent comes later, sooner after a plague thins the lay brothers. Benedictine abbeys, the manorial landlords with markets at their gates, may follow as a distinct kind.
+2. **Fish is in scope for abbeys** (their diet and fishponds).
+3. **Lords travel visibly** to court, parliament and war; a lord at the capital is a person who went there, not a record.
+4. **Commuting labour services** follows the lord's own reckoning; the player may intervene with an order.
+5. **Usury is a policy choice** for the ruler (allow, licence or forbid), not a fixed rule.
+6. **Taxes are set by the lord or the player**; a parliament votes them only once a parliament exists (#39).
+7. **Pardoning the poor's fines** is a player or lord order, part of strategy.
+8. **Lords' rent grain goes to a barn first** (it rots less), as calibration for #23, #35 and #36.
+9. **Crusades and foreign wars** exist as something a ruler or lord can undertake.
+10. **Institutions arrive through the technology tree's learning** (#44), calibrated so that average play reaches them near their historical years.
+11. **Goods that mattered get added** (e.g. venison, rabbits, pigeons, fish from ponds) when their system needs them.
+12. **Abbeys hold their own purses and land in the money census;** the order and the wider Church (bishops, chapters, the papacy) are separate holders, some abroad, and real flows leave the realm to them (tenths, Peter's Pence, the order's contributions).
