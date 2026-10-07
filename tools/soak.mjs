@@ -107,7 +107,8 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   const flows=()=>Object.assign({},W._flow||{});
   const land=(()=>{let n=0,l=0;for(let i=0;i<W.water.length;i++){n++;if(W.water[i]!==1)l++;}return l/n;})();
   if(typeof ownershipTick==='function')ownershipTick(); // complete the initial registry before taking the baseline census
-  let M0=money(),F0=flows(),E0=errN,Y=0;
+  if(typeof SIM_FAULTS!=='undefined')SIM_FAULTS.carry=true; // a fault in one part of the day is recorded and the day goes on, so later faults still show; the run is no baseline after the first
+  let M0=money(),F0=flows(),E0=errN,Y=0,FL0=0;
   S.draw=on=>{if(on){window.requestAnimationFrame=RAF;RAF(animate);perfToggle(true);}else{setSpeed(0);window.requestAnimationFrame=()=>0;}return on;};
   S.view=v=>{const s=W.capital;cam.follow=null;cam.mode='free';if(v==='street')flyTo(s.pos.x,s.pos.z,160);else flyTo(s.pos.x,s.pos.z,3000*MAPK);return v;};
   S.frames=()=>{const F=PERF.f.slice(),g=PERF.gpu.slice(),n=F.length;if(!n)return null;const a=k=>F.reduce((t,x)=>t+x[k],0)/n,d=F.map(x=>x.dt).sort((x,y)=>x-y),inf=renderer.info;
@@ -131,8 +132,8 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
       food:Object.fromEntries(Object.entries(S.F).map(([k,v])=>[k,+(v-Fd0[k]).toFixed(3)])),foodExamples:S.foodExamples,famPop,popDays,hungerSum:hung,routes:Object.fromEntries(Object.entries(S.R).map(([k,v])=>[k,v-R0[k]])),placeDays,famDays,famOnsets:onsets,famPopShare:+(famPop/Math.max(1,popDays)).toFixed(4),hunger:+(hung/Math.max(1,popDays)).toFixed(4),grainPerHead:+(grain/Math.max(1,pop)).toFixed(2),tilled,tilledPerHead:+(tilled/Math.max(1,pop)).toFixed(4),deserted,
             journal:typeof STORAGE_OUTCOMES==='undefined'?null:STORAGE_OUTCOMES.status(),inventory:S.inventory.enabled?{checks:S.inventory.checks,first:S.inventory.first,unclaimed:S.inventory.unclaimed,lots:S.inventory.lots,commodityRows:S.inventory.commodityRows}:undefined,money:Math.round(M.t),moneyBy:Object.fromEntries(Object.entries(M.by).map(([k,v])=>[k,Math.round(v)])),dMoney:Math.round(M.t-M0.t),expected:Math.round(expect),residual:+(M.t-M0.t-expect).toFixed(3),
       prepaid:+gap(F0,F).prepaid.toFixed(3),minted:Object.fromEntries(Object.entries(minted).filter(e=>Math.abs(e[1])>=1).map(([k,v])=>[k,Math.round(v)])),paidToNobody:Math.round(lostT),
-      badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
-    M0=M;F0=F;E0=errN;return out;};
+      badMoney:M.bad,nanFlows:(F['!nan']||0)-(F0['!nan']||0),errN,dErr:errN-E0,faults:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.list.slice(FL0),firstFault:typeof SIM_FAULTS==='undefined'?undefined:SIM_FAULTS.first,leaks:aud?Object.fromEntries(Object.entries(S.L).sort((a,b)=>Math.abs(b[1].r)-Math.abs(a[1].r)).map(([k,v])=>[k,{r:Math.round(v.r),days:v.days}])):undefined,heapMB:performance.memory?Math.round(performance.memory.usedJSHeapSize/1048576):null,T};
+    M0=M;F0=F;E0=errN;FL0=typeof SIM_FAULTS==='undefined'?0:SIM_FAULTS.list.length;return out;};
   window.__soak=S;return new Promise(resolve=>RAF(()=>resolve('ok')));})()`;
 
 async function runWorld(w){
@@ -186,7 +187,7 @@ async function runWorld(w){
       if(profile){const p=(await c.send('Profiler.stop')).profile;fs.writeFileSync(path.join(OUT,id+'-y'+y+'.cpuprofile'),JSON.stringify(p));prof[y]=topFunctions(p);}
       fs.writeFileSync(path.join(OUT,id+'.summary.json'),JSON.stringify(summarize(w,id,info,bootMs,phases,years,prof,errs),null,1));
       if(RENDER&&RENDER.has(y))await measure(y);
-      if(y%10===0||y===YEARS||r.dErr)log(`${id}: AD ${r.ad} pop ${r.pop} places ${r.places} famine days ${r.famDays} residual ${r.residual} ${r.msDay} ms/day${r.dErr?' ERRORS '+r.dErr:''}`);
+      if(y%10===0||y===YEARS||r.dErr)log(`${id}: AD ${r.ad} pop ${r.pop} places ${r.places} famine days ${r.famDays} residual ${r.residual} ${r.msDay} ms/day${r.dErr?' ERRORS '+r.dErr+(r.faults?.length?' — new: '+r.faults.map(f=>`${f.part} day ${f.day}: ${f.error}`).join('; '):''):''}`);
     }
     const finalJournal=await ev(c,`(${finishJournal.toString()})(STORAGE_OUTCOMES)`);
     fs.writeFileSync(path.join(OUT,id+'.journal.json'),JSON.stringify(finalJournal,null,2),{flag:'wx'});
@@ -219,7 +220,7 @@ function summarize(w,id,info,bootMs,phases,Y,prof,errs){
     routes:Object.fromEntries(['calls','cold','unreachable'].map(k=>[k,Y.reduce((t,y)=>t+(y.routes?.[k]||0),0)])),
     perf:{tickMsDayFirst10:+avg(first,y=>y.tickMsDay).toFixed(2),tickMsDayLast10:+avg(lastY,y=>y.tickMsDay).toFixed(2),msDayFirst10:+avg(first,y=>y.msDay).toFixed(2),msDayLast10:+avg(lastY,y=>y.msDay).toFixed(2),heapMBEnd:L.heapMB,
       ticks:Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>[k,+(v/tt*100).toFixed(1)]),profile:prof},
-    leaks:Y[0]&&Y[0].leaks,errN,errs:errs.slice(0,10),checks,pass:Object.values(checks).every(Boolean)};}
+    leaks:Y[0]&&Y[0].leaks,errN,errs:errs.slice(0,10),firstFault:Y.find(y=>y.firstFault)?.firstFault||null,faults:Y.flatMap(y=>y.faults||[]).slice(0,40),checks,pass:Object.values(checks).every(Boolean)};}
 
 function report(R){
   const ok=R.filter(r=>!r.failed),pct=x=>(x*100).toFixed(1)+'%';
@@ -233,6 +234,7 @@ function report(R){
   const mint={};for(const r of ok)for(const k in r.money.mintedTotal)mint[k]=(mint[k]||0)+r.money.mintedTotal[k];
   md+=`\nTiming includes instrumentation and deferred land work; tickMsDay in JSON excludes deferred callbacks. Audit years also include the purse census overhead. Drawing scenarios restart from the same undrawn year, then advance at the selected speed; startDay/endDay retain that interval.\n\nMoney reconciliation checks every year's residual against 0.01 coin; a net residual alone can hide cancelling errors. The oracle pairs declared prepaid star credits with their synthetic negative lost-account mirror. Missing upstream debits, omitted purses and actual creation/loss still produce residuals.\n\n## Declared prepaid payouts (all worlds; upstream debit must reconcile)\n\n`+Object.entries(mint).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,15).map(([k,v])=>`- ${k}: ${v.toLocaleString()}`).join('\n')+'\n';
   const T={};for(const r of ok)for(const [k,v] of r.perf.ticks)T[k]=(T[k]||0)+v/ok.length;
+  const broken=R.filter(r=>r.firstFault);if(broken.length)md+=`\n## Faults (the run carried on; each world is no baseline after its first fault)\n\n`+broken.map(r=>`- ${r.id}: from day ${r.firstFault.day}, ${r.firstFault.part}: ${r.firstFault.error}`+(r.faults.length>1?` (and ${r.faults.length-1} more distinct)`:'')).join('\n')+'\n';
   md+=`\n## Where a day's time goes (share of tick time, mean over worlds)\n\n`+Object.entries(T).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,v])=>`- ${k}: ${v.toFixed(1)}%`).join('\n')+'\n';
   const P={};for(const r of ok)for(const y in r.perf.profile)for(const [k,ms,p] of r.perf.profile[y].top)P[k]=(P[k]||0)+p/ok.length/Object.keys(r.perf.profile).length;
   md+=`\n## Hottest functions (CPU profile, self time)\n\n`+Object.entries(P).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([k,v])=>`- ${k}: ${v.toFixed(1)}%`).join('\n')+'\n';

@@ -166,7 +166,7 @@ test('a settlement before the day’s end is journaled; the daily one is not; a 
   rr("K.adjust('yard','grain','house','held',3,'relief');replayEntry({k:'settle',d:7})");
   assert.equal(rr('K.settlementRevision'),1);assert.equal(r.events.length,1);assert.deepEqual(JSON.parse(JSON.stringify(r.events[0].deltas)),JSON.parse(JSON.stringify(c.events[0].deltas)));assert.equal(rr('J().length'),0,'a replay journals nothing');
   rr("K.adjust('yard','grain','house','held',2,'harvest');commoditySettleAll(true)");assert.equal(rr('K.settlementRevision'),2);
-  assert.match(fn('simTick'),/commoditySettleAll\(true\);\n\}\n?$/);
+  assert.match(fn('simTick'),/simPart\('commoditySettleAll',\(\)=>commoditySettleAll\(true\)\);\n\}\n?$/); // the daily settlement is still the day's last act
   assert.match(fn('makeSave'),/commoditySettleAll\(\);return saveDocument\(name\);/);
   assert.match(fn('saveUIRender'),/journalCommands\(o\.j\)/);
 });

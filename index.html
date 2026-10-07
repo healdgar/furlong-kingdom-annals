@@ -14044,26 +14044,34 @@ function doAct(act,p,opt){
 }
 
 /* ============================ MASTER TICK ================================ */
+// A fault in one part of the day. Played, it throws as it always has. In a test run that hunts for faults (SIM_FAULTS.carry) the part is
+// recorded and the day goes on, so later parts and later years can still show their own faults; from the first one on, the world is no
+// longer what a sound build would make, and the run says so (SIM_FAULTS.first).
+const SIM_FAULTS={carry:false,n:0,first:null,list:[]};
+function simPart(name,f){if(!SIM_FAULTS.carry)return f();
+  try{return f();}catch(e){const error=String(e?.message||e),at={day:day(),part:name,error};SIM_FAULTS.n++;if(!SIM_FAULTS.first)SIM_FAULTS.first=at;
+    if(SIM_FAULTS.list.length<200&&!SIM_FAULTS.list.some(x=>x.part===name&&x.error===error))SIM_FAULTS.list.push({...at,stack:String(e?.stack||'').split('\n').slice(1,4).map(l=>l.trim()).join(' | ')});
+    simErr(e);}}
 function simTick(){
   if(!MODEL_ONLY&&BACKGROUND)throw Error('The simulation is owned by the background worker');
   if(!storageOutcomeReady())return false; // let durable history catch up before another whole day
   W.clock.day++;
-  ownershipTick();
-  tickWeather();
-  tickEconomy();
-  tickPopulation();
-  tickPolitics();
-  tickMilitary();tickDomains();
-  tickThreats();
-  tickGrowth();tickLand();tickHistory();tickProjects();tickFolk();tickLivestock();tickShips();tickStone();tickTravel();tickErrands();tickMetro();tickTenure();tickStreets();tickChurches();tickCastles();tickCourts();tickInfill();tickSettlers();tickRepairs();tickVictory();tickWallWorks();tickGarrisons();tickCallToArms();tickMigration();tickMarket();tickHouseholds();tickWays();tickTitles();if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
-  if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
+  simPart('ownershipTick',()=>ownershipTick());
+  simPart('tickWeather',()=>tickWeather());
+  simPart('tickEconomy',()=>tickEconomy());
+  simPart('tickPopulation',()=>tickPopulation());
+  simPart('tickPolitics',()=>tickPolitics());
+  simPart('tickMilitary',()=>tickMilitary());simPart('tickDomains',()=>tickDomains());
+  simPart('tickThreats',()=>tickThreats());
+  simPart('tickGrowth',()=>tickGrowth());simPart('tickLand',()=>tickLand());simPart('tickHistory',()=>tickHistory());simPart('tickProjects',()=>tickProjects());simPart('tickFolk',()=>tickFolk());simPart('tickLivestock',()=>tickLivestock());simPart('tickShips',()=>tickShips());simPart('tickStone',()=>tickStone());simPart('tickTravel',()=>tickTravel());simPart('tickErrands',()=>tickErrands());simPart('tickMetro',()=>tickMetro());simPart('tickTenure',()=>tickTenure());simPart('tickStreets',()=>tickStreets());simPart('tickChurches',()=>tickChurches());simPart('tickCastles',()=>tickCastles());simPart('tickCourts',()=>tickCourts());simPart('tickInfill',()=>tickInfill());simPart('tickSettlers',()=>tickSettlers());simPart('tickRepairs',()=>tickRepairs());simPart('tickVictory',()=>tickVictory());simPart('tickWallWorks',()=>tickWallWorks());simPart('tickGarrisons',()=>tickGarrisons());simPart('tickCallToArms',()=>tickCallToArms());simPart('tickMigration',()=>tickMigration());simPart('tickMarket',()=>tickMarket());simPart('tickHouseholds',()=>tickHouseholds());simPart('tickWays',()=>tickWays());simPart('tickTitles',()=>tickTitles());if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
+  simPart('dragonWake',()=>{if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
-  }
-  tickSovereign();
-  tickEnvoys();
-  routingPrepare();
-  commoditySettleAll(true);
+  }});
+  simPart('tickSovereign',()=>tickSovereign());
+  simPart('tickEnvoys',()=>tickEnvoys());
+  simPart('routingPrepare',()=>routingPrepare());
+  simPart('commoditySettleAll',()=>commoditySettleAll(true));
 }
 /* =========================================================================
    CHRONICLE — the product. Dated entries in annalist voice; click to fly.
