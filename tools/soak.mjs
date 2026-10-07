@@ -265,7 +265,7 @@ fs.writeFileSync(path.join(OUT,'summary.json'),JSON.stringify(results,null,1));
 for(const r of results){if(r.failed||!r.perf?.profile)continue; // each world's CPU score joins the hot list
   const ages=Object.entries(r.perf.profile).filter(([,p])=>p.score).map(([y,p])=>{return {year:+y,days:p.score.days,msDay:p.score.msDay,wallMsDay:r.perf.msDayByYear?.[+y-1]??null,parts:p.score.parts,self:p.score.self,total:p.score.total,where:p.score.where};}).sort((a,b)=>a.year-b.year);
   if(!ages.length)continue;
-  const rec={at:new Date().toISOString(),tool:'soak',world:r.id+(r.fate!==r.seed?'-f'+r.fate:''),seed:r.seed,fate:r.fate,coast:r.coast,build:provenance.sourceSHA256.slice(0,12),commit:COMMIT,load:r.load||null,fault:r.firstFault?{day:r.firstFault.day,part:r.firstFault.part}:null,args:provenance.args,ages};
+  const rec={at:new Date().toISOString(),tool:'soak',world:r.id+(r.fate!==r.seed?'-f'+r.fate:'')+(KM?'-km'+KM:'')+(Y0&&Y0!==850?'-y'+Y0:''),seed:r.seed,fate:r.fate,coast:r.coast,build:provenance.sourceSHA256.slice(0,12),commit:COMMIT,load:r.load||null,fault:r.firstFault?{day:r.firstFault.day,part:r.firstFault.part}:null,args:provenance.args,ages};
   let prev=null;if(HOTLIST)try{prev=updateHotlist(HOTLIST,rec);}catch(e){log('hot list not updated: '+e.message);}
   const lastYear=ages.at(-1).year;r.hot={report:hotlistReport(rec,prev),last:r.perf.profile[lastYear].score,lastYear};}
 const md=report(results)+(results.some(r=>!r.failed)?`\nBoot: `+results.filter(r=>!r.failed).map(r=>`${r.id} ${(r.bootMs/1000).toFixed(1)} s${BOOTCPU>1?' (cpu ×'+BOOTCPU+')':''}`).join(', ')+'\n':'');fs.writeFileSync(path.join(OUT,'summary.md'),md);console.log('\n'+md);

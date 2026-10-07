@@ -4,7 +4,7 @@
    day after day with simTick, waiting on the storage journal as the game does.
 
    node tools/model-run.cjs --seed 1001 --fate 42 --coast sea --days 7200 --out run.json
-   Options: --src index.html (default: this checkout's)  --y AD  --days N  --out file.json
+   Options: --src index.html (default: this checkout's)  --y AD (start year: history before it is played first)  --km N (map size)  --days N  --out file.json
      --every N            a measured window every N days (time, CPU, instructions if --ru, parts of the day if --phases 1)
      --measure a:b,c:d    measured windows: ticks a+1..b (ticks count from the day the world is ready)
      --phases 1           time each part of the day inside measured windows
@@ -35,7 +35,7 @@ function load(A){
   const src=path.resolve(A.src||path.join(HERE,'..','index.html'));
   const html=fs.readFileSync(src,'utf8'),m='<script>',a=html.indexOf(m),b=html.indexOf(m,a+m.length)+m.length,source=html.slice(b,html.indexOf('</script>',b));
   const seed=+(A.seed??1001),fate=+(A.fate??42),coast=A.coast||'sea',startAD=+(A.y||850);
-  const hash=`#s=${seed>>>0}&f=${fate>>>0}${coast==='none'?'':'&c='+coast}&y=${startAD}`;
+  const km=A.km?+A.km:null,hash=`#s=${seed>>>0}&f=${fate>>>0}${coast==='none'?'':'&c='+coast}&y=${startAD}${km?'&km='+km:''}`;
   Object.assign(globalThis,{FURLONG_HEADLESS:true,FURLONG_OPTIONS:{hash},addEventListener(){},removeEventListener(){},requestAnimationFrame(){}});
   vm.runInThisContext(source,{filename:'index.html',lineOffset:html.slice(0,b).split('\n').length-1}); // profile lines are index.html's
   const sibling=path.join(path.dirname(src),'tools/simulation-boundary.mjs'),bt=fs.readFileSync(A.boundary||(fs.existsSync(sibling)?sibling:path.join(HERE,'simulation-boundary.mjs')),'utf8');
@@ -46,7 +46,7 @@ function load(A){
       digest.update('{');const keys=Object.keys(v);for(let i=0;i<keys.length;i++){if(i)digest.update(',');digest.update(JSON.stringify(keys[i])+':');feed(v[keys[i]]);}digest.update('}');};
     feed(graph);return {sha256:digest.digest('hex'),nodes:graph.state.length,changes:graph.changes.length,functions:graph.code.length};};
   globalThis.__CAPTURE=new Function(bt.slice(i0+'export function captureExpression(){'.length,i1))();
-  globalThis.__STATE={src,seed,fate,coast,startAD,ticks:0,srcSHA:require('crypto').createHash('sha256').update(html).digest('hex')};
+  globalThis.__STATE={src,seed,fate,coast,startAD,km,ticks:0,srcSHA:require('crypto').createHash('sha256').update(html).digest('hex')};
   if(A.phases==='1'||BUILD)wrapParts();
 }
 function wrapParts(){ // a timer on each part of the day, running only inside measured windows
@@ -71,7 +71,7 @@ const SIZES=`(()=>{const sz=v=>v==null||typeof v!=='object'?null:Array.isArray(v
     glob:{annals:allLines.length,history:HISTORY.records?.length??null,commands:typeof JOURNAL!=='undefined'?JOURNAL.length:null}};})()`;
 const ruPath=A=>A.ru||process.env.FURLONG_RU||null;
 function ru(A){const p=ruPath(A);if(!p)return {i:NaN,c:NaN};const [i,c]=require('child_process').execFileSync(p,[String(process.pid)]).toString().trim().split(' ').map(Number);return {i,c};}
-const worldId=S=>`s${S.seed}-${S.coast}${S.fate!==S.seed?'-f'+S.fate:''}`;
+const worldId=S=>`s${S.seed}-${S.coast}${S.fate!==S.seed?'-f'+S.fate:''}${S.km?'-km'+S.km:''}${S.startAD!==850?'-y'+S.startAD:''}`; // a grown world (larger map, later start) is its own world
 function score(R,A,profiles){ // CPU scores of the profiled windows, printed, kept and added to the hot list
   if(!profiles.length)return;let C;try{C=require('./cpu-score.mjs');}catch(e){console.error('no CPU scoring:',e.message);return;}
   const S=globalThis.__STATE,ages=[];
