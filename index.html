@@ -11467,13 +11467,13 @@ function craftWork(s,h,trs,v){ // a household pays for work done by a trade of t
 function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=foodOnly?{...M,grain:0,fish:0}:{};
   if(foodOnly&&!(M.grain>0)&&!(M.fish>0))return;
   const T=tilledOf(s,si);if(heads.length&&T.some(f=>!f.ten)){const fresh=T.filter(f=>!f.ten);settleTenure(s,si,heads);for(const f of fresh)writeFurlong(f);} /* a strip comes into crop already held: the lord keeps his home farm and lets the rest, as at the year's reckoning (#23: till then every new strip's corn was the lord's, and he paid its harvest wages) */const church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1,gp=price(s,'grain');
-  let tA=0;for(const f of T)tA+=f.area;const wages=new Map();if(church)chOf(church);
+  let tA=0;for(const f of T)tA+=f.area;const sheaf=new Map();if(church)chOf(church);
   if(M.grain>0){if(!T.length)offer(s,'grain',lordAcct(s),M.grain);else for(const f of T){const q=M.grain*f.area/Math.max(1,tA),tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
     if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
-    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net);wages.set(lordOf,(wages.get(lordOf)||0)+net*0.3*gp);continue;} // the home farm's crop is the lord's: he pays the harvesters three-tenths of its worth, by custom (#23)
+    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net*0.7);sheaf.set(lordOf,(sheaf.get(lordOf)||0)+net*0.3);continue;} // the home farm's crop is the lord's; the reapers take three-tenths of it in sheaves, by custom (#23: paid in coin before, from a purse the crop had not yet filled)
     const w=PM.get(f.wk),sh=clamp((TEN_SHARE[f.ten]||0.6)-(dues-1)*0.15,0.2,0.95),rest=net*(1-sh);if(w&&!w.dead)offerLand(s,'grain',w,net*sh,f);else offer(s,'grain',lordOf,net*sh);
     const o=PM.get(f.own);if(f.ten==='crop'&&o&&!o.dead){offerLand(s,'grain',o,rest*0.85,f);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}}
-  if(wages.size){const L=heads.filter(h=>tills(h,s)&&!(h._strips>0));for(const[lord,v]of wages)if(v>0)payAmong(L,v,lord,'harvest wages');} // day-labour on the home farm, paid by the lord whose crop it is (#23: the place's lord paid for strips another lord held and reaped)
+  if(sheaf.size){const R=dayHands(s,heads,h=>tills(h,s)&&!(h._strips>0));for(const[lord,q]of sheaf)if(q>0){if(R.length)for(const h of R)offer(s,'grain',h,q/R.length);else offer(s,'grain',lord,q);}} // the harvest hands: the landless ploughmen and whoever of the place is going hungry; with none, the lord's men reap and the sheaves stay his
   const cost={tools:0.75*(price(s,'ore')+price(s,'timber')),cloth:price(s,'wool')/0.8}; // a craftsman will not sell below what his stuff cost him
   const MAKER={fish:'fisher',timber:'woodcutter',ore:'miner',tools:'smith',cloth:'weaver'};
   for(const g of(foodOnly?['fish']:['fish','timber','ore','tools','cloth'])){if(!(M[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,M[g]/L.length,cost[g]);
@@ -13742,12 +13742,14 @@ function clearMarket(s,g,orders,p){if(commodityActive(s)&&!BEASTS.includes(g))re
   const D=s._dem||(s._dem={}),S=s._sold||(s._sold={});D[g]=(D[g]||0)+Dt;S[g]=(S[g]||0)+got.reduce((a,b)=>a+b,0);return got;}
 function heads_(s,pred){if(!s.folk)return [];const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead&&!p.role&&pred(p))out.push(p);}return out;}
 function workers_(s,pred){if(!s.folk)return [];const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead&&!p.role&&!p.outlawCampId&&pred(p))out.push(p);}return out;}
+function dayHands(s,heads,also){const out=[];for(const h of heads){if(h.dead||h.role||h.outlawCampId)continue;if((householdAccount(h)?.hunger||0)>0||also&&also(h))out.push(h);}return out;} // who comes out for a day's hire: the hungry of the place first of all (#23), and those whose living it is
 function payAmong(list,v,payer,why){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
   if(!(cost>0)||!s)return;let B=workers_(s,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher'),C=workers_(s,h=>h.tr==='carter');
   if(!B.length){const U=s._unmet||(s._unmet={});U.mason=(U.mason||0)+cost*0.4;U.carpenter=(U.carpenter||0)+cost*0.35;const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>workers_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=workers_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=workers_(o,h=>h.tr==='carter');}}
-  if(!B.length)B=workers_(s,()=>true);payAmong(B,cost*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,cost*0.25,payer,why);}
+  if(!B.length)B=workers_(s,()=>true);const H=dayHands(s,heads_(s,()=>true)),lab=H.length?cost*0.25:0; /* the labourers who dig and carry for the masons: the hungry of the place, hired by the day (#23; paid in coin: works are paid from a purse, and the payer's corn may be the very load being carted) */
+  payAmong(B,(cost-lab)*(C.length?0.75:1),payer,why);if(C.length)payAmong(C,(cost-lab)*0.25,payer,why);if(lab>0)payAmong(H,lab,payer,why);}
 function levy(s,v,to,why){ // a rate laid on the households by their means; returns what was gathered
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why);}return got;}
 function compensate(payer,b,s,c){const hh=b.hh||[],own=ownerAcct(b,s);transfer(payer,own,hh.length?c*0.85:c,'works');for(const h of hh)transfer(payer,h,c*0.15/hh.length,'works');} // a house pulled down for a work: the owner has most of the price, the tenants something to go (the whole of it, with none)

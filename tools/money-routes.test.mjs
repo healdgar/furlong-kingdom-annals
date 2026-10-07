@@ -13,7 +13,7 @@ import {inlineGameScript} from './simulation-boundary.mjs';
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||assert.fail('no function '+n);
 const between=(a,b,from=0)=>{const i=source.indexOf(a,from);assert.ok(i>=0,'missing '+a);const j=source.indexOf(b,i);assert.ok(j>i,'missing '+b);return source.slice(i,j+b.length);};
-const PAY=['book','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
+const PAY=['book','dayHands','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
 
 // a realm with `households` purses of `cash`, a crown holding `crown`, and (optionally) great houses with gold
 function world({cash=100,crown=1000,households=6,gold=[]}={}){
@@ -33,6 +33,11 @@ test('building work is paid by its named payer to the masons and carters',()=>{
   const r=world();trades(r,'mason','carter');
   r.eval("buildWorks(s,60,'crown','works')");
   near(r.W.treasury,940);near(r.H[0].w,145);near(r.H[1].w,115);near(r.H[2].w,100);r.audit();
+});
+test('the hungry of the place are hired to dig and carry: a quarter of the works, from the same payer (#23)',()=>{
+  const r=world();trades(r,'mason','carter');r.eval('householdAccount(H[2]).hunger=0.5');
+  r.eval("buildWorks(s,60,'crown','works')");
+  near(r.W.treasury,940);near(r.H[0].w,133.75);near(r.H[1].w,111.25);near(r.H[2].w,115);near(r.H[3].w,100);r.audit();
 });
 test('a house that pays the builders is debited and books it; it cannot pay what it has not got',()=>{
   const r=world({gold:[500,10]});trades(r,'mason');
