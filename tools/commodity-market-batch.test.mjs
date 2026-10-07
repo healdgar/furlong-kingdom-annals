@@ -11,7 +11,10 @@ function productionFunction(html,name){
   assert.ok(match,`production ${name} exists`);return match[0];
 }
 const currentMarket=productionFunction(currentHTML,'commodityClearMarket');
-const baselineMarket=productionFunction(baselineHTML,'commodityClearMarket');
+// The batching is held to the baseline's market with today's bread credit (#23: a lender's judgement, creditOf, replaced the
+// quarter-year limit); credit is not what this test checks.
+const baselineMarket=productionFunction(baselineHTML,'commodityClearMarket').replace('borrow(s,b,Math.min(short,foodYr()*.25-(b._debt||0)))','borrow(s,b,Math.min(short,creditOf(s,b)))');
+assert.ok(baselineMarket.includes('creditOf(s,b)'),'the baseline market borrows by today\'s credit');
 
 function runMarket(fn,scenario){
   const r=realm({commodity:true,grain:0,fish:0,households:scenario.buyerCount,cash:0,crown:0});
@@ -26,6 +29,7 @@ function runMarket(fn,scenario){
       if(row.reserve>0)rsv(s,'grain').set(owner,row.reserve);
     }
     for(let i=0;i<H.length;i++)householdAccount(H[i]).assets.w=cfg.cash[i]??20;
+    for(let i=0;i<H.length;i++)if(i%3===0)herdOf(H[i],s).cattle=1; // a beast to borrow on: a lender advances half its price (creditOf)
     globalThis.marketOrders=cfg.orders.map(([i,q])=>[H[i],q]);
     globalThis.marketCounts={poolEntryQueries:0,poolTransferQueries:0,poolQuantityQueries:0};
     const E=K.entries,Q=K.quantity,T=K.transfer;

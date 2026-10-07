@@ -26,7 +26,7 @@ test('physical food is not free when a household cannot pay or borrow',()=>{
   near(r.s.hunger,1);near(r.s.stores.grain,20);near(r.s.stores.fish,20);near(r.H[0]._debt||0,0);
 });
 test('loans fund food without minting coin',()=>{
-  const r=realm({cash:0,crown:100}),before=r.coins();r.run();
+  const r=realm({cash:0,crown:100});r.eval('herdOf(H[0],s).cattle=10');const before=r.coins();r.run(); // beasts to borrow on (creditOf: half their price)
   near(r.s.hunger,0);assert.ok(r.H[0]._debt>0);near(r.coins(),before);
   assert.ok(!Object.keys(r.W._flow||{}).some(k=>k.endsWith('*')));
 });
@@ -39,8 +39,8 @@ test('a place without named households cannot overdraw its lord for processing',
   near(r.s.hunger,0);near(r.W.treasury,0);
   near(Object.values(r.W.settlements[1]._poolBy).reduce((t,v)=>t+v,0),0);
 });
-test('the existing quarter-year bread-credit limit still applies',()=>{
-  const r=realm({cash:0,crown:100});r.eval('H[0]._debt=foodYr()*0.25');const debt=r.H[0]._debt;r.run();
+test('a lender advances no more than the household could repay',()=>{
+  const r=realm({cash:0,crown:100});r.eval('herdOf(H[0],s).cattle=10;H[0]._debt=creditOf(s,H[0])+(H[0]._debt||0)');const debt=r.H[0]._debt;assert.ok(debt>0);near(r.eval('creditOf(s,H[0])'),0);r.run();
   near(r.s.hunger,1);near(r.H[0]._debt,debt);near(r.coins(),100);
 });
 test('another farmer retains reserved grain; buyers can take fish instead',()=>{

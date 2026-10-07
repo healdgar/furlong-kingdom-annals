@@ -60,7 +60,9 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // No lot, title, claim or journal writer changes.
  // Economy (#23): spoilOwned now notes what rotted this month for the price (s._lostM) around the unchanged spoilage body (spoilOwned0);
  // winterFeed reads the shared WINTER_HAY. No lot, title, claim or journal writer changes.
- assert.equal(digest(source.slice(a,b)),"dd5ba860970e1067e2e2de47631d3ba6e80d82da2f80f528a55b37530f6e362d");
+ // Economy (#23): the market's bread loan is bounded by creditOf (what a lender judges a household can repay) instead of a
+ // quarter-year; the loan itself is unchanged. No lot, title, claim or journal writer changes.
+ assert.equal(digest(source.slice(a,b)),"fd759ead0f04c4d582492a17453202d908eb4efb96937c27683d2b8b4dac3a15");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
