@@ -12556,8 +12556,9 @@ function tickMilitary(){
     if(a.gone)continue; // disbanded mid-loop (e.g. the war ended a moment ago)
     armyLand(a);
     if(a.supply<=0){a.supply=0;a.strength*=0.995;a.morale=Math.max(20,a.morale-0.3);}
-    if(a.supply<18&&a.state==='idle'&&a.nextOrder==null&&!(a.why==='no passable route: a bridge, ford, or breach is needed'&&a.holdUntil>now)&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house)){ // hungry: fall back on its own granaries
-      let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}});
+    if(a.supply<18&&a.state==='idle'&&a.nextOrder==null&&!(a.why==='no passable route: a bridge, ford, or breach is needed'&&a.holdUntil>now)&&!(W.settlements[a.at]&&W.settlements[a.at].owner===a.house&&dist2d(a._spos.x,a._spos.z,W.settlements[a.at].pos.x,W.settlements[a.at].pos.z)<60)){ // hungry, and not where its own granary feeds it (armyLand): fall back on its own granaries
+      let best=-1,bd=1e18;W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const r=si===a.at?null:route(a.at,si,true);if(si!==a.at&&!r)return;const d=r?r.tlen||r.len:0;if(d<bd){bd=d;best=si;}}); // the nearest by road or sea (its own town first), not across a river with no crossing
+      if(best<0)W.settlements.forEach((s,si)=>{if(s.owner!==a.house)return;const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);if(d<bd){bd=d;best=si;}}); // no road to any: the nearest across country
       if(best>=0){if(marchArmy(a,best)){a.why='its wagons empty, it falls back to forage';if(a.house===plyH()||chance('sim',0.3))emit('war',4,a._spos,`${a.name}, its wagons empty, falls back to forage at ${W.settlements[best].name}.`);}else if(a.why==='no passable route: a bridge, ford, or breach is needed')a.holdUntil=Math.max(a.holdUntil||0,now+30);continue;}}
     if(a.state==='idle'&&!a.field&&houseAtWar(a.house)&&hostileTo(a,W.settlements[a.at])){ // encamped at an enemy town (e.g. after a battle broke its siege): invest it again
       if(inRebellion(a)||fitToCampaign(a)){a.target=a.at;a.poly=null;a.tf=null;a.state='march';a.departDay=a.arriveDay=now;}

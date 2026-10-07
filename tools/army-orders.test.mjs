@@ -61,3 +61,18 @@ test('a lord\'s hosts camped together in the field join under one banner, as the
   vm.runInContext(fn('mergeArmies')+'\n'+fn('tickMilitary'),c);vm.runInContext('tickMilitary()',c);
   assert.equal(b.gone,true);assert.equal(a.strength,200);assert.deepEqual(W.armies.map(x=>x.id),[6,11],'the far camp keeps its own banner');
 });
+
+function hungryRealm(routes){
+  const settlements=[{owner:0,pos:{x:100,z:0},name:'Near, over the river'},{owner:1,pos:{x:0,z:0},name:'Enemy'},{owner:0,pos:{x:2000,z:0},name:'Far, by the road'}],marched=[];
+  const c=vm.createContext({W:{settlements,armies:[],war:null},Math,dist2d,day:()=>40,plyH:()=>-1,clamp:(v,l,h)=>Math.max(l,Math.min(h,v)),armySimPos:a=>a.field?{...a.field}:{...settlements[a.at].pos},
+    route:(a,b)=>routes[a+'_'+b]||null,marchArmy:(a,t)=>{marched.push(t);a.state='march';return true;},chance:()=>false,emit:()=>{},armyLand:()=>{},armiesAtSettlement:()=>[],
+    houseAtWar:()=>false,hostileTo:()=>false,atWar:()=>false,musterSync:()=>{},rollLiving:()=>{}});
+  vm.runInContext(fn('tickMilitary'),c);return {c,marched};}
+test('a hungry host falls back on the nearest granary of its own it can reach by road, not one across the river',()=>{
+  const {c,marched}=hungryRealm({'1_2':{poly:[],len:2000}}),a={id:3,house:0,side:'host',at:1,state:'idle',strength:80,supply:10,morale:60,field:null,name:'Host'};c.W.armies.push(a);
+  vm.runInContext('tickMilitary()',c);assert.deepEqual(marched,[2]);
+});
+test('a hungry host camped in the field beyond its own town\'s granary goes in to it',()=>{
+  const {c,marched}=hungryRealm({}),a={id:3,house:0,side:'host',at:0,state:'idle',strength:80,supply:10,morale:60,field:{x:600,z:0},name:'Host'};c.W.armies.push(a);
+  vm.runInContext('tickMilitary()',c);assert.deepEqual(marched,[0]);
+});
