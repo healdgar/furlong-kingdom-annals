@@ -58,7 +58,9 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Money routing (#19) in this region: carriage and storage works paid by their payer through buildWorks, a robbed cargo owned by
  // the household that took it (thief); and the storage walk's remembered blocking step (#15), a pure read kept outside the world.
  // No lot, title, claim or journal writer changes.
- assert.equal(digest(source.slice(a,b)),"cda74961ad283871a980f3fd0c9a034e577f3803a889dd1075eecacc330a2b83");
+ // Economy (#23): spoilOwned now notes what rotted this month for the price (s._lostM) around the unchanged spoilage body (spoilOwned0);
+ // winterFeed reads the shared WINTER_HAY. No lot, title, claim or journal writer changes.
+ assert.equal(digest(source.slice(a,b)),"dd5ba860970e1067e2e2de47631d3ba6e80d82da2f80f528a55b37530f6e362d");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
