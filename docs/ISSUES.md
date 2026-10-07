@@ -41,6 +41,8 @@ Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190
 
 ## Missing systems (planned)
 
+Design notes for #35–#43, ranked by real income and jobs added, with build order, budgets and open questions: `docs/SYSTEMS.md`. Stand-ins without real payers to replace (nothing fake): the tourney (700) and guild-charter (500) petitions and the debasement dilemma; `tickWays` reckons road tolls it never collects.
+
 Medieval institutions the world lacks (scan of building types, trades and terms, 2026-10-06). Each must be worth doing by a quantity, pay and earn through named flows, and fit the per-day budget (see the design note under #35).
 
 | # | System | Status | Notes |
