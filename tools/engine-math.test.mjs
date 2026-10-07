@@ -40,7 +40,7 @@ test('DM gives the values it always has (fdlibm, and V8 hypot, in plain double a
 });
 
 // The world after a few days, played in a worker thread's own realm (a vm context is several times slower to grow a world in).
-const RUN=`const {parentPort,workerData:{source,rounded,nudged,seed,fate,coast,days}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
+const RUN=`const {parentPort,workerData:{source,rounded,nudged,seed,fate,coast,days,census}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
   if(nudged){const F=new Float64Array(1),B=new BigUint64Array(F.buffer),nudge=v=>{if(!Number.isFinite(v)||v===0)return v;F[0]=v;B[0]+=1n;return F[0];};
     for(const k of rounded){const f=Math[k];Math[k]=(...a)=>nudge(f(...a));} // another engine's Math: every rounded function a last bit off
     const sort0=Array.prototype.sort;Array.prototype.sort=function(cmp){if(cmp===undefined)return sort0.call(this); // and another engine's sort: a top-down merge, stable as the standard asks
@@ -52,14 +52,22 @@ const RUN=`const {parentPort,workerData:{source,rounded,nudged,seed,fate,coast,d
   vm.runInThisContext(source,{filename:'index.html'});const R=c=>vm.runInThisContext(c);
   (async()=>{await R('startSimulation({seed:'+seed+',fate:'+fate+',coast:'+JSON.stringify(coast)+',startAD:850,outcomeJournal:new OutcomeJournal(async e=>({chunk:e.chunk,first:e.first,last:e.last}),{maxPendingBytes:64*1024*1024})})');
     for(let i=0;i<days;i++){await R('STORAGE_OUTCOMES.wait()');R('simTick()');}
+    if(census==='read')R('for(const s of W.settlements)void s.pop'); // a reader from outside the day: a panel, the soak's census, the screen's packets
+    if(census==='unread')R('for(const s of W.settlements){delete s._popValid;delete s._popTotal;}'); // as if nothing had ever summed them
     const g=R('(()=>{const g=new HistoryGraph(),f=g.capture(W,{skipQueryScratch:true});return JSON.stringify([f.root,[...g.state].sort(([a],[b])=>a-b),g.code]);})()');
     parentPort.postMessage({world:createHash('sha256').update(g).digest('hex'),rng:R('JSON.stringify(Object.entries(RS).map(([k,r])=>[k,r.state()]))'),annals:R('JSON.stringify(allLines)'),treasury:R('W.treasury')});})();`;
-export const engineRun=(source,nudged,{seed=42,fate=42,coast='sea',days=8}={})=>new Promise((resolve,reject)=>{
-  const w=new Worker(RUN,{eval:true,workerData:{source,rounded:ROUNDED,nudged,seed,fate,coast,days}});w.once('message',m=>{resolve(m);w.terminate();});w.once('error',reject);});
+export const engineRun=(source,nudged,{seed=42,fate=42,coast='sea',days=8,census=null}={})=>new Promise((resolve,reject)=>{
+  const w=new Worker(RUN,{eval:true,workerData:{source,rounded:ROUNDED,nudged,seed,fate,coast,days,census}});w.once('message',m=>{resolve(m);w.terminate();});w.once('error',reject);});
 
 test('a realm and its history do not depend on the engine: its Math rounding, or its sort',async()=>{
   const here=await engineRun(SOURCE,false),elsewhere=await engineRun(SOURCE,true);
   assert.equal(elsewhere.world,here.world,'the world after eight days');
   assert.equal(elsewhere.rng,here.rng,'every RNG stream');
   assert.equal(elsewhere.annals,here.annals,'the annals');
+});
+
+test('reading the world from outside the day leaves its graph as it was (the population memo is scratch)',async()=>{
+  const unread=await engineRun(SOURCE,false,{census:'unread'}),read=await engineRun(SOURCE,false,{census:'read'});
+  assert.equal(read.world,unread.world,'the world after eight days, every place\'s population read by a census or never summed');
+  assert.equal(read.rng,unread.rng,'every RNG stream');
 });

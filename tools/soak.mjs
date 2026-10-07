@@ -193,7 +193,7 @@ async function runWorld(w){
       const st=await ev(c,`({line:(document.getElementById('loadline')||{}).textContent||'',ready:!document.getElementById('loading')&&typeof W!=='undefined'&&!!W&&!!W.settlements&&typeof errN!=='undefined'})`).catch(()=>({line:'',ready:false}));
       const ph=st.line.replace(/[\d,]+/g,'#').slice(0,40);if(ph!==last){phases.push([ph,Date.now()-t0]);last=ph;}if(st.ready)break;}
     const bootMs=Date.now()-t0;if(BOOTCPU>1)await c.send('Emulation.setCPUThrottlingRate',{rate:1});await ev(c,HARNESS);const info=await ev(c,'__soak.info()');
-    if(/SwiftShader|llvmpipe|Software Rasterizer/i.test(info.gpu))throw new Error('hardware GPU required; got '+info.gpu);
+    if(RENDER&&/SwiftShader|llvmpipe|Software Rasterizer/i.test(info.gpu))throw new Error('hardware GPU required to measure drawing; got '+info.gpu); // the days themselves draw nothing
     log(`${id}: ${info.realm}, ${info.places} places, land ${(info.land*100).toFixed(0)}%, booted in ${(bootMs/1000).toFixed(1)} s`);
     const years=[],prof={},render=[];
     const reset=async y=>{ // each drawing scenario starts with the same undrawn history, not the previous scenario's later world
