@@ -54,6 +54,7 @@ Medieval institutions the world lacks (scan of building types, trades and terms,
 | 41 | The knightly world | planned | Tournaments, orders of chivalry, mercenary companies, crusades, scutage. |
 | 42 | Bondage and freedom | planned | Villeins exist; manumission, flight to a town (a year and a day), free and unfree status. |
 | 43 | The craft ladder | planned | Apprentice, journeyman, master; guild entry. Apprenticeship exists. |
+| 44 | Technology | proposed | Inventions of the period pegged to their historical years: on their own a realm gets them about a generation late; patronage of learning, contact and wealth bring them on time; never before history. Proposal: `docs/TECH-TREE.md`. |
 
 ## Tooling
 
