@@ -1,7 +1,9 @@
 # Furlong: Kingdom Annals — working rules
 
+State of work, what's next and what waits on the user: `docs/HANDOFF.md`. Read it first.
+
 ## Repository and release
-- One branch: `main`. No long-lived branches; an experimental build may get a short-lived one, deleted after. Parallel agents work in their own clones under `~/dev/.furlong-work/<name>` (remote removed; never under `/tmp`, which a reboot wipes) and hand back patches; only one agent edits the main checkout's `index.html` at a time.
+- One branch: `main`. No long-lived branches; an experimental build may get a short-lived one, deleted after. Parallel agents work in their own clones (on the user's Mac under `~/dev/.furlong-work/<name>`, remote removed; never under `/tmp`, which a reboot wipes) and hand back patches; only one agent edits the main checkout's `index.html` at a time.
 - One build, three targets. Every push to `main` deploys GitHub Pages and the container image `ghcr.io/healdgar/furlong-kingdom-annals` (`.github/workflows/pages.yml`); the claude.ai artifact is published from the same build.
 - Release: `node tools/embed-advisor.mjs` → `node --test --test-concurrency=8 tools/*.test.mjs` → `./tools/stamp.sh` (embeds again and stamps the build) → commit → `git push origin main` → publish `index.html` to the artifact with `assets/` and `LICENSE` as files.
 - The advisor carries copies of `README.md`, `docs/UI-GUIDE.md` and its bridge inside `index.html`; after editing any of them run `node tools/embed-advisor.mjs`, or `tools/advisor-context.test.mjs` fails.
@@ -21,6 +23,7 @@
 - Performance and display changes must leave the simulation byte-identical: prove the world graph and every RNG stream are equal to the previous build over at least 150 days (seed 1001, fate 42, sea). Changes that alter generated worlds or history are allowed when intended; say so and re-baseline the affected tests.
 
 ## Agents and machine load
+- Subagents run on Opus, never Sonnet or Haiku. Never use the `mcp__furlong__*` tools: they drive the user's live game.
 - At most five agents run at once (they may start their own subagents for reading and exploration). Too many heavy test runs at the same time have crashed this machine.
 - One agent, the test runner, runs everything heavy: the full suite, Chrome, soaks, long simulation runs, identity proofs and measurements. It runs one job at a time, checks the load first, and keeps at most one Chrome open. Other agents send it requests and act on its results.
 - Other agents may run only light checks themselves: `node --check`, and a single focused test file with `--test-concurrency=1`.
@@ -29,7 +32,7 @@
 
 ## Tools
 - Tests: `node --test --test-concurrency=8 tools/*.test.mjs`.
-- Multi-world soak (money, famine, population, per-tick cost): `tools/soak.mjs`. Graphics-free model runs (windows, digests, instruction counts): `tools/model-run.cjs`. Both score CPU by function and part of the day by default (`tools/cpu-score.mjs`; `--profile 0` turns it off) and record into a hot list; pass `--hotlist /Users/alexwall/dev/.furlong-work/hotlist.json` so every run ranks in one list. Performance work takes the top of that list first. A soak carries on past a fault in one part of the day (`SIM_FAULTS.carry`) and names each world's first fault, after which the world is no baseline. Game speeds in the real worker build: `tools/speed-check.mjs`. Goods conservation: `tools/storage-check.mjs`. Worker/reference parity and save/replay: `tools/simulation-worker-check.mjs`. Drawn play: `tools/simulation-worker-play-check.mjs`. Replay and timing: `tools/replay-check.mjs`.
+- Multi-world soak (money, famine, population, per-tick cost): `tools/soak.mjs`. Graphics-free model runs (windows, digests, instruction counts): `tools/model-run.cjs`. Both score CPU by function and part of the day by default (`tools/cpu-score.mjs`; `--profile 0` turns it off) and record into a hot list; pass `--hotlist <path>` so every run ranks in one list (on the user's Mac `/Users/alexwall/dev/.furlong-work/hotlist.json`; elsewhere `tools/soak-results/hotlist.json`). Performance work takes the top of that list first. A soak carries on past a fault in one part of the day (`SIM_FAULTS.carry`) and names each world's first fault, after which the world is no baseline. Game speeds in the real worker build: `tools/speed-check.mjs`. Goods conservation: `tools/storage-check.mjs`. Worker/reference parity and save/replay: `tools/simulation-worker-check.mjs`. Drawn play: `tools/simulation-worker-play-check.mjs`. Replay and timing: `tools/replay-check.mjs`.
 - Measurement output goes to `tools/soak-results/` (ignored) or a temporary directory, never the tracked tree.
 - Read `index.html` with python3 or `rg -n` with bounded output; plain `grep` (ugrep here) fails on its long lines.
 
