@@ -10946,7 +10946,7 @@ function tickLand(){ // monthly: the countryside follows the people
     for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
     const tillHH=s.folk&&s.folk.length?heads_(s,h=>tills(h,s)).length:0;if(s._haHH==null&&tillHH>0)s._haHH=s.pop*landWt(s)*ph/tillHH; // what one household can plough, as the place first showed it
     const need=tillHH>0&&s._haHH?tillHH*s._haHH:s.pop*landWt(s)*ph; // the land is ploughed by the households that farm it: as many as farming pays enough to keep
-    s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;s._bearA=bearing;s._gYield=soilYield(s);
+    s._bearA=bearing;s._gYield=soilYield(s); // the corn is the soil's yield on the land actually under the plough (#23: a clamped landF once scaled a fixed yield; the bearing area is the quantity)
     const d=f=>dist2d(f.x,f.z,s.pos.x,s.pos.z);
     s._needLand=tilled<need; // (a place that needs no more land does not stand in a neighbour's way)
     if(tilled<need&&!s.siegeBy){ // take in more land: old pasture, open waste, scrub, then the wood; beyond the bounds if need be
@@ -11037,8 +11037,8 @@ function landValue(f){ // a furlong's worth: what it yields as it lies, and how 
   return y*acc*(f.held?0.5:1);
 }
 function prodOf(s){ // a year's output by good (the same sums the economy runs daily)
-  const r=s.res||{},lf=s.landF??1,smiths=(s.buildings||[]).filter(b=>b.arch==='smithy'&&b.state==='sound').length;
-  return {grain:(r.farm||0)*0.92*0.87*360*lf,fish:(r.fish||0)*0.8*360,timber:(r.forest||0)*0.05*360,ore:(r.ore||0)*0.05*360,tools:smiths*20,
+  const r=s.res||{},smiths=(s.buildings||[]).filter(b=>b.arch==='smithy'&&b.state==='sound').length;
+  return {grain:(s._gYield&&s._bearA!=null?s._gYield*s._bearA*(s.ploughF??1):(r.farm||0)*0.92)*0.87*360,fish:(r.fish||0)*0.8*360,timber:(r.forest||0)*0.05*360,ore:(r.ore||0)*0.05*360,tools:smiths*20,
     cloth:(s._dyers||0)*0.5*0.8*360+(s.stores.sheep||0)*0.012*12*0.55+(s.buildings||[]).filter(b=>b.arch==='shop').length*3,wool:(s.stores.sheep||0)*0.012*12,sheep:(s.stores.sheep||0)*HERDR.sheep,cattle:(s.stores.cattle||0)*HERDR.cattle,horses:(s.stores.horses||0)*HERDR.horses,swine:(s.stores.swine||0)*HERDR.swine,wine:s.kind==='capital'?0.7*360:(s.furl||[]).filter(f=>f.kind===LK.VINE&&f.state===LS.TILLED).length*12};
 }
 /* ---------------- beasts: every place keeps sheep, cattle, horses and swine on what its land can feed.
@@ -11047,6 +11047,7 @@ function prodOf(s){ // a year's output by good (the same sums the economy runs d
    a lord's stable, sheep for whatever grass is left — as fast as its herdsmen's husbandry allows, and no faster than the
    grass. It gives milk, cheese and pork to the larder, wool to the looms, teams to the plough and horses to the host;
    raiders drive it off, murrain runs through it, and grass no beast crops goes back to scrub. */
+const HAND_TILTH=0.75; // ground dug by spade and mattock yields three-quarters of ploughed ground
 const WINTER_HAY=0.35*3; // a beast's winter fodder by its livestock units: 0.35 a winter month (winterFeed), three months (#23: owners bought ten a year and their beasts ate one; the rest rotted, and its want drove hay to many times its price and the ploughland to meadow, #21)
 const LU={sheep:0.12,cattle:1,horses:1.1,swine:0.25},HERDR={sheep:0.4,cattle:0.22,horses:0.14,swine:0.9},BEASTS=['sheep','cattle','horses','swine'];
 function grazeOf(s){ // livestock units the place's land can carry, and what of it is what
@@ -11097,7 +11098,7 @@ function tickLivestock(){
         ()=>`The ${M.murrainK==='cattle'?'kine':'sheep'} of ${s.name} sicken and die where they stand. The herdsmen cannot say why.`,
         ()=>`${M.murrainK==='cattle'?'Cattle-plague':'The rot'} at ${s.name}: the byres are emptied and the smoke of the pyres hangs over the fields.`]));}
     herdSync(s);herdProduce(s); // milk, meat, fleeces and homespun remain their producer's
-    const teams=St.cattle*0.6+St.horses*0.4,need=g.till/6;s.ploughF=need>0?clamp(0.75+0.25*teams/need,0.75,1.05):1; // the plough wants its teams
+    const teams=St.cattle*0.6+St.horses*0.4,need=g.till/6;const pl=need>0?Math.min(1,teams/need):1;s.ploughF=pl+(1-pl)*HAND_TILTH; // the plough wants its teams: what they cannot reach is dug by hand, at a spade's yield (#23: a clamp let spare teams add a twentieth)
   });
   if(!W.prehistory&&G.herdMesh)G.herdsDirty=true;} // the flocks are laid out again when someone is near enough to see them
 const grazed=f=>{const s=W.settlements[f.dom];if(s&&s.hm)return (s.hm.press||0)>0.25; // grass the beasts keep short does not go back to scrub
@@ -11654,7 +11655,7 @@ function tickEconomy(){
   for(const s of W.settlements){
     storageInit(s);storageTick(s);storageInvestment(s);const phaseK=commodityActive(s)?s.storage:undefined;
     const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=['grain','fish','timber','ore'].map(g=>phaseK?phaseK.quantity(null,g,'unassigned'):s.stores[g]);
-    if(W.land&&s._bearA==null)landYield(s);s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92*(s.landF??1))*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
+    if(W.land&&s._bearA==null)landYield(s);s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92)*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF*(s._wcF??1)*(waterMill(s)&&AD()>=1250?1.25:1); // the woodcutters' axes; and a water-driven saw more
     s.stores.ore+=s.res.ore*0.05*workF;
