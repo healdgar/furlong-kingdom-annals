@@ -12468,6 +12468,18 @@ function armyShore(a,P){ // a host boards and lands at the water's edge, not out
       if(s)out.push(s);} // aboard from here to the boat (or ashore from the boat to here)
     out.push(q);}
   return out;}
+function armyCampaignValue(a,s,r){ // what marching on a place is worth to a host: the arrival's own reckoning of what it would win there (the siege likely to take it, or the raid), less the host's pay and bread for the march and the siege; null if its wagons would be empty before it came there
+  const rebel=inRebellion(a),winter=seasonIdx()===3,p=a._spos||armySimPos(a),t=W.settlements[a.at];
+  const days=((r.tlen||r.len)+(a.field&&t?dist2d(p.x,p.z,t.pos.x,t.pos.z):0))/(a.field?FIELD_MPD:MARCH_MPD); // as marchArmy goes: across country from a camp, else by road
+  if(a.supply<=days*(0.8+(winter?0.35:0)))return null; // armyLand: a march eats 0.8 a day, a winter one 0.35 more
+  const defend=defenceOf(s),A=a.strength*(a.morale/70),pTake=A/(A+defend*1.2),worth=pTake*townWorth(s)*0.3,raidV=s.pop*2+(s.stores.grain||0)*GOODBASE.grain*0.3,raid=!rebel&&worth<raidV;
+  const manned=clamp(((s.garrison||0)+(s.militia||0)*0.5)/30,0,1),siege=raid?25:(rebel?4:12)+Math.round((s.garrison||0)/6+s.pop/60+manned*(s.walls*22-(winter?0:6)+(s.natDef||0)*40+(s.bastions?35:0)+(s.citadel?25:0)));
+  const gain=raid?(s.raidedUntil>day()?0:raidV):worth; // a raid on fields already burned takes nothing until the next harvest
+  return gain-(days+siege)*a.strength*((a.standing?0.1:0.25)*PL()/30+0.01*GOODBASE.grain);} // its pay (tickDomains, by the month) and its bread (armyLand: a hundredth of a measure a man a day)
+function armyObjective(a){ // the enemy place most worth a host's march, among those a road or the sea leads to from where it is reckoned; -1 if none is worth it
+  let best=-1,bv=0;const S=W.settlements;
+  for(let si=0;si<S.length;si++){const s=S[si];if(si===a.at||!hostileTo(a,s))continue;const r=route(a.at,si,true);if(!r)continue;const v=armyCampaignValue(a,s,r);if(v!=null&&v>bv){bv=v;best=si;}}
+  return best;}
 function marchArmy(a,toS){
   const t=W.settlements[toS];if(!t)return armyRouteBlocked(a);const from=armySimPos(a),goal=armyDestination(a,t,from);if(!goal)return armyRouteBlocked(a);
   // A blocked order leaves a field position; it must not discard roads and
@@ -12569,14 +12581,7 @@ function tickMilitary(){
       if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);if(a.men){(m.men||(m.men=[])).push(...a.men);a.men=[];}a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
     if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;if(marchArmy(a,t)===false&&W.settlements[t])emit('war',3,a._spos,`${a.name} cannot reach ${W.settlements[t].name} by the roads or fords now open.`);} // an order kept while it fled: told if it fails
     if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
-      // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
-      let tgt=-1,bd=1e18;
-      W.settlements.forEach((s,si)=>{
-        if(si===a.at||!hostileTo(a,s)||(!inRebellion(a)&&defenceOf(s)>a.strength*2))return; // no lord rides at walls he could not even raid
-        if(!inRebellion(a)&&s.raidedUntil>day()&&a.strength<defenceOf(s)*2)return; // fields already burned: nothing left to take until the next harvest
-        const d=dist2d(a._spos.x,a._spos.z,s.pos.x,s.pos.z);
-        if(d<bd){bd=d;tgt=si;}
-      });
+      let tgt=armyObjective(a); // the enemy place most worth the march and the siege, among those a road or the sea leads to
       if(tgt<0){ // nothing to besiege: ride for the nearest enemy host instead
         let foe=null,fd=1e18;
         for(const b of W.armies){if(!atWar(a.house,b.house)||b.gone||b.state==='march'||b.state==='rout'||(b.state==='idle'&&b.id<a.id))continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}} // ride only at a host that stands still, and of two idle hosts only one rides (they used to swap towns forever)
