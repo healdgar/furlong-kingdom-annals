@@ -11376,7 +11376,7 @@ function withdrawObjectiveArmy(a,s){const o=a&&a.objective;if(!o||o.si!==W.settl
 const SPOIL={grain:0.0003,fish:0.012,timber:0.0001,ore:0,tools:0.00005,cloth:0.0001,wine:0.0002,wool:0.0002,spice:0.0001,silk:0.00005,stone:0,hay:0.0006}; // the share lost each day in store
 const NEED={grain:0.007,fish:0.003,timber:0.0006,ore:0.0002,tools:0.0004,cloth:0.0005,wine:0.0004,wool:0,sheep:0,cattle:0,horses:0,swine:0,spice:0.00004,silk:0.00003,stone:0.00002,hay:0}; // the herds and the wool are wanted by what a place keeps and spins, not eaten by the head
 function price(s,g){if(s.px&&s.px[g]!=null)return s.px[g];const v=price0(s,g);(s.px||(s.px={}))[g]=v;return v;} // the price the market last found
-function price0(s,g){ // a first reckoning, before the market has traded
+function price0(s,g){ // a first reckoning, before the market has traded: an opening value the market then moves (its 0.3-4x bounds are of that guess only, #23)
   const need=(g==='hay'?(s._hayWant||0)*1.1:g==='stone'?(s._stoneWant||0)*1.2+s.pop*NEED.stone*25:g==='wool'?woolWant(s)*6:LU[g]!==undefined?(s._want?s._want[g]:0)*1.1:s.pop*NEED[g]*25+(s._lux&&s._lux[g]||0)*0.5)+5; // a stable short of horses, a village short of plough-oxen, a town of idle looms
   return GOODBASE[g]*clamp(need*(g==='spice'||g==='silk'?(s.kind==='capital'?4:1)*(0.5+s.prosperity/80):1)/((s.stores[g]||0)+2),0.3,4); // the court and the rich towns pay most for the Levant's goods
 }
@@ -11469,7 +11469,7 @@ function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=f
   let tA=0;for(const f of T)tA+=f.area;const wages=new Map();if(church)chOf(church);
   if(M.grain>0){if(!T.length)offer(s,'grain',lordAcct(s),M.grain);else for(const f of T){const q=M.grain*f.area/Math.max(1,tA),tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
     if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
-    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net);wages.set(lordOf,(wages.get(lordOf)||0)+net*0.3*gp);continue;} // the home farm's crop is the lord's: he pays the harvesters
+    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net);wages.set(lordOf,(wages.get(lordOf)||0)+net*0.3*gp);continue;} // the home farm's crop is the lord's: he pays the harvesters three-tenths of its worth, by custom (#23)
     const w=PM.get(f.wk),sh=clamp((TEN_SHARE[f.ten]||0.6)-(dues-1)*0.15,0.2,0.95),rest=net*(1-sh);if(w&&!w.dead)offerLand(s,'grain',w,net*sh,f);else offer(s,'grain',lordOf,net*sh);
     const o=PM.get(f.own);if(f.ten==='crop'&&o&&!o.dead){offerLand(s,'grain',o,rest*0.85,f);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}}
   if(wages.size){const L=heads.filter(h=>tills(h,s)&&!(h._strips>0));for(const[lord,v]of wages)if(v>0)payAmong(L,v,lord,'harvest wages');} // day-labour on the home farm, paid by the lord whose crop it is (#23: the place's lord paid for strips another lord held and reaped)
@@ -11562,7 +11562,7 @@ function reprice(s){ // each price rises when buyers wanted more than was sold, 
   for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25;Y[g]=(Y[g]??d)*11/12+d/12; // what is usually wanted in a month; and the year round (the hay bought in autumn is the winter's)
     if(!(S[g]>0)&&!(a>0))continue; // nothing to be had at any price: no market, and no price found
     const keep=L[g]>0?Math.min(6,(s.stores[g]||0)/L[g]):6; // half a year's stock is no glut, unless it rots sooner: then what it keeps for is the measure (#23: fish that rots in three weeks was weighed against six months' want, so its price held while nine-tenths of the catch rotted)
-    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));} // (the step is bounded, #23: a last resort for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month)
+    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));} // (the step is bounded, and the price kept above a thousandth of its base, #23: last resorts for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month, and a log needs a price above nothing)
   s._dem={};s._sold={};}
 function tickMarket(){
   const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
@@ -13593,7 +13593,7 @@ function houseName(hi){return hi>0&&W.houses[hi]?W.houses[hi].name:'the crown';}
    holding passes to the eldest son, or is shared among the sons where the custom is partible (Welsh, German, Slav, Norse). */
 const PARTIBLE=new Set(['celtic','german','slavic','norse']);
 const TEN_NAME={villein:'in villeinage, owing labour on the lord\'s land',free:'freehold, for a small quit-rent',lease:'on lease, for a money rent',crop:'as a sharecropper, for half the crop',demesne:'the lord\'s demesne, worked by hired hands'};
-const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5};
+const TEN_SHARE={villein:0.62,free:0.85,lease:0.7,crop:0.5}; // the worker's share of his strip's crop by tenure: custom of the manor, which the lord's dues move (#23)
 function tenureNew(){const ad=AD(),r=frand();return ad<1150?(r<0.75?'villein':'free'):ad<1349?(r<0.6?'villein':'free'):(r<0.45?'lease':r<0.8?'free':'villein');}
 function folkIndex(){if(W._folkIndex)return W._folkIndex;const M=new Map();for(const s of W.settlements)for(const p of s.folk||[])M.set(p.id,p);for(const h of nonemptyHouseholds())for(const p of h.members)if(!p.dead)M.set(p.id,p);return W._folkIndex=M;}
 function headsOf(s){const out=[];for(const h of householdsOf(s)){const p=h.head;if(p&&!p.dead)out.push(p);}return out;} // an orphan household remains an owner even before its heir is grown
