@@ -60,6 +60,12 @@ Medieval institutions the world lacks (scan of building types, trades and terms,
 | 47 | Crusades and foreign wars | planned | Something a ruler or lord can undertake: hosts raised, shipped and paid abroad, with costs, spoils, absence and return (user decision 9). |
 | 44 | Technology | proposed | Inventions of the period pegged to their historical years: on their own a realm gets them about a generation late; patronage of learning, contact and wealth bring them on time; never before history. Proposal: `docs/TECH-TREE.md`. |
 
+## Late game
+
+| # | Issue | Status | Notes |
+|---|---|---|---|
+| 48 | We never test past year 20; Reel can't reliably reach 1066 | in progress | 216 years is ~78,000 days, hours per world even in Node. Shipped checkpoints will be needed (later). Now: a late-world farm plays a few worlds in Node to AD 900, 950, 1000 and 1066 in 10-year segments with restorable snapshots, a structural census at each milestone (towns, walls, castles, building density, street graphs, hamlets, list growth, pattern checks) and a hot-list profile per era, plus short studies resumed from the snapshots. |
+
 ## Tooling
 
 | # | Item | Status |
