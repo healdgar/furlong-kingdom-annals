@@ -12,7 +12,7 @@ function realm(settlements,routes){
   const marched=[];
   let now=100;const c=vm.createContext({W:{settlements,armies:[],war:null,feuds:[{a:0,b:1}],roads:[]},Math,dist2d,marched,day:()=>now,setDay:d=>{now=d;},plyH:()=>-1,clamp:(v,l,h)=>Math.max(l,Math.min(h,v)),PL:()=>1,GOODBASE:{grain:2},
     MARCH_MPD:400,FIELD_MPD:250,seasonIdx:()=>1,armySimPos:a=>a.field?{...a.field}:{...settlements[a.at].pos},route:(a,b)=>routes[a+'_'+b]||null,townWorth:s=>s.worth,defenceOf:s=>s.pop*0.05+(s.garrison||0),
-    hostileTo:(a,s)=>s.owner!==a.house,houseAtWar:()=>true,atWar:(x,y)=>x!==y,inRebellion:()=>false,fitToCampaign:()=>true,nearestSettlementIdx:()=>0,
+    hostileTo:(a,s)=>s.owner!==a.house,houseAtWar:()=>true,purse:h=>c.gold??1e9,atWar:(x,y)=>x!==y,inRebellion:()=>false,fitToCampaign:()=>true,nearestSettlementIdx:()=>0,
     marchArmy:(a,t)=>{marched.push(t);if((c.blocked||[]).includes(t)){a.state='idle';a.field={...settlements[a.at].pos,x:settlements[a.at].pos.x+100};return false;}a.state='march';return true;},goHome:(a,why)=>{a.wentHome=why;a.state='march';},rafts:[],armyRaftFor:(a,si)=>{c.rafts.push(si);if(c.raftOk){a.raft={readyDay:now+3};return true;}return false;},chance:()=>false,emit:()=>{},armyLand:()=>{},armiesAtSettlement:()=>[],musterSync:()=>{},rollLiving:()=>{}});
   vm.runInContext([line('const ARMY_NO_WAY_DAYS='),...['armyNoWay','armyNoWayNote','armyUpkeep','armyCampaignValue','armyObjective','tickMilitary'].map(fn)].join('\n'),c);return c;}
 const host=extra=>({id:1,house:0,side:'host',at:0,home:0,state:'idle',strength:300,supply:100,morale:70,field:null,name:'Host',...extra});
@@ -69,4 +69,13 @@ test('a host too weak to campaign does not sit in a field camp at war, but goes 
   const c=realm([town(0,0,200,5000),town(1,4000,600,30000)],{'0_1':{poly:[],len:4000}});c.fitToCampaign=()=>false;
   const a=host({field:{x:3000,z:0},at:1,strength:20});c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.match(a.wentHome||'',/too few to campaign/);
   const b=host({field:{x:3000,z:0},at:1,strength:20,hold:true});c.W.armies=[b];vm.runInContext('tickMilitary()',c);assert.equal(b.wentHome,undefined,'one held by its lord\'s word stays');
+});
+
+test('a march by sea counts the ships, and no host chooses a place its lord cannot ship it to (it used to ask every day)',()=>{
+  const sea={poly:[],len:1000,tlen:2000,sea:true,seaLen:3000},S=()=>[town(0,0,200,5000),town(1,1000,300,12000),town(1,3000,300,9000)];
+  const c=realm(S(),{'0_1':sea,'0_2':{poly:[],len:3000}});c.gold=100;c.W.armies.push(host());vm.runInContext('tickMilitary()',c);
+  assert.deepEqual(c.marched,[2],'the richer place over the water needs 440 crowns of ships; the purse holds 100');
+  const d=realm(S(),{'0_1':sea,'0_2':{poly:[],len:3000}});d.gold=1e6;d.W.armies.push(host());
+  const v=vm.runInContext('[armyCampaignValue(W.armies[0],W.settlements[1],route(0,1)),armyCampaignValue(W.armies[0],W.settlements[1],{...route(0,1),sea:false})]',d);
+  assert.equal(Math.round(v[1]-v[0]),440,'the charter is counted against the gain');
 });
