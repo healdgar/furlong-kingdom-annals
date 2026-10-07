@@ -57,7 +57,7 @@ test('a lord\'s hosts camped together in the field join under one banner, as the
   const host=(id,x,extra)=>({id,house:2,side:'host',state:'idle',at:0,strength:100,supply:60,morale:70,men:[],horses:0,field:{x,z:0},name:'Host '+id,...extra});
   const a=host(6,500),b=host(10,500),far=host(11,900),W={armies:[a,b,far],settlements:[{owner:2,pos:{x:0,z:0},name:'Ashby'}],war:null};
   const c=vm.createContext({W,Math,dist2d,day:()=>3,plyH:()=>0,clamp:(v,l,h)=>Math.max(l,Math.min(h,v)),armySimPos:x=>({...x.field}),armiesAtSettlement:()=>[],
-    dropArmyFlag:()=>{},dropMarker:()=>{},liftSiege:()=>{},musterSync:()=>{},rollLiving:()=>{},armyLand:()=>{},houseAtWar:()=>false,hostileTo:()=>false,atWar:()=>false,emit:()=>{}});
+    dropArmyFlag:()=>{},dropMarker:()=>{},liftSiege:()=>{},musterSync:()=>{},rollLiving:()=>{},armyHomeward:()=>false,armyLand:()=>{},houseAtWar:()=>false,hostileTo:()=>false,atWar:()=>false,emit:()=>{}});
   vm.runInContext(fn('mergeArmies')+'\n'+fn('tickMilitary'),c);vm.runInContext('tickMilitary()',c);
   assert.equal(b.gone,true);assert.equal(a.strength,200);assert.deepEqual(W.armies.map(x=>x.id),[6,11],'the far camp keeps its own banner');
 });

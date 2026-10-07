@@ -14,7 +14,7 @@ function realm(settlements,routes){
     MARCH_MPD:400,FIELD_MPD:250,seasonIdx:()=>1,armySimPos:a=>a.field?{...a.field}:{...settlements[a.at].pos},route:(a,b)=>routes[a+'_'+b]||null,townWorth:s=>s.worth,defenceOf:s=>s.pop*0.05+(s.garrison||0),
     hostileTo:(a,s)=>s.owner!==a.house,houseAtWar:()=>true,purse:h=>c.gold??1e9,atWar:(x,y)=>x!==y,inRebellion:()=>false,fitToCampaign:()=>true,nearestSettlementIdx:()=>0,
     marchArmy:(a,t)=>{marched.push(t);if((c.blocked||[]).includes(t)){a.state='idle';a.field={...settlements[a.at].pos,x:settlements[a.at].pos.x+100};return false;}a.state='march';return true;},goHome:(a,why)=>{a.wentHome=why;a.state='march';},rafts:[],armyRaftFor:(a,si)=>{c.rafts.push(si);if(c.raftOk){a.raft={readyDay:now+3};return true;}return false;},chance:()=>false,emit:()=>{},armyLand:()=>{},armiesAtSettlement:()=>[],musterSync:()=>{},rollLiving:()=>{}});
-  vm.runInContext([line('const ARMY_NO_WAY_DAYS='),...['armyNoWay','armyNoWayNote','armyUpkeep','armyCampaignValue','armyObjective','tickMilitary'].map(fn)].join('\n'),c);return c;}
+  vm.runInContext([line('const ARMY_NO_WAY_DAYS='),...['armyNoWay','armyNoWayNote','armyHomeward','armyUpkeep','armyCampaignValue','armyObjective','tickMilitary'].map(fn)].join('\n'),c);return c;}
 const host=extra=>({id:1,house:0,side:'host',at:0,home:0,state:'idle',strength:300,supply:100,morale:70,field:null,name:'Host',...extra});
 
 test('a host marches on the place most worth it, not merely the nearest',()=>{
@@ -37,8 +37,8 @@ test('a host remembers a place it found no way to: it weighs the next one, and t
   const a=host();c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2],'the best first');assert.equal(a._noWay.length,1);
   a.state='idle';c.setDay(101);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1],'the next day, the next best');
   a.state='idle';c.blocked=[1,2];c.setDay(102);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1,1],'the next best is blocked now too');
-  a.state='idle';c.setDay(103);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1,1],'both remembered: no search at all');assert.ok(a.wentHome,'and it goes home from the field');
-  a.state='idle';c.W.roads.push({});c.setDay(104);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1,1,2],'a road built: it looks again');
+  a.state='idle';c.setDay(103);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1,1,0],'both remembered: no search for them, and it goes home from the field');assert.match(a.why,/no foe it can reach/);
+  a.state='idle';c.W.roads.push({});c.setDay(104);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[2,1,1,0,2],'a road built: it looks again');
   a.state='idle';c.setDay(105);c.blocked=[];a._noWay=[{si:2,until:150,roads:1,owner:1,raft:-1}];vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched.at(-1),1,'still remembered');
   a.state='idle';c.setDay(150);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched.at(-1),2,'a season gone: it looks again');
 });
@@ -67,8 +67,8 @@ test('the raft is lashed where a river bars the way close by, only when the plac
 
 test('a host too weak to campaign does not sit in a field camp at war, but goes home to muster',()=>{
   const c=realm([town(0,0,200,5000),town(1,4000,600,30000)],{'0_1':{poly:[],len:4000}});c.fitToCampaign=()=>false;
-  const a=host({field:{x:3000,z:0},at:1,strength:20});c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.match(a.wentHome||'',/too few to campaign/);
-  const b=host({field:{x:3000,z:0},at:1,strength:20,hold:true});c.W.armies=[b];vm.runInContext('tickMilitary()',c);assert.equal(b.wentHome,undefined,'one held by its lord\'s word stays');
+  const a=host({field:{x:3000,z:0},at:1,strength:20});c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0]);assert.match(a.why,/too few to campaign/);
+  const b=host({field:{x:3000,z:0},at:1,strength:20,hold:true});c.W.armies=[b];vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0],'one held by its lord\'s word stays');
 });
 
 test('a march by sea counts the ships, and no host chooses a place its lord cannot ship it to (it used to ask every day)',()=>{
@@ -78,4 +78,12 @@ test('a march by sea counts the ships, and no host chooses a place its lord cann
   const d=realm(S(),{'0_1':sea,'0_2':{poly:[],len:3000}});d.gold=1e6;d.W.armies.push(host());
   const v=vm.runInContext('[armyCampaignValue(W.armies[0],W.settlements[1],route(0,1)),armyCampaignValue(W.armies[0],W.settlements[1],{...route(0,1),sea:false})]',d);
   assert.equal(Math.round(v[1]-v[0]),440,'the charter is counted against the gain');
+});
+
+test('a lord\'s host left in a field camp at peace goes home; with no way home it looks again a season later',()=>{
+  const c=realm([town(0,0,200,5000),town(1,4000,600,30000)],{'1_0':{poly:[],len:4000}});c.houseAtWar=()=>false;
+  const a=host({field:{x:3000,z:0},at:1});c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0]);assert.match(a.why,/at peace/);
+  c.blocked=[0];a.state='idle';a.field={x:3000,z:0};c.setDay(101);vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0,0]);
+  c.setDay(102);a.state='idle';vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0,0],'not every day');
+  c.setDay(191);a.state='idle';vm.runInContext('tickMilitary()',c);assert.deepEqual(c.marched,[0,0,0],'a season later');
 });
