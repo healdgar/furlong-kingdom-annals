@@ -42,3 +42,11 @@ test('raft construction retains partial timber receipts and permits crossing onl
  assert.equal(vm.runInContext('armyRaftAt(a,0,0)',c),false);assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river');
  now=c.a.raft.readyDay;assert.equal(vm.runInContext('armyRaftAt(a,0,0)',c),true);assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null);assert.equal(c.a.supply,37);
  c.riverAt=()=>({a:{x:0,z:-50},b:{x:0,z:50},hw:20,y:13});assert.equal(vm.runInContext('buildArmyRaft(a,0,0)',c),false);assert.equal(total,26);});
+test('a paid road bridge carries a host over the fording fringe of a broad river, as its water test reaches',()=>{const{c}=fixture();const river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12};
+ c.riverAt=(x,z,pad)=>c.segDist(x,z,river.a,river.b)<river.hw+pad?river:null;c.a={house:0};c.W.roads.push({path:[{x:-15,z:0},{x:15,z:0}]});
+ assert.equal(vm.runInContext('armyObstacle(a,10.2,0)',c),null,'on the road, within 0.4 m of the water: on the bridge');
+ assert.equal(vm.runInContext('armyObstacle(a,5,0)',c),null,'over the water');
+ assert.equal(vm.runInContext('armyObstacle(a,10.2,8)',c),'river','off the road, the fringe is still water');
+ assert.equal(vm.runInContext('armyBridgeAt(10.2,0)',c),false,'with no clearance asked, the bridge test is the water itself (walkers, the old rule)');
+ assert.equal(vm.runInContext('armySegmentClear(a,{x:-14,z:0},{x:14,z:0})',c),true,'the march over the bridge, probed every metre');
+ c.a.waterClearance=3;assert.equal(vm.runInContext('armyObstacle(a,12.5,0)',c),null,'a host that keeps further from the water: its bridge reaches as far');});

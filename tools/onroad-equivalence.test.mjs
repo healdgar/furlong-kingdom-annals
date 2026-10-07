@@ -30,3 +30,22 @@ test('every ask answers as the original, with the same reach and the same river 
       assert.equal(JSON.stringify(b.R.map(r=>r._bb||null)),JSON.stringify(a.R.map(r=>r._bb||null)));}}
   assert.ok(asks>10000&&hits>asks/10&&hits<asks*0.9,`asks ${asks}, on a road ${hits}`);
 });
+
+// A host's bridge test passes riverPad (its fording clearance): only the river question at the road's nearest point
+// widens; the 5 m reach and so the skip are unchanged. Against the original with that one question widened alike.
+test('with riverPad, every ask answers as the original asking the river with the same pad',()=>{
+  const cur=block('function onRoad(','\nonRoad.reach=-1;');
+  const frozenPad=frozen.replace('function onRoad(x,z,pad,waterOnly=false){','function onRoad(x,z,pad,waterOnly=false,riverPad=0){').replace('riverAt(a.x+dx*t,a.z+dz*t,0)','riverAt(a.x+dx*t,a.z+dz*t,riverPad)');
+  assert.notEqual(frozenPad,frozen,'the frozen text takes riverPad');
+  let asks=0,hits=0;
+  for(let seed=1;seed<=20;seed++){const r=rng(seed*977),a=realm(frozenPad),b=realm(cur);
+    const roads=[];for(let n=0;n<1+Math.floor(r()*8);n++){let x=(r()-.5)*4000,z=(r()-.5)*4000;const P=[];for(let k=0;k<2+Math.floor(r()*120);k++){x+=(r()-.5)*60;z+=(r()-.5)*60;P.push({x,z});}roads.push({path:P});}
+    for(const c of [a,b]){c.R=JSON.parse(JSON.stringify(roads));c.W.roads=c.R;}
+    const wet=[];for(let i=0;i<300;i++)wet.push(Math.floor(r()*2000)-1000);for(const c of [a,b])for(const k of wet)c.WET.add(k);
+    for(let q=0;q<400;q++){const R=roads[Math.floor(r()*roads.length)].path,p=R[Math.floor(r()*R.length)];
+      const x=p.x+(r()-.5)*(r()<.5?20:400),z=p.z+(r()-.5)*(r()<.5?20:400),pad=[0,0.5,2][Math.floor(r()*3)],rp=[0,0.4,1,3][Math.floor(r()*4)];
+      for(const c of [a,b]){c.ASKS.length=0;Object.assign(c,{x,z,pad,rp});}
+      const oa=vm.runInContext('onRoad(x,z,pad,true,rp)',a),ob=vm.runInContext('onRoad(x,z,pad,true,rp)',b);asks++;if(oa)hits++;
+      assert.equal(ob,oa,`seed ${seed} ask ${q}`);assert.equal(b.onRoad.reach,a.onRoad.reach,'reach');assert.deepEqual([...b.ASKS],[...a.ASKS],'river questions');}}
+  assert.ok(asks>5000&&hits>0,`asks ${asks}, crossings ${hits}`);
+});
