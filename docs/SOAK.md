@@ -34,6 +34,8 @@ For an older realm, use `--years 20 --render 20`. Each device/CPU/view/speed sce
 
 Each year records population and places, famine onsets and place-days, hunger and famine weighted by people-days, grain and tilled furlongs per head, fish production, household purchase and consumption, high-hunger days with food still stored, money by holder (including both craft pools) and its flow-book residual, simulation errors, wall proportions, deserted houses, heap, per-phase time and route calls. Tilled furlongs are a count, not hectares.
 
+The economy section (`econ` per year, summarized in summary.md, #23) records the crown's and the great houses' gold and the first day each fell below 5% of its opening; mean grain and fish prices, people-weighted over the realm and at the capital, sampled monthly; buildings, households, tilled meadow and field furlongs; and grain and fish produced, eaten and rotted, read from the commodity ledger's balance changes. It reads the world and never writes it.
+
 The `fishBought` and `grainBought` counters cover `clearMarket` orders. They exclude direct `purchase` calls, including the daily top-up's use of a producer's own food and purchases for charity. They are partial market-clearance measures, not all household acquisitions. Consumption includes those additional sources.
 
 The frame loop is suppressed before boot. The harness yields after monthly land work so deferred tracks and fences finish before subsequent days use them. It also flushes the annual autosave. This avoids year-sized batches of delayed land callbacks. Undrawn histories are useful comparisons; equivalence to continuously rendered play is a separate check.
