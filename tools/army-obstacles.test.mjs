@@ -78,3 +78,16 @@ test('a host sent against a walled town makes for free ground outside the walls,
  assert.equal(vm.runInContext(`armyObstacle(a,${goal.x},${goal.z})`,c),null,'clear ground');assert.ok(Math.abs(Math.hypot(goal.x,goal.z)-38)<1e-9,'at the siege line');
  assert.ok(Math.abs(Math.atan2(goal.z,goal.x))<Math.PI/4,'on the side it came from');
  house.state='gone';const g2=vm.runInContext('armyDestination(a,s,{x:60,z:0})',c);assert.deepEqual([Math.round(g2.x),Math.round(g2.z)],[38,0],'facing it when the ground there is clear');});
+test('a walker\'s bridge reaches as far past the water\'s edge as its water test keeps from it, as a host\'s does',()=>{const{c}=fixture();const river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12};
+ c.riverAt=(x,z,pad)=>c.segDist(x,z,river.a,river.b)<river.hw+pad?river:null;c.W.roads.push({path:[{x:-20,z:0},{x:20,z:0}]});
+ for(const wc of [undefined,2.3,11]){c.a={house:0,requireRoadCrossing:true,waterClearance:wc};const edge=10+(wc??0.4)-0.05;
+   assert.equal(vm.runInContext(`armyObstacle(a,${edge},0)`,c),null,`on the bridge, within its clearance ${wc} of the water`);
+   assert.equal(vm.runInContext(`armyObstacle(a,${edge},8)`,c),'river','beside it, water');}});
+test('a town\'s service lane may cross a river where a paid road bridges it, to the same 0.4 m past the water\'s edge',()=>{
+ const river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12},c=vm.createContext({W:{roads:[{path:[{x:-20,z:0},{x:20,z:0}]}]},Math,SEA_SURFACE:.5,hAt:()=>10,lakeAt:()=>false,fortRoadBlocked:()=>false,
+  dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
+  segDist:(x,z,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,t=Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1)));return Math.hypot(x-a.x-dx*t,z-a.z-dz*t);}});
+ c.riverAt=(x,z,pad)=>c.segDist(x,z,river.a,river.b)<river.hw+pad?river:null;
+ vm.runInContext(['onRoad','paidRoadAt','roadAccessClear'].map(extract).join('\n')+';onRoad.reach=-1;',c);
+ assert.equal(vm.runInContext('roadAccessClear({},{x:10.3,z:0},{x:14,z:0})',c),true,'off the bridge\'s end, within the water\'s fringe');
+ assert.equal(vm.runInContext('roadAccessClear({},{x:10.3,z:8},{x:14,z:8})',c),false,'beside the bridge, in the fringe');});

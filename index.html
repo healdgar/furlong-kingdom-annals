@@ -1738,7 +1738,7 @@ function paidRoadAt(x,z,riverPad=0){return onRoad(x,z,0,true,riverPad);}
 function roadAccessClear(s,a,b){
   const n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)));for(let k=0;k<=n;k++){
     const x=lerp(a.x,b.x,k/n),z=lerp(a.z,b.z,k/n);
-    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z)||fortRoadBlocked(s,x,z))return false;
+    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z,0.4)||fortRoadBlocked(s,x,z))return false;
   }return true;
 }
 // A service lane is planned once when its building or quay is laid out.
@@ -12251,7 +12251,7 @@ function walkedRoadAt(x,z,waterOnly,riverPad){ // the road as a host walks it (r
 function armyCauseway(a,x,z){return !a.requireRoadCrossing&&(onRoad(x,z,0)||walkedRoadAt(x,z,false,0));} // a road the realm built carries a host where it runs, though its line dips under the sea's surface at the shore
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE&&!armyCauseway(a,x,z))return 'water';
-  const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z,a.waterClearance??0.4,true)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river'; // a host's bridge spans the same clearance its water test keeps
+  const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z,a.waterClearance??0.4):!armyBridgeAt(x,z,a.waterClearance??0.4,true)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river'; // a host's bridge spans the same clearance its water test keeps
   const g=a.ghost;if(g){const c=Math.cos(g.rot||0),sn=Math.sin(g.rot||0),X=x-g.x,Z=z-g.z;if(Math.abs(X*c-Z*sn)<g.w/2+0.6&&Math.abs(X*sn+Z*c)<g.d/2+0.6)return 'building';} // a site being surveyed stands in the way as its building will. Only service walkers carry one, and they carry a settlement, `placed` and `_em`, which the route memory never remembers: armyRouteRead need not read it
   const i=toCell(x),j=toCell(z),mem=a._em&&a._em.scopes?a._em:null; // mem: armyLandPath's per-call memo, which also holds each cell's scope and each settlement's circuits (nothing moves during the call)
   let scope=mem?mem.scopes.get(i*100003+j):undefined;
@@ -12274,7 +12274,7 @@ function armyObstacle(a,x,z){
   return null;
 }
 function armySegmentClear(a,p,q){const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));let px=p.x,pz=p.z,pg; // pg: the ground at the previous step, once known (it was the last step's own)
-  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(px,pz,x,z);if(L){const g=fortGround(x,z,a.settlement);if(Math.abs(g-(pg!==undefined?pg:fortGround(px,pz,a.settlement)))/L>0.65&&!armyBridgeAt(x,z,a.requireRoadCrossing?0:a.waterClearance??0.4,!a.requireRoadCrossing)&&!armyRaftAt(a,x,z))return false;pg=g;}px=x;pz=z;}return true;}
+  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(px,pz,x,z);if(L){const g=fortGround(x,z,a.settlement);if(Math.abs(g-(pg!==undefined?pg:fortGround(px,pz,a.settlement)))/L>0.65&&!armyBridgeAt(x,z,a.waterClearance??0.4,!a.requireRoadCrossing)&&!armyRaftAt(a,x,z))return false;pg=g;}px=x;pz=z;}return true;}
 function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stretch; no smoothing across obstacles
   // A walker that carries `_em` (a Map) remembers each lattice edge's clearance. The lattice is the even integers, so every box shares its edges; the first and last edges (off the lattice) are never stored. Armies carry none.
   const step=2,x0=Math.floor((Math.min(p.x,q.x)-pad)/step)*step,z0=Math.floor((Math.min(p.z,q.z)-pad)/step)*step,
