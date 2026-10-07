@@ -64,3 +64,9 @@ test('the raft is lashed where a river bars the way close by, only when the plac
   assert.deepEqual(c.built.map(([x])=>Math.round(x)),[55],'at the first river probe on its way');assert.equal(c.a.hold,false,'a lord\'s host keeps its own counsel');
   const d=raftRealm(40);d.a={house:0,at:0,strength:100,hold:false,field:null};assert.equal(vm.runInContext('armyRaftFor(a,1)',d),false);assert.deepEqual(d.built,[],'worth less than 22 timber and two days');
 });
+
+test('a host too weak to campaign does not sit in a field camp at war, but goes home to muster',()=>{
+  const c=realm([town(0,0,200,5000),town(1,4000,600,30000)],{'0_1':{poly:[],len:4000}});c.fitToCampaign=()=>false;
+  const a=host({field:{x:3000,z:0},at:1,strength:20});c.W.armies.push(a);vm.runInContext('tickMilitary()',c);assert.match(a.wentHome||'',/too few to campaign/);
+  const b=host({field:{x:3000,z:0},at:1,strength:20,hold:true});c.W.armies=[b];vm.runInContext('tickMilitary()',c);assert.equal(b.wentHome,undefined,'one held by its lord\'s word stays');
+});
