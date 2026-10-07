@@ -72,3 +72,9 @@ test('a host crosses by the road it walks, the town\'s spoke street included, no
  assert.equal(vm.runInContext('armyObstacle(a,0,15)',c),'river','between them, the river');
  c.a.requireRoadCrossing=true;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river','walkers keep the open road alone');
  c.a.requireRoadCrossing=false;c.hAt=()=>0.3;assert.equal(vm.runInContext('armyObstacle(a,-12,0)',c),null,'and the walked line is a causeway too');});
+test('a host sent against a walled town makes for free ground outside the walls, not a house standing there',()=>{const{c,W}=fixture();const wall={x:0,z:0,r:10,wallRad:new Float32Array(32).fill(10)},house={x:38,z:0,w:8,d:8,rot:0,state:'sound'};
+ W.settlements=[{owner:0,circuits:[wall],_lay:{placed:{near:()=>[house]}}}];c.a={house:1};c.s=W.settlements[0];
+ const goal=vm.runInContext('armyDestination(a,s,{x:60,z:0})',c);assert.ok(goal,'a place to stand');
+ assert.equal(vm.runInContext(`armyObstacle(a,${goal.x},${goal.z})`,c),null,'clear ground');assert.ok(Math.abs(Math.hypot(goal.x,goal.z)-38)<1e-9,'at the siege line');
+ assert.ok(Math.abs(Math.atan2(goal.z,goal.x))<Math.PI/4,'on the side it came from');
+ house.state='gone';const g2=vm.runInContext('armyDestination(a,s,{x:60,z:0})',c);assert.deepEqual([Math.round(g2.x),Math.round(g2.z)],[38,0],'facing it when the ground there is clear');});
