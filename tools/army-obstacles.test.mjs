@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath','armyShore','armyCauseway'];
+const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath','armyShore','armyCauseway','walkedRoadAt','roadWalkedBounds','roadBounds'];
 const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
 function fixture(){const W={settlements:[],rivHash:{},roads:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
  const c=vm.createContext({W,G,ARMY_ROUTES:{on:false},SIZE:2000,CELL:10,SEA_SURFACE:.5, // stub ground: the route memory (army-route-memory.test) needs the real raster
@@ -64,3 +64,11 @@ test('a road the realm built carries a host where its line dips under the sea\'s
  assert.equal(vm.runInContext('armyObstacle(a,0,20)',c),'water','off the road: the shore is water');
  assert.equal(vm.runInContext('armySegmentClear(a,{x:-14,z:0},{x:14,z:0})',c),true,'the march along it');
  c.a.requireRoadCrossing=true;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'water','walkers keep the old rule');});
+test('a host crosses by the road it walks, the town\'s spoke street included, not only by the open road',()=>{const{c}=fixture();const river={a:{x:0,z:-50},b:{x:0,z:50},hw:10,y:12};
+ c.riverAt=(x,z,pad)=>c.segDist(x,z,river.a,river.b)<river.hw+pad?river:null;c.a={house:0};
+ const open=[{x:-15,z:30},{x:15,z:30}],path=[{x:-15,z:0},{x:15,z:0}];c.W.roads.push({open,path}); // the spoke street bridges the river at z 0; the open road at z 30
+ assert.equal(vm.runInContext('armyObstacle(a,0,30)',c),null,'on the open road\'s bridge');
+ assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null,'on the spoke street\'s bridge, the way route() leads');
+ assert.equal(vm.runInContext('armyObstacle(a,0,15)',c),'river','between them, the river');
+ c.a.requireRoadCrossing=true;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'river','walkers keep the open road alone');
+ c.a.requireRoadCrossing=false;c.hAt=()=>0.3;assert.equal(vm.runInContext('armyObstacle(a,-12,0)',c),null,'and the walked line is a causeway too');});

@@ -12242,11 +12242,16 @@ function buildArmyRaft(a,x,z){ // an explicit order: actual timber purchases, on
   const days=Math.max(1,Math.ceil(work.need/12));a.raft={a:work.a,b:work.b,hw:1.8,y:work.y,readyDay:day()+days,timber:work.used};a.raftWork=null;a.supply-=Math.min(8,days);a.hold=true;G.detDirty=true;
   emit('war',4,{x:cx,z:cz},`${a.name} uses ${work.need} timber to lash a raft crossing; ${days} days' work, fed from its supply town.`);return true;
 }
-function armyBridgeAt(x,z,pad=0){return !!W.rivHash&&!!riverAt(x,z,pad)&&paidRoadAt(x,z,pad);} // on a paid road's crossing: pad, a host's fording clearance, reaches as far past the water's edge as the water test does
-function armyCauseway(a,x,z){return !a.requireRoadCrossing&&onRoad(x,z,0);} // a road the realm built carries a host where it runs, though its line dips under the sea's surface at the shore
+function armyBridgeAt(x,z,pad=0,walked=false){return !!W.rivHash&&!!riverAt(x,z,pad)&&(paidRoadAt(x,z,pad)||walked&&walkedRoadAt(x,z,true,pad));} // on a paid road's crossing: pad, a host's fording clearance, reaches as far past the water's edge as the water test does
+function roadWalkedBounds(P){const M=roadWalkedBounds.memo||(roadWalkedBounds.memo=new WeakMap());let b=M.get(P);if(!b)M.set(P,b=roadBounds(P));return b;} // derived, outside the world: a road line is replaced, never edited, when it changes
+function walkedRoadAt(x,z,waterOnly,riverPad){ // the road as a host walks it (route() follows r.path: the town's spoke street, the open road, the far spoke), where that is not the open road onRoad reads
+  const R=W.roads||[];for(let i=0;i<R.length;i++){const r=R[i],P=r.path;if(!r.open||P===r.open||!P||P.length<2)continue;const bb=roadWalkedBounds(P);if(x<bb[0]-6||x>bb[2]+6||z<bb[1]-6||z>bb[3]+6)continue;
+    for(let k=1;k<P.length;k++)if(segDist(x,z,P[k-1],P[k])<5){if(!waterOnly)return true;const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L,0,1);if(riverAt(a.x+dx*t,a.z+dz*t,riverPad))return true;}}
+  return false;}
+function armyCauseway(a,x,z){return !a.requireRoadCrossing&&(onRoad(x,z,0)||walkedRoadAt(x,z,false,0));} // a road the realm built carries a host where it runs, though its line dips under the sea's surface at the shore
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE&&!armyCauseway(a,x,z))return 'water';
-  const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z,a.waterClearance??0.4)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river'; // a host's bridge spans the same clearance its water test keeps
+  const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z,a.waterClearance??0.4,true)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river'; // a host's bridge spans the same clearance its water test keeps
   const g=a.ghost;if(g){const c=Math.cos(g.rot||0),sn=Math.sin(g.rot||0),X=x-g.x,Z=z-g.z;if(Math.abs(X*c-Z*sn)<g.w/2+0.6&&Math.abs(X*sn+Z*c)<g.d/2+0.6)return 'building';} // a site being surveyed stands in the way as its building will. Only service walkers carry one, and they carry a settlement, `placed` and `_em`, which the route memory never remembers: armyRouteRead need not read it
   const i=toCell(x),j=toCell(z),mem=a._em&&a._em.scopes?a._em:null; // mem: armyLandPath's per-call memo, which also holds each cell's scope and each settlement's circuits (nothing moves during the call)
   let scope=mem?mem.scopes.get(i*100003+j):undefined;
@@ -12269,7 +12274,7 @@ function armyObstacle(a,x,z){
   return null;
 }
 function armySegmentClear(a,p,q){const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));let px=p.x,pz=p.z,pg; // pg: the ground at the previous step, once known (it was the last step's own)
-  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(px,pz,x,z);if(L){const g=fortGround(x,z,a.settlement);if(Math.abs(g-(pg!==undefined?pg:fortGround(px,pz,a.settlement)))/L>0.65&&!armyBridgeAt(x,z,a.requireRoadCrossing?0:a.waterClearance??0.4)&&!armyRaftAt(a,x,z))return false;pg=g;}px=x;pz=z;}return true;}
+  for(let k=1;k<=n;k++){const x=lerp(p.x,q.x,k/n),z=lerp(p.z,q.z,k/n);if(armyObstacle(a,x,z))return false;const L=dist2d(px,pz,x,z);if(L){const g=fortGround(x,z,a.settlement);if(Math.abs(g-(pg!==undefined?pg:fortGround(px,pz,a.settlement)))/L>0.65&&!armyBridgeAt(x,z,a.requireRoadCrossing?0:a.waterClearance??0.4,!a.requireRoadCrossing)&&!armyRaftAt(a,x,z))return false;pg=g;}px=x;pz=z;}return true;}
 function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stretch; no smoothing across obstacles
   // A walker that carries `_em` (a Map) remembers each lattice edge's clearance. The lattice is the even integers, so every box shares its edges; the first and last edges (off the lattice) are never stored. Armies carry none.
   const step=2,x0=Math.floor((Math.min(p.x,q.x)-pad)/step)*step,z0=Math.floor((Math.min(p.z,q.z)-pad)/step)*step,
@@ -12362,6 +12367,8 @@ function armyRouteRead(a,P,log){ // write into ROUTE_READ everything the search 
   const R=W.roads||[],X0=ROUTE_I0*CELL-SIZE/2,X1=(ROUTE_I1+1)*CELL-SIZE/2,Z0=ROUTE_J0*CELL-SIZE/2,Z1=(ROUTE_J1+1)*CELL-SIZE/2;routeW(R.length); // onRoad tests every road's bounds, and reads the line of those near
   for(const rd of R){const Q=rd.open||rd.path;if(!Q||Q.length<2){routeW(0);continue;}const bb=rd._bb||roadBounds(Q);routeW(1);routeW(bb[0]);routeW(bb[1]);routeW(bb[2]);routeW(bb[3]);
     if(bb[2]+6<X0||bb[0]-6>X1||bb[3]+6<Z0||bb[1]-6>Z1){routeW(0);continue;}routeW(Q.length);for(const p of Q){routeW(p.x);routeW(p.z);}}
+  for(const rd of R){const P=rd.path;if(!rd.open||P===rd.open||!P||P.length<2){routeW(0);continue;}const bb=roadWalkedBounds(P);routeW(1);routeW(bb[0]);routeW(bb[1]);routeW(bb[2]);routeW(bb[3]); // the lines hosts walk (walkedRoadAt)
+    if(bb[2]+6<X0||bb[0]-6>X1||bb[3]+6<Z0||bb[1]-6>Z1){routeW(0);continue;}routeW(P.length);for(const p of P){routeW(p.x);routeW(p.z);}}
   return ROUTE_N;
 }
 function roadBounds(P){return P.reduce((q,p)=>[Math.min(q[0],p.x),Math.min(q[1],p.z),Math.max(q[2],p.x),Math.max(q[3],p.z)],[1e9,1e9,-1e9,-1e9]);} // onRoad's own reduction

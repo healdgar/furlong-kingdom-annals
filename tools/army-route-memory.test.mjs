@@ -14,7 +14,7 @@ const sha=s=>createHash('sha256').update(s).digest('hex').slice(0,16);
 
 // Everything a host's land search reads goes through these. armyRouteRead copies what they read; a change to any of
 // them must be matched there (and its purity kept: the copy calls fortGateAngles, wallGates, hostileTo and wallProg).
-const READS=['armyLandPath','armySegmentClear','armyDetour','armyObstacle','armyCauseway','armyRaftAt','armyBridgeAt','paidRoadAt','onRoad','riverAt','makeHash','hAt',
+const READS=['armyLandPath','armySegmentClear','armyDetour','armyObstacle','armyCauseway','walkedRoadAt','roadWalkedBounds','armyRaftAt','armyBridgeAt','paidRoadAt','onRoad','riverAt','makeHash','hAt',
   'fortGround','fortSurface','motteSurface','fortCircuits','casRing','fortCenter','wallRadAt','wallKindAt','wallBuilt','wallProg','wallDmgAt','fortGateAngles','wallGates',
   'hostileTo','atWar','inRevolt','inPoly','segDist'];
 const HELPERS=['const lerp=','const clamp=','const dist2d=','const cIdx=','const inB=','const toCell=','const sstep='];
@@ -28,7 +28,9 @@ const HELPERS=['const lerp=','const clamp=','const dist2d=','const cIdx=','const
 // onRoad's segment skip is untouched by riverPad: riverPad widens only the river test at the road's nearest point, not the 5 m reach.
 // Repinned again: armyObstacle asks armyCauseway (new, onRoad) before calling low ground by the sea water: a road the
 // realm built carries a host where it runs. The copy already holds the roads' bounds and lines it reads.
-const PINNED={"armyLandPath":"7a2da4e68f08e3f5","armySegmentClear":"063c5c5b0ab4fa9c","armyDetour":"8d6cba39d5afdd97","armyObstacle":"a3cc45a2978fe7c8","armyCauseway":"a62d18760d6f09bc","armyRaftAt":"f314e81a2aca7bd3","armyBridgeAt":"178b48fe1967e31a","paidRoadAt":"e0fdaec86dbbd2fe","onRoad":"ea3162c62b7bd93a","riverAt":"c4bda44c2b489b2e","makeHash":"df390d3239378d38","hAt":"f459c5ff2804ca09","fortGround":"3536cbafb7ccdc5a","fortSurface":"6277e0cf9adcbe38","motteSurface":"90120ef2ced40e8e","fortCircuits":"e77dd39eccb4abc1","casRing":"a6921fd1103e167c","fortCenter":"70fbd07bf1bf54a1","wallRadAt":"fbbec3db03bd0ce6","wallKindAt":"fb3d95f598b7b8e5","wallBuilt":"c8fd76feaf0dac34","wallProg":"67b50b3b042c425b","wallDmgAt":"0ec2325c7d2a1ce4","fortGateAngles":"e054c476fb7e3624","wallGates":"66ae4de110791e54","hostileTo":"dac2f7053f0303fb","atWar":"f7f1457aa7b9b2a2","inRevolt":"4b1beb090e61d7d1","inPoly":"abebffb4a9abafff","segDist":"01b34b3baef31aff","helpers":"005d5b927de2876f"};
+// Repinned again: a host's crossing and causeway tests also read the line route() walks (walkedRoadAt, r.path with
+// the town's spoke streets) where it is not the open road. The copy now holds those lines' bounds and points too.
+const PINNED={"armyLandPath":"7a2da4e68f08e3f5","armySegmentClear":"c8e41318ea9fe2d2","armyDetour":"8d6cba39d5afdd97","armyObstacle":"355881ae25f5884d","armyCauseway":"079626ea81537ac3","walkedRoadAt":"e49bcc15eaf3ae41","roadWalkedBounds":"7f78343dc91daf8b","armyRaftAt":"f314e81a2aca7bd3","armyBridgeAt":"09476256197a9cf1","paidRoadAt":"e0fdaec86dbbd2fe","onRoad":"ea3162c62b7bd93a","riverAt":"c4bda44c2b489b2e","makeHash":"df390d3239378d38","hAt":"f459c5ff2804ca09","fortGround":"3536cbafb7ccdc5a","fortSurface":"6277e0cf9adcbe38","motteSurface":"90120ef2ced40e8e","fortCircuits":"e77dd39eccb4abc1","casRing":"a6921fd1103e167c","fortCenter":"70fbd07bf1bf54a1","wallRadAt":"fbbec3db03bd0ce6","wallKindAt":"fb3d95f598b7b8e5","wallBuilt":"c8fd76feaf0dac34","wallProg":"67b50b3b042c425b","wallDmgAt":"0ec2325c7d2a1ce4","fortGateAngles":"e054c476fb7e3624","wallGates":"66ae4de110791e54","hostileTo":"dac2f7053f0303fb","atWar":"f7f1457aa7b9b2a2","inRevolt":"4b1beb090e61d7d1","inPoly":"abebffb4a9abafff","segDist":"01b34b3baef31aff","helpers":"005d5b927de2876f"};
 test('the search the route memory copies is the one reviewed with it',()=>{
   const now=Object.fromEntries([...READS.map(n=>[n,sha(fn(n))]),['helpers',sha(HELPERS.map(line).join('\n'))]]);
   assert.deepEqual(now,PINNED,'A function the host search reads has changed: make armyRouteRead read what it now reads, then repin.');
@@ -127,7 +129,7 @@ const SCENES=[ // what, setup, route, change, whether the answer must change ('k
   ['the bounds of a road cleared','',S0,'W.roads[0]._bb=null','kept'], // nothing the search reads has changed: the memory answers, and stores the bounds again as the search does
   ['the stored bounds of a road gone stale','',S0,'W.roads[0]._bb=[-120,100,120,100]',true],
   ['a road rerouted, its bounds cleared','',S0,'W.roads[0].open=[{x:-120,z:100},{x:120,z:100}];W.roads[0]._bb=null',true],
-  ['a road rerouted, its bounds left stale','',S0,'W.roads[0].open=[{x:-120,z:100},{x:120,z:100}]',true],
+  ['a road rerouted, its bounds left stale','',S0,'W.roads[0].open=[{x:-120,z:100},{x:120,z:100}]',false], // searched afresh; the line the host walks (r.path) still bridges the river
   ['a lake rising','W.settlements[0].lake={y:8,poly:[{x:-40,z:170},{x:-12,z:170},{x:-12,z:230},{x:-40,z:230}]}',S0,'W.settlements[0].lake.y=12',true],
   ['a lake','',S0,'W.settlements[0].lake={y:12,poly:[{x:-40,z:170},{x:-12,z:170},{x:-12,z:230},{x:-40,z:230}]}',true],
   ['a motte moved','W.settlements[0].motte={x:-24,z:300,r:12,gateA:0}',S0,'W.settlements[0].motte.z=200',true],
