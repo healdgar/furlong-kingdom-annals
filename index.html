@@ -2127,7 +2127,11 @@ function layoutSettlement(s){
   const wallSide=(x,z)=>s.wallRad?dist2d(x,z,C.x,C.z)-wallRadAt(s,Math.atan2(z-C.z,x-C.x)):-1e9;
   const probe=(f)=>{const c=obbCorners(f.x,f.z,f.w,f.d,f.rot),o=[...c,{x:f.x,z:f.z}];
     for(let i=0;i<4;i++)o.push({x:(c[i].x+c[(i+1)%4].x)/2,z:(c[i].z+c[(i+1)%4].z)/2});return o;};
-  const onStreet=f=>segH.near(f.x,f.z,Math.hypot(f.w,f.d)/2+2).some(g=>!g.st.gone&&streetFootprintOverlap(f,g)); // (hidden lanes are reserved too)
+  const onRoadway=f=>{const m=Math.hypot(f.w,f.d)/2+RHW+1; // on a highway's surface: every road's (another town's through this one included), as wide as this place lays its own roads
+    for(const r of W.roads||[]){const P=r.path;if(!P||P.length<2)continue;const bb=roadWalkedBounds(P);if(f.x<bb[0]-m||f.x>bb[2]+m||f.z<bb[1]-m||f.z>bb[3]+m)continue;
+      for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k];if(a.x>f.x+m&&b.x>f.x+m||a.x<f.x-m&&b.x<f.x-m||a.z>f.z+m&&b.z>f.z+m||a.z<f.z-m&&b.z<f.z-m)continue;if(streetFootprintOverlap(f,{a,b,hw:RHW},0))return true;}}
+    return false;};
+  const onStreet=f=>segH.near(f.x,f.z,Math.hypot(f.w,f.d)/2+2).some(g=>!g.st.gone&&streetFootprintOverlap(f,g))||onRoadway(f); // (hidden lanes are reserved too; no building stands on a highway, not even another town's)
   const fits=(f,gap,soft)=>{
     if(onStreet(f))return false;
     let inside=0,outside=0;
