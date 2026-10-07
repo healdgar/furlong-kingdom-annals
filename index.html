@@ -11511,7 +11511,7 @@ function eatHouseholds(s,PM){initOwnership(s);const H=householdsOf(s),heads=[],p
   s._homeDay=homeDay;s._fill=total>0?1-hungry/total:1;s._wealth=H.length?H.reduce((n,h)=>n+Math.max(0,h.assets.w||0),0)/H.length:0;return total>0?hungry/total:0;}
 function provision(s,heads,size){ // the month's necessaries, bought as each household's purse (and its credit with its neighbours) allows
   initOwnership(s);let pool=0;
-  const pg=price(s,'grain'),pf=price(s,'fish'),fishSh=Math.min(0.8,0.25*Math.pow(pg/Math.max(1e-6,pf),1.5)); // the cheaper food is eaten more
+  const pg=price(s,'grain'),pf=price(s,'fish'),rot=(s._rot&&s._rot.fish)||SPOIL.fish,eg=pg/(1-0.3),ef=pf/(1-0.25),fishSh=ef<eg?Math.min(1,Math.log(eg/ef)/-Math.log(1-rot)/30):0; /* fish is bought for the days it is still the cheaper bread after what rots in the crock meanwhile; the rest of the month is grain, or fish bought fresh day by day (#23: before, a share by price capped at four-fifths) */
   const B=heads.length?heads:[lordAcct(s)];let sf=0,sn=0,sw=0;
   const plan=[],O={};let homeFood=0;const pay2=[]; // wages the better-off pay for service and day-labour
   for(const h of B){const n=heads.length?householdSize(s,h):s.pop,owner=heads.length?householdAccount(h):householdsOf(s)[0]||accountOwner(h),Ld=pantry(s,owner),H=h.gn!==undefined?herdOf(h,s):{};if(h.gn!==undefined)h._keep=n*NEED.grain*180; /* half a year's bread, on average, to the next harvest */
@@ -11561,7 +11561,7 @@ function reprice(s){ // each price rises when buyers wanted more than was sold, 
   const L=s._lostM||{};s._lostM={};const PY=s._pxY||(s._pxY={});s._pxN=(s._pxN||0)+1;
   for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25;Y[g]=(Y[g]??d)*11/12+d/12; // what is usually wanted in a month; and the year round (the hay bought in autumn is the winter's)
     if(!(S[g]>0)&&!(a>0))continue; // nothing to be had at any price: no market, and no price found
-    const keep=L[g]>0?Math.min(6,(s.stores[g]||0)/L[g]):6; // half a year's stock is no glut, unless it rots sooner: then what it keeps for is the measure (#23: fish that rots in three weeks was weighed against six months' want, so its price held while nine-tenths of the catch rotted)
+    const keep=L[g]>0?Math.min(6,(s.stores[g]||0)/L[g]):6;if(L[g]>0&&s.stores[g]>0)(s._rot||(s._rot={}))[g]=L[g]/(L[g]+s.stores[g])/30; // half a year's stock is no glut, unless it rots sooner: then what it keeps for is the measure (#23: fish that rots in three weeks was weighed against six months' want, so its price held while nine-tenths of the catch rotted)
     const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));PY[g]=PY[g]==null?P[g]:PY[g]*11/12+P[g]/12;} // (the step is bounded, and the price kept above a thousandth of its base, #23: last resorts for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month, and a log needs a price above nothing)
   s._dem={};s._sold={};}
 function tickMarket(){
