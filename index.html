@@ -12547,7 +12547,7 @@ function tickMilitary(){
   const now=day();
   for(const a of W.armies){if(!a.chase||a.gone)continue;const b=W.armies.find(x=>x.id===a.chase); // in pursuit: each day the host turns toward where the foe now is
     if(!b||b.gone||!atWar(a.house,b.house)||a.state==='rout'){a.chase=null;continue;}if(a.state==='battle'||b.state==='battle')continue;
-    chaseStep(a,b);}
+    chaseStep(a,b);if(!a.chase)emit('war',3,a._spos||armySimPos(a),`${a.name} loses ${b.name}: no passable way to it.`);} // the day's march failed (armyRouteBlocked ends the pursuit)
   if(now%10===3)for(const a of W.armies){if(a.gone||a.state!=='idle'||a.field||a.house===plyH())continue; // a lord's hosts lying at one town join under one banner
     const b=armiesAtSettlement(a.at).find(x=>x!==a&&!x.gone&&x.house===a.house&&x.state==='idle'&&!x.field&&x.side===a.side);if(b)mergeArmies(a.standing||!b.standing?a:b,a.standing||!b.standing?b:a);}
   for(const a of W.armies){a._ppos=a._spos||armySimPos(a);a._spos=armySimPos(a);if(!(a.strength>=0))a.strength=0;} // (a host never musters fewer than none)
@@ -12565,7 +12565,7 @@ function tickMilitary(){
     }
     if(a.state==='idle'&&!a.hold&&!a.field){const m=armiesAtSettlement(a.at).find(b=>b!==a&&!b.gone&&!b.field&&b.house===a.house&&b.state==='idle'&&!b.hold&&b.side===a.side&&(b.standing||!a.standing));
       if(m){m.strength+=a.strength;m.supply=Math.min(m.supply,a.supply);if(a.men){(m.men||(m.men=[])).push(...a.men);a.men=[];}a.strength=0;disbandArmy(a);continue;}} // two bands of one lord in one camp march as one
-    if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;marchArmy(a,t);}
+    if(a.state==='idle'&&a.nextOrder!=null){const t=a.nextOrder;a.nextOrder=null;if(marchArmy(a,t)===false&&W.settlements[t])emit('war',3,a._spos,`${a.name} cannot reach ${W.settlements[t].name} by the roads or fords now open.`);} // an order kept while it fled: told if it fails
     if(a.state==='idle'&&houseAtWar(a.house)&&!a.hold&&a.supply>=35&&!(a.holdUntil>day())&&(inRebellion(a)||fitToCampaign(a))){
       // pick objective: the nearest settlement held by an enemy (the crown used to march on loyal vassals too)
       let tgt=-1,bd=1e18;
@@ -12645,7 +12645,8 @@ function tickMilitary(){
     }
     if(a.state==='rout'&&now>=a.arriveDay){a.state='idle';armySetSettlement(a,a.target);a.morale=55;}
     else if(a.state==='rout'&&a.hold&&now>=a.departDay+4){const p=armySimPos(a);a.state='idle';a.field={x:p.x,z:p.z};armySetSettlement(a,nearestSettlementIdx(p.x,p.z));a.morale=Math.max(a.morale,40);a.why=null; // your captains rally the men after a few days' flight
-      emit('war',4,p,`${a.name} rallies near ${W.settlements[a.at].name}${a.nextOrder!=null?' and turns as you commanded':' and awaits your word'}.`);if(a.nextOrder!=null){const n=a.nextOrder;a.nextOrder=null;marchArmy(a,n);}}
+      const n=a.nextOrder;a.nextOrder=null;const ok=n!=null?marchArmy(a,n):null,to=W.settlements[n]; // the order is tried before it is told
+      emit('war',4,p,`${a.name} rallies near ${W.settlements[a.at].name}${n==null?' and awaits your word':ok===true?` and turns for ${to.name} as you commanded`:ok===false?`, but cannot reach ${to?to.name:'the place you named'} by the roads or fords now open`:''}.`);}
   }
   // a battle draws in any host near enough to hear it: it comes up on the side of its friends
   {const prim=W.armies.filter(a=>!a.gone&&a.state==='battle'&&!a.joined&&a.foe&&a.battlePos);
@@ -15019,9 +15020,11 @@ function orderArmy(a,si){
   if(!s)return false;
   if(a.state==='battle'){emit('war',2,null,`${a.name} is locked in battle and cannot heed new orders.`);return false;}
   a.hold=true;a.why=null;a.chase=null;
-  if(a.state==='rout')a.nextOrder=si; // in flight: heeded once the men are rallied
-  else{if(a.state==='march'){const p=armySimPos(a);a.field={x:p.x,z:p.z};a.fieldTo=null;} // turned about from where it stands on the road
-    liftSiege(a);a.state='idle';a.nextOrder=null;if(marchArmy(a,si)===false){emit('war',3,s.pos,`${a.name} cannot reach ${s.name} by the roads or fords now open.`);return false;}}
+  if(a.state==='rout'){a.nextOrder=si;emit('war',3,s.pos,`${a.name} is to turn for ${s.name} once its men are rallied.`);refreshInspect();return true;} // in flight: heeded once the men are rallied, and told then
+  if(a.state==='march'){const p=armySimPos(a);a.field={x:p.x,z:p.z};a.fieldTo=null;} // turned about from where it stands on the road
+  liftSiege(a);a.state='idle';a.nextOrder=null;const ok=marchArmy(a,si);
+  if(ok===false){emit('war',3,s.pos,`${a.name} cannot reach ${s.name} by the roads or fords now open.`);refreshInspect();return false;}
+  if(ok!==true){refreshInspect();return false;} // it lies where it is (the ships could not be paid for: the annals have said so)
   emit('war',3,s.pos,`By the crown's command, ${a.name} marches on ${s.name}.`);
   refreshInspect();
   return true;
@@ -15037,6 +15040,7 @@ function orderArmyAt(a,b){ // set one host on another: it follows the foe until 
     emit('war',7,armySimPos(b),`${W.houses[me].name} sends ${a.name} against ${b.name} of ${W.houses[them].name}: it is war between them.`);}
   if(a.state==='siege')liftSiege(a);
   a.hold=true;a.why=null;a.chase=b.id;a.nextOrder=null;chaseStep(a,b);
+  if(a.chase!==b.id){emit('war',3,armySimPos(a),`${a.name} cannot reach ${b.name}: a passable ford, bridge or breach is required.`);refreshInspect();return;} // the first day's march failed (armyRouteBlocked ends the pursuit)
   emit('war',4,armySimPos(b),`${a.name} marches to bring ${b.name} to battle${b.state==='idle'&&!b.field&&W.settlements[b.at]?` at ${W.settlements[b.at].name}`:''}.`);refreshInspect();}
 function chaseStep(a,b){ // one day's pursuit: on the roads while the foe is far, straight at it when near; a foe within its town's walls is besieged there
   const p=armySimPos(a),q=armySimPos(b),d=dist2d(p.x,p.z,q.x,q.z),go=si=>{if(a.state==='march'||a.field){a.field={x:p.x,z:p.z};}a.fieldTo=null;a.state='idle';marchArmy(a,si);}; // set out from where it stands, not from home
