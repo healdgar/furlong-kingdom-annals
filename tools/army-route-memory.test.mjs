@@ -18,13 +18,15 @@ const READS=['armyLandPath','armySegmentClear','armyDetour','armyObstacle','army
   'fortGround','fortSurface','motteSurface','fortCircuits','casRing','fortCenter','wallRadAt','wallKindAt','wallBuilt','wallProg','wallDmgAt','fortGateAngles','wallGates',
   'hostileTo','atWar','inRevolt','inPoly','segDist'];
 const HELPERS=['const lerp=','const clamp=','const dist2d=','const cIdx=','const inB=','const toCell=','const sstep='];
-const PINNED={"armyLandPath":"767ff34828abfbb0","armySegmentClear":"d6b1989d27d72098","armyDetour":"329098b16a15ede1","armyObstacle":"a5e751adca702082","armyRaftAt":"f314e81a2aca7bd3","armyBridgeAt":"59d89e28f33b688b","paidRoadAt":"35fb570078477b11","onRoad":"f2ca4362b4ec14f5","riverAt":"c4bda44c2b489b2e","makeHash":"b1d9816147e072f3","hAt":"f459c5ff2804ca09","fortGround":"3536cbafb7ccdc5a","fortSurface":"6277e0cf9adcbe38","motteSurface":"90120ef2ced40e8e","fortCircuits":"e77dd39eccb4abc1","casRing":"a6921fd1103e167c","fortCenter":"70fbd07bf1bf54a1","wallRadAt":"fbbec3db03bd0ce6","wallKindAt":"fb3d95f598b7b8e5","wallBuilt":"c8fd76feaf0dac34","wallProg":"67b50b3b042c425b","wallDmgAt":"0ec2325c7d2a1ce4","fortGateAngles":"e054c476fb7e3624","wallGates":"66ae4de110791e54","hostileTo":"dac2f7053f0303fb","atWar":"f7f1457aa7b9b2a2","inRevolt":"4b1beb090e61d7d1","inPoly":"abebffb4a9abafff","segDist":"01b34b3baef31aff","helpers":"005d5b927de2876f"};
+// Repinned 6 October 2026: armyLandPath hands the log's list to armyDetour, which notes the nodes it expanded (the route memory's
+// buildings test). Neither reads anything new; their search is unchanged.
+const PINNED={"armyLandPath":"7a2da4e68f08e3f5","armySegmentClear":"d6b1989d27d72098","armyDetour":"8d6cba39d5afdd97","armyObstacle":"a5e751adca702082","armyRaftAt":"f314e81a2aca7bd3","armyBridgeAt":"59d89e28f33b688b","paidRoadAt":"35fb570078477b11","onRoad":"f2ca4362b4ec14f5","riverAt":"c4bda44c2b489b2e","makeHash":"b1d9816147e072f3","hAt":"f459c5ff2804ca09","fortGround":"3536cbafb7ccdc5a","fortSurface":"6277e0cf9adcbe38","motteSurface":"90120ef2ced40e8e","fortCircuits":"e77dd39eccb4abc1","casRing":"a6921fd1103e167c","fortCenter":"70fbd07bf1bf54a1","wallRadAt":"fbbec3db03bd0ce6","wallKindAt":"fb3d95f598b7b8e5","wallBuilt":"c8fd76feaf0dac34","wallProg":"67b50b3b042c425b","wallDmgAt":"0ec2325c7d2a1ce4","fortGateAngles":"e054c476fb7e3624","wallGates":"66ae4de110791e54","hostileTo":"dac2f7053f0303fb","atWar":"f7f1457aa7b9b2a2","inRevolt":"4b1beb090e61d7d1","inPoly":"abebffb4a9abafff","segDist":"01b34b3baef31aff","helpers":"005d5b927de2876f"};
 test('the search the route memory copies is the one reviewed with it',()=>{
   const now=Object.fromEntries([...READS.map(n=>[n,sha(fn(n))]),['helpers',sha(HELPERS.map(line).join('\n'))]]);
   assert.deepEqual(now,PINNED,'A function the host search reads has changed: make armyRouteRead read what it now reads, then repin.');
 });
 
-const MEMORY=['armyRouteRecall','armyRouteBounds','armyRouteVerify','armyRouteReplay','armyRouteKey','armyRouteSameKey','armyRouteSameRead','armyRouteRead','roadBounds','routeSettlement','routeHas','routeMark','routeCell','routeList','routeW'];
+const MEMORY=['armyRouteRecall','armyRouteBounds','armyRouteVerify','armyRouteReplay','armyRouteKey','armyRouteSameKey','armyRouteSameRead','armyRouteSameBuildings','routeCellTouch','routeTouch','routeShutPack','armyRouteRead','roadBounds','routeSettlement','routeHas','routeMark','routeCell','routeList','routeW'];
 function rng(seed){let x=seed>>>0;return()=>((x=Math.imul(x^x>>>15,0x2c1b3c6d)+0x297a2d39|0,x^=x>>>12,x=Math.imul(x,0x297a2d39),(x^x>>>15)>>>0)/4294967296);}
 // A 1.2 km square: two places, the west one (where lakes and mottes come and go) and a small walled town east of
 // a broad river that only a road bridge or a raft can cross; a host on the west bank.
@@ -92,6 +94,8 @@ const SCENES=[ // what, setup, route, change, whether the answer must change ('k
   ['a building taken down',BLOCK,S0,'B.removed=true',true],
   ['a building made a churchyard',BLOCK,S0,'B.arch="churchyard"',true],
   ['a building turned',BLOCK,S0,'B.rot=0.7',false],
+  ['a building raised in the search box, clear of every point the search tested','',S0,'addBuilding(0,-150,100,6,6,0.3)','kept'],
+  ['a building raised beside the way the search went, the way unchanged','',FAR,'addBuilding(0,-40,100,6,6,0.3)',false],
   ['the ground under a building passing to another place',BLOCK,S0,'for(let j=26;j<=31;j++)for(let i=19;i<=23;i++)W.dom[j*44+i]=1',true],
   ['ground sunk below the sea','',S0,'for(let j=28;j<=30;j++)for(let i=20;i<=21;i++)W.h[j*44+i]=0',true],
   ['ground raised to a bank','',S0,'W.h[29*44+21]=16',false],

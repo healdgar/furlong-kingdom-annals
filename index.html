@@ -12224,6 +12224,7 @@ function armyDetour(a,p,q,pad){ // bounded local A*, only around a blocked stret
   while(heap.length&&visited++<30000){const k=pop();if(closed[k])continue;closed[k]=1;if(k===end)break;const P=k===start?p:point(k),ix=k%nx,iz=Math.floor(k/nx);
     for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz||ix+dx<0||ix+dx>=nx||iz+dz<0||iz+dz>=nz)continue;const j=k+dz*nx+dx;if(closed[j])continue;const Q=j===end?q:point(j);if(a._em&&k!==start&&j!==end){const ek=(((P.x>>1)+8192)*16384+((P.z>>1)+8192))*9+((dz+1)*3+dx+1);let ok=a._em.get(ek);if(ok===undefined){ok=armySegmentClear(a,P,Q);a._em.set(ek,ok);}if(!ok)continue;}else if(!armySegmentClear(a,P,Q))continue;const cost=g[k]+dist2d(P.x,P.z,Q.x,Q.z);if(cost<g[j]){g[j]=cost;prev[j]=k;push(j,cost+score(j));}}
   }
+  if(a._em&&a._em.shut)a._em.shut.push({x0,z0,nx,nz,closed}); // the nodes it expanded, for the route memory: every point the search tested lies within 3√2 m of one
   if(start!==end&&prev[end]<0)return null;const out=[q];for(let k=prev[end];k>=0&&k!==start;k=prev[k])out.push(point(k));out.push(p);out.reverse();return out;
 }
 function armyLandPath(a,P,log){ // validate an existing road or field route; repair only obstructed spans
@@ -12232,7 +12233,7 @@ function armyLandPath(a,P,log){ // validate an existing road or field route; rep
   if(log===undefined&&!a._em&&!a.settlement&&!a.placed&&ARMY_ROUTES.on)return armyRouteRecall(a,P); // a host's own search: remembered while all it read is unchanged
   const out=[P[0]];
   // Nothing moves during the call, so the wider detour boxes and later spans reuse the lattice edges already tried (the walker's `_em`, which an army has none of otherwise) and the cell scopes.
-  const memo=!a._em;if(memo){a._em=new Map();a._em.scopes=new Map();a._em.circuits=new Map();if(log)a._em.boxes=log.boxes;}
+  const memo=!a._em;if(memo){a._em=new Map();a._em.scopes=new Map();a._em.circuits=new Map();if(log){a._em.boxes=log.boxes;a._em.shut=log.shut;}}
   try{
   for(let k=1;k<P.length;k++){const p=out[out.length-1],q=P[k];if(p.sea&&q.sea){out.push(q);continue;}
     if(log)log.spans.push(k);
@@ -12248,12 +12249,16 @@ function armyLandPath(a,P,log){ // validate an existing road or field route; rep
    ground and domain cells under every span and search box; the river and road lines there; and each place whose domain
    those cells lie in, with its lake, buildings, walls and breaches, gates, earthworks, and whether its gates stand open
    to this host. The answer is given again only while that copy equals the world exactly: any difference (a bridge built,
-   a wall breached, a war made or ended, a raft finished) searches afresh at once. A search also stores the bounds of the
+   a wall breached, a war made or ended, a raft finished) searches afresh at once. Buildings are weighed more finely, or a
+   growing town in a search box would send its hosts searching afresh every few days: the copy keeps them apart, with the
+   nodes each search box expanded, and a building raised, taken down, moved or turned counts only if its footprint could
+   cover a point the search tested (on a straight stretch, or within 3√2 m of an expanded node); otherwise every test
+   the search made comes out as before, and so does the search. A search also stores the bounds of the
    roads it looks at (onRoad); a remembered answer stores them on the same roads (those up to onRoad.reach), as the
    search would. The memory is derived state and lives outside the world: it is never saved, sent to the screen or
    replayed, and a loaded game, starting with it empty, finds the same answers. */
-const ARMY_ROUTES={on:true,verify:false,memory:new WeakMap(),hits:0,misses:0,kept:0,readMax:0}; // verify (tests): search afresh at every recall and throw on any difference
-let ROUTE_READ=new Float64Array(8192),ROUTE_N=0,ROUTE_MARK=null,ROUTE_STAMP=0,ROUTE_CELLS=new Int32Array(1024),ROUTE_NC=0,ROUTE_I0=0,ROUTE_I1=0,ROUTE_J0=0,ROUTE_J1=0;
+const ARMY_ROUTES={on:true,verify:false,memory:new WeakMap(),hits:0,misses:0,kept:0,readMax:0,spared:0}; // verify (tests): search afresh at every recall and throw on any difference
+let ROUTE_READ=new Float64Array(8192),ROUTE_BLD=[],ROUTE_N=0,ROUTE_MARK=null,ROUTE_STAMP=0,ROUTE_CELLS=new Int32Array(1024),ROUTE_NC=0,ROUTE_I0=0,ROUTE_I1=0,ROUTE_J0=0,ROUTE_J1=0;
 function routeW(v){if(ROUTE_N===ROUTE_READ.length){const B=new Float64Array(ROUTE_N*2);B.set(ROUTE_READ);ROUTE_READ=B;}ROUTE_READ[ROUTE_N++]=v;}
 function routeList(L){if(!L){routeW(-1);return;}routeW(L.length);for(let i=0;i<L.length;i++)routeW(L[i]);} // absent, or its length and values
 function routeCell(x){return Math.floor(clamp((x+SIZE/2)/CELL,0,GRID-1.001));} // the first cell hAt reads for x
@@ -12270,10 +12275,10 @@ function routeHas(x0,z0,x1,z1){ // does the box touch a marked cell? (every poin
 function routeSettlement(a,s){ // all armyObstacle and fortGround read of a place
   routeW(s.owner===a.house||!hostileTo(a,s)?1:0); // its gates open to this host
   const L=s.lake;if(L){const poly=L.poly;routeW(1);routeW(L.y);routeW(poly?poly.length:-1);if(poly)for(const q of poly){routeW(q.x);routeW(q.z);}}else routeW(0);
-  const placed=s._lay?.placed;if(placed){const cs=placed.near?.cell,at=ROUTE_N;let n=0;routeW(cs);routeW(0); // its buildings, in the cells armyObstacle reads
-    for(const[key,list]of placed.historyCells){const i=Math.round(key/100003),j=key-i*100003;if(!routeHas(i*cs,j*cs,i*cs+cs,j*cs+cs))continue;n++;routeW(key);routeW(list.length);
-      for(const b of list){if(b.removed||b.state==='gone'||b.arch==='churchyard'){routeW(0);continue;}routeW(1);routeW(b.x);routeW(b.z);routeW(b.rot||0);routeW(b.w);routeW(b.d);}}
-    ROUTE_READ[at+1]=n;}else routeW(-1);
+  const placed=s._lay?.placed;if(placed){const cs=placed.near?.cell,cells=new Map();routeW(cs); // its buildings, in the cells armyObstacle reads: kept apart (ROUTE_BLD), as each one standing, its place and size
+    for(const[key,list]of placed.historyCells){const i=Math.round(key/100003),j=key-i*100003;if(!routeHas(i*cs,j*cs,i*cs+cs,j*cs+cs))continue;const L=[];
+      for(const b of list){if(b.removed||b.state==='gone'||b.arch==='churchyard')L.push(b,0,0,0,0,0,0);else L.push(b,1,b.x,b.z,b.rot||0,b.w,b.d);}cells.set(key,L);}
+    ROUTE_BLD.push(cells);}else{routeW(-1);ROUTE_BLD.push(null);}
   const C=fortCircuits(s);routeW(C.length);
   for(const c of C){if(!c.wallRad){routeW(0);continue;}const O=fortCenter(c),B=c.wallBuild,D=c.wallDmg;routeW(1);routeW(c===s.motte?1:0);routeW(O.x);routeW(O.z);routeList(c.wallRad);routeList(c.wallKind);
     if(B){routeW(1);routeW(B.a0);routeW(wallProg(c));}else routeW(0);
@@ -12287,7 +12292,7 @@ function routeSettlement(a,s){ // all armyObstacle and fortGround read of a plac
   }else routeW(0);
 }
 function armyRouteRead(a,P,log){ // write into ROUTE_READ everything the search of P that left this log could have read; returns the count
-  if(!ROUTE_MARK)ROUTE_MARK=new Uint32Array(GRID*GRID);ROUTE_STAMP++;ROUTE_N=0;ROUTE_NC=0;ROUTE_I0=GRID;ROUTE_I1=-1;ROUTE_J0=GRID;ROUTE_J1=-1;
+  if(!ROUTE_MARK)ROUTE_MARK=new Uint32Array(GRID*GRID);ROUTE_STAMP++;ROUTE_N=0;ROUTE_NC=0;ROUTE_BLD=[];ROUTE_I0=GRID;ROUTE_I1=-1;ROUTE_J0=GRID;ROUTE_J1=-1;
   for(const k of log.spans){const p=P[k-1],q=P[k],n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)/(CELL*0.5)));for(let t=0;t<=n;t++){const x=lerp(p.x,q.x,t/n),z=lerp(p.z,q.z,t/n);routeMark(x,z,x,z);}} // each span's straight test
   const X=log.boxes;for(let i=0;i<X.length;i+=4)routeMark(X[i],X[i+1],X[i+2],X[i+3]); // each detour box searched
   routeW(a.waterClearance??0.4);routeW(a.requireRoadCrossing?1:0);
@@ -12311,20 +12316,45 @@ function armyRouteRecall(a,P){
   const M=ARMY_ROUTES;for(const p of P)if(!Number.isFinite(p.x)||!Number.isFinite(p.z))return armyLandPath(a,P,null);
   let list=M.memory.get(a);
   if(list)for(let i=0;i<list.length;i++){const e=list[i];if(!armyRouteSameKey(e.key,P))continue;
-    const n=armyRouteRead(a,P,e.log);if(n===e.read.length&&armyRouteSameRead(e.read,n)){M.hits++;if(M.verify)return armyRouteVerify(a,P,e);armyRouteBounds(e.reach);return armyRouteReplay(P,e);}
+    const n=armyRouteRead(a,P,e.log);if(n===e.read.length&&armyRouteSameRead(e.read,n)&&armyRouteSameBuildings(P,e)){M.hits++;if(M.verify)return armyRouteVerify(a,P,e);armyRouteBounds(e.reach);return armyRouteReplay(P,e);}
     list.splice(i,1);break;} // something it read has changed: search afresh
-  M.misses++;onRoad.reach=-1;const log={spans:[],boxes:[],corners:new Map()},out=armyLandPath(a,P,log),reach=onRoad.reach;
-  if(log.boxes.length){const n=armyRouteRead(a,P,log);if(!list)M.memory.set(a,list=[]);list.unshift({key:armyRouteKey(P),log,read:ROUTE_READ.slice(0,n),reach,ok:!!out});if(list.length>2)list.length=2;M.kept++;if(n>M.readMax)M.readMax=n;} // only a search that had to go round something is worth keeping
+  M.misses++;onRoad.reach=-1;const log={spans:[],boxes:[],shut:[],corners:new Map()},out=armyLandPath(a,P,log),reach=onRoad.reach;
+  if(log.boxes.length){const n=armyRouteRead(a,P,log);if(!list)M.memory.set(a,list=[]);routeShutPack(log);list.unshift({key:armyRouteKey(P),log,read:ROUTE_READ.slice(0,n),bld:ROUTE_BLD,reach,ok:!!out});if(list.length>2)list.length=2;M.kept++;if(n>M.readMax)M.readMax=n;} // only a search that had to go round something is worth keeping
   return out;
 }
 function armyRouteBounds(reach){const R=W.roads||[];for(let i=0;i<=reach&&i<R.length;i++){const r=R[i],Q=r.open||r.path;if(Q&&Q.length>=2&&!r._bb)r._bb=roadBounds(Q);}} // the bounds onRoad stores on the roads it looks at
+function routeShutPack(log){for(const S of log.shut){const C=S.closed,B=new Uint8Array((C.length+7)>>3);for(let k=0;k<C.length;k++)if(C[k])B[k>>3]|=1<<(k&7);S.bits=B;delete S.closed;}} // the expanded nodes, one bit each
+function armyRouteSameBuildings(P,e){ // a building raised, taken down, moved or turned matters only if it stands on a point the search tested; then the search would go as it went
+  const A=e.bld,B=ROUTE_BLD;if(A.length!==B.length)return false;let moved=false;
+  for(let i=0;i<A.length;i++){const was=A[i],now=B[i];if(!was||!now){if(was!==now)return false;continue;}
+    for(const[key,L]of now){const K=was.get(key);if(K&&K.length===L.length&&K.every((v,k)=>Object.is(v,L[k])))continue;moved=true;if(routeCellTouch(K,L,P,e.log))return false;}
+    for(const[key,K]of was)if(!now.has(key)){moved=true;if(routeCellTouch(K,null,P,e.log))return false;}}
+  if(moved){e.bld=B;ARMY_ROUTES.spared++;}return true; // the copy takes the buildings as they now stand
+}
+function routeCellTouch(K,L,P,log){ // each building of one cell that is new, gone or changed there, as it was and as it is, against the points tested
+  const same=(X,i,Y,j)=>{for(let k=1;k<7;k++)if(!Object.is(X[i+k],Y[j+k]))return false;return true;},at=(X,b)=>{if(X)for(let i=0;i<X.length;i+=7)if(X[i]===b)return i;return -1;};
+  if(L)for(let i=0;i<L.length;i+=7){const j=at(K,L[i]);if(j>=0&&same(L,i,K,j))continue;if(L[i+1]&&routeTouch(L[i+2],L[i+3],L[i+4],L[i+5],L[i+6],P,log))return true;if(j>=0&&K[j+1]&&routeTouch(K[j+2],K[j+3],K[j+4],K[j+5],K[j+6],P,log))return true;}
+  if(K)for(let j=0;j<K.length;j+=7)if(at(L,K[j])<0&&K[j+1]&&routeTouch(K[j+2],K[j+3],K[j+4],K[j+5],K[j+6],P,log))return true;
+  return false;
+}
+function routeTouch(x,z,rot,w,d,P,log){ // could a building here (armyObstacle's footprint: its rectangle and 0.6 m) cover a point the search tested?
+  const c=Math.cos(rot),sn=Math.sin(rot),hw=w/2+0.6+1e-6,hd=d/2+0.6+1e-6,U=(X,Z)=>X*c-Z*sn,V=(X,Z)=>X*sn+Z*c;
+  for(const k of log.spans){const p=P[k-1],q=P[k],u0=U(p.x-x,p.z-z),v0=V(p.x-x,p.z-z),du=U(q.x-x,q.z-z)-u0,dv=V(q.x-x,q.z-z)-v0;let t0=0,t1=1; // each straight test: the segment through the footprint
+    const clip=(d,lo,hi)=>{if(Math.abs(d)<1e-12)return lo<0&&hi>0;let a=lo/d,b=hi/d;if(a>b)[a,b]=[b,a];t0=Math.max(t0,a);t1=Math.min(t1,b);return t0<=t1;};
+    if(clip(du,-hw-u0,hw-u0)&&clip(dv,-hd-v0,hd-v0))return true;}
+  const HW=hw+4.25,HD=hd+4.25,ex=Math.abs(c)*HW+Math.abs(sn)*HD,ez=Math.abs(sn)*HW+Math.abs(c)*HD; // each search box: the expanded nodes within 3√2 m of the footprint
+  for(const S of log.shut){const i0=Math.max(0,Math.ceil((x-ex-S.x0)/2)),i1=Math.min(S.nx-1,Math.floor((x+ex-S.x0)/2)),j0=Math.max(0,Math.ceil((z-ez-S.z0)/2)),j1=Math.min(S.nz-1,Math.floor((z+ez-S.z0)/2));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const k=j*S.nx+i;if(!(S.bits[k>>3]>>(k&7)&1))continue;const X=S.x0+i*2-x,Z=S.z0+j*2-z;if(Math.abs(U(X,Z))<HW&&Math.abs(V(X,Z))<HD)return true;}}
+  return false;
+}
 function armyRouteVerify(a,P,e){ // ARMY_ROUTES.verify: search afresh and insist that the answer, the search itself, what it read and the roads' stored bounds all agree
   const R=W.roads||[],before=R.map(r=>r._bb),want=R.map((r,i)=>{const Q=r.open||r.path;return !r._bb&&i<=e.reach&&Q&&Q.length>=2?JSON.stringify(roadBounds(Q)):r._bb;}),kept=armyRouteReplay(P,e);
-  onRoad.reach=-1;const log={spans:[],boxes:[],corners:new Map()},fresh=armyLandPath(a,P,log);
+  onRoad.reach=-1;const log={spans:[],boxes:[],shut:[],corners:new Map()},fresh=armyLandPath(a,P,log);routeShutPack(log);
   const same=(x,y)=>x.length===y.length&&x.every((v,i)=>Object.is(v,y[i]));let bad=null;
   if(!fresh!==!kept||fresh&&(fresh.length!==kept.length||fresh.some((q,i)=>!Object.is(q.x,kept[i].x)||!Object.is(q.z,kept[i].z)||(P.includes(q)||P.includes(kept[i]))&&q!==kept[i])))bad='the path';
   else if(onRoad.reach!==e.reach||R.some((r,i)=>before[i]?r._bb!==before[i]:typeof want[i]==='string'?JSON.stringify(r._bb)!==want[i]:!!r._bb))bad='the roads\' stored bounds';
-  else if(!same(log.spans,e.log.spans)||!same(log.boxes,e.log.boxes)||log.corners.size!==e.log.corners.size||[...log.corners].some(([k,c])=>!e.log.corners.has(k)||!same(c,e.log.corners.get(k))))bad='the search';
+  else if(!same(log.spans,e.log.spans)||!same(log.boxes,e.log.boxes)||log.corners.size!==e.log.corners.size||[...log.corners].some(([k,c])=>!e.log.corners.has(k)||!same(c,e.log.corners.get(k)))
+    ||log.shut.length!==e.log.shut.length||log.shut.some((S,i)=>{const T=e.log.shut[i];return S.x0!==T.x0||S.z0!==T.z0||S.nx!==T.nx||S.nz!==T.nz||!same(S.bits,T.bits);}))bad='the search';
   else{const n=armyRouteRead(a,P,log);if(n!==e.read.length||!armyRouteSameRead(e.read,n))bad='what it read';}
   if(bad)throw Error(`Route memory: ${bad} differs from a fresh search (${a.name||'host '+a.id}, day ${day()})`);
   return fresh;
