@@ -4394,7 +4394,8 @@ function winterFeed(s,snow){herdSync(s);const owners=[...(s._owners||new Map())]
   for(const[o,x]of [...owners,[lordAcct(s),{animals:remainder}]]){const H=x.animals,need=['sheep','cattle','horses'].reduce((n,g)=>n+(H[g]||0)*LU[g],0)*0.35,eat=consumeOwnStock(s,o,'hay',need),short=need>0?1-eat/need:0;
     if(short>0.05){const loss=Math.min(0.1,short*0.12)*(snow?1.4:1);for(const g of ['sheep','cattle','horses']){const q=(H[g]||0)*loss;if(H===remainder&&H[g]>0)for(const x of (s._owners||new Map()).values())for(const kind of ['sale','held'])if(x[kind][g]!==undefined)x[kind][g]*=1-loss;H[g]=(H[g]||0)-q;s.stores[g]=Math.max(0,(s.stores[g]||0)-q);}}}
   s._herdLast=Object.fromEntries(BEASTS.map(g=>[g,s.stores[g]||0]));}
-function spoilOwned(s,g,rate,phaseK){if(!(rate>0))return;if(s.storage){storageSpoil(s,g,rate,phaseK);return;}const f=Math.max(0,1-rate);s.stores[g]=Math.max(0,(s.stores[g]||0)*f);
+function spoilOwned(s,g,rate,phaseK){if(!(rate>0))return;const was=s.stores[g]||0;try{spoilOwned0(s,g,rate,phaseK);}finally{const M=s._lostM||(s._lostM={});M[g]=(M[g]||0)+Math.max(0,was-(s.stores[g]||0));}} // what rotted this month, for the price
+function spoilOwned0(s,g,rate,phaseK){if(s.storage){storageSpoil(s,g,rate,phaseK);return;}const f=Math.max(0,1-rate);s.stores[g]=Math.max(0,(s.stores[g]||0)*f);
   for(const x of (s._owners||new Map()).values()){if(x.held[g])x.held[g]*=f;if(x.sale[g])x.sale[g]*=f;if(g==='timber'&&x.held.char)x.held.char*=f;}
   if(s._made&&s._made[g])s._made[g]*=f;}
 function heldTotal(s,g){let n=0;for(const x of (s._owners||new Map()).values())n+=x.held[g]||0;return n;}
@@ -4828,7 +4829,7 @@ function treeHTML(x){let h='';const seen=new Set();
 function chooseLandUse(s,si){ // once a year: strips go to corn or to hay as the market pays better for them, while the place grows less of that than it buys (a farmer looks at the price and at the stacks his neighbours have already made), the best-suited ground first
   if(!s._gYield||!W.land)return;const pg=price(s,'grain'),ph=price(s,'hay'),gA0=s._gYield*0.87*360,E=s._dAvg||{},wetOf=f=>f.n?clamp(f.fl/f.n/0.35,0,1):0,hY=f=>12/1e4*(0.6+0.4*wetOf(f));
   const T=(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&f.area);let haySup=0,grSup=0;for(const f of T){if(f.kind===LK.MEADOW)haySup+=hY(f)*f.area;else if(ARABLE.has(f.kind))grSup+=gA0*f.area;}
-  const Y=s._dYr||E,hayDem=(Y.hay||0)*12,grDem=(Y.grain||0)*12; // a farmer lays down meadow for the year's want, not the autumn's
+  const Y=s._dYr||E,hayDem=(Y.hay||0)*12,grDem=Math.max((Y.grain||0)*12,(s.pop||0)*NEED.grain*360); // a farmer lays down meadow for the year's want, not the autumn's; and the place wants at least its own people's bread, bought or grown (#21: corn wanted was only what the market sold, so families eating their own corn never called a meadow back to the plough)
   if(ph*12/1e4>pg*gA0)for(const f of T.filter(f=>ARABLE.has(f.kind)&&f.kind!==LK.DEMESNE).sort((a,b)=>wetOf(b)-wetOf(a))){if(haySup>=hayDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((hA-gA)*3<=gA*0.25)continue; // hay pays, and the town is short of it
     f.kind0=f.kind;f.kind=LK.MEADOW;writeFurlong(f);G.fenceDirty=true;haySup+=hY(f)*f.area;grSup-=gA0*f.area;}
   else for(const f of T.filter(f=>f.kind===LK.MEADOW&&f.ar>=Math.max(1,f.n)*0.25).sort((a,b)=>wetOf(a)-wetOf(b))){if(grSup>=grDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((gA-hA)*3<=hA*0.25)continue; // corn pays, and the town is short of bread
@@ -10555,6 +10556,8 @@ function syncOwner(s){ // the town changed hands: its fields go with it
   const old=s._lord;s._lord=s.owner;
   for(const f of s.furl||[])if(f.lord===old||f.lord<0)setLord(f,s.owner,false);
 }
+function hostPay(a){return a.strength*(a.standing?0.1:0.25)*PL();} // a host's month: customary wages in the price level (the household's sworn men are kept at the hall and cost less than a levy)
+function watchPay(s){return (s.garrison||0)*0.2*PL();} // a garrison's month, customary wages
 function book(h,k,v){if(h){const L=h.led||(h.led={});L[k]=(L[k]||0)+v;const Y=h.ledY||(h.ledY={});Y[k]=(Y[k]||0)+v;}} // a house's running ledger: where its gold came from and went
 function hostTarget(hi){const h=W.houses[hi],pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(h.might||1))*(hi>0?1+clamp((h.gold||0)/20000,0,0.5):1);} // a full purse hires swords
 function ensureHosts(){ // every house keeps a household host at its seat, topped up from its people
@@ -10569,8 +10572,8 @@ function ensureHosts(){ // every house keeps a household host at its seat, toppe
       a.name=(hi===0?'The Royal Household':'Household of '+h.name.replace('House ',''));a.hold=hi===plyH();
     }else if(!houseAtWar(hi)&&a.state==='idle'&&a.strength>tgt*1.1){ // peace: the levies go home to the harvest, the household keeps its sworn men
       const go=(a.strength-tgt)*0.35;a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
-    }else if((a._arrears||0)>a.strength*(a.standing?0.1:0.25)*PL()&&a.state!=='battle'&&a.strength>5){ // unpaid a month and more, the men drift home to their fields, the faster the longer they are owed
-      const go=a.strength*Math.min(0.15,0.04*(a._arrears/Math.max(1e-6,a.strength*(a.standing?0.1:0.25)*PL())));a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
+    }else if((a._arrears||0)>hostPay(a)&&a.state!=='battle'&&a.strength>5){ // unpaid a month and more, the men drift home to their fields, the faster the longer they are owed
+      const go=a.strength*Math.min(0.15,0.04*(a._arrears/Math.max(1e-6,hostPay(a))));a.strength-=go;a._rel=(a._rel||0)+go;const s=W.settlements[a.home];if(s)s.pop+=go*0.8;
     }else if(a.at===a.home&&a.state==='idle'&&a.strength<tgt&&(hi===0||(h.gold??0)>=0)){ // recruits come in at home, paid from the purse
       const s=W.settlements[a.home],folk=W.settlements.filter(x=>x.owner===hi).reduce((t,x)=>t+x.pop,0);
       const add=Math.min(tgt-a.strength,tgt*0.12,folk*0.004,s.pop*0.05,hi>0?Math.max(0,h.gold)/(1.5*PL()):1e9);
@@ -10676,12 +10679,12 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     const stew=stewardship(notableById(h.head));let castellans=0,hosts=0,gar=0;
     for(const s of own){if(s===seatS)continue;const v=(2*PL()+rentOf(s)*(0.25+0.65*far(s)))/stew,C=heads_(s,()=>true).sort((a,c)=>(c.w||0)-(a.w||0)); // the castellan's household, the steadiest in the place
       const pv=Math.min(v,Math.max(0,means(h)));castellans+=pv;transfer(h,C[0]||'out',pv,'castellans');}
-    for(const a of W.armies)if(a.house===hi&&!a.gone){const v=a.strength*(a.standing?0.1:0.25)*PL();hosts+=v;soldiersPay(a,v,h);}
-    for(const s of own){const v=Math.min((s.garrison||0)*0.2*PL(),Math.max(0,means(h)));gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
+    for(const a of W.armies)if(a.house===hi&&!a.gone){const v=hostPay(a);hosts+=v;soldiersPay(a,v,h);}
+    for(const s of own){const v=Math.min(watchPay(s),Math.max(0,means(h)));gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
     for(const s of own){const need=garrisonNeed(s)*1.1; // a garrison beyond what the town needs goes home unless the enemy is at the gate
       if(!s.siegeBy&&s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}}
     { // the lord's household: servants and retainers, his hall's bread and wine, cloth for the household, spice and silk for his table, bought at his seat; a great house spends as it holds
-      const inc=h._inc||0;h._inc=0;h._incA=h._incA==null?inc:h._incA*5/6+inc/6; /* the month's revenue, reckoned over half a year */const G0=Math.max(0,h.gold||0),T=seatS,spend=clamp(Math.max(0,G0-g0)+(G0-3*h._incA)/12,0,G0); /* the hall lives on what the month left over, and draws down what lies beyond a quarter's revenue (or saves toward it): rents came at the quarter days, and a great house lived from one to the next */if(T&&spend>0){const sv0=heads_(T,q=>ageYrs(q)<50&&!tills(q,T)),sv=sv0.length?sv0.slice(0,Math.max(1,Math.ceil(sv0.length*0.1))):heads_(T,()=>true).slice(0,6);payAmong(sv,spend*0.4,h,'household');
+      const inc=h._inc||0,net=(h.gold||0)-g0;h._inc=0;h._incA=h._incA==null?inc:h._incA*5/6+inc/6;h._netA=h._netA==null?net:h._netA*5/6+net/6; /* the month's revenue, and what it left after the hosts, garrisons and castellans, each reckoned over half a year */const G0=Math.max(0,h.gold||0),T=seatS,spend=clamp(h._netA+(G0-3*h._incA)/12,0,G0); /* the hall lives on what its months leave over, one with another, and draws down what lies beyond a quarter's revenue (or saves toward it): rents came at the quarter days, and a great house lived from one to the next (#23: it spent each good month's surplus and bore each bad month's loss from its chest, which ran the chest dry) */if(T&&spend>0){const sv0=heads_(T,q=>ageYrs(q)<50&&!tills(q,T)),sv=sv0.length?sv0.slice(0,Math.max(1,Math.ceil(sv0.length*0.1))):heads_(T,()=>true).slice(0,6);payAmong(sv,spend*0.4,h,'household');
         const Ld=pantry(T,h),hallN=6+sv.length;h._hallN=hallN;let paid=0;for(const[g,f,x]of[['grain',0.25,1.5],['wine',0.15,8],['cloth',0.1,4],['spice',0.05,20],['silk',0.05,20]]){const v=spend*f,p=price(T,g);if(!(p>0))continue;paid+=purchase(T,g,h,Math.min(v/p,hallN*NEED[g]*30*x));commodityCreditPurchase(T,h,g,purchase.got);} /* the hall eats and wears what its people need (the family, a servant from each household it keeps, guests at the board): cheap bread is not eaten twice over */
         const rest=spend*0.6-paid;if(rest>0){const c=craftWork(T,h,['tailor','brewer','cook','carpenter'],rest*0.5);payAmong(sv,rest-c,h,'household');}}} /* what the market could not sell him (or his own barns gave), he spends on more hands and the town's crafts */
     h.lastNet=h.gold-g0;h._g0=h.gold; // what the month actually brought in, less what went out
@@ -10930,6 +10933,8 @@ function addBuildingLive(s,settle=true){ // growth: empty houses fill first, the
 }
 
 /* SIMULATION — monthly land production and use; visual work is downstream. */
+function soilYield(s){const S=W.settlements,fm=S.reduce((t,o)=>t+(o.res?o.res.farm||0:0),0)/Math.max(1,S.length);return NEED.grain*1.35/(W.land.perHead*0.87)*((s.res.farm||fm)/Math.max(1e-6,fm));} // the soil's yield: ploughland enough for a people's bread gives their bread and a third again (the rents, the tithe, the town's market), more on rich ground, less on poor
+function landYield(s){let bearing=0;for(const f of s.furl||[])if(ARABLE.has(f.kind)&&f.lord===s.owner&&f.state===LS.TILLED)bearing+=f.area;s._bearA=bearing;s._gYield=soilYield(s);} // a place's corn before its first monthly reckoning of the land (#23: the old reckoning, s.res.farm a day, gave a new place a hundred times its corn)
 function tickLand(){ // monthly: the countryside follows the people
   if(!W.land||day()%30!==15)return;
 
@@ -10941,7 +10946,7 @@ function tickLand(){ // monthly: the countryside follows the people
     for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
     const tillHH=s.folk&&s.folk.length?heads_(s,h=>tills(h,s)).length:0;if(s._haHH==null&&tillHH>0)s._haHH=s.pop*landWt(s)*ph/tillHH; // what one household can plough, as the place first showed it
     const need=tillHH>0&&s._haHH?tillHH*s._haHH:s.pop*landWt(s)*ph; // the land is ploughed by the households that farm it: as many as farming pays enough to keep
-    s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;s._bearA=bearing;{const S=W.settlements,fm=S.reduce((t,o)=>t+(o.res?o.res.farm||0:0),0)/Math.max(1,S.length);s._gYield=NEED.grain*1.35/(ph*0.87)*((s.res.farm||fm)/Math.max(1e-6,fm));} // the soil's yield: ploughland enough for a people's bread gives their bread and a third again (the rents, the tithe, the town's market), more on rich ground, less on poor
+    s.landF=need>0?clamp(0.75+0.25*bearing/need,0.75,1):1;s._bearA=bearing;s._gYield=soilYield(s);
     const d=f=>dist2d(f.x,f.z,s.pos.x,s.pos.z);
     s._needLand=tilled<need; // (a place that needs no more land does not stand in a neighbour's way)
     if(tilled<need&&!s.siegeBy){ // take in more land: old pasture, open waste, scrub, then the wood; beyond the bounds if need be
@@ -11459,7 +11464,7 @@ function craftWork(s,h,trs,v){ // a household pays for work done by a trade of t
   if(spent>0){if(h.gn!==undefined)h.w=(h.w||0)-spent;else acct(h,-spent);}return spent;} // used up by the households that bought them
 function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=foodOnly?{...M,grain:0,fish:0}:{};
   if(foodOnly&&!(M.grain>0)&&!(M.fish>0))return;
-  const T=tilledOf(s,si),church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1,gp=price(s,'grain');
+  const T=tilledOf(s,si);if(heads.length&&T.some(f=>!f.ten))settleTenure(s,si,heads); /* a strip comes into crop already held: the lord keeps his home farm and lets the rest, as at the year's reckoning (#23: till then every new strip's corn was the lord's, and he paid its harvest wages) */const church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1,gp=price(s,'grain');
   let tA=0;for(const f of T)tA+=f.area;let wages=0;if(church)chOf(church);
   if(M.grain>0){if(!T.length)offer(s,'grain',lordAcct(s),M.grain);else for(const f of T){const q=M.grain*f.area/Math.max(1,tA),tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
     if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
@@ -11552,9 +11557,11 @@ function payCrafts(s,heads){ // the crafts and trades take in what the town's fa
   if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);}s._poolCash=0;}
 function reprice(s){ // each price rises when buyers wanted more than was sold, and moves against the stock for sale: above half a year of what is wanted it falls, below it rises
   const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{},E=s._dAvg||(s._dAvg={}),Y=s._dYr||(s._dYr={});
+  const L=s._lostM||{};s._lostM={};
   for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25;Y[g]=(Y[g]??d)*11/12+d/12; // what is usually wanted in a month; and the year round (the hay bought in autumn is the winter's)
     if(!(S[g]>0)&&!(a>0))continue; // nothing to be had at any price: no market, and no price found
-    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*6+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));}
+    const keep=L[g]>0?Math.min(6,(s.stores[g]||0)/L[g]):6; // half a year's stock is no glut, unless it rots sooner: then what it keeps for is the measure (#23: fish that rots in three weeks was weighed against six months' want, so its price held while nine-tenths of the catch rotted)
+    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));} // (the step is bounded, #23: a last resort for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month)
   s._dem={};s._sold={};}
 function tickMarket(){
   const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
@@ -11646,7 +11653,7 @@ function tickEconomy(){
   for(const s of W.settlements){
     storageInit(s);storageTick(s);storageInvestment(s);const phaseK=commodityActive(s)?s.storage:undefined;
     const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=['grain','fish','timber','ore'].map(g=>phaseK?phaseK.quantity(null,g,'unassigned'):s.stores[g]);
-    s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92*(s.landF??1))*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
+    if(W.land&&s._bearA==null)landYield(s);s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92*(s.landF??1))*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
     s.stores.timber+=s.res.forest*0.05*workF*(s._wcF??1)*(waterMill(s)&&AD()>=1250?1.25:1); // the woodcutters' axes; and a water-driven saw more
     s.stores.ore+=s.res.ore*0.05*workF;
@@ -11771,11 +11778,11 @@ function tickEconomy(){
   }
   for(const r of W.roads)r.vol=(r.vol||0)*0.995;
   // treasury upkeep drains — the predator on hoarding
-  for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+a.strength*(a.standing?0.02:0.05)*PL(); // the crown pays its own hosts by the head; the household costs less than a levy
-  for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+(s.garrison||0)*0.012*PL(); // the crown keeps its own garrisons; a lord keeps his
+  for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+hostPay(a)/30; // the crown pays its own hosts by the head, at a lord's rate (#23: it paid six times a lord's, by the day)
+  for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+watchPay(s)/30; // the crown keeps its own garrisons at a lord's rate (#23: it paid nearly twice); a lord keeps his
   if(day()%30===0){for(const a of W.armies)if(a._payOwed>0&&!a.gone){soldiersPay(a,a._payOwed,houseAcct(a.house));a._payOwed=0;}
     for(const s of W.settlements)if(s._watchOwed>0){const v=Math.min(s._watchOwed,Math.max(0,means(lordAcct(s))));payAmong(heads_(s,h=>ageYrs(h)<50),v,lordAcct(s),'garrisons');s._watchOwed-=v;}} // paid monthly, to the men's households
-  if(day()%30===0){const inc=W._crInc||0;W._crInc=0;W._crIncA=W._crIncA==null?inc:W._crIncA*5/6+inc/6;const T=Math.max(0,W.treasury),reserve=Math.max(3*W._crIncA,hostTarget(0)*25),v=clamp(Math.max(0,T-(W._crT0??T))+(T-reserve)/12,0,T);
+  if(day()%30===0){const inc=W._crInc||0,net=W.treasury-(W._crT0??W.treasury);W._crInc=0;W._crIncA=W._crIncA==null?inc:W._crIncA*5/6+inc/6;W._crNetA=W._crNetA==null?net:W._crNetA*5/6+net/6;const T=Math.max(0,W.treasury),reserve=Math.max(3*W._crIncA,hostTarget(0)*25),v=clamp(W._crNetA+(T-reserve)/12,0,T); /* (#23: on what its months leave over one with another, not each good month's surplus) */
     W.treasury-=v;W.capital._poolCash=(W.capital._poolCash||0)+v;W._crT0=W.treasury;} // the court lives on what the month left over, and spends what lies beyond a war chest and a quarter's revenue: with the capital's tailors, spicers, vintners and the rest
 }
 
