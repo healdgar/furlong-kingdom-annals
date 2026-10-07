@@ -10680,7 +10680,7 @@ function tickDomains(){ // monthly: owners, hosts, the frontier, and private war
     for(const s of own){if(s===seatS)continue;const v=(2*PL()+rentOf(s)*(0.25+0.65*far(s)))/stew,C=heads_(s,()=>true).sort((a,c)=>(c.w||0)-(a.w||0)); // the castellan's household, the steadiest in the place
       if(!C[0])continue;const pv=Math.min(v,Math.max(0,means(h)));castellans+=pv;transfer(h,C[0],pv,'castellans'); /* a fief no one lives in keeps no castellan (#23: his fee went out of the realm) */}
     for(const a of W.armies)if(a.house===hi&&!a.gone){const v=hostPay(a);hosts+=v;soldiersPay(a,v,h);}
-    for(const s of own){const v=Math.min(watchPay(s),Math.max(0,means(h)));gar+=v;payAmong(heads_(s,q=>ageYrs(q)<50),v,h,'garrisons');} // every garrison wants its pay: to the households its men come from
+    for(const s of own){const v=Math.min(watchPay(s),Math.max(0,means(h)));gar+=v;payWatch(s,heads_(s,q=>ageYrs(q)<50),v,h);} // every garrison wants its pay: to the households its men come from
     for(const s of own){const need=garrisonNeed(s)*1.1; // a garrison beyond what the town needs goes home unless the enemy is at the gate
       if(!s.siegeBy&&s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}}
     { // the lord's household: servants and retainers, his hall's bread and wine, cloth for the household, spice and silk for his table, bought at his seat; a great house spends as it holds
@@ -11790,7 +11790,7 @@ function tickEconomy(){
   for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+hostPay(a)/30; // the crown pays its own hosts by the head, at a lord's rate (#23: it paid six times a lord's, by the day)
   for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+watchPay(s)/30; // the crown keeps its own garrisons at a lord's rate (#23: it paid nearly twice); a lord keeps his
   if(day()%30===0){for(const a of W.armies)if(a._payOwed>0&&!a.gone){soldiersPay(a,a._payOwed,houseAcct(a.house));a._payOwed=0;}
-    for(const s of W.settlements)if(s._watchOwed>0){const v=Math.min(s._watchOwed,Math.max(0,means(lordAcct(s))));payAmong(heads_(s,h=>ageYrs(h)<50),v,lordAcct(s),'garrisons');s._watchOwed-=v;}} // paid monthly, to the men's households
+    for(const s of W.settlements)if(s._watchOwed>0){const v=Math.min(s._watchOwed,Math.max(0,means(lordAcct(s))));payWatch(s,heads_(s,h=>ageYrs(h)<50),v,lordAcct(s));s._watchOwed-=v;}} // paid monthly, to the men's households
   if(day()%30===0){const inc=W._crInc||0,net=W.treasury-(W._crT0??W.treasury);W._crInc=0;W._crIncA=W._crIncA==null?inc:W._crIncA*5/6+inc/6;W._crNetA=W._crNetA==null?net:W._crNetA*5/6+net/6;const T=Math.max(0,W.treasury),reserve=Math.max(3*W._crIncA,hostTarget(0)*25),v=clamp(W._crNetA+(T-reserve)/12,0,T); /* (#23: on what its months leave over one with another, not each good month's surplus) */
     W.treasury-=v;W.capital._poolCash=(W.capital._poolCash||0)+v;W._crT0=W.treasury;} // the court lives on what the month left over, and spends what lies beyond a war chest and a quarter's revenue: with the capital's tailors, spicers, vintners and the rest
 }
@@ -13756,6 +13756,11 @@ function hungryHands(s){ // the place's hungry heads who would take a day's hire
   if(!C||C.of!==H||C.meal!==HUNGRY_HANDS.meal||C.rev!==rev){const hh=[];for(const h of H){const p=h.head;if(p&&(!p._hh||(p._hh.hunger||0)>0))hh.push(h);}C={of:H,meal:HUNGRY_HANDS.meal,rev,hh};HUNGRY_HANDS.at.set(s,C);}
   const out=[];for(const h of C.hh){const p=h.head;if(p&&!p.dead&&!p.role&&!p.outlawCampId&&(householdAccount(p)?.hunger||0)>0)out.push(p);}return out;}
 function dayHands(s,heads,also){const out=[];for(const h of heads){if(h.dead||h.role||h.outlawCampId)continue;if((householdAccount(h)?.hunger||0)>0||also&&also(h))out.push(h);}return out;} // who comes out for a day's hire: the hungry of the place first of all (#23), and those whose living it is
+function payWatch(s,young,v,payer){ // a garrison's month: its posts are taken by the men whose own work earns them less than a watchman's wage, the poorest first; the rest of the posts are filled from the other young men of the place (#23: the pay was shared among every young man alike)
+  const men=Math.max(1,Math.round(s.garrison||0));if(!(v>0)||!young.length)return payAmong(young,v,payer,'garrisons');const wage=v/men,takers=[];
+  for(const h of young){const A=householdAccount(h),earn=(A&&A.assets._incY!=null?A.assets._incY:tradeIncome(s,h.tr))/12;if(earn<wage)takers.push([earn,h]);}
+  takers.sort((a,b)=>a[0]-b[0]);const T=takers.slice(0,men).map(x=>x[1]),rest=men-T.length;
+  return payAmong(T,wage*T.length,payer,'garrisons')+(rest>0?payAmong(young.filter(h=>!T.includes(h)),wage*rest,payer,'garrisons'):0);}
 function payAmong(list,v,payer,why){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid

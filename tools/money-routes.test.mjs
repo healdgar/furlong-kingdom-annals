@@ -13,7 +13,7 @@ import {inlineGameScript} from './simulation-boundary.mjs';
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||assert.fail('no function '+n);
 const between=(a,b,from=0)=>{const i=source.indexOf(a,from);assert.ok(i>=0,'missing '+a);const j=source.indexOf(b,i);assert.ok(j>i,'missing '+b);return source.slice(i,j+b.length);};
-const PAY=(source.match(/^const HUNGRY_HANDS=.*$/m)?.[0]||'')+'\n'+['book','dayHands','hungryHands','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
+const PAY=(source.match(/^const HUNGRY_HANDS=.*$/m)?.[0]||'')+'\n'+['book','dayHands','hungryHands','payWatch','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
 
 // a realm with `households` purses of `cash`, a crown holding `crown`, and (optionally) great houses with gold
 function world({cash=100,crown=1000,households=6,gold=[]}={}){
@@ -38,6 +38,10 @@ test('the hungry of the place are hired to dig and carry: a quarter of the works
   const r=world();trades(r,'mason','carter');r.eval('householdAccount(H[2]).hunger=0.5');
   r.eval("buildWorks(s,60,'crown','works')");
   near(r.W.treasury,940);near(r.H[0].w,133.75);near(r.H[1].w,111.25);near(r.H[2].w,115);near(r.H[3].w,100);r.audit();
+});
+test('a garrison is kept by the men its wage draws: the poorest first, from the same payer (#23)',()=>{
+  const r=world();r.eval("s.garrison=2;householdAccount(H[0]).assets._incY=1000;householdAccount(H[1]).assets._incY=10;householdAccount(H[2]).assets._incY=50;payWatch(s,[H[0],H[1],H[2]],24,'crown')");
+  near(r.W.treasury,976);near(r.H[0].w,100);near(r.H[1].w,112);near(r.H[2].w,112);r.audit();
 });
 test('a house that pays the builders is debited and books it; it cannot pay what it has not got',()=>{
   const r=world({gold:[500,10]});trades(r,'mason');
