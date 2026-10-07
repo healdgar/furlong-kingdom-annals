@@ -102,7 +102,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   S.inventory={enabled:${Number(A.inventory||0)>0},first:null,checks:0};const checkInventory=${inventoryAudit.toString()};
   const auditInventory=()=>{if(!S.inventory.enabled||S.inventory.first)return;const issue=checkInventory(W.settlements,S.inventory,BEASTS,typeof STORAGE_GOODS==='undefined'?{}:STORAGE_GOODS);if(issue)S.inventory.first={day:day(),...issue};};
   const gap=${moneyFlowGap.toString()};
-  const money=()=>{let bad=0;const coin=v=>{if(v!==undefined&&!Number.isFinite(v))bad++;return v??0;};const by={crown:coin(W.treasury),houses:0,folk:0,church:0,murage:0,pool:0,hoard:coin(W.dragon?.hoard),escrow:0},seen=new Set(),P=p=>{if(!p||seen.has(p)||p.merc)return;seen.add(p);if(!W.households||!p._hh)by.folk+=coin(p.w);};
+  const money=()=>{let bad=0;const coin=v=>{if(v!==undefined&&!Number.isFinite(v))bad++;return v??0;};const by={crown:coin(W.treasury),houses:0,folk:0,church:0,murage:0,pool:0,hoard:coin(W.dragon?.hoard),escrow:0},seen=new Set(),P=p=>{if(!p||p.merc||W.households&&p._hh)return;if(seen.has(p))return;seen.add(p);by.folk+=coin(p.w);}; // folk in a household are counted with it: skip them before the set
     if(W.households)for(const h of W.households.values())by.folk+=coin(h.assets.w);
     for(let i=1;i<W.houses.length;i++)if(W.houses[i])by.houses+=coin(W.houses[i].gold);
     for(const s of W.settlements){for(const p of s.folk||[])P(p);by.murage+=coin(s.murage);by.pool+=coin(s._poolCash);for(const v of Object.values(s._poolBy||{}))by.pool+=coin(v);}
