@@ -4827,7 +4827,7 @@ function treeHTML(x){let h='';const seen=new Set();
     if(L.claims.length)h+=`<div class="note">Then, by royal blood: ${L.claims.map(i=>esc(W.houses[i].name)).join(', ')}</div>`;}
   return h;}
 function chooseLandUse(s,si){ // once a year: strips go to corn or to hay as the market pays better for them, while the place grows less of that than it buys (a farmer looks at the price and at the stacks his neighbours have already made), the best-suited ground first
-  if(!s._gYield||!W.land)return;const pg=price(s,'grain'),ph=price(s,'hay'),gA0=s._gYield*0.87*360,E=s._dAvg||{},wetOf=f=>f.n?clamp(f.fl/f.n/0.35,0,1):0,hY=f=>12/1e4*(0.6+0.4*wetOf(f));
+  if(!s._gYield||!W.land||!(s._pxN>=12))return;const pg=s._pxY.grain,ph=s._pxY.hay; /* a farmer goes by a year of the prices the market found, not a first guess (#21: the opening prices, set from stocks the world began with, made hay dear and corn cheap, and half the ploughland went to meadow in the first year) */if(!(pg>0)||!(ph>0))return;const gA0=s._gYield*0.87*360,E=s._dAvg||{},wetOf=f=>f.n?clamp(f.fl/f.n/0.35,0,1):0,hY=f=>12/1e4*(0.6+0.4*wetOf(f));
   const T=(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&f.area);let haySup=0,grSup=0;for(const f of T){if(f.kind===LK.MEADOW)haySup+=hY(f)*f.area;else if(ARABLE.has(f.kind))grSup+=gA0*f.area;}
   const Y=s._dYr||E,hayDem=(Y.hay||0)*12,grDem=Math.max((Y.grain||0)*12,(s.pop||0)*NEED.grain*360); // a farmer lays down meadow for the year's want, not the autumn's; and the place wants at least its own people's bread, bought or grown (#21: corn wanted was only what the market sold, so families eating their own corn never called a meadow back to the plough)
   if(ph*12/1e4>pg*gA0)for(const f of T.filter(f=>ARABLE.has(f.kind)&&f.kind!==LK.DEMESNE).sort((a,b)=>wetOf(b)-wetOf(a))){if(haySup>=hayDem)break;const hA=hY(f)*ph,gA=gA0*pg;if((hA-gA)*3<=gA*0.25)continue; // hay pays, and the town is short of it
@@ -11558,11 +11558,11 @@ function payCrafts(s,heads){ // the crafts and trades take in what the town's fa
   if(cash>0){if(tw>0)for(const h of C)acct(h,cash*wt(h)/tw);else acct(lordAcct(s),cash);}s._poolCash=0;}
 function reprice(s){ // each price rises when buyers wanted more than was sold, and moves against the stock for sale: above half a year of what is wanted it falls, below it rises
   const P=s.px||(s.px={}),D=s._dem||{},S=s._sold||{},E=s._dAvg||(s._dAvg={}),Y=s._dYr||(s._dYr={});
-  const L=s._lostM||{};s._lostM={};
+  const L=s._lostM||{};s._lostM={};const PY=s._pxY||(s._pxY={});s._pxN=(s._pxN||0)+1;
   for(const g of GOODS){const p=price(s,g),d=D[g]||0,a=avail(s,g,p);E[g]=(E[g]??d)*0.75+d*0.25;Y[g]=(Y[g]??d)*11/12+d/12; // what is usually wanted in a month; and the year round (the hay bought in autumn is the winter's)
     if(!(S[g]>0)&&!(a>0))continue; // nothing to be had at any price: no market, and no price found
     const keep=L[g]>0?Math.min(6,(s.stores[g]||0)/L[g]):6; // half a year's stock is no glut, unless it rots sooner: then what it keeps for is the measure (#23: fish that rots in three weeks was weighed against six months' want, so its price held while nine-tenths of the catch rotted)
-    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));} // (the step is bounded, and the price kept above a thousandth of its base, #23: last resorts for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month, and a log needs a price above nothing)
+    const z=Math.log((d+0.01)/((S[g]||0)+0.01))+0.5*Math.log((E[g]*keep+0.01)/(a+0.01));P[g]=Math.max(GOODBASE[g]*1e-3,p*Math.exp(0.25*Math.tanh(z)));PY[g]=PY[g]==null?P[g]:PY[g]*11/12+P[g]/12;} // (the step is bounded, and the price kept above a thousandth of its base, #23: last resorts for a monthly search with no demand curve; unbounded, a good with no stock would multiply its price ninefold in a month, and a log needs a price above nothing)
   s._dem={};s._sold={};}
 function tickMarket(){
   const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
