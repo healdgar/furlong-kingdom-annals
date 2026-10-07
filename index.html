@@ -11462,7 +11462,11 @@ function marketFor(s,tr){ // the nearest place with this trade, and how much of 
 function craftWork(s,h,trs,v){ // a household pays for work done by a trade of the place; where the place has no one in it, the family does it themselves, and the want is noted
   if(h&&h.gn!==undefined)v=Math.min(v,Math.max(0,h.w||0));if(!(v>0)||!Number.isFinite(v)||!trs||!trs.length)return 0;let spent=0;const tc=tradeCounts(s),P=s._poolBy||(s._poolBy={}),U=s._unmet||(s._unmet={});
   for(const tr of trs){const part=v/trs.length;if(tc[tr]>0){P[tr]=(P[tr]||0)+part;spent+=part;continue;}
-    const mk=marketFor(s,tr);if(mk){const t=W.settlements[mk[0]],q=part*mk[1],P2=t._poolBy||(t._poolBy={});P2[tr]=(P2[tr]||0)+q;spent+=q;U[tr]=(U[tr]||0)+part-q;}else U[tr]=(U[tr]||0)+part;} // none here: bought at the market town that has the trade, the more of it the nearer it lies; the rest done at home
+    const mk=marketFor(s,tr);if(mk){const t=W.settlements[mk[0]],P2=t._poolBy||(t._poolBy={}),A=h&&h.gn!==undefined?householdAccount(h):null;U[tr]=(U[tr]||0)+part*(1-mk[1]); // none here: the want of the trade is noted, the more the farther the market
+      if(!A){P2[tr]=(P2[tr]||0)+part;spent+=part;continue;} // a steward rides to market for a lord, the crown or the church
+      const M=A._mw||(A._mw={}),key=mk[0]+':'+tr,trip=-Math.log(Math.max(1e-9,mk[1]))*Math.max(0,tradeIncome(s,h.tr))/300;M[key]=(M[key]||0)+part; // a family saves its errands for the market town until they are worth the days the walk there and back costs it (the reach of a day, 1200 m on the first map), at what a day of its work earns
+      if(M[key]>=trip){const pay=Math.min(M[key],Math.max(0,(h.w||0)-spent));if(pay>0){P2[tr]=(P2[tr]||0)+pay;spent+=pay;M[key]-=pay;}if(!(M[key]>1e-9))delete M[key];}}
+    else U[tr]=(U[tr]||0)+part;} // none within reach: done at home (#23: before, a family far from the town bought only a fraction of its wants there and kept the coin, so it pooled in the villages)
   if(spent>0){if(h.gn!==undefined)h.w=(h.w||0)-spent;else acct(h,-spent);}return spent;} // used up by the households that bought them
 function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=foodOnly?{...M,grain:0,fish:0}:{};
   if(foodOnly&&!(M.grain>0)&&!(M.fish>0))return;

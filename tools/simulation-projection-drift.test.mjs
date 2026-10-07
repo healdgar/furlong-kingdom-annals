@@ -44,6 +44,7 @@ const WORKER_ONLY={
   dragon:{target:'the town it means to raid'},
   project:{payer:'an account, for storage works',reason:'a sentence when set'},
   road:{open:'the untrimmed open-country path; path and drawn cross'},
+  banditCamp:{king:'a name when set'},
 };
 
 const globals={FURLONG_HEADLESS:true,FURLONG_OPTIONS:{hash:HASH},addEventListener(){},removeEventListener(){},requestAnimationFrame(){},setTimeout,clearTimeout,
