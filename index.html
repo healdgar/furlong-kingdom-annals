@@ -12471,9 +12471,20 @@ function armyShore(a,P){ // a host boards and lands at the water's edge, not out
 const ARMY_NO_WAY_DAYS=90; // a season: then a host looks again at a place it found no way to
 function armyNoWay(a,si){ // did this host find no way to that place lately? Forgotten when a season has passed, a road is built or rebuilt away (the realm's roads are counted), the place changes hands or its raft is made ready
   const L=a._noWay;if(!L)return false;const now=day(),roads=(W.roads||[]).length,raft=a.raft?a.raft.readyDay:-1;
-  for(let i=L.length-1;i>=0;i--){const e=L[i],s=W.settlements[e.si];if(now>=e.until||e.roads!==roads||!s||e.owner!==s.owner||e.raft!==raft||raft>now)L.splice(i,1);}
+  for(let i=L.length-1;i>=0;i--){const e=L[i],s=W.settlements[e.si];if(now>=e.until||e.roads!==roads||!s||e.owner!==s.owner||e.raft!==raft)L.splice(i,1);}
   if(!L.length){a._noWay=null;return false;}for(const e of L)if(e.si===si)return true;return false;}
-function armyNoWayNote(a,si){const s=W.settlements[si];(a._noWay||(a._noWay=[])).push({si,until:day()+ARMY_NO_WAY_DAYS,roads:(W.roads||[]).length,owner:s?s.owner:-1,raft:a.raft?a.raft.readyDay:-1});}
+function armyNoWayNote(a,si,until=day()+ARMY_NO_WAY_DAYS){const s=W.settlements[si];(a._noWay||(a._noWay=[])).push({si,until,roads:(W.roads||[]).length,owner:s?s.owner:-1,raft:a.raft?a.raft.readyDay:-1});}
+function armyUpkeep(a){return a.strength*((a.standing?0.1:0.25)*PL()/30+0.01*GOODBASE.grain);} // a host's day: its pay (tickDomains, by the month) and its bread (armyLand: a hundredth of a measure a man)
+function armyRaftFor(a,si){ // a host whose march on a place is barred by a river close by lashes a raft there, if the place is worth the timber and the days (buildArmyRaft: bought at its supply town)
+  const t=W.settlements[si],s=W.settlements[a.at],r=t&&route(a.at,si,true);if(!r||!s||s.owner!==a.house||a.raftWork&&a.raftWork.si!==si)return false;
+  const from=armySimPos(a),goal=armyDestination(a,t,from);if(!goal)return false;
+  const P=r.poly.length?(a.field?armyRoadDeparture(from,r.poly):[from,...r.poly.slice(1)]):[from,goal];if(!a.field||r.poly.length)P[P.length-1]=goal; // the way marchArmy would take
+  let x=null,z=null,L=0;for(let k=1;k<P.length&&x==null&&L<=120;k++){const p=P[k-1],q=P[k];if(p.sea||q.sea)break;const n=Math.max(1,Math.ceil(dist2d(p.x,p.z,q.x,q.z)));
+    for(let i=1;i<=n;i++){const X=lerp(p.x,q.x,i/n),Z=lerp(p.z,q.z,i/n),o=armyObstacle(a,X,Z);if(o){if(o==='river'&&dist2d(from.x,from.z,X,Z)<=120){x=X;z=Z;}L=1e9;break;}}L+=dist2d(p.x,p.z,q.x,q.z);}
+  const river=x!=null&&riverAt(x,z,0);if(!river)return false;
+  const need=Math.ceil(8+river.hw*2+a.strength*0.08+(a.horses||0)*0.5),v=armyCampaignValue(a,t,r);
+  if(v==null||v<=need*price(s,'timber')+Math.ceil(need/12)*armyUpkeep(a))return false; // not worth the timber and the days of lashing it
+  const hold=a.hold,ok=buildArmyRaft(a,x,z);a.hold=hold;if(a.raftWork)a.raftWork.si=si;return ok;} // the lords' captains build for their own campaign: no order to wait on
 function armyCampaignValue(a,s,r){ // what marching on a place is worth to a host: the arrival's own reckoning of what it would win there (the siege likely to take it, or the raid), less the host's pay and bread for the march and the siege; null if its wagons would be empty before it came there
   const rebel=inRebellion(a),winter=seasonIdx()===3,p=a._spos||armySimPos(a),t=W.settlements[a.at];
   const days=((r.tlen||r.len)+(a.field&&t?dist2d(p.x,p.z,t.pos.x,t.pos.z):0))/(a.field?FIELD_MPD:MARCH_MPD); // as marchArmy goes: across country from a camp, else by road
@@ -12481,7 +12492,7 @@ function armyCampaignValue(a,s,r){ // what marching on a place is worth to a hos
   const defend=defenceOf(s),A=a.strength*(a.morale/70),pTake=A/(A+defend*1.2),worth=pTake*townWorth(s)*0.3,raidV=s.pop*2+(s.stores.grain||0)*GOODBASE.grain*0.3,raid=!rebel&&worth<raidV;
   const manned=clamp(((s.garrison||0)+(s.militia||0)*0.5)/30,0,1),siege=raid?25:(rebel?4:12)+Math.round((s.garrison||0)/6+s.pop/60+manned*(s.walls*22-(winter?0:6)+(s.natDef||0)*40+(s.bastions?35:0)+(s.citadel?25:0)));
   const gain=raid?(s.raidedUntil>day()?0:raidV):worth; // a raid on fields already burned takes nothing until the next harvest
-  return gain-(days+siege)*a.strength*((a.standing?0.1:0.25)*PL()/30+0.01*GOODBASE.grain);} // its pay (tickDomains, by the month) and its bread (armyLand: a hundredth of a measure a man a day)
+  return gain-(days+siege)*armyUpkeep(a);}
 function armyObjective(a){ // the enemy place most worth a host's march, among those a road or the sea leads to from where it is reckoned; -1 if none is worth it
   let best=-1,bv=0;const S=W.settlements;
   for(let si=0;si<S.length;si++){const s=S[si];if(si===a.at||!hostileTo(a,s)||armyNoWay(a,si))continue;const r=route(a.at,si,true);if(!r)continue;const v=armyCampaignValue(a,s,r);if(v!=null&&v>bv){bv=v;best=si;}}
@@ -12593,7 +12604,7 @@ function tickMilitary(){
         for(const b of W.armies){if(!atWar(a.house,b.house)||b.gone||b.state==='march'||b.state==='rout'||(b.state==='idle'&&b.id<a.id))continue;const d=dist2d(a._spos.x,a._spos.z,b._spos.x,b._spos.z);if(d<fd){fd=d;foe=b;}} // ride only at a host that stands still, and of two idle hosts only one rides (they used to swap towns forever)
         if(foe){const t=nearestSettlementIdx(foe._spos.x,foe._spos.z);if(t!==a.at&&!armyNoWay(a,t))tgt=t;}
       }
-      if(tgt>=0){if(marchArmy(a,tgt)===false)armyNoWayNote(a,tgt);} // no way there: tomorrow it weighs the next place, and this one again once a crossing changes or a season has passed
+      if(tgt>=0){if(marchArmy(a,tgt)===false){if(armyRaftFor(a,tgt))armyNoWayNote(a,tgt,a.raft.readyDay);else armyNoWayNote(a,tgt);}} // no way there: a raft if a river close by bars it and the place is worth the timber (it looks again when the raft is ready); else tomorrow it weighs the next place, and this one again once a crossing changes or a season has passed
       else{const h=W.settlements[a.home];if(a.field&&h&&h.owner===a.house&&dist2d(a._spos.x,a._spos.z,h.pos.x,h.pos.z)>=60)goHome(a,'no foe it can reach is worth the march');} // nothing within its reach: it does not sit in the field for months, but goes home to its granary
     }
     if(a.state==='march'&&now>=a.arriveDay&&a.fieldTo){a.field=a.fieldTo;a.fieldTo=null;armySetSettlement(a,nearestSettlementIdx(a.field.x,a.field.z));a.state='idle';a.hold=true;continue;} // camps where it was sent, and waits
