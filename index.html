@@ -13609,8 +13609,9 @@ function PL(){return (W&&W._pl)||1;} // the price level: labour and stuff cost w
 const tilledOf=(s,si)=>(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&ARABLE.has(f.kind));
 const tills=(h,s)=>!h.outlawCampId&&(TILLERS.has(h.tr)||s.kind==='village'&&!TRADE_ARCH[h.tr]&&h.tr!=='merchant');
 function inheritanceCustom(s){return {land:PARTIBLE.has(s&&s.cult)?'partible':'eldest',movables:s&&s.cult==='anglo'&&AD()>=1180?'thirds':'kin',dower:1/3,heriot:true,naturalLand:s&&s.cult==='celtic',...s&&s.custom};}
-function estateChildren(p){const all=new Set(p.kids||[]);for(const h of nonemptyHouseholds())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
-  const living=[];const visit=(q,seen)=>{if(seen.has(q))return;seen.add(q);if(!q.dead){living.push(q);return;}for(const r of q.kids||[])visit(r,seen);};for(const q of all)visit(q,new Set());return living.sort((a,b)=>a.b-b.b||a.id-b.id);}
+let ESTATE_CHILDREN=null; // while one death's heirs are reckoned (inherit), nothing moves: each person's living issue is found once
+function estateChildren(p){const M=typeof ESTATE_CHILDREN!=='undefined'?ESTATE_CHILDREN:null,c=M&&M.get(p);if(c)return c;const all=new Set(p.kids||[]);for(const h of nonemptyHouseholds())for(const q of h.members)if(q.pa===p||q.ma===p)all.add(q);
+  const living=[];const visit=(q,seen)=>{if(seen.has(q))return;seen.add(q);if(!q.dead){living.push(q);return;}for(const r of q.kids||[])visit(r,seen);};for(const q of all)visit(q,new Set());living.sort((a,b)=>a.b-b.b||a.id-b.id);if(M)M.set(p,living);return living;}
 function estateKin(p){const children=estateChildren(p);if(children.length)return children;
   const parents=[p.ma,p.pa].filter(q=>q&&!q.dead&&!q._dying);if(parents.length)return parents;
   const siblings=new Set();for(const par of [p.ma,p.pa])if(par)for(const q of par.kids||[])if(q!==p&&!q.dead&&!q._dying)siblings.add(q);return [...siblings].sort((a,b)=>a.b-b.b||a.id-b.id);}
@@ -13776,7 +13777,7 @@ function soldiersPay(a,v,payer){ // a host's pay: to the households its men come
   if(!(v>0))return;if(payer){const can=Math.max(0,means(payer));if(can<v){a._arrears=(a._arrears||0)+(v-can);v=can;}else if(a._arrears>0){const back=Math.min(a._arrears,can-v);a._arrears-=back;v+=back;}if(!(v>0))return;}rollLiving(a);const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts');}}
 function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount(p);if(!h)return;const s=W.settlements[p.si]||W.settlements.find(x=>h.population.has(x))||W.capital;
-  const isHead=h.head===p,servile=(s.furl||[]).some(f=>f.ten==='villein'&&(f.wk===p.id||f.own===p.id)),survivors=[...h.members].filter(q=>q!==p&&!q.dead),widow=p.sp&&!p.sp.dead?p.sp:null,heirs=landHeirs(p,s),shares=isHead?estateShares(p,s):[];
+  const isHead=h.head===p,servile=(s.furl||[]).some(f=>f.ten==='villein'&&(f.wk===p.id||f.own===p.id)),survivors=[...h.members].filter(q=>q!==p&&!q.dead),widow=p.sp&&!p.sp.dead?p.sp:null;let heirs,shares;ESTATE_CHILDREN=new Map();try{heirs=landHeirs(p,s);shares=isHead?estateShares(p,s):[];}finally{ESTATE_CHILDREN=null;}
   // Land, occupation and movables are different rights. A minor's holding is not forfeited for want of an adult.
   for(const t of W.settlements){for(const f of t.furl||[]){if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;
       if(widow&&heir&&heir!==widow){f.dower=widow.id;f.dowerFraction=inheritanceCustom(t).dower;}writeFurlong(f);}if(f.wk===p.id){const to=survivors.find(q=>q.si===W.settlements.indexOf(t)&&ageYrs(q)>=14)||heirs.find(q=>q.si===W.settlements.indexOf(t));f.wk=to?to.id:-1;writeFurlong(f);}} // the strip's new holder is drawn so
