@@ -16,7 +16,7 @@ export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,p
     day:()=>1,year:()=>0,AD:()=>850,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),ageYrs:p=>p.age??30,BEASTS:['sheep','cattle','horses','swine'],
     price:(x,g)=>x.px[g]??1,tilledOf:()=>[],parishOf:()=>null,payAmong:()=>assert.fail('fixture has no demesne wages'),
     tradeCounts:()=>Object.fromEntries(H.map(h=>[h.tr,1])),marketFor:()=>null,book:()=>{},lordTake:()=>{},folkIndex:()=>new Map(H.map(h=>[h.id,h])),carryingCap:()=>1000,
-    sheltered:()=>0,emit:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
+    sheltered:()=>0,emit:()=>{},writeFurlong:()=>{},vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
   if(bootstrap)vm.runInContext(bootstrap,C);
   vm.runInContext(`globalThis.FURLONG_COMMODITY_BALANCES=${!!commodity};`,C);
   const program=constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions;
