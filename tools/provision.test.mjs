@@ -43,6 +43,12 @@ test('a lender advances no more than the household could repay',()=>{
   const r=realm({cash:0,crown:100});r.eval('herdOf(H[0],s).cattle=10;H[0]._debt=creditOf(s,H[0])+(H[0]._debt||0)');const debt=r.H[0]._debt;assert.ok(debt>0);near(r.eval('creditOf(s,H[0])'),0);r.run();
   near(r.s.hunger,1);near(r.H[0]._debt,debt);near(r.coins(),100);
 });
+test('a lender judges by what the household itself earned last year, and a loan is no earning (#23)',()=>{
+  const r=realm({cash:0,crown:100});r.eval('tradeIncome=()=>1e6;householdAccount(H[0]).assets._incY=0');
+  near(r.eval('creditOf(s,H[0])'),0); // a rich trade on average, but this household earned nothing: no credit
+  r.eval('householdAccount(H[0]).assets._incY=1e6');assert.ok(r.eval('creditOf(s,H[0])')>0);
+  r.run();assert.ok(r.H[0]._debt>0,'it borrows');near(r.eval('householdAccount(H[0]).assets._inc||0'),0);
+});
 test('another farmer retains reserved grain; buyers can take fish instead',()=>{
   const r=realm({grain:100});r.eval("s.mkt.grain.clear();offer(s,'grain',{gn:'seller',w:0,_keep:100},100)");r.run();
   near(r.s.hunger,0);near(r.s.stores.grain,100);near(r.s.stores.fish,18.5);
