@@ -23,7 +23,7 @@ Status: **open**, **investigating**, **in progress**, **queued** (waiting on ano
 
 | # | Issue | Status | Notes |
 |---|---|---|---|
-| 15 | A game day costs ~50–150 ms late in a game; Reel reaches ~27 days/s, not 360 | in progress | Exact speed-ups recovered after the crash (ledger paths, settleTracks, storage routes); untested. Biggest late cost: armies retry impossible campaign routes daily (`tickMilitary` 45–58% of a year-3 day). Fix under way: an exact route cache, "no route" included, cleared when roads, bridges, walls, access, buildings or endpoints change. Cost also grows with the number of places (hamlets multiply: #22). |
+| 15 | A game day costs ~50–150 ms late in a game; Reel reaches ~27 days/s, not 360 | in progress | Cost grows with the number of places (hamlets multiply: #22). Exact speed-ups (ledger paths, settleTracks, storage routes) and remembered army routes: an army no longer searches the same blocked route each day, which halves the instructions of a war-time day after year 3 (`tickMilitary` 45–58% of such a day before; PERFORMANCE.md, remembered army routes). Identity-proven against main. |
 | 16 | Fastest reaches 45% of its 30 days/s | partly fixed | Settlement records now go only when they change: Fastest 13.9 → 25.9 days/s (worker build, seed 1001, load ~5). Reel years stays at ~26–28 days/s of a nominal 360; that is the cost of a simulated day (#15), not the packets. |
 
 ## Simulation and calibration

@@ -82,6 +82,48 @@ residuals, and complete journal settlement. This does not reproduce the live
 year-five army state or establish later-year throughput. All 39 focused army,
 campaign, routing and old-search guard tests pass.
 
+## Remembered army routes, 6 October 2026
+
+On seed 2002 (land), days 1000–1200, `tickMilitary` took 45–58% of the daily tick before this change. A host
+whose campaign route is impassable asks for it again every day: the 30-day `holdUntil` guards only the hungry
+fall-back, not the campaign objective or a queued `nextOrder`. Each failed `armyLandPath` searched up to three
+detour boxes of up to 30,000 lattice points.
+
+`armyLandPath` now remembers, for each host, every answer whose search needed a detour box
+(`armyRouteRecall`). With the answer it keeps an exact copy of everything that search could read
+(`armyRouteRead`): the host's fording depth, road-only crossing and raft (with whether it is ready that day);
+the terrain and domain cells under each span it tested and each box it searched, with two cells (at least
+54 m) to spare; the river lines and road bounds and lines there; and, for every place whose domain those cells
+lie in, its lake, buildings, walls (with breaches, building progress and kinds), gates, motte and ring ditch,
+and whether its gates stand open to this host. The answer is given again only while that copy equals the
+world value for value. Any difference searches afresh, so a bridge built, a breach, a peace or a finished raft
+is seen the same day. A search stores the bounds of the roads it looks at (`onRoad`, up to `onRoad.reach`);
+a recall stores them on the same roads. Walkers (`a.settlement` or a shared `_em`) are not remembered.
+
+The memory is derived state in the module (`ARMY_ROUTES`, a WeakMap keyed by host), outside `W`. It is never
+saved, sent to the screen or captured by the history graph, and an empty memory (a loaded game) finds the
+same answers. `ARMY_ROUTES.verify` searches afresh at every recall and throws if the path, the search, what
+it read or the roads' bounds differ. `tools/army-route-memory.test.mjs` runs the game's own search and memory
+against fresh searches, through random changes and through one targeted change of each kind the search reads.
+It also pins the source of every function the copy mirrors, so changing one of them fails until
+`armyRouteRead` is reviewed. Deliberately weakened copies (one input left out at a time) fail that file,
+except a narrower margin, which only the long verify runs exercise.
+
+Evidence (model-only runner, instructions retired per simulated day over days 1000–1200; one-minute load
+beside each, mostly from work outside Furlong):
+
+| World | Memory off | Memory on | `tickMilitary` CPU ms/day |
+|---|---|---|---|
+| seed 2002, land | 1,087 M (load 54–63) | 574 M (load 20–24), −47% | 26.1 → 1.1 |
+| seed 287970763 / fate 370450810, sea | 1,915 M (load 8–9) | 901 M (load 58–101), −53% | 65.9 → 14.4 |
+
+The world graph, world-only graph, RNG streams and the full capture are equal with the memory off, on and in
+verify mode at days 1000, 1100 and 1200 on both worlds. They also equal main at days 360 and 720 (seeds 1001
+sea and 2002 land) and over the 150-day proof. The verify runs made 332 and 837 recalls without a difference.
+The largest copy held 18,937 values. On seed 287970763 after day 1000, 19 of 411 fresh searches needed a
+detour box (6.5 ms a day); 4 remembered answers were searched afresh because roads were added, and stayed
+blocked.
+
 ## Algorithms
 
 - Settlement population totals are computed lazily from the household ledger. Ledger set/delete/clear
