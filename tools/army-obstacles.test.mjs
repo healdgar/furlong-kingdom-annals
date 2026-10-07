@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath'];
+const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath','armyShore'];
 const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
 function fixture(){const W={settlements:[],rivHash:{},roads:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
  const c=vm.createContext({W,G,ARMY_ROUTES:{on:false},SIZE:2000,CELL:10,SEA_SURFACE:.5, // stub ground: the route memory (army-route-memory.test) needs the real raster
@@ -50,3 +50,11 @@ test('a paid road bridge carries a host over the fording fringe of a broad river
  assert.equal(vm.runInContext('armyBridgeAt(10.2,0)',c),false,'with no clearance asked, the bridge test is the water itself (walkers, the old rule)');
  assert.equal(vm.runInContext('armySegmentClear(a,{x:-14,z:0},{x:14,z:0})',c),true,'the march over the bridge, probed every metre');
  c.a.waterClearance=3;assert.equal(vm.runInContext('armyObstacle(a,12.5,0)',c),null,'a host that keeps further from the water: its bridge reaches as far');});
+test('a host takes ship at the water\'s edge and lands at the far shore, not out where the boat lies',()=>{const{c}=fixture();c.a={house:0};
+ c.hAt=(x,z)=>x<0||x>=250?10:0; // land, a strait from x 0 to 250, land
+ c.P=[{x:-50,z:0},{x:30,z:0,sea:true},{x:200,z:0,sea:true},{x:280,z:0}];
+ assert.equal(vm.runInContext('armyLandPath(a,P)',c),null,'from the town straight to the mooring: into the sea');
+ const Q=vm.runInContext('armyShore(a,P)',c);assert.equal(Q.length,6,'a shore point beside each landing');
+ assert.deepEqual([Q[1].x,Q[1].sea,Q[4].x,Q[4].sea],[-1,true,250,true],'on the last dry ground and the first, counted aboard from there');
+ c.Q=Q;const path=vm.runInContext('armyLandPath(a,Q)',c);assert.ok(path,'the march by ship is open');
+ assert.deepEqual(vm.runInContext('armyShore(a,[{x:-50,z:0},{x:-10,z:0}])',c).length,2,'a route on land is left as it is');});

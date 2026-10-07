@@ -116,7 +116,7 @@ test('field-origin retreat follows the road route and retains a sea crossing wit
   const f=retreatRealm({routeResult:{poly:[{x:100,z:0},{x:70,z:0},{x:70,z:20,sea:true},{x:0,z:0}],len:140,time:140,sea:true,seaLen:500},roadPassable:true});
   f.army.field={x:85,z:8};f.army.strength=100;
   f.setPosition({x:85,z:8});f.setRoute({poly:[{x:100,z:0},{x:70,z:0},{x:70,z:20,sea:true},{x:0,z:0}],len:140,time:140,sea:true,seaLen:500});
-  f.c.armyLandPath=(a,p)=>{f.calls.paths.push(p.map(q=>({...q})));return p;};
+  f.c.armyLandPath=(a,p)=>{f.calls.paths.push(p.map(q=>({...q})));return p;};f.c.armyShore=(a,p)=>p; // the shore points are army-obstacles.test's
   vm.runInContext(sourceFunction('armyMarchPath'),f.c);
   f.c.a=f.army;
   assert.equal(vm.runInContext('marchArmy(a,0)',f.c),true);

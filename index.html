@@ -12449,11 +12449,21 @@ function armyRoadDeparture(from,P){
   for(let k=1;k<P.length;k++){const p=P[k-1],q=P[k];if(p.sea||q.sea)break;const dx=q.x-p.x,dz=q.z-p.z,L=dx*dx+dz*dz||1,t=clamp(((from.x-p.x)*dx+(from.z-p.z)*dz)/L,0,1),x=p.x+dx*t,z=p.z+dz*t,d=dist2d(from.x,from.z,x,z);if(d<best){best=d;point={x,z};next=k;}}
   return best<0.01?[from,...P.slice(next)]:[from,point,...P.slice(next)];
 }
+function armyShore(a,P){ // a host boards and lands at the water's edge, not out where the boat lies: a shore point beside each landing, on ground it can stand on
+  const out=[P[0]];
+  for(let k=1;k<P.length;k++){const p=P[k-1],q=P[k];
+    if(!p.sea!==!q.sea){const L=p.sea?q:p,S=p.sea?p:q,n=Math.max(1,Math.ceil(dist2d(L.x,L.z,S.x,S.z)));let s=null; // L on land, S afloat
+      for(let t=n;t>=0&&!s;t--){const x=lerp(L.x,S.x,t/n),z=lerp(L.z,S.z,t/n);if(hAt(x,z)<=SEA_SURFACE)continue; // the water's edge, seen from the boat
+        for(let u=t;u>=0&&u>=t-60;u--){const X=lerp(L.x,S.x,u/n),Z=lerp(L.z,S.z,u/n);if(!armyObstacle(a,X,Z)){s={x:X,z:Z,sea:true};break;}} // the first ground clear to stand on, within 60 m
+        if(!s)s={x,z,sea:true};}
+      if(s)out.push(s);} // aboard from here to the boat (or ashore from the boat to here)
+    out.push(q);}
+  return out;}
 function marchArmy(a,toS){
   const t=W.settlements[toS];if(!t)return armyRouteBlocked(a);const from=armySimPos(a),goal=armyDestination(a,t,from);if(!goal)return armyRouteBlocked(a);
   // A blocked order leaves a field position; it must not discard roads and
   // bridges on the next retreat. Validate the connection from that position.
-  let r=route(a.at,toS,true),poly=null,fieldRoute=false;if(r){r={...r,poly:r.poly.length?r.poly.slice():[from,goal]};if(a.field)r.poly=armyRoadDeparture(from,r.poly);else r.poly[0]=from;r.poly[r.poly.length-1]=goal;poly=armyLandPath(a,r.poly);}
+  let r=route(a.at,toS,true),poly=null,fieldRoute=false;if(r){r={...r,poly:r.poly.length?r.poly.slice():[from,goal]};if(a.field)r.poly=armyRoadDeparture(from,r.poly);else r.poly[0]=from;r.poly[r.poly.length-1]=goal;if(r.sea)r.poly=armyShore(a,r.poly);poly=armyLandPath(a,r.poly);}
   // Roads are preferred, not compulsory. An army may cross passable open
   // country when no usable road route exists; rivers and obstacles still apply.
   if(!poly){fieldRoute=true;poly=armyLandPath(a,[from,goal]);r={poly};}if(!poly)return armyRouteBlocked(a);r={...r,poly};
