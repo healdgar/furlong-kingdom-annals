@@ -26,7 +26,7 @@
 
 ## Tools
 - Tests: `node --test --test-concurrency=8 tools/*.test.mjs`.
-- Multi-world soak (money, famine, population, per-tick cost, profiles): `tools/soak.mjs`. Game speeds in the real worker build: `tools/speed-check.mjs`. Goods conservation: `tools/storage-check.mjs`. Worker/reference parity and save/replay: `tools/simulation-worker-check.mjs`. Drawn play: `tools/simulation-worker-play-check.mjs`. Replay and timing: `tools/replay-check.mjs`.
+- Multi-world soak (money, famine, population, per-tick cost): `tools/soak.mjs`. Graphics-free model runs (windows, digests, instruction counts): `tools/model-run.cjs`. Both score CPU by function and part of the day by default (`tools/cpu-score.mjs`; `--profile 0` turns it off) and record into a hot list; pass `--hotlist /Users/alexwall/dev/.furlong-work/hotlist.json` so every run ranks in one list. Performance work takes the top of that list first. A soak carries on past a fault in one part of the day (`SIM_FAULTS.carry`) and names each world's first fault, after which the world is no baseline. Game speeds in the real worker build: `tools/speed-check.mjs`. Goods conservation: `tools/storage-check.mjs`. Worker/reference parity and save/replay: `tools/simulation-worker-check.mjs`. Drawn play: `tools/simulation-worker-play-check.mjs`. Replay and timing: `tools/replay-check.mjs`.
 - Measurement output goes to `tools/soak-results/` (ignored) or a temporary directory, never the tracked tree.
 - Read `index.html` with python3 or `rg -n` with bounded output; plain `grep` (ugrep here) fails on its long lines.
 
