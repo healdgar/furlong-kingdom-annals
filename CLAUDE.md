@@ -14,6 +14,7 @@
 
 ## Rules for simulation changes
 - Things happen because a quantity (surplus, rent against cost, threat against value) makes them worth doing, not because a number crossed a hand-picked line.
+- Nothing fake: no invented payments, make-work, placeholder incomes or stand-in payers. Every coin, job and decision needs a real actor with a reason that exists in the state; where a real income or employer is missing because an institution isn't modelled yet (abbeys, courts, credit…), build that institution from `docs/ISSUES.md` rather than faking it.
 - No price fixing as a remedy: don't clamp, floor, cap or pin a price, rate or purse to get a better outcome. Where such pins exist, remove them and fix the mechanism that makes the bad outcome, so the value follows from a quantity (cost, supply, demand, yield, what a buyer can pay). Exceptions, each named in a comment: a starting value the market then moves; a price fixed in the world itself (a decree, an assize, a custom the player or a lord sets); and, rarely, a last resort where no mechanism works, with the reason and the issue number.
 - Every coin moves from a named payer to a named recipient through `flow`/`transfer`/`acct`; `tools/soak.mjs --audit` finds the exceptions.
 - A save is the seed plus a journal of commands, replayed day by day. Nothing the simulation decides may depend on wall-clock time, frame timing, event-loop yields, rendering or UI reads; keep `Math.random`, `Date.now` and `performance.now` out of simulation state.
