@@ -1713,6 +1713,12 @@ function makeHash(cs){ // tiny spatial hash for footprints and street segments
   h.near.cell=cs; // on the method, not the record: the history graph keeps a function only by its source
   return h;
 }
+// The cells a makeHash holds, as bounds kept beside it (a hash only ever gains cells, and every cell it holds lists
+// something): a query whose cells all lie outside them lists nothing, so it need not be asked. Derived, outside the world.
+const HASH_BOUNDS=new WeakMap();
+function hashMisses(h,x,z,r){const m=h.historyCells,cs=h.near?.cell;if(!m||!cs)return false;let B=HASH_BOUNDS.get(h);
+  if(!B||B.n!==m.size){B={n:m.size,i0:Infinity,i1:-Infinity,j0:Infinity,j1:-Infinity};for(const k of m.keys()){const i=Math.round(k/100003),j=k-i*100003;if(i<B.i0)B.i0=i;if(i>B.i1)B.i1=i;if(j<B.j0)B.j0=j;if(j>B.j1)B.j1=j;}HASH_BOUNDS.set(h,B);}
+  return Math.floor((x+r)/cs)<B.i0||Math.floor((x-r)/cs)>B.i1||Math.floor((z+r)/cs)<B.j0||Math.floor((z-r)/cs)>B.j1;}
 function groundBuilding(b){ // floor on the highest corner, foundations down to the lowest
   const s=b.s,inBailey=s?.bailey&&dist2d(b.x,b.z,s.bailey.x,s.bailey.z)<=(s.bailey.r??30)+8,c=s?.motte&&dist2d(b.x,b.z,s.motte.x,s.motte.z)<s.motte.r?s.motte:b.hill&&s?.hillCastle?.timber?s.hillCastle:b.bailey||inBailey?s?.bailey:null;
   const surface=(x,z)=>c&&typeof fortSurface==='function'?fortSurface(s,c,x,z):hAt(x,z);
@@ -13225,7 +13231,7 @@ function settleParcels(targets=null){
     // settlements whose footprints or streets can reach a target's neighbours: neighbours lie within a bisector's
     // reach of the target, and their own candidates within one more (each widened by a cell)
     for(const m of targetList)if(m&&m.x!==undefined){const reach=2*((58+PARCEL_RMAX)*1.5+PARCEL_CELL)+Math.max(m._r,oldR.get(m));
-      for(const o of W.settlements||[])if(!setts.has(o)&&o._lay&&(dist2d(m.x,m.z,o.pos.x,o.pos.z)<(o.radius||90)+reach||o._lay.placed.near(m.x,m.z,reach).some(live)||o._lay.segH.near(m.x,m.z,reach).length))setts.add(o);}
+      for(const o of W.settlements||[])if(!setts.has(o)&&o._lay&&(dist2d(m.x,m.z,o.pos.x,o.pos.z)<(o.radius||90)+reach||!hashMisses(o._lay.placed,m.x,m.z,reach)&&o._lay.placed.near(m.x,m.z,reach).some(live)||!hashMisses(o._lay.segH,m.x,m.z,reach)&&o._lay.segH.near(m.x,m.z,reach).length))setts.add(o);}
     S_ARR=[...setts];
     bh={near(x,z,r){const out=[],seen=new Set();
       for(const s of S_ARR)for(const o of s._lay.placed.near(x,z,r+PARCEL_CELL))if(live(o)&&!seen.has(o)){seen.add(o);o._r=Math.hypot(o.w,o.d)/2;if(parcelCellsMeet(o.x,o.z,o._r,x,z,r))out.push(o);}
@@ -13235,7 +13241,7 @@ function settleParcels(targets=null){
     for(const m of targetList)if(m&&m.x!==undefined){const rm=Math.max(m._r,oldR.get(m));
       for(const o of bh.near(m.x,m.z,(58+PARCEL_RMAX)*1.5+PARCEL_CELL+rm))if(o.s&&parcelCellsMeet(m.x,m.z,rm,o.x,o.z,(58+o._r)*1.5))affected.add(o);}
     for(const o of affected)if(live(o)&&o._r>PARCEL_RMAX){const reach=(58+o._r)*1.5*2+PARCEL_CELL*2; // an unusually large footprint reaches further
-      for(const t of W.settlements||[])if(!S_ARR.includes(t)&&t._lay&&(t._lay.placed.near(o.x,o.z,reach).some(live)||t._lay.segH.near(o.x,o.z,reach).length))S_ARR.push(t);}
+      for(const t of W.settlements||[])if(!S_ARR.includes(t)&&t._lay&&(!hashMisses(t._lay.placed,o.x,o.z,reach)&&t._lay.placed.near(o.x,o.z,reach).some(live)||!hashMisses(t._lay.segH,o.x,o.z,reach)&&t._lay.segH.near(o.x,o.z,reach).length))S_ARR.push(t);}
     list=affected;
     // roads, rivers and lot-edge streets (not in the layout hash) whose cells can meet any query in the batch: read once
     let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
