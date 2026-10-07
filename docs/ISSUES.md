@@ -65,6 +65,7 @@ Medieval institutions the world lacks (scan of building types, trades and terms,
 | # | Issue | Status | Notes |
 |---|---|---|---|
 | 48 | We never test past year 20; Reel can't reliably reach 1066 | in progress | 216 years is ~78,000 days, hours per world even in Node. Shipped checkpoints will be needed (later). Now: a late-world farm plays a few worlds in Node to AD 900, 950, 1000 and 1066 in 10-year segments with restorable snapshots, a structural census at each milestone (towns, walls, castles, building density, street graphs, hamlets, list growth, pattern checks) and a hot-list profile per era, plus short studies resumed from the snapshots. |
+| 49 | Era games | planned | Starts in the Dark Ages, the early Middle Ages, the late Middle Ages and the early Renaissance. Today `e=dark` (AD 850), `e=high` (1250) and `y=` up to 1500 play the history forward unseen, hours of simulation. Era starts will load from shipped checkpoints (#48's milestones at 850, 1066, 1250 and 1450 line up with them); technology (#44) and institutions arrive by era through learning. |
 
 ## Tooling
 
