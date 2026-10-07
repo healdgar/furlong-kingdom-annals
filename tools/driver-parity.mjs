@@ -38,8 +38,8 @@ const log=(...a)=>console.log(new Date().toISOString().slice(11,19),...a);
 // The same digest in every realm: the graph of W (as the history recorder captures it), the RNG streams, the annals, the commands.
 const DIGEST=`(()=>{const h=s=>{let a=0xdeadbeef,b=0x41c6ce57;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677);}
     a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return (b>>>0).toString(16).padStart(8,'0')+(a>>>0).toString(16).padStart(8,'0')+':'+s.length;};
-  const g=new HistoryGraph(),f=g.capture(W,{skipQueryScratch:true});
-  return {day:W.clock.day,world:h(JSON.stringify([f.root,[...g.state].sort((x,y)=>x[0]-y[0]),g.code])),rng:h(JSON.stringify(Object.entries(RS).map(([k,r])=>[k,r.state()]))),
+  const keys={};for(const k of Object.keys(W).sort()){const g=new HistoryGraph(),f=g.capture(W[k],{skipQueryScratch:true});keys[k]=h(JSON.stringify([f.root,[...g.state].sort((x,y)=>x[0]-y[0]),g.code]));} // key by key, so a difference is named
+  return {day:W.clock.day,world:h(JSON.stringify(keys)),keys,rng:h(JSON.stringify(Object.entries(RS).map(([k,r])=>[k,r.state()]))),
     annals:h(JSON.stringify(allLines)),commands:h(JSON.stringify(JOURNAL.filter(e=>e.k!=='settle'))),treasury:W.treasury,pop:W.settlements.reduce((t,s)=>t+s.pop,0)};})()`;
 
 function nodeRun(w){ // the model runner's loop, in a worker thread's own realm
@@ -105,7 +105,8 @@ for(const w of WORLDS){const id=`${w.seed}/${w.fate}/${w.coast}`,R={...w,runs:{}
     const cpu=process.cpuUsage(cpu0);log(id,d,'done in',((Date.now()-t0)/1000).toFixed(1),'s (this process',((cpu.user+cpu.system)/1e6).toFixed(1),'s CPU)');}
   R.equal={};for(const day of DAYS){const at=DRIVERS.map(d=>Array.isArray(R.runs[d])?R.runs[d].find(x=>x.day===day):null),ref=at[0];
     const same=!!ref&&at.every(x=>x&&KEYS.every(k=>x[k]===ref[k]));R.equal[day]=same;if(!same)ok=false;
-    console.log(`${id} day ${day}: ${same?'EQUAL':'DIFFERENT'}  `+DRIVERS.map((d,i)=>`${d} ${at[i]?`world ${at[i].world.split(':')[0]} rng ${at[i].rng.split(':')[0]} pop ${at[i].pop.toFixed(2)} treasury ${at[i].treasury.toFixed(2)}`:'—'}`).join(' | '));}
+    console.log(`${id} day ${day}: ${same?'EQUAL':'DIFFERENT'}  `+DRIVERS.map((d,i)=>`${d} ${at[i]?`world ${at[i].world.split(':')[0]} rng ${at[i].rng.split(':')[0]} pop ${at[i].pop.toFixed(2)} treasury ${at[i].treasury.toFixed(2)}`:'—'}`).join(' | '));
+    if(!same&&ref)for(let i=1;i<at.length;i++)if(at[i]){const k=Object.keys({...ref.keys,...at[i].keys}).filter(k=>ref.keys[k]!==at[i].keys[k]);if(k.length)console.log(`  W keys apart, ${DRIVERS[0]} v ${DRIVERS[i]}: ${k.join(', ')}`);}}
   fs.writeFileSync(path.join(OUT,'parity.json'),JSON.stringify(report,null,1));}
 report.pass=ok;fs.writeFileSync(path.join(OUT,'parity.json'),JSON.stringify(report,null,1));
 console.log(ok?'PASS: every driver played the same history.':'FAIL: the drivers parted.');process.exit(ok?0:1);

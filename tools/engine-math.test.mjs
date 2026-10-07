@@ -25,7 +25,7 @@ test('the game takes the place of every engine-rounded Math function it uses, an
 
 test('no sort asks the dice: how often, and in what order, a comparator is asked is each engine\'s own',()=>{
   const dice=[];for(const m of SOURCE.matchAll(/\.sort\(/g)){let i=m.index+6,d=1;while(d>0&&i<SOURCE.length){const c=SOURCE[i++];if('([{'.includes(c))d++;else if(')]}'.includes(c))d--;}
-    const cmp=SOURCE.slice(m.index+6,i-1);if(/\b(rr|rand|randi|frand|pick|chance)\s*\(|Math\.random/.test(cmp))dice.push(cmp.slice(0,80));}
+    const cmp=SOURCE.slice(m.index+6,i-1);if(/\b(rr|rand|randi|frand|fgauss|pick|chance|nameRng|tenureNew)\s*\(|\bRS\s*[[.]|Math\.random/.test(cmp))dice.push(cmp.slice(0,80));}
   assert.deepEqual(dice,[],'draw each item\'s lot once, then sort by it; or shuffle by Fisher and Yates');
 });
 
