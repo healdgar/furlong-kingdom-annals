@@ -18,7 +18,9 @@ export function inlineGameScript(html){
   return html.slice(bodyStart,end);
 }
 
-function contextFor(source,hash){
+// math: the engine's Math, or a stand-in for another engine's (its own rounding of sin, exp, pow...). The game puts its own
+// functions (DM) on the Math it is given, so it gets a child of it, and this process's Math stays as it was.
+export function contextFor(source,hash,math=Math){
   const context={FURLONG_HEADLESS:true,FURLONG_OPTIONS:{hash},__hashWorldGraph:graph=>{
     const digest=createHash('sha256');const feed=v=>{
       if(v===null||typeof v!=='object'){digest.update(JSON.stringify(v));return;}
@@ -28,7 +30,7 @@ function contextFor(source,hash){
   },
     addEventListener(){},removeEventListener(){},requestAnimationFrame(){},setTimeout,clearTimeout,
     performance,console,URL,Blob,TextEncoder,TextDecoder,ReadableStream,btoa,atob,Map,Set,WeakMap,WeakSet,
-    Date,Math,Number,Intl,Promise,Uint8Array,Uint8ClampedArray,Float32Array,Float64Array,
+    Date,Math:Object.create(math),Number,Intl,Promise,Uint8Array,Uint8ClampedArray,Float32Array,Float64Array,
     Int8Array,Int16Array,Int32Array,Uint16Array,Uint32Array,ArrayBuffer,DataView,
     Error,TypeError,RangeError,JSON,RegExp,parseInt,parseFloat,isFinite,NaN,Infinity,
     ...(typeof CompressionStream==='undefined'?{}:{CompressionStream}),
@@ -68,12 +70,12 @@ export function captureExpression(){return `(()=>{
  return {day:W.clock.day,startAD:W.startAD,seed:W.seed,fate:W.fate,treasury:W.treasury,population:W.settlements?.map(s=>s.pop),settlements,households,people:[...people.values()].sort((a,b)=>a.id-b.id),houses:(W.houses||[]).map(h=>({name:h.name,gold:h.gold,debt:h.debt,extinct:h.extinct})),journals:{commands:JOURNAL,annals:allLines,history:HISTORY.active?HISTORY.records:null,storage:STORAGE_OUTCOMES.journal?{seq:STORAGE_OUTCOMES.journal.seq,rows:[...STORAGE_OUTCOMES.journal.uncommitted()].map(r=>({seq:r.seq,event:r.event}))}:null},rng:Object.fromEntries(Object.entries(RS||{}).map(([k,r])=>[k,r.state?.()||null])),resumed:RESUMED,worldGraph,worldOnlyGraph,mod:{...MOD}};
 })()`;}
 
-export async function runSimulation({sourcePath=DEFAULT_SOURCE,seed=1001,fate=42,coast='sea',startAD=850,days=8,roundTrip=false}={}){
+export async function runSimulation({sourcePath=DEFAULT_SOURCE,seed=1001,fate=42,coast='sea',startAD=850,days=8,roundTrip=false,math=Math}={}){
   if(!Number.isInteger(days)||days<0||days>360)throw Error('days must be an integer from 0 through 360');
   const html=fs.readFileSync(sourcePath,'utf8'),htmlSHA256=createHash('sha256').update(html).digest('hex');
   const source=inlineGameScript(html);
   const hash=`#s=${seed>>>0}&f=${fate>>>0}&c=${coast}&y=${startAD}`;
-  const ctx=contextFor(source,hash);
+  const ctx=contextFor(source,hash,math);
   await vm.runInContext(`startSimulation({seed:${seed>>>0},fate:${fate>>>0},coast:${JSON.stringify(coast)},startAD:${startAD},outcomeJournal:new OutcomeJournal(async entry=>({chunk:entry.chunk,first:entry.first,last:entry.last}),{maxPendingBytes:64*1024*1024})})`,ctx,{timeout:120_000});
   if(roundTrip)vm.runInContext(`jot({k:'sov',on:true,hi:0});setSovereign(true,0);setRulerRate('tax',20)`,ctx,{timeout:15_000});
   const snapshot=`JSON.stringify(${captureExpression()})`;
@@ -92,7 +94,7 @@ export async function runSimulation({sourcePath=DEFAULT_SOURCE,seed=1001,fate=42
     const savedEnd=JSON.parse(vm.runInContext(snapshot,ctx,{timeout:30_000}));
     const saveJSON=await vm.runInContext(`unpackSave(${JSON.stringify(code)}).then(o=>JSON.stringify(o))`,ctx,{timeout:30_000});
     const save=JSON.parse(saveJSON);saveInfo={day:save.day,commands:save.j.length,build:save.build,encoding:code.slice(0,2)};
-    const replayCtx=contextFor(source,hash);
+    const replayCtx=contextFor(source,hash,math);
     await vm.runInContext(`startSimulation({seed:${seed>>>0},fate:${fate>>>0},coast:${JSON.stringify(coast)},startAD:${startAD},outcomeJournal:new OutcomeJournal(async entry=>({chunk:entry.chunk,first:entry.first,last:entry.last}),{maxPendingBytes:64*1024*1024})})`,replayCtx,{timeout:120_000});
     await vm.runInContext(`replaySave(${saveJSON}).then(()=>undefined)`,replayCtx,{timeout:120_000});
     const replayEnd=JSON.parse(vm.runInContext(snapshot,replayCtx,{timeout:30_000}));
