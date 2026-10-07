@@ -54,7 +54,7 @@ test('provision wage recipients preserve ties, self exclusion and per-payment mu
 
 test('migration roots retain value while farmland is scanned once for all destinations',()=>{
   const rootsExpr=source=>{
-    const body=fn(source,'tickHouseholds');
+    const body=/^function familyMove\b/m.test(source)?fn(source,'familyMove'):fn(source,'tickHouseholds'); // a family's move is weighed in familyMove since #23 (783448c); the baseline still has it in tickHouseholds
     const m=body.match(/(?:const roots=|if\(roots===undefined\)roots=)(foodYr\(\)\*[\s\S]*?\))(?=; \/\/)/);
     return m?.[1]||assert.fail('missing roots expression');
   };
