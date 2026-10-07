@@ -23,6 +23,7 @@
 - At most five agents run at once (they may start their own subagents for reading and exploration). Too many heavy test runs at the same time have crashed this machine.
 - One agent, the test runner, runs everything heavy: the full suite, Chrome, soaks, long simulation runs, identity proofs and measurements. It runs one job at a time, checks the load first, and keeps at most one Chrome open. Other agents send it requests and act on its results.
 - Other agents may run only light checks themselves: `node --check`, and a single focused test file with `--test-concurrency=1`.
+- Test in batches. Each agent commits its change with light checks and reports it ready; the coordinator bundles ready changes (exact changes first, behaviour changes after) and the test runner gates the batch once: the full suite, one identity proof covering every exact change, and one short multi-world soak that tracks money, faults, CPU and the economy at once. Bisect only when a batch fails. No per-change soaks or identity proofs; diagnosis runs that find causes are the exception, and are kept few and wide.
 - Report timings as CPU time or instruction counts, with the load average beside them.
 
 ## Tools
