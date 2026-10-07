@@ -9,7 +9,7 @@ import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=name=>{const hit=source.match(new RegExp(`^function ${name}\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))`,'m'));assert.ok(hit,`missing ${name}`);return hit[0];};
-const REAL=['armyRaftAt','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyReach','armyReaches','serviceRoadPlan'];
+const REAL=['armyRaftAt','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyReach','armyReaches','armyReachClosed','armyReachFrom','armyReachCovers','serviceRoadPlan'];
 // serviceRoadPlan exactly as released before the flood: every target gets its full search.
 const LEGACY=`function legacyServiceRoadPlan(s,p,placed,skip,hw=1.3){
   const candidates=[];
@@ -146,4 +146,31 @@ test('random worlds: the flood never rules out a target that a full search would
       assert.equal(R.call('armyLandPath(...args)',plain,[p,q]),null,`world ${i}: target (${q.x.toFixed(1)}, ${q.z.toFixed(1)}) was ruled out but is reachable`);}
   }
   assert.ok(ruledOut>15,`${ruledOut} of ${checked} targets were ruled out and checked`);
+});
+
+// ---- a survey before building (#29): the site's footprint is a ghost, and the doors of one survey share their floods ----------
+test('doors on a bank cut off by water share one flood: only the first searches',()=>{
+  const moat=(x,z,pad)=>Math.abs(Math.hypot(x,z)-8)<2+pad;
+  const R=runtime({water:moat}),s={owner:0,streets:Array.from({length:14},(_,i)=>lane(18+i*1.5,-10,18+i*1.5,10))};
+  const doors=[{x:0,z:0},{x:1.5,z:.5},{x:-1,z:1.2},{x:.4,z:-1.4}],banks={floods:[],span:doors,memo:new Map()};
+  const runs=doors.map(p=>R.measure('serviceRoadPlan(...args)',s,p,R.C.placed,null,1.3,null,null,banks));
+  assert.ok(runs.every(r=>r.result===null));assert.equal(banks.floods.length,doors.length,'the first refusal leaves its flood; each door after floods its own from edges already known');
+  assert.equal(runs[0].detour,3);assert.deepEqual(runs.slice(1).map(r=>r.detour),[0,0,0],'the doors after it never search');
+  for(const p of doors)assert.equal(R.call('legacyServiceRoadPlan(...args)',s,p,R.C.placed),null);
+});
+
+test('random worlds: doors sharing floods (round an unbuilt mill, or along a quay with one memo) plan exactly the plain planner\'s lanes',()=>{
+  const rnd=mulberry(29);let planned=0,refused=0,saved=0;
+  for(let i=0;i<40;i++){
+    const{R,s,p}=scenario(rnd),U=(a,b)=>a+(b-a)*rnd(),built=R.C.placed.near(),doors=Array.from({length:6},(_,k)=>({x:p.x+k*2.3-6,z:p.z+(k%3)*1.7-2}));
+    const ghosts=doors.map(d=>{const a=U(0,Math.PI*2);return{x:d.x+Math.cos(a)*7.5,z:d.z+Math.sin(a)*7.5,w:9,d:9,rot:U(0,Math.PI)};}),banks={floods:[],span:doors,memo:new Map()};
+    let fast=0,slow=0;
+    for(let k=0;k<doors.length;k++){
+      const quay=i%2===1,hw=quay?1.6:1.3,survey=R.measure('serviceRoadPlan(...args)',s,doors[k],R.C.placed,null,hw,quay?banks.memo:null,quay?null:ghosts[k],banks);
+      R.C.withMill={near:()=>[...built,{...ghosts[k],state:'sound'}]};const raised=R.measure('legacyServiceRoadPlan(...args)',s,doors[k],quay?R.C.placed:R.C.withMill,null,hw);
+      assert.deepEqual(shape(survey.result,s),shape(raised.result,s),`world ${i} door ${k}`);fast+=survey.detour;slow+=raised.detour;if(raised.result)planned++;else refused++;
+    }
+    assert.ok(fast<=slow,`world ${i}: sharing never adds a search`);if(fast<slow)saved++;
+  }
+  assert.ok(planned>40&&refused>40,`${planned} planned, ${refused} refused`);assert.ok(saved>=5,`${saved} worlds skipped searches`);
 });

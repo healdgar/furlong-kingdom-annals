@@ -1743,19 +1743,25 @@ function roadAccessClear(s,a,b){
 }
 // A service lane is planned once when its building or quay is laid out.
 // `memo` caches lattice edge tests for one world state and one clearance (see armyDetour); a caller may share it between calls only while nothing is built, razed or roaded between them.
-function serviceRoadPlan(s,p,placed,skip,hw=1.3,memo){
+// `ghost` is a footprint not yet built that the lane must go round. `banks` ({floods:[],span:[],memo}) lets the doors of one survey share what is known: a failed
+// search leaves its flood, taken without the ghost (a wider reach, so still a safe bound) and over `span` too, so it covers the doors still to be asked; a later door
+// whose first steps all land in that flood skips every street it cannot reach. Share `banks` only while nothing is built or razed between the calls.
+function serviceRoadPlan(s,p,placed,skip,hw=1.3,memo,ghost,banks){
   const candidates=[];
   for(const st of s.streets||[])if(st!==skip&&!st.hidden&&!st.gone&&!st.planQ&&!st.planned&&st.kind!=='edge'&&(st.kind!=='quay'||st.serviceLinked)&&!st.castlePath)for(let k=1;k<st.pts.length;k++){
     const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/L,0,1),x=a.x+dx*t,z=a.z+dz*t;
     if(streetAccessAt(s,{x,z}))candidates.push({x,z,d:dist2d(p.x,p.z,x,z),st});}
-  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,waterClearance:hw+1,_em:memo||new Map()};
+  candidates.sort((a,b)=>a.d-b.d);const walker={house:s.owner,settlement:s,placed,requireRoadCrossing:true,waterClearance:hw+1,_em:memo||new Map(),ghost},open=ghost?{...walker,ghost:null,_em:banks?.memo||new Map()}:walker;
   if(armyObstacle(walker,p.x,p.z))return null;
-  const attempted=[];let reach;
+  const attempted=[],banked=banks?banks.floods.filter(R=>R.hw===hw&&armyReachFrom(R,open,p)):[];let reach;
+  const flood=from=>{const pts=[],seen=new Set(attempted.map(a=>a.st));for(let cj=from;cj<candidates.length&&pts.length+attempted.length<12;cj++){const c=candidates[cj];if(seen.has(c.st)||armyObstacle(walker,c.x,c.z))continue;seen.add(c.st);pts.push(c);}
+    const span=banks&&pts.length?banks.span.filter(d=>dist2d(d.x,d.z,p.x,p.z)<160):[]; // too wide a box to flood: the door's own targets alone
+    reach=pts.length>0?span.length&&armyReach(open,p,[...pts,...span],150,60000)||armyReach(open,p,pts,150,60000):null;if(reach&&banks&&armyReachClosed(reach,open)){reach.hw=hw;banks.floods.push(reach);}};
+  if(banked.length)flood(0); // a door on ground already flooded floods its own reach first (its edges are mostly known) and searches only what that reaches
   for(let ci=0;ci<candidates.length;ci++){const q=candidates[ci];if(armyObstacle(walker,q.x,q.z)||attempted.some(a=>a.st===q.st))continue;attempted.push(q);
-    if(reach&&!armyReaches(reach,q)&&!armySegmentClear(walker,p,q)){if(attempted.length===12)break;continue;} // blocked straight on, and no lattice route can reach it
+    if((reach&&!armyReaches(reach,q)||banked.some(R=>armyReachCovers(R,p,q)&&!armyReaches(R,q)))&&!armySegmentClear(walker,p,q)){if(attempted.length===12)break;continue;} // blocked straight on, and no lattice route can reach it
     const path=armyLandPath(walker,[p,{x:q.x,z:q.z}]);if(path)return{path,street:q.st};
-    if(reach===undefined){const pts=[],seen=new Set(attempted.map(a=>a.st));for(let cj=ci+1;cj<candidates.length&&pts.length+attempted.length<12;cj++){const c=candidates[cj];if(seen.has(c.st)||armyObstacle(walker,c.x,c.z))continue;seen.add(c.st);pts.push(c);}
-      reach=pts.length>0?armyReach(walker,p,pts,150,60000):null;}
+    if(reach===undefined)flood(ci+1);
     if(attempted.length===12)break;}
   return null;
 }
@@ -2271,12 +2277,14 @@ function layoutSettlement(s){
     const p=serviceDoor(b),plan=survey||serviceRoadPlan(s,p,placed);if(!plan)return false;
     if(dist2d(plan.path[0].x,plan.path[0].z,plan.path.at(-1).x,plan.path.at(-1).z)<1){b.st=plan.street;return true;}
     plan.path.unshift(serviceDoor(b,0));b.st=addStreet(plan.path,1.3,'alley',{straight:true,serviceAccess:b.arch});G.roadsDirty=true;return !!b.st;};
-  const quayAccess=st=>{if(st.gone||st.hidden)return false;if(st.serviceLinked)return true;
-    const points=[...st.pts];for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],b=st.pts[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((C.x-a.x)*dx+(C.z-a.z)*dz)/L,0,1);points.push({x:a.x+dx*t,z:a.z+dz*t});}
-    points.sort((a,b)=>dist2d(a.x,a.z,C.x,C.z)-dist2d(b.x,b.z,C.x,C.z));
-    const memo=new Map();for(const p of points.slice(0,12)){const plan=serviceRoadPlan(s,p,placed,st,1.6,memo);if(!plan)continue;
-      if(dist2d(p.x,p.z,plan.path.at(-1).x,plan.path.at(-1).z)>1)addStreet(plan.path,1.6,'alley',{straight:true,serviceAccess:'quay'});
-      st.serviceLinked=true;G.roadsDirty=true;return true;}return false;};
+  // Quays are surveyed before they are laid: one is built only where a lane from one of its twelve points nearest the centre reaches a street.
+  // The quays of one batch share what a failed survey learned (see serviceRoadPlan): nothing is built between them, only streets laid.
+  const layQuays=(paths,hw)=>{const doors=paths.map(P=>{const points=[...P];for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k],dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz||1,t=clamp(((C.x-a.x)*dx+(C.z-a.z)*dz)/L,0,1);points.push({x:a.x+dx*t,z:a.z+dz*t});}
+      return points.sort((a,b)=>dist2d(a.x,a.z,C.x,C.z)-dist2d(b.x,b.z,C.x,C.z)).slice(0,12);}),banks={floods:[],span:doors.flat(),memo:new Map()};
+    paths.forEach((P,i)=>{for(const p of doors[i]){const plan=serviceRoadPlan(s,p,placed,null,1.6,banks.memo,null,banks);if(!plan)continue;
+      addStreet(P,hw,'quay',{serviceLinked:true});if(dist2d(p.x,p.z,plan.path.at(-1).x,plan.path.at(-1).z)>1)addStreet(plan.path,1.6,'alley',{straight:true,serviceAccess:'quay'});
+      G.roadsDirty=true;break;}});};
+  const quayAccess=st=>!st.gone&&!st.hidden&&!!st.serviceLinked; // every quay is laid with its lane
   const ux=Math.cos(rAng),uz=Math.sin(rAng),vx=-uz,vz=ux;
   const lineRuns=(ax,az,bx,bz,ok)=>{ // a straight line split into its usable runs
     const out=[];let run=[];for(const q of resample([{x:ax,z:az},{x:bx,z:bz}],8)){if(ok(q.x,q.z))run.push(q);else{if(run.length>=3)out.push(run);run=[];}}
@@ -2394,11 +2402,10 @@ function layoutSettlement(s){
       for(let d=1;d<NA/2;d++){const k=(bk-d+NA)%NA;if(!coast[k]||Math.abs(coast[k]-coast[(k+1)%NA])>40)break;run.unshift(k);}
       const q=run.map(k=>{const a=k/NA*Math.PI*2,r=coast[k]-11;return{x:C.x+Math.cos(a)*r,z:C.z+Math.sin(a)*r};})
         .filter(p=>cellOK(p.x,p.z)&&dist2d(p.x,p.z,C.x,C.z)<Rmax*(isVil?0.8:0.6));
-      if(q.length>=3)for(const path of shoreRoadRuns(s,q,4))addStreet(path,4,'quay');
+      if(q.length>=3)layQuays(shoreRoadRuns(s,q,4),4);
     }
     foundLine=role==='port'?'Began as a landing on the shore, where boats could be drawn up out of the swell.':'Began as a row of fishers’ huts above the shingle.';
   }
-  for(const st of s.streets.filter(t=>t.kind==='quay'))if(!quayAccess(st)){st.gone=true;st.hidden=true;}
   const quay=s.streets.find(t=>t.kind==='quay'&&!t.gone);
   if(mode==='twin'&&quay){ // Hamburg: the bishop's cathedral-burg on the dry rise, the count's merchant town on the water
     let best=null,bh=-1e9;
@@ -2435,21 +2442,22 @@ function layoutSettlement(s){
     foundLine=`The bishop's cathedral and its burg stood on the dry rise; below, the count founded a merchants' town on the waterfront. For a generation they had two councils, then one.${nCan?' Canals — fleets — were dug from the harbour into the merchant quarter, so that lighters could unload at the warehouse doors.':''}`;
   }
   if(s.river||s.canals){ // quays along the bank where a river or a canal runs close to the nucleus
+    const paths=[],nearQuay=(x,z)=>paths.some(P=>P.some((q,k)=>k&&segDist(x,z,P[k-1],q)<HW*0.9+1)); // runs proposed so far keep their ground as laid streets do
     for(const rs of W.rivStrips)for(const side of[-1,1]){
       let run=[];
-      const take=()=>{if(run.length>=4)for(const path of shoreRoadRuns(s,run,HW*0.9))addStreet(path,HW*0.9,'quay');run=[];};
+      const take=()=>{if(run.length>=4)paths.push(...shoreRoadRuns(s,run,HW*0.9));run=[];};
       for(let k=0;k<rs.pts.length;k++){
         const a=rs.pts[Math.max(0,k-1)],b=rs.pts[Math.min(rs.pts.length-1,k+1)],L=dist2d(a.x,a.z,b.x,b.z)||1;
         const off=rs.hw[k]+HW+3,x=rs.pts[k].x-(b.z-a.z)/L*off*side,z=rs.pts[k].z+(b.x-a.x)/L*off*side;
         const d=dist2d(x,z,C.x,C.z);
-        if(d<Rmax*(isVil?0.35:0.5)&&buildable(x,z)&&!inPlace(x,z,4)&&!nearStreet(x,z,1)){if(k%2===0)run.push({x,z});}
+        if(d<Rmax*(isVil?0.35:0.5)&&buildable(x,z)&&!inPlace(x,z,4)&&!nearStreet(x,z,1)&&!nearQuay(x,z)){if(k%2===0)run.push({x,z});}
         else take();
       }
       take();
     }
+    layQuays(paths,HW*0.9);
     if(!foundLine)foundLine=role==='crossing'?'A hamlet grew up at the ford where the road crosses the river; a bridge replaced the ford in its second age.':'Settled on the riverbank for the water and the fishing.';
   }
-  for(const st of s.streets.filter(t=>t.kind==='quay'&&!t.gone))if(!quayAccess(st)){st.gone=true;st.hidden=true;}
   if(!foundLine)foundLine=isVil?({farm:'A handful of farms about a green, where the plough-land is good.',timber:'A clearing of woodcutters and charcoal-burners at the forest’s edge.',mining:'Huts of miners under the scarp, where the ore comes near the surface.'}[role]||'A handful of farms about a green.')
     :'Farms and an alehouse about a green where the roads meet; a weekly market was granted in its second age.';
   const vilName=oldVil?rpick(NAMEB.pfx).replace(/[aeiou]?$/,'')+rpick(['ingi','ithi','ede','heim','um']):'';
@@ -3100,18 +3108,19 @@ function layoutSettlement(s){
       for(let k=0;k<=n;k++)if(pondWet(L,lerp(a.x,b.x,k/n),lerp(a.z,b.z,k/n)))return true;}return false;};
   const pondClear=L=>!s.buildings.some(b=>{const P=[...obbCorners(b.x,b.z,b.w,b.d,b.rot),{x:b.x,z:b.z}];for(let i=0;i<4;i++)P.push({x:(P[i].x+P[(i+1)%4].x)/2,z:(P[i].z+P[(i+1)%4].z)/2});return P.some(p=>pondWet(L,p.x,p.z));})&&
     !s.streets.some(st=>st.pts.length>1&&lineWet(L,st.pts))&&!W.roads.some(rd=>lineWet(L,rd.path));
+  // A mill stands only where its miller's lane can reach a street: each fitting site, nearest first, is surveyed round its own footprint
+  // before anything is raised; sites on one bank share what a failed survey learned (see serviceRoadPlan).
+  const siteMill=()=>{const sites=millBankSites(s,Rmax).filter(f=>fits(f,1,'mill')),banks={floods:[],span:sites.map(f=>serviceDoor({...f,arch:'mill'})),memo:new Map()};
+    for(let i=0;i<sites.length;i++){const plan=serviceRoadPlan(s,banks.span[i],placed,null,1.3,null,sites[i],banks);if(!plan)continue;
+      const b=place('mill',1,sites[i],'artisan',1,{inst:true,millWater:sites[i].millWater});serviceAccess(b,plan);return s.mill=b;}
+    return null;};
   let pondAccepted=false;
   for(const L of pondOptions){s.lake=L;if(!pondClear(L)){s.lake=null;continue;}
-    for(const site of millBankSites(s,Rmax))if(fits(site,1,'mill')){
-      const b=place('mill',1,site,'artisan',1,{inst:true,millWater:site.millWater});
-      if(serviceAccess(b)){s.mill=b;pondAccepted=true;break;}unplace(b);
-    }
+    pondAccepted=!!siteMill();
     if(pondAccepted){hist(1,'The river was dammed above the town to drive its mill; a contained mill-pond spread into a lake.');break;}
     s.lake=null;
   }
-  if(!pondAccepted){s.lake=null;if(s.river)for(const site of millBankSites(s,Rmax))if(fits(site,1,'mill')){
-      const b=place('mill',1,site,'artisan',1,{inst:true,millWater:site.millWater});if(serviceAccess(b)){s.mill=b;break;}unplace(b);
-    }}
+  if(!pondAccepted){s.lake=null;if(s.river)siteMill();}
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   for(const s of W.settlements)if(s._lay&&s._lay.rejoin)s._lay.rejoin();
@@ -12229,6 +12238,7 @@ function armyBridgeAt(x,z){return !!W.rivHash&&!!riverAt(x,z,0)&&paidRoadAt(x,z)
 function armyObstacle(a,x,z){
   if(Math.abs(x)>=SIZE/2-CELL||Math.abs(z)>=SIZE/2-CELL||hAt(x,z)<=SEA_SURFACE)return 'water';
   const water=W.rivHash&&riverAt(x,z,a.waterClearance??0.4);if(water&&(a.requireRoadCrossing?!paidRoadAt(x,z):!armyBridgeAt(x,z)&&!armyRaftAt(a,x,z)&&(water.hw>8||water.y-hAt(x,z)>1.25)))return 'river';
+  const g=a.ghost;if(g){const c=Math.cos(g.rot||0),sn=Math.sin(g.rot||0),X=x-g.x,Z=z-g.z;if(Math.abs(X*c-Z*sn)<g.w/2+0.6&&Math.abs(X*sn+Z*c)<g.d/2+0.6)return 'building';} // a site being surveyed stands in the way as its building will. Only service walkers carry one, and they carry a settlement, `placed` and `_em`, which the route memory never remembers: armyRouteRead need not read it
   const i=toCell(x),j=toCell(z),mem=a._em&&a._em.scopes?a._em:null; // mem: armyLandPath's per-call memo, which also holds each cell's scope and each settlement's circuits (nothing moves during the call)
   let scope=mem?mem.scopes.get(i*100003+j):undefined;
   if(!scope){scope=a.settlement?[a.settlement]:[];const seen=[];
@@ -12410,6 +12420,15 @@ function armyReach(a,p,pts,pad,cap){ // every lattice node a walker can reach fr
 }
 function armyReaches(R,q){const i=Math.round((q.x-R.x0)/2),j=Math.round((q.z-R.z0)/2);if(i<0||j<0||i>=R.nx||j>=R.nz||j*R.nx+i===R.start)return true;
   for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){const ii=i+dx,jj=j+dz;if(ii>=0&&jj>=0&&ii<R.nx&&jj<R.nz&&R.seen[jj*R.nx+ii])return true;}return false;}
+// A flood from one door can speak for another door on the same ground (same walker, nothing built between):
+// closed — its start, taken as a lattice node, steps nowhere the flood did not reach (the flood stepped from the exact door);
+function armyReachClosed(R,a){const ix=R.start%R.nx,iz=Math.floor(R.start/R.nx),P={x:R.x0+ix*2,z:R.z0+iz*2};
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz)continue;if(ix+dx<0||ix+dx>=R.nx||iz+dz<0||iz+dz>=R.nz)return false;if(!R.seen[(iz+dz)*R.nx+ix+dx]&&armySegmentClear(a,P,{x:P.x+dx*2,z:P.z+dz*2}))return false;}return true;}
+// from — every first step the other door p can take lands on a node the flood reached;
+function armyReachFrom(R,a,p){const i=Math.round((p.x-R.x0)/2),j=Math.round((p.z-R.z0)/2);if(i<1||j<1||i>=R.nx-1||j>=R.nz-1)return false;
+  for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){if(!dx&&!dz)continue;if(!R.seen[(j+dz)*R.nx+i+dx]&&armySegmentClear(a,p,{x:R.x0+(i+dx)*2,z:R.z0+(j+dz)*2}))return false;}return true;}
+// covers — the widest detour box from p to q (pad 144, lattice-rounded) lies inside the flood's box.
+function armyReachCovers(R,p,q){const x1=R.x0+(R.nx-1)*2,z1=R.z0+(R.nz-1)*2;return (Math.round(p.x/2)!==Math.round(q.x/2)||Math.round(p.z/2)!==Math.round(q.z/2))&&Math.min(p.x,q.x)-146>=R.x0&&Math.max(p.x,q.x)+146<=x1&&Math.min(p.z,q.z)-146>=R.z0&&Math.max(p.z,q.z)+146<=z1;}
 function armyDestination(a,s,p){const c=hostileTo(a,s)&&activeFort(s);if(c){const C=fortCenter(c),an=Math.atan2(p.z-C.z,p.x-C.x),r=wallRadAt(c,an)+28;return{x:C.x+Math.cos(an)*r,z:C.z+Math.sin(an)*r};}
   const goal={x:s.pos.x,z:s.pos.z};if(!armyObstacle(a,goal.x,goal.z))return goal;for(let r=3;r<=30;r+=3)for(let k=0;k<16;k++){const an=k/16*Math.PI*2,q={x:goal.x+Math.cos(an)*r,z:goal.z+Math.sin(an)*r};if(!armyObstacle(a,q.x,q.z))return q;}return null;}
 function armyRouteBlocked(a){const p=armySimPos(a);a.field={x:p.x,z:p.z};a.fieldTo=null;a.chase=null;a.state='idle';a.why='no passable route: a bridge, ford, or breach is needed';return false;}
