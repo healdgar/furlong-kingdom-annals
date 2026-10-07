@@ -13,7 +13,7 @@ import {inlineGameScript} from './simulation-boundary.mjs';
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||assert.fail('no function '+n);
 const between=(a,b,from=0)=>{const i=source.indexOf(a,from);assert.ok(i>=0,'missing '+a);const j=source.indexOf(b,i);assert.ok(j>i,'missing '+b);return source.slice(i,j+b.length);};
-const PAY=['book','dayHands','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
+const PAY=(source.match(/^const HUNGRY_HANDS=.*$/m)?.[0]||'')+'\n'+['book','dayHands','hungryHands','payAmong','buildWorks','workers_','purseAcct','purse','spend','escheat','compensate','levy','rollLiving','soldiersPay','householdHead','wallPurse'].filter(n=>source.includes('function '+n+'(')).map(fn).join('\n');
 
 // a realm with `households` purses of `cash`, a crown holding `crown`, and (optionally) great houses with gold
 function world({cash=100,crown=1000,households=6,gold=[]}={}){
