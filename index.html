@@ -11549,7 +11549,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   s._homeDay=homeFood/30; // what the families' own beasts put on the table each day
   if(pay2.length){const poor=heads.filter(h=>(h.w||0)<foodYr()*0.5).sort((a,b)=>(a.w||0)-(b.w||0)).slice(0,5);for(const[h,v]of pay2){const L=poor.filter(q=>q!==h).slice(0,4);if(L.length)payAmong(L,v,h,'wages');}} // four recipients need only the first five candidates when the payer is excluded
   for(const h of heads)if(h._debt>0)repay(h,Math.max(0,(h.w||0)-foodYr()/12*(size.get(h)||1))); // debts paid out of what is left once the month's bread is put by
-  {let lu=0;for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too
+  {let lu=0;const ph=price(s,'hay');for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;if(beastYield(s,k)<LU[k]*WINTER_HAY*ph)continue;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too: those whose year's yield pays for their winter's hay at its price (#23: he bought it at any price, and a dear year's hay emptied the crown's chest; beasts not worth it go short in the winter)
     const short=lu*WINTER_HAY-(pantry(s,lordAcct(s)).hay||0);if(short>0){purchase(s,'hay',lordAcct(s),short);commodityCreditPurchase(s,lordAcct(s),'hay',purchase.got);}} // the lord's beasts' winter fodder, topped up as the meadows offer it
   // the crafts buy their stuff when the work pays
   const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30;
@@ -13821,6 +13821,7 @@ function living(o){return foodYr()*(2*(o._fill??1)+0.1*Math.log1p(Math.max(0,o._
 function youngPull(o){return foodYr()*0.5*Math.log10(1+o.pop)/3;} // to the young, a bigger place is a better chance of a match
 /* beasts are the families' own: the village herd is their beasts grazing the common together, and the lord's;
    calves and lambs are the owners', losses fall on them, and each family buys, keeps or sells as its beasts are worth to it */
+function beastYield(s,k){return k==='sheep'?price(s,'wool')*0.55:price(s,k)*(k==='cattle'?0.12:k==='swine'?0.35:0.06);} // what a beast brings in a year at the place's prices: a fleece and a lamb; milk and dung; a litter; a horse's work hired out (the shares of BEAST_YR)
 const BEAST_YR={cattle:k=>GOODBASE.cattle*0.12,sheep:k=>GOODBASE.wool*0.55,swine:k=>GOODBASE.swine*0.35,horses:k=>GOODBASE.horses*0.06}; // milk and dung; a fleece and a lamb; a litter for the pot; a horse's work hired out
 function herdOf(h,s){const account=householdAccount(h);s=s||W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
 function herdLoss(s,k,q){const was=s.stores[k]||0;if(!(was>0&&q>0))return;const lost=Math.min(q,was),f=(was-lost)/was;for(const x of (s._owners||new Map()).values())for(const kind of ['animals','sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;s.stores[k]=was-lost;if(s._herdLast)s._herdLast[k]=s.stores[k];}
