@@ -55,7 +55,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // instead of debiting it and booking the wage as coined from nobody, and a robbed cargo is owned by the
  // outlaw household that took it (the thief argument, default 'out') instead of a dealer abroad. No lot,
  // title, claim or journal writer changes; money-routes.test.mjs and the storage fixtures cover these lines.
- assert.equal(digest(source.slice(a,b)),"fe882e7cf10cdb646276b2fad5df523b9f9e06fe04ecda2446c54272bdc2842e");
+ // Money routing (#19) in this region: carriage and storage works paid by their payer through buildWorks, a robbed cargo owned by
+ // the household that took it (thief); and the storage walk's remembered blocking step (#15), a pure read kept outside the world.
+ // No lot, title, claim or journal writer changes.
+ assert.equal(digest(source.slice(a,b)),"cda74961ad283871a980f3fd0c9a034e577f3803a889dd1075eecacc330a2b83");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
