@@ -375,11 +375,24 @@ Acts are sealed while you rule; the crown's own levers take their place:
   and not the other, comes up and joins it, forming behind the line; the
   fight lasts a day longer for each, and the whole side wins or breaks
   together.
+- **Lords' hosts at war** march on the enemy place most worth it: what the
+  siege is likely to win there, or the raid, against their pay and bread for
+  the march and the siege, among places a road or the sea leads to, and not
+  a march their wagons would not last. A host that finds no way to a place
+  passes it over for a season, or until a road is built, the place changes
+  hands or its raft is ready; if a river close by bars it and the place is
+  worth the timber, it lashes a raft. With nothing within reach worth the
+  march it goes home. A hungry host falls back on the nearest granary of its
+  own by road. A lord's hosts camped together in the field join under one
+  banner. Bridges carry a host over the water's edge as far as it keeps from
+  the water elsewhere; a host takes ship at the shore and lands on it.
 - **Why it turned back**: a host's card says why it is marching home (the
   war over, a siege failed, beaten in battle, wagons empty, laden with
   plunder), and you are told when one of yours does. Given new orders on
-  the march, a host turns from where it stands; in peace your own hosts stay
-  where you left them; routed, they rally after a few days and await orders.
+  the march, or sent home, a host turns from where it stands; in peace your
+  own hosts stay where you left them; routed, they rally after a few days and
+  await orders, or take up the order you gave meanwhile. An order or a
+  pursuit that cannot be carried out is told as such.
 - **Seize land by force**: click a lord's furlong within 450 m of one of
   your hosts. It is held by the sword: yours for good once one of your
   places is within 1500 m, otherwise only while a host of yours stays near.
