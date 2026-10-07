@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
-const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath','armyShore'];
+const names=['onRoad','paidRoadAt','armyRaftAt','buildArmyRaft','armyBridgeAt','armyObstacle','armySegmentClear','armyDetour','armyLandPath','armyDestination','armyRouteBlocked','armyMarchPath','armyShore','armyCauseway'];
 const extract=name=>html.match(new RegExp('^function '+name+'\\b[\\s\\S]*?(?=^function |^/\\*|$(?![\\s\\S]))','m'))[0];
 function fixture(){const W={settlements:[],rivHash:{},roads:[],dom:new Int16Array(400).fill(0)},G={rivHash:{},bridgeSpans:[]};
  const c=vm.createContext({W,G,ARMY_ROUTES:{on:false},SIZE:2000,CELL:10,SEA_SURFACE:.5, // stub ground: the route memory (army-route-memory.test) needs the real raster
@@ -58,3 +58,9 @@ test('a host takes ship at the water\'s edge and lands at the far shore, not out
  assert.deepEqual([Q[1].x,Q[1].sea,Q[4].x,Q[4].sea],[-1,true,250,true],'on the last dry ground and the first, counted aboard from there');
  c.Q=Q;const path=vm.runInContext('armyLandPath(a,Q)',c);assert.ok(path,'the march by ship is open');
  assert.deepEqual(vm.runInContext('armyShore(a,[{x:-50,z:0},{x:-10,z:0}])',c).length,2,'a route on land is left as it is');});
+test('a road the realm built carries a host where its line dips under the sea\'s surface at the shore',()=>{const{c}=fixture();c.a={house:0};
+ c.hAt=()=>0.3;c.W.roads.push({path:[{x:-15,z:0},{x:15,z:0}]}); // low ground, under the drawn sea surface (0.5)
+ assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),null,'on the road: a causeway');
+ assert.equal(vm.runInContext('armyObstacle(a,0,20)',c),'water','off the road: the shore is water');
+ assert.equal(vm.runInContext('armySegmentClear(a,{x:-14,z:0},{x:14,z:0})',c),true,'the march along it');
+ c.a.requireRoadCrossing=true;assert.equal(vm.runInContext('armyObstacle(a,0,0)',c),'water','walkers keep the old rule');});
