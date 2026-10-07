@@ -82,3 +82,8 @@ test('production count writes and annual head changes notify the index',()=>{
   assert.match(seed,/marketTradeIndexRecord\(W,s,s\._tc\)/);
   assert.match(tick,/s\._tcY=-1;marketTradeIndexInvalidate\(\);/);
 });
+
+test('a market with many makers draws custom from farther than a nearer one with few (#23)',()=>{
+  const {W,c}=fixture(),s=W.settlements[10];W.settlements[30].heads={smith:5};c.__setYear(2);c.tradeCounts(s);
+  assert.deepEqual(Array.from(c.marketFor(s,'smith')),[30,Math.exp(-200/1200)]);
+});
