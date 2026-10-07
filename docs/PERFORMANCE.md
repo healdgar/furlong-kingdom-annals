@@ -124,6 +124,18 @@ The largest copy held 18,937 values. On seed 287970763 after day 1000, 19 of 411
 detour box (6.5 ms a day); 4 remembered answers were searched afresh because roads were added, and stayed
 blocked.
 
+Buildings are weighed by the points the search tested (6 October 2026). A growing town inside a search box
+changed the copy every few days, and its hosts searched afresh for the same answer. The copy now keeps a place's
+buildings apart (`ROUTE_BLD`), and each detour box notes the nodes it expanded. A building raised, taken down, moved
+or turned in the copied cells spoils the copy only if its footprint (armyObstacle's rectangle and 0.6 m) could cover
+a tested point: on a straight stretch, or within 3√2 m of an expanded node. Otherwise every test the search made
+comes out as before. On seed 1001 sea at km 15, days 31–150 (8 hosts, model only, instructions by
+`proc_pid_rusage`, load 5–11): 20 of 46 such re-searches are spared (boxed-key hits 90% → 95%); `tickMilitary`
+663 → 512 M instructions a day, the whole day 1,895 → 1,752 M. The other 26 are new buildings on ground the search
+tested; an exact edge-by-edge test of the probe points spares none of them either. In the batch gate, verify mode found no
+difference over 1,486 recalls (287970763 to day 1200) and 486 (km 15 to day 150), every digest equal to main's;
+287970763 days 1000–1200 went from 664 to 549 M instructions a day.
+
 ## Algorithms
 
 - Settlement population totals are computed lazily from the household ledger. Ledger set/delete/clear
