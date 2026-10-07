@@ -4480,8 +4480,10 @@ function hireMen(a,k){ // sell-swords: their own tongue, their own names
     p.gn=givenPick(c,'m',null);p.sur=X?(frand()<0.5?X.patr(givenPick(c,'m',null)):X.nick[['tall','strong','bold','dark','red','young','quick','stout'][Math.floor(frand()*8)]]):'';
     p.sk[KA]=0.35+frand()*0.45;p.sk[KRi]=frand()*0.7;if(p.sk[KRi]>=0.45)a.horses=(a.horses||0)+1;a.men.push(p);}} // a sell-sword who rides brings his own horse
 function sendHome(p){const s=p.merc?null:W.settlements[p.home];if(!s||!s.folk){dropPerson(p);return;}p.si=p.home;s.folk.push(p);invalidateFolkIndex();}
+function rollLiving(a){ // a man who died away from the host (an outlaw cut down with his band, say) is struck off its roll; the host's numbers stand, and the muster makes up the roll
+  const M=a.men;if(!M||!M.some(p=>p.dead))return;let j=0;for(const p of M)if(!p.dead)M[j++]=p;M.length=j;}
 function musterSync(a){ // the roll follows the host's numbers: the released go home, the rest of the missing are dead
-  if(!a.men)return [];const want=Math.max(0,Math.round(a.strength)),dead=[];let k=a.men.length-want;
+  if(!a.men)return [];rollLiving(a);const want=Math.max(0,Math.round(a.strength)),dead=[];let k=a.men.length-want;
   if(k>0){const rel=Math.min(k,Math.round(a._rel||0));a._rel=0;
     if(rel>0){for(const p of pickK(a.men,rel,p=>p.merc?0.3:1)){a.men.splice(a.men.indexOf(p),1);sendHome(p);}k-=rel;}
     if(k>0)for(const p of pickK(a.men,k,p=>Math.exp(-1.2*p.sk[KA]-0.5*trait(p,GV)-0.3*p.sk[KRi]))){a.men.splice(a.men.indexOf(p),1);dropPerson(p,`Fell fighting with ${a.name}`);
@@ -12414,7 +12416,7 @@ function closestApproach(a,b){ // two hosts moving straight over the day (from y
   return {d:Math.hypot(px-qx,pz-qz),x:(px+qx)/2,z:(pz+qz)/2};}
 function tickMilitary(){
   for(const a of W.armies)if(!a.gone)a.fatigue=clamp((a.fatigue||0)+(a.state==='march'?(a.field||a.fieldTo?0.09:0.06):a.state==='battle'?0:-0.12)+(a.supply<=0?0.02:0),0,1); // legs worn by the march, rested in camp
-  for(const a of W.armies)if(!a.gone&&a.men&&a.men.length!==Math.round(a.strength)&&a.state!=='battle')musterSync(a);
+  for(const a of W.armies)if(!a.gone&&a.men){rollLiving(a);if(a.men.length!==Math.round(a.strength)&&a.state!=='battle')musterSync(a);} // the dead struck off first: today's battles weigh only living men
   if(!W.war&&W.armies.length===0)return;
   const now=day();
   for(const a of W.armies){if(!a.chase||a.gone)continue;const b=W.armies.find(x=>x.id===a.chase); // in pursuit: each day the host turns toward where the foe now is
@@ -13585,7 +13587,7 @@ function levy(s,v,to,why){ // a rate laid on the households by their means; retu
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why);}return got;}
 function wages(s,v,why){buildWorks(s,v,null,why);} // the payer's purse already debited: the money reaches the builders
 function soldiersPay(a,v,payer){ // a host's pay: to the households its men come from; the sell-swords' goes out of the realm; what the purse cannot meet is owed them
-  if(!(v>0))return;if(payer){const can=Math.max(0,means(payer));if(can<v){a._arrears=(a._arrears||0)+(v-can);v=can;}else if(a._arrears>0){const back=Math.min(a._arrears,can-v);a._arrears-=back;v+=back;}if(!(v>0))return;}const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
+  if(!(v>0))return;if(payer){const can=Math.max(0,means(payer));if(can<v){a._arrears=(a._arrears||0)+(v-can);v=can;}else if(a._arrears>0){const back=Math.min(a._arrears,can-v);a._arrears-=back;v+=back;}if(!(v>0))return;}rollLiving(a);const M=a.men||[];if(!M.length){const t=W.settlements[a.home]||W.settlements[a.at];payAmong(t?heads_(t,h=>ageYrs(h)<50):[],v,payer,'hosts');return;}/* the levy is of the host's own country */const each=v/M.length;
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts');}}
 function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount(p);if(!h)return;const s=W.settlements[p.si]||W.settlements.find(x=>h.population.has(x))||W.capital;
   const isHead=h.head===p,servile=(s.furl||[]).some(f=>f.ten==='villein'&&(f.wk===p.id||f.own===p.id)),survivors=[...h.members].filter(q=>q!==p&&!q.dead),widow=p.sp&&!p.sp.dead?p.sp:null,heirs=landHeirs(p,s),shares=isHead?estateShares(p,s):[];
