@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-07 15:07 UTC · after 54c4c9c</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-07 15:33 UTC · after 1aa7568</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -8411,14 +8411,19 @@ function badge(g,fill,ring){g.beginPath();g.arc(32,32,28,0,7);g.fillStyle=fill;g
 function houseMarker(hi){const h=W.houses[hi]||W.houses[0];return markerTex('h'+hi+'_'+h.sigilHue[0]+h.charge,g=>{
   badge(g,'#'+h.sigilHue[0].toString(16).padStart(6,'0'),'#f0e6cf');const img=makeSigil(h.sigilHue,h.charge);g.save();g.beginPath();g.arc(32,32,24,0,7);g.clip();g.drawImage(img,10,10,44,44);g.restore();});}
 function placeMarker(obj,tex,x,y,z,px){ // px: on-screen size in pixels, roughly
-  const markers=G.markers||(G.markers=new WeakMap());let sp=markers.get(obj);
+  const markers=G.markers||(G.markers=new Map());let sp=markers.get(obj);
   if(!sp){sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false,fog:false}));markers.set(obj,sp);sp.renderOrder=5;scene.add(sp);}
+  sp.userData.seen=G.markFrame||0;
   if(sp.material.map!==tex){sp.material.map=tex;sp.material.needsUpdate=true;}
   const far=cam.cur.dist>900;sp.visible=far;if(!far)return;
   const ds=camera.position.distanceTo(new THREE.Vector3(x,y,z))*(px/innerHeight)*1.1;
   sp.position.set(x,y+ds*0.7,z);sp.scale.set(ds,ds,1);
 }
 function dropMarker(obj){const markers=G.markers,sp=obj&&markers?.get(obj);if(sp){scene.remove(sp);sp.material.dispose();markers.delete(obj);}}
+function sweepMarkers(){ // a badge not placed this frame belongs to a host disbanded, a camp broken or an envoy home: the worker's own drops never reach the screen's sprites, and a stale badge kept its map-altitude size over the town where it was left
+  const M=G.markers,f=G.markFrame||0;G.markFrame=f+1;if(!M)return;
+  for(const [o,sp]of M)if(sp.userData.seen!==f){scene.remove(sp);sp.material.dispose();M.delete(o);}
+}
 function buildAgents(){
   // caravans: ox-drawn covered wagons, the cover coloured by the cargo
   const cg=cartGeom();
@@ -16501,6 +16506,7 @@ function animateWorld(dt,now){
   if(W.dragon&&!W.dragon.dead&&G.dragonMesh){const dm=G.dragonMesh,vis=dm.visible;
     placeMarker(W.dragon,markerTex('dragon',g2=>{badge(g2,'#7a1f1f','#e8c247');g2.font='32px serif';g2.textAlign='center';g2.fillText('🐉',32,44);}),vis?dm.position.x:W.dragon.lair.x,(vis?dm.position.y:W.dragon.lair.y)-20,vis?dm.position.z:W.dragon.lair.z,vis?30:20);}
   else if(W.dragon)dropMarker(W.dragon);
+  sweepMarkers();
   /* --- dragon --- */
   const d=W.dragon;
   const dsc=clamp(cam.cur.dist*0.0011,1,3);G.dragonMesh.scale.setScalar(dsc);
