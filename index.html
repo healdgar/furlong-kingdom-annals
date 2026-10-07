@@ -11466,13 +11466,13 @@ function craftWork(s,h,trs,v){ // a household pays for work done by a trade of t
 function shareOutput(s,si,PM,heads,foodOnly=false){const M=s._made||{};s._made=foodOnly?{...M,grain:0,fish:0}:{};
   if(foodOnly&&!(M.grain>0)&&!(M.fish>0))return;
   const T=tilledOf(s,si);if(heads.length&&T.some(f=>!f.ten))settleTenure(s,si,heads); /* a strip comes into crop already held: the lord keeps his home farm and lets the rest, as at the year's reckoning (#23: till then every new strip's corn was the lord's, and he paid its harvest wages) */const church=parishOf(s),mill=s.buildings.find(b=>(b.arch==='mill'||b.arch==='windmill')&&b.state==='sound'&&!b.removed),dues=(s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].dues)||1,gp=price(s,'grain');
-  let tA=0;for(const f of T)tA+=f.area;let wages=0;if(church)chOf(church);
+  let tA=0;for(const f of T)tA+=f.area;const wages=new Map();if(church)chOf(church);
   if(M.grain>0){if(!T.length)offer(s,'grain',lordAcct(s),M.grain);else for(const f of T){const q=M.grain*f.area/Math.max(1,tA),tithe=church?q*0.1:0,mult=mill||(s.works&&s.works.mill)?q*0.06:0,net=q-tithe-mult,lordOf=f.lord>=0?houseAcct(f.lord):lordAcct(s);
     if(tithe)offer(s,'grain',church,tithe);if(mult)offer(s,'grain',mill?ownerAcct(mill,s):lordAcct(s),mult);
-    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net);wages+=net*0.3*gp;continue;} // the home farm's crop is the lord's: he pays the harvesters
+    if(f.ten==='demesne'||!f.ten){offer(s,'grain',lordOf,net);wages.set(lordOf,(wages.get(lordOf)||0)+net*0.3*gp);continue;} // the home farm's crop is the lord's: he pays the harvesters
     const w=PM.get(f.wk),sh=clamp((TEN_SHARE[f.ten]||0.6)-(dues-1)*0.15,0.2,0.95),rest=net*(1-sh);if(w&&!w.dead)offerLand(s,'grain',w,net*sh,f);else offer(s,'grain',lordOf,net*sh);
     const o=PM.get(f.own);if(f.ten==='crop'&&o&&!o.dead){offerLand(s,'grain',o,rest*0.85,f);offer(s,'grain',lordOf,rest*0.15);}else offer(s,'grain',lordOf,rest);}}
-  if(wages>0)payAmong(heads.filter(h=>tills(h,s)&&!(h._strips>0)),wages,lordAcct(s),'harvest wages'); // day-labour on the home farm, paid by the lord
+  if(wages.size){const L=heads.filter(h=>tills(h,s)&&!(h._strips>0));for(const[lord,v]of wages)if(v>0)payAmong(L,v,lord,'harvest wages');} // day-labour on the home farm, paid by the lord whose crop it is (#23: the place's lord paid for strips another lord held and reaped)
   const cost={tools:0.75*(price(s,'ore')+price(s,'timber')),cloth:price(s,'wool')/0.8}; // a craftsman will not sell below what his stuff cost him
   const MAKER={fish:'fisher',timber:'woodcutter',ore:'miner',tools:'smith',cloth:'weaver'};
   for(const g of(foodOnly?['fish']:['fish','timber','ore','tools','cloth'])){if(!(M[g]>0))continue;const L=heads.filter(h=>(PRODUCE[h.tr]||'')===g);if(L.length)for(const h of L)offer(s,g,h,M[g]/L.length,cost[g]);
