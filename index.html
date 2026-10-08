@@ -11773,12 +11773,15 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   {let lu=0;const ph=price(s,'hay');for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;if(beastYield(s,k)<LU[k]*WINTER_HAY*ph)continue;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too: those whose year's yield pays for their winter's hay at its price (#23: he bought it at any price, and a dear year's hay emptied the crown's chest; beasts not worth it go short in the winter)
     const short=lu*WINTER_HAY-(pantry(s,lordAcct(s)).hay||0);if(short>0){purchase(s,'hay',lordAcct(s),short);commodityCreditPurchase(s,lordAcct(s),'hay',purchase.got);}} // the lord's beasts' winter fodder, topped up as the meadows offer it
   // the crafts buy their stuff when the work pays
-  const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30;
-  if(cap>0&&price(s,'tools')*0.8>0.6*(price(s,'ore')+price(s,'timber'))){const sm=heads.filter(h=>h.tr==='smith'),by=sm.length?sm:[lordAcct(s)];
-    for(const h of by){let c=purchase(s,'ore',h,cap*0.6/by.length);commodityCreditPurchase(s,h,'ore',purchase.got);c+=purchase(s,'timber',h,cap*0.6/by.length);commodityCreditPurchase(s,h,'char',purchase.got);if(h.gn!==undefined)h._inc=(h._inc||0)-c;}}
+  // ... for the work the market will take: what the place has wanted of the ware in a month, one month with another, less what lies unsold at its
+  // price and the stuff the workshop already holds (#51: they bought a month's full work whatever would sell, so a lord with no smith of his own
+  // bought ore at forty times its price, a hundred loads of it, for tools no one would buy)
+  const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30,wanted=g=>Math.max(0,(s._dAvg?.[g]||0)-avail(s,g,price(s,g)))/0.8;
+  if(cap>0&&price(s,'tools')*0.8>0.6*(price(s,'ore')+price(s,'timber'))){const sm=heads.filter(h=>h.tr==='smith'),by=sm.length?sm:[lordAcct(s)],work=Math.min(cap,wanted('tools'))/by.length;
+    if(work>0)for(const h of by){const x=pantry(s,h),need=Math.max(0,work-Math.min(x.ore||0,x.char||0)/0.6);if(!(need>0))continue;let c=purchase(s,'ore',h,need*0.6);commodityCreditPurchase(s,h,'ore',purchase.got);c+=purchase(s,'timber',h,need*0.6);commodityCreditPurchase(s,h,'char',purchase.got);if(h.gn!==undefined)h._inc=(h._inc||0)-c;}}
   const wcap=((s._dyers||0)*0.5+s.pop*0.0008)*30;
-  if(wcap>0&&price(s,'cloth')*0.8>price(s,'wool')){const wv=heads.filter(h=>h.tr==='weaver'||h.tr==='dyer'),by=wv.length?wv:heads.length?heads:[lordAcct(s)];
-    for(const h of by){const c=purchase(s,'wool',h,wcap/by.length);commodityCreditPurchase(s,h,'wool',purchase.got);if(h.gn!==undefined&&wv.length)h._inc=(h._inc||0)-c;}}
+  if(wcap>0&&price(s,'cloth')*0.8>price(s,'wool')){const wv=heads.filter(h=>h.tr==='weaver'||h.tr==='dyer'),by=wv.length?wv:heads.length?heads:[lordAcct(s)],work=Math.min(wcap,wanted('cloth'))/by.length;
+    if(work>0)for(const h of by){const need=Math.max(0,work-(pantry(s,h).wool||0));if(!(need>0))continue;const c=purchase(s,'wool',h,need);commodityCreditPurchase(s,h,'wool',purchase.got);if(h.gn!==undefined&&wv.length)h._inc=(h._inc||0)-c;}}
   }
 function payCrafts(s,heads){ // the crafts and trades take in what the town's families paid them this month, a better shop and a better hand taking more
   const C=heads.filter(h=>!tills(h,s)&&h.tr&&!PRODUCE[h.tr]),wt=h=>(TRADE_W[h.tr]||0.5)*(1+0.3*(h.bh&&!h.bh.removed?h.bh.tier:0))*(0.8+0.2*(h.sk?h.sk[KCr]||0:0));let tw=0;for(const h of C)tw+=wt(h);

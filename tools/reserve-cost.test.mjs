@@ -32,3 +32,14 @@ test('no reserve is raised to the dearest of two costs any more',()=>{
   const ladeIn=source.slice(source.indexOf('function ladeIn('),source.indexOf('\nfunction ',source.indexOf('function ladeIn(')+1));
   assert.ok(ladeIn.includes("const who=c.m||'out';reserveAt(d,c.good,who,"),'an arrived load sets the reserve of whoever holds it, not of the lord who paid a dead dealer\'s tolls');
 });
+
+// The crafts buy their stuff for the work the market will take (#51), not a month's full work whenever the margin is good.
+const smithy=(onSale=0)=>{const r=realm({grain:0,fish:0,crown:100000,cash:0,households:0});
+  r.eval(`s._smiths=4;Object.assign(s.px,{tools:300,ore:10,timber:3});s._dAvg={tools:2};s.stores.ore=1000;s.stores.timber=1000;s.stores.tools=${onSale};
+    offer(s,'ore','miner',1000);offer(s,'timber','woodcutter',1000);${onSale?`offer(s,'tools','smith',${onSale});`:''}provision(s,[],new Map())`);return r;};
+test('a lord with smithies and no smith buys ore for the tools the town wants',()=>{
+  near(smithy().eval("pantry(s,'crown').ore||0"),2/0.8*0.6); // a month's full work would be 4 smithies × 0.45 × 30 × 0.6 = 32.4
+});
+test('no ore is bought while the tools the town wants already lie unsold',()=>{
+  assert.equal(smithy(5).eval("pantry(s,'crown').ore||0"),0);
+});
