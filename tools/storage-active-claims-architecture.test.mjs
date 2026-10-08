@@ -72,7 +72,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // the views are noted in COMMODITY_VIEW_PROXIES and keep their targets; the ledger gains static historyState/historyAdopt over
  // its private state. No writer, journal event or order changed: world graphs, RNG and annals equal the previous build (42 and
  // 1001 sea, 40 days), and world-save.test.mjs covers the round trip.
- assert.equal(digest(source.slice(a,b)),"c1ca0b3b214b7800a15d823212af618985525d5b2654fbd220f7e4cb4d5e751a");
+ // Meat (batch 9): STORAGE_GOODS gains meat's volume; commodityClearMarket lends for every food (FOODS), not grain and fish alone;
+ // herdProduce no longer counts the swine's bacon as grain (their meat comes at Martinmas); winterFeed reads its loss rate as STARVE.
+ // No lot, title, claim or journal writer changes; meat.test.mjs and the ownership and storage fixtures cover these lines.
+ assert.equal(digest(source.slice(a,b)),"5112cb73892e5be13f567984d5680721585806ffb4c33978de52ffcb115c28be");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
@@ -86,6 +89,8 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // and normalize the land-uniform guard. Canonical claim and balance writes match HEAD.
  // Re-pinned with the embedded docs excluded: the corpus is identical at 9c66076, cd2eab8, e472d30 and HEAD; only stamped doc lines had varied.
  // Tick-cost: the smith/weaver owner scan is skipped when no owner holds ore and charcoal (or wool); one copy of _owners, no writer changed.
- assert.equal(digest(outside),"89119c20e2944f1085e7e07a05ccc5ff44a14d6c57912ee013e27ff0054a7e04");
+ // Meat (batch 9): the lords' halls eat through eatFood; herdOwners and martinmas read the families' beasts (x.animals) in owner
+ // order. No held or sale writer outside the region changed.
+ assert.equal(digest(outside),"606a83f27efa5266307540bc8cbc56a5ac32d9aa2d943cd41eeebd0a56a77d3f");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });
