@@ -128,13 +128,14 @@ test('construction material purchase is consumed from the same balance once',()=
   near(held(r,1,'timber'),0);
 });
 
-test('migration moves held stock only and leaves the household sale offer at origin',()=>{
+// A family that moves carries its stock, held and on sale, where it is worth more than its carriage (#55; before, its offer was left at origin).
+test('migration carries held stock and the household sale offer to the new home when worth their carriage',()=>{
   const r=fixture({households:1,grain:10,fish:0});
-  const d={name:'remote',owner:0,pos:{x:1,z:1},stores:{grain:0,fish:0},folk:[],buildings:[],pop:0};
+  const d={name:'remote',owner:0,pos:{x:1,z:1},stores:{grain:0,fish:0},folk:[],buildings:[],pop:0,px:{grain:2}};
   r.W.settlements.push(d);
-  r.eval("mkt(s,'grain').clear();addHeld(s,H[0],'grain',4);offer(s,'grain',H[0],6);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
-  near(r.s.stores.grain,6);near(d.stores.grain,4);near(held(r,0,'grain'),0);near(sale(r,0,'grain'),6);
-  near(r.eval("pantry(W.settlements[1],H[0]).grain"),4);
+  r.eval("buildWorks=(s,c,p,why)=>transfer(p,'crown',c,why);mkt(s,'grain').clear();addHeld(s,H[0],'grain',4);offer(s,'grain',H[0],6);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
+  near(r.s.stores.grain,0);near(d.stores.grain,10);near(held(r,0,'grain'),0);near(sale(r,0,'grain'),0);
+  near(r.eval("pantry(W.settlements[1],H[0]).grain"),4);near(r.eval("mkt(W.settlements[1],'grain').get(H[0])"),6);
 });
 
 test('settlement transfer clips a one-ulp caller excess but rejects material excess atomically',()=>{

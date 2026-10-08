@@ -87,7 +87,27 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // drops only their cached quantities. No quantity, title, claim or balance writer changed, and no settlement is written or withheld
  // that was not before: with the retired places and records taken out, world graphs, RNG, annals and the journal's deltas, flows
  // and notes equal deab546 (1001 sea 150 days, 42 sea 3600 days); world-save.test.mjs covers the saved spent set.
- assert.equal(digest(source.slice(a,b)),"3e9e7bb9bfb352521f56e9084656b73bc85d67b0412c6a74461b787b5ee5d9c7");
+ // Crumbs (#55, batch 10b, behaviour): commoditySpoil sweeps out a store whose day's spoilage leaves less than CRUMB of it, whole,
+ // through the same consume and spoilage causes (journaled as spoilage; the stores, s._lostM, pending output and the lord's rot
+ // tally in step), and a seller left with nothing on sale there loses his reserve there, as commodityConsume does; spoilOwned
+ // calls it for goods that never rot too, for their crumbs. No other writer changed; ledger-growth.test.mjs covers the rule.
+ // A family's goods (#55, batch 10b, behaviour): moveHouseholdGoods takes a moving household's ledger goods, held and on sale, through
+ // carryHome (commodityMove, cause household-carriage, as far as each is worth more at the new home than the carters' freight and the purse
+ // pays it; the carriage paid through buildWorks; a seller's reserve moved with his stock, the carriage added) instead of storageMoveLots
+ // of its held goods alone; its beasts as before. homeward (at each place's market) offers what a family living elsewhere left there and
+ // is not worth carrying (held to sale, cause offered, reserve dropped), and waifs gives what the market did not take to the lord (cause
+ // waif). No other writer changed; ledger-growth.test.mjs covers the rules, the migration fixtures their new expectations.
+ // Spoilage in closed form (#55, batch 10b, behaviour): the ledger keeps each good's clock of days of spoilage (spoilage: {n, rate},
+ // ripen) and on each owner's store of a good at a facility the count it was last settled at (since, non-enumerable on its Map); every
+ // read (quantity, total, entries, _quantityAt, _usedStats, _plan) gives the store as it stands, compounded in closed form with a crumb
+ // gone, and every write (_set) first settles the store (_settle: the loss written by _put, journaled as exposure-loss or stored-spoilage,
+ // and handed to the spoiled hook). commoditySpoil ripens the good and settles only the place's unsold output; commoditySpoiled notes
+ // the month's loss, pending output, the lord's rot and an emptied seller's reserve; the storage report reads balances as they stand.
+ // The quantity, total and used caches are dated by the clock. Powers are products, memoised (POWERS), the same in every engine. A store
+ // left below its crumb by a write is noted (sweep) and settled after the next day's ripening, so crumbs go the next day as they did. A
+ // yard without bounds is not reckoned for room (adjust, transfer): what it holds cannot fail a capacity it does not have. No other writer
+ // changed; ledger-growth.test.mjs covers the closed form.
+ assert.equal(digest(source.slice(a,b)),"586414d45309e6c2de212452dd2cf103bdbc634364165ef05c509cc2b4866449");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
