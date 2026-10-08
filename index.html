@@ -4019,19 +4019,19 @@ globalThis.CommodityBalanceLedger = (() => {
       this.version = 3; this.realmId = realmId; this.day = finiteNonnegative(day, 'day'); this.settlementRevision = 0; this.facilities = new Map(); this.locations = this.facilities;
       DAILY.set(this, { ownerId, assert, volumes: { ...volumes }, rows: new Map(), locations: new Map(), flows: new Map(), notes: new Map(),
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: new Map(),
-        orderRanks: new Map(), nextOrderRank: 0 });
+        orderRanks: new Map(), nextOrderRank: 0, spent: new Set() });
     }
     // A saved world takes its ledgers up again (worldSave, worldLoad): the private order of rows, owners and facilities goes
     // with it, and the day's buffers; the query caches stay behind and fill again as they are asked.
     static historyState(ledger) {
       const s = DAILY.get(ledger); if (!s) fail('not a ledger');
       return { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
-        ownerFacilities: s.ownerFacilities, orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank };
+        ownerFacilities: s.ownerFacilities, orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank, spent: s.spent };
     }
     static historyAdopt(ledger, s) {
       DAILY.set(ledger, { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: s.ownerFacilities,
-        orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank });
+        orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank, spent: s.spent || new Set() });
     }
     _assert() { DAILY.get(this).assert(); }
     ownerId(owner) { return ownerIdString(DAILY.get(this).ownerId(owner), 'ownerId'); }
@@ -4080,6 +4080,13 @@ globalThis.CommodityBalanceLedger = (() => {
     }
     _facility(id) { const f = this.facilities.get(id); if (!f) fail(`unknown location: ${String(id)}`); return f; }
     facilityOrder(id) { return this._facility(id)[FACILITY_ORDER]; }
+    // A spent place of passage (a cart's or a boat's load laid down, or lost on the road) leaves the ledger at the next settlement that is
+    // written in any case, which records its removal (after: null). Its id came from a counter and is never issued again.
+    retire(id) { const f = this.facilities.get(id); if (f && f.transit && !f.balances.size) DAILY.get(this).spent.add(id); }
+    // Whether an owner holds anything here, in store or on the road.
+    holds(owner) { return DAILY.get(this).ownerFacilities.has(owner); }
+    // An owner who holds nothing here and is not asked again: his remembered totals go. They are a cache, read only by quantity().
+    forget(owner) { const state = DAILY.get(this); if (state.ownerFacilities.has(owner)) return false; state.quantityCache.delete(owner); return true; }
     volume(good) { const defaults = DAILY.get(this).volumes; return defaults[good] ?? (good === 'char' ? defaults.timber : undefined) ?? 1; }
     _volume(facility, good) { const defaults = DAILY.get(this).volumes; return facility.volumes[good] ?? defaults[good] ?? (good === 'char' ? defaults.timber : undefined) ?? facility.volume ?? 1; }
     _canStore(facility, good) {
@@ -4338,12 +4345,18 @@ globalThis.CommodityBalanceLedger = (() => {
       const yieldRow = row => { if (!Object.is(row.before, row.after)) deltas.push(Object.freeze({ location: row.location, good: row.good, owner: row.ownerId, availability: row.availability,
         before: row.before, after: row.after, delta: row.after - row.before })); }; // frozen as built: the event's deep freeze then stops at each row
       flattenRows(state.rows);
-      const locations = [...state.locations.values()].filter(x => JSON.stringify(x.before) !== JSON.stringify(x.after)).map(x => ({ id: x.id, after: x.after }));
+      let locations = [...state.locations.values()].filter(x => JSON.stringify(x.before) !== JSON.stringify(x.after)).map(x => ({ id: x.id, after: x.after }));
       const flows = {};
       for (const [cause, goods] of state.flows) { const row = {}; for (const [good, qty] of goods) if (qty !== 0) Object.defineProperty(row, good, { value: qty, enumerable: true, writable: true, configurable: true }); if (Object.keys(row).length) Object.defineProperty(flows, cause, { value: row, enumerable: true, writable: true, configurable: true }); }
       const notes = {};
       for (const [cause, note] of state.notes) Object.defineProperty(notes, cause, { value: { count: note.count, qty: note.qty, metadata: note.metadata }, enumerable: true, writable: true, configurable: true });
       if (!deltas.length && !locations.length && !Object.keys(flows).length && !Object.keys(notes).length) { clearBuffer(state); this.day = day; return null; }
+      if (state.spent.size) { // spent places leave with a settlement written anyway, in the order they were made: no settlement is written for them alone
+        const gone = [...state.spent].map(id => this.facilities.get(id)).filter(f => f && f.transit && !f.balances.size).sort((a, b) => a[FACILITY_ORDER] - b[FACILITY_ORDER]);
+        for (const f of gone) { recordLocation(this, f.id, f.metadata, null); this.facilities.delete(f.id); state.usedCache.delete(f.id); }
+        state.spent.clear();
+        locations = [...state.locations.values()].filter(x => JSON.stringify(x.before) !== JSON.stringify(x.after)).map(x => ({ id: x.id, after: x.after }));
+      }
       const event = freezeDeep({ kind: 'storage', cause: 'daily-settlement', version: 3, settlement: this.realmId,
         day, revision: this.settlementRevision + 1, deltas, locations, flows, ...(Object.keys(notes).length ? { notes } : {}) });
       if (emit) emit(event);
@@ -4436,6 +4449,7 @@ function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=comm
 function commodityBuildingReport(s,b){const K=s.storage,n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const r of K.entries({location:n.id})){const g=commodityPhysical(r.good);goods[g]=(goods[g]||0)+r.qty;const id=storageOwnerId(r.owner);owners.set(id,(owners.get(id)||0)+r.qty*K.volume(r.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
 function commodityCargoOut(c,s){const K=s.storage,id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});K.transfer({owner:accountOwner(c.m),good:c.good,availability:'held'},c.qty,accountOwner(c.m),{location:id,availability:'transit',cause:'dispatch'});c.storageCargo={origin:s,id};commodityCargoQtyBind(c,K,id);}
 function commodityCargoQtyBind(c,K,id){Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){return [...K.entries({location:id})].reduce((n,r)=>n+r.qty,0);}});}
+function commodityCargoRetire(c){const cargo=c.storageCargo;if(cargo&&commodityActive(cargo.origin))cargo.origin.storage.retire(cargo.id);} // a load laid down or lost: its cart's place in the ledger is spent
 function commodityCargoArrive(c,d){const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);for(const r of [...A.entries({location:cargo.id})]){stockOf(d,r.owner);A.consume(r,r.qty,'cargo-departure');B.adjust('yard',r.good,r.owner,'sale',r.qty,'arrival');}storageBindGood(d,c.good);}
 function commodityCargoRaid(c,fence,thief='out'){const cargo=c.storageCargo;if(!cargo)return 0;const A=cargo.origin.storage,B=fence?storageInit(fence):null;let kept=0;for(const r of [...A.entries({location:cargo.id})]){A.consume(r,r.qty,'cargo-robbery');if(B){const q=r.qty*.6;stockOf(fence,thief);B.adjust('yard',r.good,accountOwner(thief),'sale',q,'cargo-stolen-arrival');storageBindGood(fence,r.good);kept+=q;}}return kept;}
 function commodityGiveFood(s,g,q,source){if(!(q>0))return;if(!Number.isFinite(q))storageInvariantFault('Invalid relief distribution at '+s.name+' day '+day()+': requested '+q+' '+g+', cause relief');const H=householdsOf(s);if(!H.length)return;const weights=H.map(h=>Math.max(0,h.population.get(s)||0)*(.1+h.hunger)),total=weights.reduce((a,b)=>a+b,0),K=s.storage,owner=source===undefined?null:accountOwner(source),availability=source===undefined?'unassigned':'held',goods=g==='char'&&source===undefined?['char','timber']:[g],liveHave=()=>{let n=0;for(const good of goods)for(const r of K.entries({owner,good,availability}))if(!K.locations.get(r.location)?.transit)n+=r.qty;return n;},have=liveHave(),tolerance=Number.EPSILON*Math.max(q,have)*Math.max(32,H.length*16);if(q>have+tolerance)storageInvariantFault('Unbacked relief distribution at '+s.name+' day '+day()+': requested '+q+' '+g+', available '+have+', owner '+storageOwnerId(owner)+', availability '+availability+', cause relief');const amount=Math.min(q,have),shares=[];let left=amount;for(let i=0;i<H.length;i++){const v=i===H.length-1?left:Math.min(left,amount*(total>0?weights[i]/total:1/H.length));shares.push(v);left-=v;}for(let i=0;i<H.length;i++){let v=shares[i];if(!(v>0))continue;const h=H[i],recipient=accountOwner(h);if(source!==undefined&&recipient===owner)continue;const available=liveHave();if(v>available){const excess=v-available;if(i===H.length-1&&excess<=tolerance)v=available;else storageInvariantFault('Unbacked relief recipient at '+s.name+' day '+day()+': requested '+v+' '+g+', available '+available+', owner '+storageOwnerId(owner)+', recipient '+storageOwnerId(recipient)+', cause relief');}if(!(v>0))continue;if(source!==undefined){stockOf(s,h);K.transfer({owner,good:g,availability:'held'},v,h,{availability:'held',cause:'relief'});}else addHeld(s,h,g,v);}}
@@ -4696,7 +4710,22 @@ function furlongRightsBind(f,resolve){
     Object.defineProperty(f,'wk',{configurable:true,enumerable:true,get(){const o=this.title.work.owner;return o&&o.household?o.head?o.head.id:-1:o;},set(id){this.title.work=resolve(id);}});}
 function buildingRightsBind(b,resolve){
     Object.defineProperty(b,'ownerId',{configurable:true,enumerable:true,get(){return this.title.beneficiary?this.title.beneficiary.id:this.title.owner;},set(id){this.title=resolve(id);}});}
-function ownershipTick(){W._pm=folkIndex();for(const s of W.settlements){householdsOf(s);initOwnership(s);bindPropertyRights(s);}}
+function ownershipTick(){W._pm=folkIndex();for(const s of W.settlements){householdsOf(s);initOwnership(s);bindPropertyRights(s);}if(day()%30===0)ownersRetire();}
+// A household that has ended (no member left, its estate passed to its successors) and holds nothing in any place, nor has a load on
+// the road, leaves every place's owners: nothing is given to it again (its heirs take in its stead: acct, means, ownerShares), and every
+// walk of a place's owners passes over a record that holds nothing. The household itself stays in W.households: what is paid to it goes on to its heirs.
+const OWNERS_RETIRED=new WeakSet(); // households whose records are gone: a cache, not save state (a world taken up checks them once again)
+function ownerRecordEmpty(s,x){const V=COMMODITY_ACCOUNT_VIEWS.get(x);if(!commodityActive(s)||V?.K!==s.storage)return false;
+  for(const k of Reflect.ownKeys(x))if(k!=='held'&&k!=='sale'&&k!=='reserve'&&k!=='animals')return false;
+  for(const t of [V.targets.held,V.targets.sale,x.reserve,x.animals])if(!t||typeof t!=='object'||Reflect.ownKeys(t).length)return false;return true;}
+function ownersRetire(){if(!W.households)return;let road=null;
+  for(const h of W.households.values()){if(OWNERS_RETIRED.has(h)||h.members.size||!Array.isArray(h.successors))continue;
+    if(!road){road=new Set();for(const c of W.caravans||[])if(c.m&&c.m._hh)road.add(c.m._hh);}if(road.has(h))continue; // his load comes to his name where it is laid down
+    let empty=true;for(const s of W.settlements){const x=s._owners?.get(h);if(s.storage&&(!commodityActive(s)||s.storage.holds(h))||x&&!ownerRecordEmpty(s,x)){empty=false;break;}}if(!empty)continue;
+    for(const s of W.settlements){const M=s._owners,x=M?.get(h);if(!x)continue;M.delete(h);const C=STORAGE_ACTIVE_CLAIMS.get(s);
+      if(C){const r=C.records.get(x);C.records.delete(x);C.size=M.size;if(r)for(const L of [...(C.goods?.values()||[]),...(C.offers?.values()||[])]){const i=L.indexOf(r);if(i>=0)L.splice(i,1);}}
+      s.storage.forget(h);}
+    OWNERS_RETIRED.add(h);}}
 function houseFolk(s){
   const homes=(s.buildings||[]).filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),cap=new Map();for(const b of homes){cap.set(b,capOf(b));b.hh=[];}
   const heads=new Set();for(const p of s.folk||[])heads.add(householdHead(p));
@@ -12213,7 +12242,7 @@ function tickEconomy(){
           plagueArrives(d);
         }
       }
-      c.gone=true;
+      c.gone=true;commodityCargoRetire(c);
       W.caravans.splice(i,1);
     }
   }
@@ -18891,7 +18920,7 @@ function worldSaveEncode(){
   for(const s of W.settlements){
     if(s.storage){const st=CommodityBalanceLedger.historyState(s.storage),assert=st.assert===storageOutcomeAssert?'outcome':src(st.assert)==='()=>{}'?'none':null;
       if(st.ownerId!==storageOwnerId||!assert)throw Error('The ledger at '+s.name+' answers to another owner or assertion');
-      ledgers.push([s.storage,{volumes:st.volumes,rows:st.rows,locations:st.locations,flows:st.flows,notes:st.notes,ownerFacilities:st.ownerFacilities,orderRanks:st.orderRanks,nextOrderRank:st.nextOrderRank},assert]);}
+      ledgers.push([s.storage,{volumes:st.volumes,rows:st.rows,locations:st.locations,flows:st.flows,notes:st.notes,ownerFacilities:st.ownerFacilities,orderRanks:st.orderRanks,nextOrderRank:st.nextOrderRank,spent:st.spent},assert]);}
     const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C)claims.push([s,{map:C.map,size:C.size,next:C.next,ready:C.ready,fallback:C.fallback,goods:C.goods,unsafe:C.unsafe,offers:C.offers??null,
       records:C.map instanceof Map?[...Map.prototype.values.call(C.map)].filter(x=>C.records.has(x)).map(x=>[x,C.records.get(x)]):[]}]);
   }
