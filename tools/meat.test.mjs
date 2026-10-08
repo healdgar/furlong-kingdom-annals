@@ -22,7 +22,8 @@ for(const commodity of [false,true]){
     const r=place({commodity});herd(r,'swine:10');r.eval("H[0].herd={swine:4};H[1].herd={swine:2}");
     r.eval("herdCull(s,'swine',5)"); // half the herd: each owner's half
     near(r.s.stores.swine,5);near(r.eval('H[0].herd.swine'),2);near(r.eval('H[1].herd.swine'),1);
-    near(held(r,0,'meat'),2*1.5);near(held(r,1,'meat'),1*1.5);near(sale(r,"'crown'",'meat'),2*1.5); // the four of the herd no family owns are the lord's
+    near(sale(r,'H[0]','meat'),2*1.5);near(sale(r,'H[1]','meat'),1*1.5);near(sale(r,"'crown'",'meat'),2*1.5); // the four of the herd no family owns are the lord's; each owner's meat lies on sale, as his grain does
+    near(held(r,0,'meat'),0);
     near(r.s.stores.meat,5*1.5);near(r.s.stores.grain,0);
   });
 
@@ -30,10 +31,10 @@ for(const commodity of [false,true]){
     const r=place({commodity});herd(r,'swine:10');r.eval("H[0].herd={swine:4};H[1].herd={swine:2};s.furl=[]");
     r.eval("martinmas(s,{pann:1e6,till:0},{swine:9.5,cattle:0,sheep:0,horses:0})"); // the sows that farrow 9.5 by next Martinmas: 9.5/1.9 = 5
     near(r.s.stores.swine,5);near(r.eval('H[0].herd.swine'),2);near(r.eval('H[1].herd.swine'),1);
-    near(r.s.stores.meat,5*1.5);near(held(r,0,'meat'),3);near(sale(r,"'crown'",'meat'),3);
-    near(r.eval('householdAccount(H[0]).assets._fresh'),r.eval('householdSize(s,H[0])*FOOD*FRESH')); // what the family eats fresh in the week it keeps, eaten first; the rest is salted
-    const left=r.eval('householdAccount(H[0]).assets._fresh');r.eval('eatHouseholds(s,folkIndex())');near(held(r,0,'meat'),3-r.eval('householdSize(s,H[0])*FOOD'));
-    near(r.eval('householdAccount(H[0]).assets._fresh'),left-r.eval('householdSize(s,H[0])*FOOD'));
+    const fresh=r.eval('householdSize(s,H[0])*FOOD*FRESH'),day=r.eval('householdSize(s,H[0])*FOOD');
+    near(r.s.stores.meat,5*1.5);near(held(r,0,'meat'),fresh);near(sale(r,'H[0]','meat'),3-fresh);near(sale(r,"'crown'",'meat'),3);
+    near(r.eval('householdAccount(H[0]).assets._fresh'),fresh); // what the family eats fresh in the week it keeps, eaten first; the rest is salted and lies on sale
+    r.eval('eatHouseholds(s,folkIndex())');near(held(r,0,'meat'),fresh-day);near(r.eval('householdAccount(H[0]).assets._fresh'),fresh-day);
   });
 
   test(`a pig's yield is the meat of its part of the litters, what the slaughter takes of a herd at its want (${how})`,()=>{
@@ -46,9 +47,32 @@ for(const commodity of [false,true]){
       const r=place({commodity,households:1,cash});herd(r,'cattle:3');
       r.eval("s.px.cattle=12;s.px.hay=1;s.furl=[];H[0].herd={cattle:3};s.stores.hay=10;addHeld(s,H[0],'hay',1.05);offer(s,'hay','crown',8.95)"); // a cow's winter hay held; the lord's meadows' hay on sale
       r.eval("martinmas(s,{pann:0,till:0},{swine:0,cattle:3,sheep:0,horses:0})");
-      if(cash){near(r.s.stores.cattle,3);near(held(r,0,'hay'),3*1.05);near(r.s.stores.meat||0,0);}
-      else{near(r.s.stores.cattle,1);near(held(r,0,'meat'),2*4);} // kept unfed a cow is worth 73% of its milk and carcass, less than its carcass now
+      if(cash){near(r.s.stores.cattle,3);near(held(r,0,'hay'),1.05);near(r.s.stores.meat||0,0);} // the first winter month's hay is in; the rest its purse will buy month by month
+      else{near(r.s.stores.cattle,1);near(held(r,0,'meat')+sale(r,'H[0]','meat'),2*4);} // kept unfed a cow is worth 73% of its milk and carcass, less than its carcass now
     }
+  });
+
+  test(`a family's Martinmas meat lies on sale at what its salting cost, and the family buys its own back first where meat is the cheapest food (${how})`,()=>{
+    const r=place({commodity,households:1,grain:100});herd(r,'swine:10');r.eval("H[0].herd={swine:10};s.furl=[];s.px.meat=1;martinmas(s,{pann:1e6,till:0},{swine:9.5,cattle:0,sheep:0,horses:0})");
+    const fresh=r.eval('householdSize(s,H[0])*FOOD*FRESH'),onSale=7.5-fresh;near(sale(r,'H[0]','meat'),onSale);
+    const w0=r.H[0].w;r.eval('provision(s,H,new Map())');const month=r.eval('householdSize(s,H[0])*FOOD*30');
+    near(held(r,0,'meat'),month);near(sale(r,'H[0]','meat'),onSale-(month-fresh));assert.ok(r.H[0].w>=w0-1e-9-r.eval('householdSize(s,H[0])*foodYr()'),'its own meat costs it nothing');
+  });
+
+  test(`a family that cannot buy its month's food kills its own beasts for the gap: pigs, then sheep, then cattle beyond its plough oxen (${how})`,()=>{
+    for(const [herds,after] of [[{swine:2,sheep:2,cattle:1},{swine:0,sheep:2,cattle:1}],[{swine:1,sheep:2,cattle:1},{swine:0,sheep:0,cattle:1-0.3/4}]]){
+      const r=place({commodity,households:1,cash:0});herd(r,Object.entries(herds).map(([k,v])=>k+':'+v).join(','));r.eval(`H[0].herd=${JSON.stringify(herds)};provision(s,H,new Map())`); // nothing to buy and nothing to buy it with
+      for(const k in after)near(r.eval(`H[0].herd.${k}||0`),after[k]);
+      const month=r.eval('householdSize(s,H[0])*FOOD*30');near(held(r,0,'meat'),month);near(r.eval('householdAccount(H[0]).assets._fresh'),r.eval('householdSize(s,H[0])*FOOD*FRESH')); // its own pot, the fresh eaten first
+    }
+    const r=place({commodity,households:1,cash:0});herd(r,'cattle:2');r.eval("H[0].tr='ploughman';s.furl=[{wk:H[0].id},{wk:H[0].id},{wk:H[0].id},{wk:H[0].id}];H[0].herd={cattle:2};provision(s,H,new Map())");
+    near(r.eval('H[0].herd.cattle'),2); // the plough's oxen are not killed
+  });
+
+  test(`in the winter a family buys its beasts' month of hay as its purse allows, not the whole winter at one market (${how})`,()=>{
+    const r=place({commodity,households:1,cash:100,grain:100});herd(r,'cattle:3');r.eval("day=()=>300;H[0].herd={cattle:3};s.px.hay=1;s.stores.hay=50;offer(s,'hay','crown',50);provision(s,H,new Map())");
+    near(held(r,0,'hay'),3*1.05/3);
+    r.eval("provision(s,H,new Map())");near(held(r,0,'hay'),3*1.05/3); // a month held is not bought again
   });
 
   test(`a household holding only meat eats it to its need (${how})`,()=>{
@@ -88,7 +112,7 @@ for(const commodity of [false,true]){
   test(`a butcher buys beasts only when the carcass, less his part, pays for the beast; from whoever keeps them, as many as the herd breeds (${how})`,()=>{
     for(const pig of [4,5]){
       const r=place({commodity,households:3,cash:200});herd(r,'swine:30,cattle:10,sheep:20'); // no bread on sale: the purses move only by the beasts
-      r.eval(`H[0].tr='butcher';H[1].herd={swine:10};s.hm={bred:{swine:6,cattle:1,sheep:3}};s._graze={till:0};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:${pig},cattle:12,sheep:3,meat:4});offer(s,'cattle','crown',10);offer(s,'sheep','crown',20);provision(s,H,new Map())`);
+      r.eval(`s.stores.grain=6;for(const h of H)addHeld(s,h,'grain',2);H[0].tr='butcher';H[1].herd={swine:10};s.hm={bred:{swine:6,cattle:1,sheep:3}};s._graze={till:0};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:${pig},cattle:12,sheep:3,meat:4});offer(s,'cattle','crown',10);offer(s,'sheep','crown',20);provision(s,H,new Map())`);
       near(r.s.stores.cattle,10);near(r.s.stores.sheep,20); // an ox's carcass at 4, less his quarter, fetches 12, no more than the ox; a sheep's 1.8
       if(pig===5){near(r.s.stores.swine,30);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.5, at 5
       near(r.s.stores.swine,24);near(r.eval('H[1].herd.swine'),10-2);near(r.H[1].w,200+2*4);near(r.W.treasury,4*4); // the month's six pigs, a third of them the family's and the rest the lord's, each paid at its price
