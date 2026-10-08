@@ -19,7 +19,8 @@ const source=inlineGameScript(fs.readFileSync(process.env.FURLONG_TEST_SOURCE||p
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^let |^/\\*|$(?![\\s\\S]))','m'))?.[0]||assert.fail('no function '+n);
 const line=n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||assert.fail('no const '+n);
 const CUSTOMS=source.slice(source.indexOf('const CUSTOMS='),source.indexOf('};',source.indexOf('const CUSTOMS='))+2);
-const TOLLS=[CUSTOMS,line('TOLL_HOMES'),line('TEN_SHARE'),line('dueOn'),...['customOf','acctLabel','hostTarget','chestReserve','tollStands','tollKeeper','tollWage','roadTolls','wayToll','payTolls','tollSite','roadSpare','tollGiveUp','tollReview','tickWays',
+const TOLLS=[CUSTOMS,line('TOLL_HOMES'),line('dueOn'), // TEN_SHARE comes with the fixture (#36's manor)
+  ...['customOf','acctLabel','hostTarget','chestReserve','tollStands','tollKeeper','tollWage','roadTolls','wayToll','payTolls','tollSite','roadSpare','tollGiveUp','tollReview','tickWays',
   'assartFine','stripYield','assartSpare','assarter','assartPays','assart'].map(fn)].join('\n');
 const PAY=(source.match(/^const HUNGRY_HANDS=.*$/m)?.[0]||'')+'\n'+['book','dayHands','hungryHands','payAmong','buildWorks','workers_','lordTake'].map(fn).join('\n');
 

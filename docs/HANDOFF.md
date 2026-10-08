@@ -22,6 +22,7 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
     - the institutions' groundwork (step 3.1);
     - street graphs and road bounds as scratch, so drawing the townsfolk leaves the world as it was (#27);
     - wards bought only out of what lies beyond the buyer's reserve (#52).
+- **Batch 9 in progress** on `claude/friendly-bardeen-luem2o` (meat, with #36): three agents in worktrees, one each for meat (the good, the Martinmas slaughter, butchers, three foods, pannage), the manor (mill and oven farms, suit of mill, commutation, entry fines, merchet, liveries, the crown's book, the customs rows) and the roads (pontage and pavage, upkeep from tolls, toll houses, assarts). The customs table (`CUSTOMS`, `customOf`) is in the tree. Then the gate: the full suite, a six-world soak and the economy probes, with the farm paused.
 - **Branches.** Work goes on `claude/friendly-bardeen-luem2o`, level with `main` after each release. The remote `determinism` branch is merged but could not be deleted from the cloud.
 - Nothing else is unpushed.
 
@@ -152,6 +153,7 @@ Line numbers drift, so find code by name.
 
 ## Rules the user set that CLAUDE.md doesn't spell out
 
+- **The historical answer is the right one** (2026-10-08), except where the detail would unbalance the game. Decide design questions that way and record the choice; ask only where history gives no answer or the detail would weigh on play.
 - Subagents run on Opus, never Sonnet or Haiku. A Fable agent may be asked for ideas when stuck, never for the coding.
 - Never use the `mcp__furlong__*` tools. They drive the user's live game.
 - Test in batches: no per-change soaks.
@@ -190,3 +192,7 @@ Line numbers drift, so find code by name.
   - Households fill the need with the cheapest of bread, fish and meat by price, as they choose between grain and fish now; the better-off eat more meat.
   - Salted meat keeps for months; fresh meat spoils in days.
   - It ties to #36 through pannage and liveries, and lands with #36 as batch 9.
+- **History decides design questions** (2026-10-08), except where the detail would unbalance the game. Applied in batch 9:
+  - A road with no toll house is mended by the lords at either end as a customary duty (the landholders' duty to the king's highway), whether or not it pays them, but only out of what their chests hold beyond their reserve.
+  - Toll houses may stand from AD 850, as Carolingian bridge and road tolls did.
+  - A mill's farm is paid at the quarter days out of the takings, not a year in advance; a farmer in arrears is not let the mill again, and his arrear goes to the pleas roll for #37.

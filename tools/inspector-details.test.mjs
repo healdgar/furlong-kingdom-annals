@@ -41,7 +41,7 @@ test('household details use the enduring owner, include property in other places
 test('expanded court detail retains every memo, full explanations, both ledgers and fractional entries',()=>{
   const why='A long explanation '.repeat(15)+'FINAL WORDS';const house={loyalty:50,memo:Array.from({length:6},(_,d)=>({d,v:1,why})),ledY:{tax:0.25},ledPrev:{rent:9}};
   const C=ctx({W:{houses:[house]},loyaltyFactors:()=>[['minor factor',0.001]],dateStr:d=>'Day '+d});
-  vm.runInContext(fn('detailNumber')+'\n'+fn('houseDetailHTML'),C);const h=vm.runInContext('houseDetailHTML(0,true)',C);
+  vm.runInContext(fn('detailNumber')+'\n'+fn('houseDetailHTML')+'\n'+fn('ledgerHTML'),C);const h=vm.runInContext('houseDetailHTML(0,true)',C);
   assert.equal(h.match(/FINAL WORDS/g).length,6);assert.ok(h.includes('this year so far')&&h.includes('last year'));assert.ok(h.includes('0.25')&&h.includes('minor factor'));
 });
 test('day-zero household listing groups unbound people without creating accounts',()=>{
