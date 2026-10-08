@@ -145,3 +145,12 @@ test('the count a store was last settled at is kept on it, out of its balances, 
   const A="[...s.storage.facilities.get('yard').balances.get('grain').values()][0]";
   assert.equal(r.eval(A+'.since'),2);assert.equal(r.eval('Object.keys('+A+').length'),0);assert.equal(r.eval("s.storage.spoilage.get('grain').n"),2);
 });
+
+test('a store left below a crumb by a sale or a meal is swept out with the next day\'s spoilage',()=>{
+  const r=fixture({households:1,grain:0,fish:0});
+  r.eval("s.stores.grain=1;addHeld(s,H[0],'grain',1);spoilOwned(s,'grain',.0003);consumeOwned(s,H[0],'grain',pantry(s,H[0]).grain-.005)");
+  near(held(r,0,'grain'),.005);assert.equal(r.eval("s.storage.sweep.get('grain').size"),1);
+  r.eval("spoilOwned(s,'grain',.0003)");
+  near(held(r,0,'grain'),0);assert.equal(r.eval("s.storage.facilities.get('yard').balances.has('grain')"),false,'gone from the ledger, not only from sight');
+  assert.equal(r.eval("s.storage.sweep.has('grain')"),false);near(r.eval('s._lostM.grain'),1-1*(1-.0012)+.005);
+});

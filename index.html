@@ -3927,9 +3927,11 @@ globalThis.CommodityBalanceLedger = (() => {
   // place's days of spoilage of that good (the ledger's clock) when it was last settled; what it holds on any later day follows from the
   // day's share lost at that facility, compounded, and a store fallen below its crumb is gone.
   function stamp(A, n) { if (own(A, 'since')) A.since = n; else Object.defineProperty(A, 'since', { value: n, writable: true, configurable: true }); }
-  const ripened = (q, f, k, crumb) => { const v = f === 1 ? q : q * (k === 1 ? f : Math.pow(f, k)); return v < crumb ? 0 : v; }; // the game's own pow (DM), as every engine gives it
-  function ripe(ledger, facility, good, A, q) { // q as it stands today
-    const clock = ledger.spoilage.get(good); if (clock === undefined || facility.transit) return q;
+  const POWERS = new Map(); // a day's share kept → its powers [1, f, f·f, (f·f)·f, …]: products, the same in every engine, each reckoned once
+  function power(f, k) { let P = POWERS.get(f); if (P === undefined) POWERS.set(f, P = [1, f]); while (P.length <= k) P.push(P[P.length - 1] * f); return P[k]; }
+  const ripened = (q, f, k, crumb) => { const v = f === 1 ? q : q * power(f, k); return v < crumb ? 0 : v; };
+  function ripe(ledger, clock, facility, good, A, q) { // q as it stands today (clock: the good's, or undefined)
+    if (clock === undefined || facility.transit) return q;
     const k = clock.n - (A.since ?? 0); return k > 0 ? ripened(q, 1 - Math.min(1, clock.rate * (facility.protection ?? 4)), k, ledger.crumbs[good] ?? 0) : q;
   }
   const QUANTITY_TERM_RANKS = [], QUANTITY_TERM_QTYS = []; // scratch for quantity(): it never re-enters
@@ -4055,6 +4057,7 @@ globalThis.CommodityBalanceLedger = (() => {
       for (const [g, v] of Object.entries(volumes)) if (!g || typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) fail('volumes must be positive finite numbers');
       this.version = 3; this.realmId = realmId; this.day = finiteNonnegative(day, 'day'); this.settlementRevision = 0; this.facilities = new Map(); this.locations = this.facilities;
       this.spoilage = new Map(); this.crumbs = { ...crumbs }; // each good's clock of days of spoilage here ({n, rate}), and the least store kept
+      this.sweep = new Map(); // good → the stores left below a crumb today (their Map → [location, owner]), swept out with the next day's spoilage
       DAILY.set(this, { ownerId, assert, spoiled, volumes: { ...volumes }, rows: new Map(), locations: new Map(), flows: new Map(), notes: new Map(),
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: new Map(),
         orderRanks: new Map(), nextOrderRank: 0, spent: new Set(), epoch: 0 });
@@ -4147,7 +4150,7 @@ globalThis.CommodityBalanceLedger = (() => {
       if (cached !== undefined && cached.epoch === state.epoch) return cached;
       const facility = this._facility(location); let sum = 0, magnitude = 0, terms = 0;
       for (const [good, owners] of facility.balances) for (const availabilities of owners.values())
-        for (const quantity of availabilities.values()) { const term = ripe(this, facility, good, availabilities, quantity) * this._volume(facility, good); sum += term; magnitude += Math.abs(term); terms++; }
+        for (const quantity of availabilities.values()) { const term = ripe(this, this.spoilage.get(good), facility, good, availabilities, quantity) * this._volume(facility, good); sum += term; magnitude += Math.abs(term); terms++; }
       const stats = { sum, magnitude, terms, epoch: state.epoch };
       state.usedCache.set(location, stats);
       return stats;
@@ -4159,8 +4162,9 @@ globalThis.CommodityBalanceLedger = (() => {
     }
     _quantityAt(facility, good, owner, availability) {
       const byOwner = facility.balances.get(good)?.get(owner); if (!byOwner) return 0;
-      if (availability !== undefined) { const q = byOwner.get(availability); return q ? ripe(this, facility, good, byOwner, q) : 0; }
-      let total = 0; for (const q of byOwner.values()) total += ripe(this, facility, good, byOwner, q);
+      const clock = this.spoilage.get(good);
+      if (availability !== undefined) { const q = byOwner.get(availability); return q ? ripe(this, clock, facility, good, byOwner, q) : 0; }
+      let total = 0; for (const q of byOwner.values()) total += ripe(this, clock, facility, good, byOwner, q);
       return total;
     }
     // A store is settled before it changes: what spoiled since it was last settled is lost now, journaled as spoilage.
@@ -4184,6 +4188,9 @@ globalThis.CommodityBalanceLedger = (() => {
       if (clock === undefined) this.spoilage.set(good, clock = { n: 0, rate });
       else if (clock.rate !== rate) { this.settleStores({ good }); clock.rate = rate; }
       clock.n++; DAILY.get(this).epoch++;
+      const S = this.sweep.get(good); if (S === undefined) return;
+      this.sweep.delete(good);
+      for (const [A, [location, owner]] of S) { const facility = this.facilities.get(location); if (facility?.balances.get(good)?.get(owner) === A) this._settle(facility, location, good, owner); }
     }
     // Settle the stores here (of one good, one owner, one facility, or all), in the ledger's order.
     settleStores(fields = {}) {
@@ -4205,7 +4212,11 @@ globalThis.CommodityBalanceLedger = (() => {
       if (after === 0) nestedDelete3(facility.balances, good, owner, availability);
       else {
         nestedSet3(facility.balances, good, owner, availability, after);
-        if (before === 0 && !facility.transit) { const A = facility.balances.get(good).get(owner); if (A.since === undefined) stamp(A, this.spoilage.get(good)?.n ?? 0); } // a new store stands as of today
+        if (!facility.transit) {
+          const A = facility.balances.get(good).get(owner);
+          if (before === 0 && A.since === undefined) stamp(A, this.spoilage.get(good)?.n ?? 0); // a new store stands as of today
+          if (after < (this.crumbs[good] ?? 0)) { let S = this.sweep.get(good); if (S === undefined) this.sweep.set(good, S = new Map()); S.set(A, [location, owner]); } // a crumb, gone tomorrow
+        }
       }
       state.usedCache.delete(location);
       state.totalCache.delete(good);
@@ -4228,9 +4239,11 @@ globalThis.CommodityBalanceLedger = (() => {
       finiteDelta(delta); this._validateRow(good, owner, availability);
       const facility = this._facility(location), before = this._quantityAt(facility, good, owner, availability);
       if (delta > 0) {
-        const stats = this._usedStats(location), free = Math.max(0, facility.capacity - stats.sum) / this._volume(facility, good);
-        const tolerance = this._roundoff(stats.magnitude, stats.terms, facility.capacity, delta * this._volume(facility, good));
-        if (!this._canStore(facility, good) || delta > free + tolerance / this._volume(facility, good)) fail(`insufficient compatible capacity at ${String(location)} (capacity=${facility.capacity}, used=${stats.sum})`);
+        if (facility.capacity !== Infinity || !this._canStore(facility, good)) { // a yard without bounds needs no reckoning of what it holds
+          const stats = this._usedStats(location), free = Math.max(0, facility.capacity - stats.sum) / this._volume(facility, good);
+          const tolerance = this._roundoff(stats.magnitude, stats.terms, facility.capacity, delta * this._volume(facility, good));
+          if (!this._canStore(facility, good) || delta > free + tolerance / this._volume(facility, good)) fail(`insufficient compatible capacity at ${String(location)} (capacity=${facility.capacity}, used=${stats.sum})`);
+        }
       } else if (delta < 0) {
         const amount = -delta, tolerance = Number.EPSILON * Math.max(before, amount) * 8;
         if (amount > before + tolerance) fail('insufficient balance');
@@ -4257,7 +4270,7 @@ globalThis.CommodityBalanceLedger = (() => {
         const owner = fields.owner, good = fields.good, availability = fields.availability;
         if (AVAILABILITY.has(availability) && (includeTransit || availability !== 'transit')) for (const id of ids) {
           const facility = this.facilities.get(id); if (!facility || !includeTransit && facility.transit || exposedOnly && !facility.exposed) continue;
-          const A = facility.balances.get(good)?.get(owner), raw = A?.get(availability), qty = raw > 0 ? ripe(this, facility, good, A, raw) : 0;
+          const A = facility.balances.get(good)?.get(owner), raw = A?.get(availability), qty = raw > 0 ? ripe(this, this.spoilage.get(good), facility, good, A, raw) : 0;
           if (qty > 0) selected.push({ row: { location: id, good, owner, availability, qty }, rank: ranks.get(id)?.get(good)?.get(owner)?.get(availability) ?? Number.MAX_SAFE_INTEGER });
         }
         if (selected.length > 1) selected.sort((a, b) => a.rank - b.rank);
@@ -4275,8 +4288,9 @@ globalThis.CommodityBalanceLedger = (() => {
         else for (const [owner, availabilities] of owners) if (availabilities) scanAvailabilities(location, facility, good, owner, availabilities);
       };
       const scanAvailabilities = (location, facility, good, owner, availabilities) => { // each balance as it stands today
-        if (hasAvailability) { const q = availabilities.get(fields.availability); if (q > 0) addRow(location, good, owner, fields.availability, ripe(this, facility, good, availabilities, q)); }
-        else for (const [availability, qty] of availabilities) addRow(location, good, owner, availability, qty > 0 ? ripe(this, facility, good, availabilities, qty) : qty);
+        const clock = this.spoilage.get(good);
+        if (hasAvailability) { const q = availabilities.get(fields.availability); if (q > 0) addRow(location, good, owner, fields.availability, ripe(this, clock, facility, good, availabilities, q)); }
+        else for (const [availability, qty] of availabilities) addRow(location, good, owner, availability, qty > 0 ? ripe(this, clock, facility, good, availabilities, qty) : qty);
       };
       const scan = (location, facility) => {
         if (!includeTransit && facility.transit || exposedOnly && !facility.exposed) return;
@@ -4298,7 +4312,7 @@ globalThis.CommodityBalanceLedger = (() => {
       const state = DAILY.get(this), token = availability == null ? undefined : availability;
       let goods = state.quantityCache.get(owner); if (!goods) state.quantityCache.set(owner, goods = new Map());
       let slots = goods.get(good); if (slots === undefined) goods.set(good, slots = QUANTITY_SLOTS.pop() || new Array(12));
-      const clockN = this.spoilage.get(good)?.n ?? 0; if (slots.n !== clockN) { slots.fill(undefined); slots.n = clockN; } // a day riper: remembered totals are stale
+      const clock = this.spoilage.get(good), clockN = clock?.n ?? 0; if (slots.n !== clockN) { slots.fill(undefined); slots.n = clockN; } // a day riper: remembered totals are stale
       const scope = !!includeTransit || token === 'transit';
       const slot = (token === undefined ? 0 : token === 'held' ? 1 : token === 'sale' ? 2 : token === 'unassigned' ? 3 : token === 'transit' ? 4 : 5) * 2 + (scope ? 1 : 0);
       const hit = slots[slot]; if (hit !== undefined) return hit;
@@ -4308,12 +4322,12 @@ globalThis.CommodityBalanceLedger = (() => {
         const facility = this.facilities.get(id); if (!facility || !scope && facility.transit) continue;
         const rows = facility.balances.get(good)?.get(owner); if (!rows) continue;
         if (token !== undefined) {
-          const raw = rows.get(token) || 0, qty = raw > 0 ? ripe(this, facility, good, rows, raw) : 0;
+          const raw = rows.get(token) || 0, qty = raw > 0 ? ripe(this, clock, facility, good, rows, raw) : 0;
           if (qty > 0 && (scope || token !== 'transit')) {
             if (n === 0) { qty0 = qty; id0 = id; kind0 = token; n = 1; }
             else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, token); termQty[n++] = qty; }
           }
-        } else for (const [kind, raw] of rows) { const qty = raw > 0 ? ripe(this, facility, good, rows, raw) : 0; if (qty > 0 && (scope || kind !== 'transit')) {
+        } else for (const [kind, raw] of rows) { const qty = raw > 0 ? ripe(this, clock, facility, good, rows, raw) : 0; if (qty > 0 && (scope || kind !== 'transit')) {
           if (n === 0) { qty0 = qty; id0 = id; kind0 = kind; n = 1; }
           else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, kind); termQty[n++] = qty; }
         } }
@@ -4330,7 +4344,7 @@ globalThis.CommodityBalanceLedger = (() => {
     total(good, includeTransit = false) {
       if (typeof good !== 'string' || !good) fail('good is required');
       const state = DAILY.get(this), scope = !!includeTransit;
-      let cached = state.totalCache.get(good); const clockN = this.spoilage.get(good)?.n ?? 0;
+      let cached = state.totalCache.get(good); const clock = this.spoilage.get(good), clockN = clock?.n ?? 0;
       if (cached?.n === clockN && cached.has(scope)) return cached.get(scope);
       let total = 0;
       const facilities = [];
@@ -4342,7 +4356,7 @@ globalThis.CommodityBalanceLedger = (() => {
         if (!scope && facility.transit) continue;
         const owners = facility.balances.get(good); if (!owners) continue;
         for (const availabilities of owners.values()) for (const [kind, qty] of availabilities)
-          if (scope || kind !== 'transit') total += ripe(this, facility, good, availabilities, qty);
+          if (scope || kind !== 'transit') total += ripe(this, clock, facility, good, availabilities, qty);
       }
       if (cached?.n !== clockN) { state.totalCache.set(good, cached = new Map()); cached.n = clockN; } cached.set(scope, total);
       return total;
@@ -4385,7 +4399,9 @@ globalThis.CommodityBalanceLedger = (() => {
         }
       }
       for (const [id, delta] of usedDelta) {
-        const facility = this._facility(id), stats = this._usedStats(id), projected = stats.sum + delta;
+        const facility = this._facility(id);
+        if (facility.capacity === Infinity && !destinations.some(x => x.toLocation === id && !this._canStore(facility, x.good))) continue; // a yard without bounds
+        const stats = this._usedStats(id), projected = stats.sum + delta;
         const tolerance = this._roundoff(stats.magnitude, stats.terms, facility.capacity, Math.abs(delta));
         if (delta > 0 && (destinations.some(x => x.toLocation === id && !this._canStore(facility, x.good)) || projected > facility.capacity + tolerance))
           fail(`insufficient compatible capacity at ${String(id)} (capacity=${facility.capacity}, used=${stats.sum}, projected=${projected})`);
@@ -4527,7 +4543,8 @@ function commodityExposed(K){return [...K.entries({exposedOnly:true})];}
 function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const bills=new Map(),routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?Math.max(0,means(payer)-(bills.get(payer)||0))/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0)bills.set(payer,(bills.get(payer)||0)+q*unitCost);K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}for(const[payer,v]of bills)buildWorks(s,v,payer,'carriage'); /* each owner pays the day's carrying in one bill (#23, #15: a bill a lot, each paying every hand) */s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+K._quantityAt(K.locations.get(r.location),r.good,r.owner,r.availability)*K.volume(r.good),0)};}
 // A day of spoilage (#55): every store of the good is a day riper, its share of the day lost at its facility, compounded, and what falls
 // below a crumb (CRUMB) gone; the ledger reckons it in closed form when the store is next settled (bought from, sold to, eaten, moved, or at
-// the place's monthly reckoning), not store by store each day. The place's own unsold output is settled at once, for its pending output.
+// the place's monthly reckoning), not store by store each day. Stores left below a crumb the day before are settled now, and swept out;
+// the place's own unsold output is settled at once, for its pending output.
 function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);for(const good of g==='timber'?['timber','char']:[g]){K.ripen(good,rate);K.settleStores({good,owner:null});}}
 // What a store lost when it was settled: the month's loss of the good for its price (s._lostM), the place's pending output that rotted
 // unsold, a lord's rotten grain; a seller left with nothing on sale here has no reserve here.

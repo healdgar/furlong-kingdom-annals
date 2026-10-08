@@ -6,7 +6,7 @@ export function inventoryAudit(settlements,state,beasts,volumes){
     if(!(K.facilities instanceof Map))return fault('invalid-facilities',s,{});
     const totals=new Map(),used=new Map(),counts=new Map(),owned=new Map();let rows=0;
     // A store stands today as it was when last settled, spoiled since by its good's clock in closed form, a crumb gone (#55).
-    const ripe=(f,good,kinds,q)=>{const c=K.spoilage instanceof Map?K.spoilage.get(good):undefined;if(!c||f.transit)return q;const k=c.n-(kinds.since??0);if(!(k>0))return q;const r=1-Math.min(1,c.rate*(f.protection??4)),v=r===1?q:q*(k===1?r:Math.pow(r,k));return v<(K.crumbs?.[good]??0)?0:v;};
+    const ripe=(f,good,kinds,q)=>{const c=K.spoilage instanceof Map?K.spoilage.get(good):undefined;if(!c||f.transit)return q;const k=c.n-(kinds.since??0);if(!(k>0))return q;const r=1-Math.min(1,c.rate*(f.protection??4)),p=r===1?1:Array.from({length:k}).reduce(x=>x*r,1),v=q*p;return v<(K.crumbs?.[good]??0)?0:v;};
     const volume=(f,g)=>f.volumes?.[g]??volumes[g]?.volume??(g==='char'?(f.volumes?.timber??volumes.timber?.volume):undefined)??f.volume??1;
     const accepts=(f,g)=>!f.goods||(f.goods instanceof Set?f.goods.has(g):Array.isArray(f.goods)&&f.goods.includes(g))||(g==='char'&&(f.goods instanceof Set?f.goods.has('timber'):Array.isArray(f.goods)&&f.goods.includes('timber')));
     for(const[id,f]of K.facilities){if(id!==f.id||!(f.balances instanceof Map)||typeof f.capacity!=='number'||Number.isNaN(f.capacity)||f.capacity<0)return fault('invalid-facility',s,{id});

@@ -103,8 +103,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // gone, and every write (_set) first settles the store (_settle: the loss written by _put, journaled as exposure-loss or stored-spoilage,
  // and handed to the spoiled hook). commoditySpoil ripens the good and settles only the place's unsold output; commoditySpoiled notes
  // the month's loss, pending output, the lord's rot and an emptied seller's reserve; the storage report reads balances as they stand.
- // The quantity, total and used caches are dated by the clock. No other writer changed; ledger-growth.test.mjs covers the closed form.
- assert.equal(digest(source.slice(a,b)),"ff911268abbc409cdd926388f190b97f1c494b95f6cb5adb90081d76153983cd");
+ // The quantity, total and used caches are dated by the clock. Powers are products, memoised (POWERS), the same in every engine. A store
+ // left below its crumb by a write is noted (sweep) and settled after the next day's ripening, so crumbs go the next day as they did. A
+ // yard without bounds is not reckoned for room (adjust, transfer): what it holds cannot fail a capacity it does not have. No other writer
+ // changed; ledger-growth.test.mjs covers the closed form.
+ assert.equal(digest(source.slice(a,b)),"715caf020bdc1bd03a4a1e72ec7157862a008b045441bcaced838e1c0694ac49");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
