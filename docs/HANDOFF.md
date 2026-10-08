@@ -164,10 +164,11 @@ Line numbers drift, so find code by name.
 
 ## Questions for the user
 
-1. **How should a market find its price (#51)?**
-   - **Today:** `reprice` steps each price up to 28% a month toward the month's shortfall and the stock's cover, with no demand curve. Where a little is offered and buyers keep ordering, it climbs for months: grain at Bourport reached 924× its base, cloth hundreds of times. It comes down at most 22% a month when supply returns, so a town can't buy the grain that finally arrives.
-   - **Options:**
-     - **(a) Clear each month at the price that sells what is offered to what buyers' purses will pay.** Demand already scales with each purse, so this price is the purses' sum over the supply. This redesigns price formation, and every history changes.
-     - **(b) Keep the step, but raise a price only for buyers turned away who could have paid it,** and let unsold stock bring it down as fast as scarcity drove it up. A mechanism fix inside today's design.
-     - **(c) Leave it until the institutions are in,** as part of calibration.
-   - **Recommendation:** (b). Until you answer, the agent works on the world serializer (step 2).
+(none open)
+
+## Decided by the user (2026-10-08)
+
+- **Prices (#51):** prices come from supply and demand only; `reprice` stays as it is. A price that stays high means supply is not answering fast enough.
+  - **Trade must answer quickly:** carts, river barges, coastal cogs and sea trade. Manufacturing may be slow, as it is in life.
+  - **Demand is elastic by how critical a good is.** A household buys need × (price / worth)^(−ε). Worth is the cost of making or bringing the good. ε is about 0.1 for food, 0.3 for fuel and building timber, 0.6 for tools, 1.2 for cloth, 1.5 for wine, and 2 for spice and silk.
+  - **A household short of money pays for food first, then shelter** (the rent it owes), then fuel, tools, cloth, and luxuries last.
