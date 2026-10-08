@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||new URL('../index.html',import.meta.url),'utf8');
-const names=['initHousePurse','creditOf','beastYield','unearned','buyBuildingMaterial','lordAcct','houseAcct','acct','flow','transfer','borrow','mkt','rsv','offer','costBlend','reserveAt','lard','forSale','avail','purchase','clearMarket','heads_','means','craftWork','shareOutput','reconcile','topUpFood','eatHouseholds','tickPopulation','headsOf','folkIndex','repay','inherit','inheritanceCustom','estateChildren','estateKin','landHeirs','estateShares','offerLand','moveStock','herdOf','herdLoss','herdBirth','herdSync','herdInit','driveOffHerds','takeHorses','ladeOut','dropPerson','yearOfFolk','removeAt','provision','departHousehold'];
+const names=['initHousePurse','creditOf','beastYield','unearned','buyBuildingMaterial','lordAcct','houseAcct','acct','flow','transfer','borrow','mkt','rsv','offer','costBlend','reserveAt','lard','forSale','avail','purchase','clearMarket','heads_','means','craftWork','shareOutput','reconcile','topUpFood','eatHouseholds','tickPopulation','headsOf','folkIndex','repay','inherit','inheritanceCustom','estateChildren','estateKin','landHeirs','estateShares','offerLand','moveStock','herdOf','herdLoss','herdBirth','herdSync','herdInit','driveOffHerds','takeHorses','ladeOut','dropPerson','yearOfFolk','removeAt','provision','departHousehold','goodWorth','wantShare','rentDue','rentOfHome','freight','frtRate','PL','closedToTrade','siegeBlocks','inRevolt','ownerAcct','ownerOf','corpOf'];
 const ownership=source.slice(source.indexOf('function oldHouseholdHead('),source.indexOf('function houseFolk(s)'));
 const functions=[...names,'publicOrderMen','publicOrderSuppression'].map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
-const constants=['GOODS','GOODBASE','NEED','SPOIL','LU','WINTER_HAY','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','SHARE'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
+const constants=['GOODS','GOODBASE','NEED','SPOIL','LU','WINTER_HAY','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','ELASTIC','metroOf'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
 
 export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,commodity=false,transformSource,bootstrap=''}={}){
   const H=Array.from({length:households},(_,i)=>({id:i+1,gn:'household',w:cash,tr:'labourer',si:0}));
@@ -16,7 +16,7 @@ export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,p
     day:()=>1,year:()=>0,AD:()=>850,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),ageYrs:p=>p.age??30,BEASTS:['sheep','cattle','horses','swine'],
     price:(x,g)=>x.px[g]??1,tilledOf:()=>[],parishOf:()=>null,payAmong:()=>assert.fail('fixture has no demesne wages'),
     tradeCounts:()=>Object.fromEntries(H.map(h=>[h.tr,1])),marketFor:()=>null,book:()=>{},lordTake:()=>{},folkIndex:()=>new Map(H.map(h=>[h.id,h])),carryingCap:()=>1000,
-    sheltered:()=>0,emit:()=>{},writeFurlong:()=>{},tradeIncome:()=>0,vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{}});
+    sheltered:()=>0,emit:()=>{},writeFurlong:()=>{},tradeIncome:()=>0,vary:(k,L)=>L[0](),randi:()=>0,famineStrikes:()=>{},dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz)});
   if(bootstrap)vm.runInContext(bootstrap,C);
   vm.runInContext(`globalThis.FURLONG_COMMODITY_BALANCES=${!!commodity};`,C);
   const program=constants+'\n'+ownership+'\nconst isHouse=x=>x&&W.houses.includes(x);\n'+functions;
