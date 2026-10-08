@@ -4,7 +4,7 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 ## Where things stand
 
-- **`main`** is released to Pages and the container image (batch 9, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
+- **`main`** is released to Pages and the container image (batch 10, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
   - **batch 8, prices answered by supply (#51, #52):**
@@ -144,7 +144,9 @@ Line numbers drift, so find code by name.
   - ended households: 2,794 of 4,554 have no living member, kept for their `successors`, with 17,395 owner records in places, 58 holding anything;
   - living households' goods scattered over places: 416 households hold goods in 11+ places (6 at AD 860), grain on sale away from home 8,560 times (families that moved left it behind).
   - The ledger's settlement, spoilage, journal encoding and the garbage collector carry the growth (settle 38 → 166 ms/day, encode 32 → 146, spoil 22 → 104, GC 26 → 149).
-  - Plan (batch 10, before #37): retire spent cargo locations and ended households' empty records (exact, an agent is on it); then a family that leaves a place sells or carries its goods (behaviour); then measure cost per living person over a long run, and bring the user a sampling or inference design for whatever living part still explodes.
+  - **Batch 10, released (exact):** spent cargo locations are retired with the next written settlement (journaled as removals), and ended households' empty owner records monthly. Identity: 1001:42:sea 150 days and 42:42:sea 3,600 days identical (world graph with the retired records left out of both, every RNG stream, annals, treasury, population, journal outcomes); suite 1291/1291; a two-world soak equal to batch 9's. By AD 860, cargo locations 16,339 → 109, ended households' records 922 → 21; at AD 890 (the same pruning by hand on the farm's save) about −12% CPU.
+  - **What still grows: crumbs in the ledger.** Spoilage and proportional sales shrink a holding by a share and never empty it: rows 12.1k → 49.6k from AD 860 to 890, 26k of them below 0.001; deltas spoiled, journaled and encoded each day 11k → 48.5k; 7.6 stock records per living household, scattered over places it traded in or left. Proposed to the user (behaviour): crumbs below a soul's day of food (0.01) are lost as spoiled; a family that moves sells or carries its goods; and if growth still outruns the living world, spoilage inferred in closed form when a row is touched instead of reckoned for every row every day.
+  - Plan (before #37): retire spent cargo locations and ended households' empty records (exact, an agent is on it); then a family that leaves a place sells or carries its goods (behaviour); then measure cost per living person over a long run, and bring the user a sampling or inference design for whatever living part still explodes.
 - **Batch 6 soak at year 5 (1aa50a1, in the cloud).** Measured on Node 22 and headless Chromium with SwiftShader, two worlds at a time on 4 cores (load about 2–3), so not comparable with the Mac's batch-4 numbers:
 
   | World | ms/day | Famine at year 5 | Capital hunger | Crown at year 5 |
