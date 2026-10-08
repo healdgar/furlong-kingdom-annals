@@ -178,7 +178,8 @@ Line numbers drift, so find code by name.
 
 ## Questions for the user
 
-(none open)
+- **Roads with no toll house (batch 9, #36).** The lords at either end now mend such a road only while the market dues its loads bring them pay for the mending; busy through-roads with no toll house and little trade at their ends wear. The alternative is a customary duty to mend as far as their purses go, which wears fewer roads but spends lords' coin on roads that bring them nothing. The build has the first; say if you want the second.
+- **Toll houses from AD 850 (batch 9).** A lord sets one up wherever the tolls would pay its keeper, its part of the road and the house, from the start (Carolingian bridge and road tolls); the towns' own layout still raises them only from AD 1000. Say if they should wait for a year or for #44's learning.
 
 ## Decided by the user (2026-10-08)
 
