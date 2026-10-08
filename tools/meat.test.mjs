@@ -85,12 +85,12 @@ for(const commodity of [false,true]){
     assert.ok(held(rich,0,'grain')<month*0.6,`${held(rich,0,'grain')} of bread: the meat it ate is bread it does not buy`);
   });
 
-  test(`a butcher buys beasts only when the carcass, salted, pays for the beast, for the meat the place will take (${how})`,()=>{
+  test(`a butcher buys beasts only when the carcass pays for the beast, for the meat the place will take (${how})`,()=>{
     for(const pig of [4,5]){
       const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:40,cattle:10,sheep:20');
       r.eval(`H[0].tr='butcher';s._dAvg={meat:30};s._want={swine:10,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:${pig},cattle:12,sheep:3,meat:3});offer(s,'swine','crown',40);offer(s,'cattle','crown',10);offer(s,'sheep','crown',20);provision(s,H,new Map())`);
-      near(r.s.stores.cattle,10);near(r.s.stores.sheep,20); // an ox's carcass at 3 fetches 11.4 salted, a sheep's 1.7: neither pays
-      if(pig===5){near(r.s.stores.swine,40);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.3, at 5
+      near(r.s.stores.cattle,10);near(r.s.stores.sheep,20); // an ox's carcass at 3 fetches 12, no more than the ox; a sheep's 1.8: neither pays
+      if(pig===5){near(r.s.stores.swine,40);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.5, at 5
       near(r.s.stores.swine,20);near(sale(r,'H[0]','meat'),30);near(r.eval("rsv(s,'meat').get(H[0])"),80/30); // twenty pigs for thirty of meat, at what they cost him
     }
     const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:5');

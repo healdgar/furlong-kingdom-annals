@@ -586,7 +586,7 @@ What happens is decided by quantities the economy produces, not by numbers cross
     still in the crock from last month is not bought again. A farming household keeps back its own bread
     till the next harvest and sells the rest.
     Smiths buy iron and charcoal, weavers wool, and butchers beasts, only when the work pays (a butcher
-    when the carcass, salted, fetches more as meat than the beast costs). A buyer takes his own stock first,
+    when the carcass fetches more as meat than the beast costs). A buyer takes his own stock first,
     then pays every seller content with the price in proportion; a craftsman or merchant will not sell
     below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
   - **Prices** are found, not set: each month a good's price rises when buyers wanted more than was sold
