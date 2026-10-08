@@ -580,13 +580,15 @@ What happens is decided by quantities the economy produces, not by numbers cross
     those who made them. Households buy the month's food, fuel, cloth and tools with what is in their
     purses. Food is bread, fish or salted meat, one for one, whichever is cheapest at the table: fish only
     for the days it stays the cheaper before it rots, salted meat for the month; a family eats its fish
-    first, then its bread and meat as they lie in the larder. The better-off buy meat for their table
-    besides, and buy that much less bread. What they cannot buy, they go without, and a town
+    first, then its bread and meat as they lie in the larder; only food that keeps the month is laid in,
+    fish is bought day by day. The better-off buy meat for their table besides, less the dearer it is
+    against what it costs to make, and buy that much less bread. What they cannot buy, they go without, and a town
     whose families cannot pay goes hungry with full barns. A household tops up to a month's need: what is
     still in the crock from last month is not bought again. A farming household keeps back its own bread
     till the next harvest and sells the rest.
     Smiths buy iron and charcoal, weavers wool, and butchers beasts, only when the work pays (a butcher
-    when the carcass fetches more as meat than the beast costs). A buyer takes his own stock first,
+    buys from the families, the lord and the drovers when the carcass, less his part, fetches more as meat
+    than the beast costs, and never more than the herds breed). A buyer takes his own stock first,
     then pays every seller content with the price in proportion; a craftsman or merchant will not sell
     below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
   - **Prices** are found, not set: each month a good's price rises when buyers wanted more than was sold
