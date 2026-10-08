@@ -37,6 +37,7 @@ visit(ast);assert.deepEqual(writes,['n.alive=alive','delete n._just','delete n._
 assert.match(source.slice(source.indexOf('async function generateWorld('),source.indexOf("await progress('Raising")),/notableIndexRebuild\(\)/);assert.match(fn(source,'killNotable'),/notableSetAlive\(n,false\)/);
 // These two assignments set IDs on newly-created event DOM nodes; retain them
 // as exact allowlisted sites alongside the existing non-notable ID writers.
-assert.deepEqual(ids,["state.id=q.storageProjectId","el.id='terrlegend'","el.id='terrlegend'","el.id='terrlegend'","events.id='eventpanel'","bubble.id='eventbubble'","h.id=next.id+'-title'","el.id='mapview'","this.id=id","o.id=auto?'auto:'+o.hash:'s'+Date.now()","el.id='advchat'"]);
+// The world save numbers the shapes (key lists) it writes: t.id is a shape's place in its table, not a notable's.
+assert.deepEqual(ids,["state.id=q.storageProjectId","el.id='terrlegend'","el.id='terrlegend'","el.id='terrlegend'","events.id='eventpanel'","bubble.id='eventbubble'","h.id=next.id+'-title'","el.id='mapview'","this.id=id","o.id=auto?'auto:'+o.hash:'s'+Date.now()","t.id=shapes.length","el.id='advchat'"]);
 assert.equal((source.match(/W\.notables\s*=/g)||[]).length,0);
 });
