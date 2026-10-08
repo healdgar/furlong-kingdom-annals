@@ -116,7 +116,9 @@ These rules apply to all nine.
 - Heriot, in `inherit`.
 - Market tolls, in `ladeIn`; customs, in `tickShips`.
 - Sale of the demesne when hands are dear, in `tickTenure`.
-- Road upkeep in `tickWays`, which reckons tolls it never collects (#36 note in `docs/ISSUES.md`).
+- Tolls (batch 9): pontage and pavage at each toll house on a load's way (`wayToll`, priced once per cached route from each road's list of toll houses `r._tolls`; paid in `ladeIn` by `payTolls`, `customOf(s,'toll')` of the load's worth to the house's owner, label `tolls`). The household living in the toll house keeps it at the watch's pay. A lord (the crown, or a town from its chest) fits out the outermost lived-in house on a road's street as a toll house where last year's worth carried over the road × the custom pays the keeper, a part of the road's upkeep and the house over a dozen years (`tollReview`); one whose takings do not is given up.
+- Road upkeep in `tickWays` (label `road upkeep`): a road with toll houses by their owners, from the year's tolls first and their purses after; one with none by the lords at either end, by the market dues its loads brought each (`r._mkA`, `r._mkB`, from `ladeIn`); mended as far as paid for. The reckoned-but-never-collected tolls are gone.
+- Assart fines (batch 9), in `tickLand`: a household that clears its lord's wood pays him a dozen years of the pannage its mast would bring (`assartFine`; label `assarts`) and holds the strip freely; it clears only with the fine to spare and a strip that repays it. The lord's clearing (`s.clearUntil`) pays none.
 
 **2. Actors and state.**
 - Existing: houses, the crown, places, strips (`f.ten`, `f.own`, `f.wk`, `f.lord`), mills and windmills (`LORD_ARCH`), bakehouses (`bakery`), toll houses (`toll`, kept by a reeve), the households of millers, bakers, reeves and swineherds, pannage (`grazeOf(s).pann`).

@@ -14,7 +14,7 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const html=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||path.join(ROOT,'index.html'),'utf8'),source=inlineGameScript(html);
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^let |^/\\*|$(?![\\s\\S]))','m'))?.[0]||assert.fail('no function '+n);
 const line=n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||assert.fail('no const '+n);
-const PROGRAM=[line('GOODS'),line('GOODBASE'),line('LU'),line('NEED'),line('TRADE_LOAD'),...['frtRate','freight','tradeOnTheWay','tradeWant','tradeSpare','tradeRoom','tickTrade'].map(fn)].join('\n');
+const PROGRAM=[line('GOODS'),line('GOODBASE'),line('LU'),line('NEED'),line('TRADE_LOAD'),...['frtRate','freight','wayToll','tradeOnTheWay','tradeWant','tradeSpare','tradeRoom','tickTrade'].map(fn)].join('\n');
 
 // A place: what it has to spare and on sale, its prices, what its buyers sought last month, and its carters, boatmen and dealers.
 function place(o={}){return {name:o.name||'P',pop:0,infected:0,storage:{},stores:{...o.stores},px:{grain:2,timber:3,wine:8,cloth:7,...o.px},_dAvg:{...o.dAvg},

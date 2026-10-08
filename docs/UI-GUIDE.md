@@ -65,6 +65,10 @@ returns, **Close** or `Esc` dismisses it. A town you govern has **Details** and
 storage); a host of yours has its orders (march, objectives, supply road,
 raft, split, join, hold, disband).
 
+A toll house's card shows its toll, for whom it is taken, its keeper's pay and
+its takings this year and last; a town's card lists its toll houses; a road's
+card says who keeps it and what its mending cost last year against its tolls.
+
 To march a host (an army): open its card, choose **Orders → Order a march**,
 then click a town, an enemy host to attack, or open ground to camp.
 

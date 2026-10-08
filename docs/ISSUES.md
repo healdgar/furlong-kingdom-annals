@@ -42,14 +42,14 @@ Kept by design (not issues): historical era gates (stone keeps 1070, gothic 1190
 
 ## Missing systems (planned)
 
-Design notes for #35–#43, ranked by real income and jobs added, with build order, budgets and open questions: `docs/SYSTEMS.md`. Stand-ins without real payers to replace (nothing fake): the tourney (700) and guild-charter (500) petitions and the debasement dilemma; `tickWays` reckons road tolls it never collects.
+Design notes for #35–#43, ranked by real income and jobs added, with build order, budgets and open questions: `docs/SYSTEMS.md`. Stand-ins without real payers to replace (nothing fake): the tourney (700) and guild-charter (500) petitions and the debasement dilemma.
 
 Medieval institutions the world lacks (scan of building types, trades and terms, 2026-10-06). Each must be worth doing by a quantity, pay and earn through named flows, and fit the per-day budget (see the design note under #35).
 
 | # | System | Status | Notes |
 |---|---|---|---|
 | 35 | Monasteries, abbeys and nunneries | planned | No monks, nuns or abbots. Great landholders and wool producers (granges, wool sold forward), hospitality, charity, schools, appropriated parish tithes: a third owner beside lords and crown. |
-| 36 | Lords' customary income | planned (first) | Includes the toll gap: lords pay road and bridge upkeep "repaid by tolls" that are never collected; pontage and pavage from carters would be the real payers. Mill, oven and press monopolies (suit of mill, multure); dovecotes, fishponds, warrens, deer parks; forest law and hunting; labour services (week work, boon work); heriot and merchet. Where real lords' money came from; bears on #23. |
+| 36 | Lords' customary income | planned (first) | Includes the toll gap: lords pay road and bridge upkeep "repaid by tolls" that are never collected; pontage and pavage from carters would be the real payers. Mill, oven and press monopolies (suit of mill, multure); dovecotes, fishponds, warrens, deer parks; forest law and hunting; labour services (week work, boon work); heriot and merchet. Where real lords' money came from; bears on #23. Batch 9, roads: the toll gap is closed. Carriers pay pontage and pavage at each toll house on their way (the place's custom on the load's worth, to the house's owner), reckoned in the dealer's margin; a road with toll houses is mended by their owners from the tolls first and their purses after, one with none by the lords at either end while the market dues its loads bring them pay for it; lords, the crown or a town set up a toll house where last year's loads would pay its keeper, its part of the road and the house, and give it up where they do not. Assart fines: a household clearing its lord's wood pays a dozen years of its pannage, and only where the strip repays it. |
 | 37 | Courts and royal justice | planned | Manor and hundred or shire courts, sheriffs, itinerant justices; fines and amercements as income for lords and crown. A court building exists without a court. |
 | 38 | Credit and coin | planned | Lenders at interest (Italian bankers, crown-protected Jewish lenders taxed by tallage); mints, recoinage and debasement. Today only bread on the slate and arrears. |
 | 39 | Estates and self-government | planned | Parliament and taxation by consent; sworn town communes. Charters and councils exist. |

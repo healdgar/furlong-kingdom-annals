@@ -28,7 +28,7 @@ function previous(W,ai,bi,sea){ // frozen pre-optimization queue semantics
   if(!(bi in prev))return null;const hops=[];for(let c=bi;prev[c]!==null;c=prev[c])hops.push([prev[c],c,via[c]]);hops.reverse();let poly=[],seaLen=0;
   for(const[f,t,e]of hops){let seg;if(e.li!==undefined){const L=W.seaLanes[e.li];seg=(L.a===f?L.poly:[...L.poly].reverse()).map(q=>({x:q.x,z:q.z,sea:true}));seaLen+=L.len;}
     else{const r=W.roads.find(r=>r.a===f&&r.b===t||r.a===t&&r.b===f);seg=r.path.slice();if(r.a!==f)seg.reverse();}if(poly.length)seg=seg.slice(1);poly=poly.concat(seg);}
-  let len=0;for(let k=1;k<poly.length;k++)len+=Math.hypot(poly[k-1].x-poly[k].x,poly[k-1].z-poly[k].z);const res={poly,len,time:g[bi]};
+  let len=0;for(let k=1;k<poly.length;k++)len+=Math.hypot(poly[k-1].x-poly[k].x,poly[k-1].z-poly[k].z);const res={poly,len,time:g[bi],ris:hops.filter(h=>h[2].ri!==undefined).map(h=>h[2].ri)}; // ris: the roads it goes along (batch 9, for their tolls)
   if(seaLen){const tf=[0];let T=0;for(let k=1;k<poly.length;k++){const d=Math.hypot(poly[k-1].x-poly[k].x,poly[k-1].z-poly[k].z),s=poly[k].sea&&poly[k-1].sea;T+=s?d*420/1000:d;if(poly[k].sea!==poly[k-1].sea)T+=600;tf.push(T);}Object.assign(res,{tf:tf.map(v=>v/Math.max(1,T)),tlen:T,sea:true,seaLen});}
   return res;
 }

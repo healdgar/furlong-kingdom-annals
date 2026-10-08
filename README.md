@@ -611,8 +611,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
     on sale are its limits. The driver is away for the trip and
     back, and is paid his freight on delivery at the place's going rate, which rises when loads wait for want
     of a driver and falls when drivers stand idle. The merchant pays the market toll and the crown's aid on
-    what he brings, and will not sell at the far end below what the load cost him laid down there: the
-    price at the origin, the freight and the tolls. Foreign ships buy and sell for silver from abroad.
+    what he brings, and at each toll house on the roads it went along (and a barge at a toll bridge over its
+    river) the place's custom on its worth, a hundredth unless its lord orders otherwise, to the house's
+    owner; he will not sell at the far end below what the load cost him laid down there: the price at the
+    origin, the freight and the tolls. Foreign ships buy and sell for silver from abroad.
   - **The labour market:** each trade is paid for its own work: the millers and bakers for bread, the
     tailors for clothes, the brewers for ale, the shoemakers, potters, coopers and the rest out of what
     families lay out on sundries. Where a place has no one in a trade, families take the want to the nearest
@@ -643,8 +645,16 @@ What happens is decided by quantities the economy produces, not by numbers cross
     hardly at all); the rest is burned, spilled or trampled. Driven herds go two thirds to the men's own
     families and a third to their lord.
   - **Ways are kept up by use:** a lane with no house on it grasses over (and comes back with the first
-    house); a king's road is mended by the lords at either end while the tolls of its carts repay the
-    roadmen, else it wears to a rutted track, narrower and slower, never quite gone.
+    house). A king's road with toll houses on it is mended by their owners, from the year's tolls first and
+    their purses after; one with none by the lords at either end, while the market dues of the loads it
+    brings them pay the roadmen; mended as far as it is paid for, else it wears to a rutted track, narrower
+    and slower, never quite gone.
+  - **Tolls (pontage and pavage):** a lord (or the crown, or a town from its chest) fits out the house
+    where a road leaves his place, at the gate or the bridgehead, as a toll house, buying it from its owner,
+    where the custom on the loads that went over the road last year would pay its keeper, its part of the
+    road and the house within a dozen years. The household that lives there keeps it, at the watch's pay;
+    a toll house no one lives in takes nothing, and one whose year's takings do not pay its keeper and its
+    part of the road is given up and lived in as a house.
   - **Buildings are reused:** an empty house is taken by a craftsman who fits it out as his workshop, or
     mended by its owner while a tenant may yet be found, and only then let fall; a family lodging in a
     house gets a storey added when that is cheaper than a new house.
@@ -1014,7 +1024,11 @@ What happens is decided by quantities the economy produces, not by numbers cross
   cramped site builds upward and then stops growing.
 - The countryside follows the people. As they multiply, old pasture is
   ploughed again, then common waste, then the wood is assarted, and in the
-  end the bounds are driven out into unclaimed land. After plague or war the
+  end the bounds are driven out into unclaimed land. A household that clears
+  its lord's wood pays him a fine, a dozen years of the pannage its mast
+  would bring him, and holds the strip freely at its rent; it clears only
+  when it has the fine to spare and the strip would repay it. The lord's own
+  assarters, hired for a clearing, pay nothing. After plague or war the
   far fields go to grass, then scrub, and at last the wood returns.
   Besiegers burn the standing crops. Land under the plough bounds the
   harvest, and a place with no land left sends its younger sons to found
@@ -1097,7 +1111,8 @@ What happens is decided by quantities the economy produces, not by numbers cross
   fields (from c. 1180), a bathhouse by running water among many households,
   a hospital by a gate or a busy road near a church, a dyehouse on running
   water near the cloth market, a toll house at a gate or bridgehead on a
-  busy road, a guildhall on the market.
+  busy road (it stands while its tolls pay its keeper and its road), a
+  guildhall on the market.
 - A realm of fiefs. Every furlong has a lord, and fighting moves it:
   - every house keeps a standing household host at its seat, recruited
     from its people; neighbouring lords with grudges or land-hunger fight
