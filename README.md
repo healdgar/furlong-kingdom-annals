@@ -598,10 +598,17 @@ What happens is decided by quantities the economy produces, not by numbers cross
     his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
     from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
     their men come from; castellans to their own; sell-swords carry their pay out of the realm.
-  - **Merchants and carters:** every few days the dealers of each place look over what it has to spare and
-    send the best load someone will take: a merchant household of the place, or a dealer of the market the
-    goods will go to riding out to buy (strangers come only by sea), and a carter (by road) or boatman (by
-    water) of either place who is free; a carter who trades on his own account drives his own load. The driver is away for the trip and
+  - **Merchants and carters:** every fourth day the dealers of each place weigh every load they might send,
+    by road, by river barge and by coastal cog: what it would fetch where it goes against its price here, its
+    own freight, the tolls and a little lost on the way, for each day the driver is gone. They send the best,
+    then the next, while one pays: a merchant household of the place, or a dealer of the market the goods
+    will go to riding out to buy (strangers come only by sea), with the silver for it, and a carter (by road)
+    or boatman (by water) of either place who is free; a carter who trades on his own account drives his own
+    load. A market takes the stock its buyers would draw down while the good keeps (to half a year), more
+    the further its price stands above what a load costs laid down there; what lies on sale there and what
+    is already on the road or the water to it counts against that, so a gap draws loads enough to close it
+    and not a glut. Nothing else caps the trade: the carters and boatmen, the dealers' purses and the goods
+    on sale are its limits. The driver is away for the trip and
     back, and is paid his freight on delivery at the place's going rate, which rises when loads wait for want
     of a driver and falls when drivers stand idle. The merchant pays the market toll and the crown's aid on
     what he brings, and will not sell at the far end below what the load cost him laid down there: the
@@ -1030,7 +1037,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   Fences follow the parcel lines: wattle, paling, then low stone walls.
 - Trade consignments run on the sim clock, but what you see is their traffic:
   each sends out a small convoy of carts (one per unit of goods), barges or
-  cogs that travel at a walking pace in real time.
+  cogs that travel at a walking pace in real time. The screen draws the loads
+  nearest the eye, 140 carts and eight cogs and eight barges at most; the
+  rest still go, and count in the roads' traffic.
 - Events are marked where they happen: a ring in the colour of their kind and
   a short scene (bells and confetti for a feast, a slow toll for a death,
   dust and arrows for a battle, smoke over a robbed road, stump fires in an

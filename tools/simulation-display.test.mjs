@@ -22,6 +22,10 @@ test('land projection requests coalesce without writing shader buffers during se
   assert.equal(G.landDirty.size,0);assert.equal(G.landMaskDirty,false);
   assert.equal(JSON.stringify(f),before);
 });
+// the drawing cap's choice of what the screen draws, and the eye it measures from
+const trafficDrawnSource=source.slice(source.indexOf('function trafficDrawn('),source.indexOf('\n/* map markers:',source.indexOf('function trafficDrawn(')));
+const trafficEye=()=>({simDay:0,TRAFFIC_CAP:140,CART_UNIT:18,performance:{now:()=>0},cam:{cur:{focus:{x:0,z:0}}},polyPos:p=>p&&p.length?{x:p[0].x,z:p[0].z}:null,
+  clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),dist2d:(a,b,c,d)=>Math.hypot(a-c,b-d)});
 function region(from,to){const a=source.indexOf(from),b=source.indexOf(to,a);assert.notEqual(a,-1,`missing ${from}`);assert.ok(b>a,`missing ${to}`);return source.slice(a,b);}
 function declaration(name){const a=source.indexOf(`function ${name}(`);assert.notEqual(a,-1,`missing ${name}`);const b=source.indexOf('\n',a);return source.slice(a,b<0?source.length:b);}
 function run(code,globals={}){
@@ -398,8 +402,8 @@ test('caravan staffing runs once per departure and does not retry daily upon fai
   assert.equal(c._staffed,true);
 
   // Animation presentation pass never touches staffing
-  const trafficSection=source.match(/^function ensureCaravanDisplay\b[^\n]+/m)[0]+'\n'+region('/* --- traffic: carts, barges and cogs on their own clock --- */','let ci=0,cogI=0,bargeI=0,dotI=0;');
-  run(trafficSection,{W,G:{},spawnCarts(){}});
+  const trafficSection=source.match(/^function ensureCaravanDisplay\b[^\n]+/m)[0]+'\n'+trafficDrawnSource+'\n'+region('/* --- traffic: carts, barges and cogs on their own clock --- */','let ci=0,cogI=0,bargeI=0,dotI=0;');
+  run(trafficSection,{W,G:{},spawnCarts(){},...trafficEye()});
   assert.equal(draws,24,'Rendering traffic pass must not consume RNG draws or re-staff');
 });
 
@@ -411,12 +415,12 @@ test('tickEconomy does not create presentation traffic entries or touch scene',(
   assert.equal(tickEconomySrc.includes('proxy'),false);
 
   // Presentation traffic spawn inside animateWorld lazily provisions traffic
-  const trafficSection=source.match(/^function ensureCaravanDisplay\b[^\n]+/m)[0]+'\n'+region('/* --- traffic: carts, barges and cogs on their own clock --- */','let ci=0,cogI=0,bargeI=0,dotI=0;');
+  const trafficSection=source.match(/^function ensureCaravanDisplay\b[^\n]+/m)[0]+'\n'+trafficDrawnSource+'\n'+region('/* --- traffic: carts, barges and cogs on their own clock --- */','let ci=0,cogI=0,bargeI=0,dotI=0;');
   const spawnCalls=[];
   const c1={origin:0,dest:1,good:'wool',qty:20,poly:[{x:0,z:0},{x:100,z:0}],arriveDay:10,departDay:0};
   const animCtx=run(trafficSection,{
     W:{caravans:[c1]},G:{},
-    spawnCarts(c){spawnCalls.push(c);}
+    spawnCarts(c){spawnCalls.push(c);},...trafficEye()
   });
   assert.equal(animCtx.G.cartSpawned.has(c1),true);
   assert.equal(Object.hasOwn(c1,'_carts'),false);

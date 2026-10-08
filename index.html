@@ -8643,7 +8643,8 @@ function agentMat(iron=false){ // self-light keeps small figures readable; only 
 }
 /* Trade runs on the sim clock (a consignment is days on the road, and can be robbed or carry plague);
    what you see on the roads is its traffic: each consignment sends out a little convoy of carts (or a
-   barge, or a cog), one to a unit of goods: at ▶ a walking pace, and faster in proportion to the calendar. */
+   barge, or a cog), one to a unit of goods: at ▶ a walking pace, and faster in proportion to the calendar.
+   TRAFFIC_CAP is what the screen draws, never what the realm sends (trafficDrawn). */
 const TRAFFIC_CAP=140,CART_UNIT=18;
 const visPace=()=>speedIdx>0?(SPEEDS[speedIdx]||0)/SPEEDS[1]:0; // ▶ is walking pace; every faster setting runs the little world as much faster as it runs the calendar
 function spawnCarts(c){
@@ -8660,6 +8661,21 @@ function trafficDistance(t,now=displayDay()){
   const c=t.cons,elapsed=Math.max(0,(c.halted?day():now)-c.departDay);
   return Math.min(t.len,t.offset+t.spd*elapsed);
 }
+/* The drawing cap. The realm sends as many loads as its dealers and drivers can; the screen draws those nearest the eye, TRAFFIC_CAP
+   carts and boats in all and a hull to each cog and barge it has, chosen again twice a second or when loads set out or come in. A load
+   not drawn still goes, and still counts in the roads' traffic and the inspectors. */
+function trafficDrawn(L,now){
+  const P=G.trafficPick||(G.trafficPick={at:-1e9,n:-1,set:new Set()}),t=performance.now();
+  if(P.n===L.length&&t-P.at<500)return P.set;
+  const f=cam.cur.focus,R=[];
+  for(const c of L){if(c.robbed||c.gone||!c.poly)continue;const p=polyPos(c.poly,clamp((now-c.departDay)/Math.max(0.01,c.arriveDay-c.departDay),0,1));R.push({c,d:p?dist2d(p.x,p.z,f.x,f.z):Infinity});}
+  R.sort((a,b)=>a.d-b.d);
+  const set=new Set(),hulls=k=>G[k]?.length??8;let used=0,cogs=0,barges=0;
+  for(const{c}of R){const n=c.sea||c.river?1:clamp(Math.round(c.qty/CART_UNIT),1,4);if(used+n>TRAFFIC_CAP)continue;
+    if(c.sea){if(cogs>=hulls('cogs'))continue;cogs++;}else if(c.river){if(barges>=hulls('barges'))continue;barges++;}used+=n;set.add(c);}
+  const T=G.traffic||[];for(let i=T.length-1;i>=0;i--){const x=T[i];if(set.has(x.cons)||x.cons.robbed||x.cons.gone)continue; // a load the eye has left behind gives up its carts to a nearer one
+    if(x.proxy){scene.remove(x.proxy);x.proxy.geometry.dispose();x.proxy.material.dispose();}T.splice(i,1);G.cartSpawned?.delete(x.cons);}
+  P.at=t;P.n=L.length;P.set=set;return set;}
 /* map markers: from altitude every host, outlaw camp and the dragon shows as a round badge that stays legible
    (only caravans had one); scaled with the camera's distance, drawn over the terrain */
 const MARKTEX={};
@@ -11663,11 +11679,11 @@ function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.
 function driverFor(o,mode,m,d){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
   const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62;let L=heads_(o,ok);if(!L.length&&d)L=heads_(d,ok);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
 function merchantFor(o,cost,d,unit){let best=null;const half=unit>0?unit:cost*0.5,scan=t=>{if(!t.folk)return;for(const h of householdsOf(t)){const p=h.head;if(!p||p.dead||p.role)continue;const tr=p.tr,w=p.w||0;if((tr==='merchant'||tr==='carter'||tr==='boatman')&&w>half&&(!best||(tr==='merchant'?best.tr!=='merchant'||w>(best.w||0):best.tr!=='merchant'&&w>(best.w||0))))best=p;}};scan(o);if(d&&d!==o)scan(d);return best;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
-function ladeOut(c,o,quiet){const mode=c.sea||c.river?'boat':'cart',unit=price(o,c.good)+freight(o,1,c.len,mode),m=merchantFor(o,c.qty*price(o,c.good)+freight(o,c.qty,c.len,mode),W.settlements[c.dest],unit),want=m&&m!=='out'?Math.min(c.qty,Math.max(0,m.w||0)/unit):c.qty;if(want<c.qty){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=c.qty-want;c.qty=want;} /* a dealer buys as much of a load as his purse will pay for with its carriage (#23: a dealer needed half a full load's worth, so grain at a tenth of the capital's price never went to it) */if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
+function ladeOut(c,o,quiet){ladeOut.why=null;const mode=c.sea||c.river?'boat':'cart',unit=price(o,c.good)+freight(o,1,c.len,mode),m=merchantFor(o,c.qty*price(o,c.good)+freight(o,c.qty,c.len,mode),W.settlements[c.dest],unit),want=m&&m!=='out'?Math.min(c.qty,Math.max(0,m.w||0)/unit):c.qty;if(want<c.qty){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=c.qty-want;c.qty=want;} /* a dealer buys as much of a load as his purse will pay for with its carriage (#23: a dealer needed half a full load's worth, so grain at a tenth of the capital's price never went to it) */if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}ladeOut.why='merchant';return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
   const drv=driverFor(o,mode,m,W.settlements[c.dest]);
-  if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman';U[tr]=(U[tr]||0)+freight(o,want,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}return null;} // no one free to drive it: the load waits, the going rate will rise, and the freight it would have paid is work wanting hands (#23: noted once a year per good before, so carters never grew to the trade; a place sends one load a visit, so each visit missed is a load missed)
+  if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman';U[tr]=(U[tr]||0)+freight(o,want,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}ladeOut.why='driver';return null;} // no one free to drive it: the load waits, the going rate will rise, and the freight it would have paid is work wanting hands (#23: noted once a year per good before, so carters never grew to the trade; a place sends one load a visit, so each visit missed is a load missed)
   c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
-  if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good)){o.stores[c.good]+=got;if(got>0)offer(o,c.good,m,got);}else if(got>0){commodityCreditPurchase(o,m,c.good,got);}return null;} // nothing for sale at the price: no load (what was taken goes back)
+  if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good)){o.stores[c.good]+=got;if(got>0)offer(o,c.good,m,got);}else if(got>0){commodityCreditPurchase(o,m,c.good,got);}ladeOut.why='market';return null;} // nothing for sale at the price: no load (what was taken goes back)
   c.qty=got;storageCargoOut(c,o,true);c.value*=got/want;c.fee=freight(o,got,c.len,mode);c.drv=drv;c.crew=drv;if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-c.cost; // his outlay
   const trip=Math.max(0.5,c.arriveDay-c.departDay),dest=W.settlements[c.dest];drv.away={until:c.arriveDay+trip,what:`${c.sea?'master of a cog':c.river?'on a barge':'carting'} ${c.good} to ${dest?dest.name:'market'}, and back`};
   (o._loads||(o._loads={}))[mode]=(o._loads[mode]||0)+1;
@@ -11933,6 +11949,67 @@ function caravanPriceIndex(Ss){
 }
 function caravanPriceCandidates(C,o,po,sell){if(!C)return null;const F=Object.getOwnPropertyDescriptor(o,'frt')?.value;if(!F||Object.getPrototypeOf(F)!==Object.prototype)return null;const rate=Object.getOwnPropertyDescriptor(F,'cart')?.value??1,level=PL();if(!Number.isFinite(rate)||rate<0||!Number.isFinite(level)||level<0)return null;return caravanDestinationCandidates(C,po,sell,0.12*0.7*rate*level);}
 
+/* TRADE. A price is answered by carriage. Every fourth day the dealers of each place weigh every load they might send, by road, by river
+   barge and by coastal cog: what it would fetch where it goes, against its price here, its own carriage, the tolls and a little lost on the
+   way, for each day the driver is gone. They send the best, then the next, while one pays, a dealer has the silver and a driver is free.
+   Nothing else holds the trade back: the carters and boatmen (each away for his journey there and back), the dealers' purses, the goods on
+   sale here, and how much the market there will take. */
+const TRADE_LOAD={cart:60,river:70,sea:90},TRADE_DROVE={horses:12,cattle:30,sheep:80,swine:80},TRADE_GI=Object.fromEntries(GOODS.map((g,i)=>[g,i])); // one driver's load: a carter's string of carts, a barge, a cog; beasts are walked to market in droves
+function tradeOnTheWay(){ // what is already on the road or the water to each market, good by good: the realm's loads not yet in (and not robbed), and the far ports' ships in the offing
+  const M=new Map(),NG=GOODS.length,add=(di,g,q)=>{if(q>0){const k=di*NG+TRADE_GI[g];M.set(k,(M.get(k)||0)+q);}};
+  for(const c of W.caravans)if(!c.robbed)add(c.dest,c.good,c.qty);
+  for(const sh of W.ships||[])if(sh.phase==='in')for(const g in sh.cargo)add(sh.port,g,sh.cargo[g]);
+  return M;}
+function tradeWant(d,g){ // the stock a market's buyers would draw down while the good keeps: their usual month (or this month's, when more are seeking it), for as long as it keeps, to half a year: the cover its price is found against (reprice)
+  const E=Math.max(d._dAvg?.[g]||0,d._dem?.[g]||0),rot=d._rot?.[g]||0;return E*(rot>0?Math.max(0,Math.min(6,1/(30*rot)-1)):6);}
+function tradeSpare(o,g){return LU[g]!==undefined?spareOf(o,g):Math.min(spareOf(o,g),(o.stores[g]||0)-o.pop*(NEED[g]||0)*30);} // what a place can send away: its spare, keeping back a month of its own use
+/* How much a market will take: a dealer lays down stock against the cover its buyers want, more of it the further the price stands above
+   what the load costs him laid down there (where it is twice his cost he will hold twice the cover, reckoning it sells even if the price
+   halves), less what lies on sale there at the price and what is already on its way; and a place short of the herds it keeps takes the
+   beasts it lacks. So a gap draws loads enough to close it, and not a glut. */
+function tradeRoom(m,ratio,inb){const on=inb.get(m.k)||0;return Math.max(m.want*ratio-m.sale,m.short)-on;}
+function tickTrade(){
+  if(day()%2!==0)return;
+  const S=W.settlements,NG=GOODS.length,inb=tradeOnTheWay(),markets=new Map(),destinationPrices=caravanPriceIndex(S),tollF=0.05+MOD.tax/100*0.14,harbors=[];
+  for(let i=0;i<S.length;i++)if(S[i].harbor)harbors.push(i);
+  const market=(di,g)=>{const k=di*NG+TRADE_GI[g];let m=markets.get(k);if(!m){const d=S[di];m={k,want:tradeWant(d,g),sale:avail(d,g,price(d,g)),short:LU[g]!==undefined&&d._want?(d._want[g]||0)-(d.stores[g]||0):0};markets.set(k,m);}return m;}; // read once a day, and the day's loads counted against it as they go
+  const fear=t=>1-Math.min(1,t.infected/Math.max(1,t.pop)*5); // carters and masters shun a town with the pestilence in it, the more the worse
+  for(let oi=(day()>>1)&1;oi<S.length;oi+=2){ // every place, every fourth day (half of them each second day)
+    const o=S[oi];if(closedToTrade(o))continue;
+    const sell=[],po={},sp={};for(const g of GOODS){const v=tradeSpare(o,g);if(LU[g]!==undefined?v>(g==='horses'?2:6):v>5){sell.push(g);po[g]=price(o,g);sp[g]=Math.min(v,avail(o,g,po[g]));}} // what it has to sell, at what, and how much of it is on sale
+    if(!sell.length)continue;
+    const C=[],fo=fear(o);
+    const add=(mode,di,len,days,goods,leg)=>{const d=S[di],fd=fo*fear(d);if(!(fd>0))return;const by=mode==='cart'?'cart':'boat',frt=freight(o,1,len,by);
+      for(const g of goods){if(by==='boat'&&LU[g]!==undefined)continue;const quote=price(d,g),carry=frt+quote*tollF,risk=by==='cart'?len/1000*0.04:0,net=quote-po[g]-carry-risk; // the freight at the going rate, the tolls, a little lost on the way; and on the road the outlaws
+        if(!(net>0))continue;C.push({mode,di,g,len,days,leg,unit:quote-po[g]-carry,ratio:quote/(quote-net),rate:net*fd/Math.max(1,days),cap:by==='cart'?TRADE_DROVE[g]??TRADE_LOAD.cart:TRADE_LOAD[mode],u:po[g]+frt,m:market(di,g)});}};
+    { // by road
+      const dests=caravanPriceCandidates(destinationPrices,o,po,sell);
+      for(let ci=0;ci<(dests?dests.length:S.length);ci++){const di=dests?dests[ci].di:ci,goods=dests?dests[ci].goods:sell;
+        if(di===oi)continue;const d=S[di];if(metroOf(d)===metroOf(o))continue; // one market already
+        if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
+        const least=freight(o,1,dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z),'cart');if(!goods.some(g=>price(d,g)*(1-tollF)-po[g]>least))continue; // not even the straight line would pay: no need to find the road
+        const r=route(oi,di);if(r)add('cart',di,r.len,(r.time??r.len)/CART_MPD,goods,r);}}
+    if(o.river&&W.riverPairs)for(const pr of W.riverPairs){if(pr.a!==oi&&pr.b!==oi)continue; // down the river or up it, by barge (faster and safer than the road)
+      const di=pr.a===oi?pr.b:pr.a,d=S[di];if(metroOf(d)!==metroOf(o)&&!closedToTrade(d))add('river',di,pr.route.len,pr.route.len/BARGE_MPD,sell,pr);}
+    if(o.harbor)for(const di of harbors){if(di===oi)continue;const d=S[di];if(metroOf(d)===metroOf(o)||closedToTrade(d))continue; // along the coast by cog, harbour to harbour: the sea is the cheap road for heavy things
+      const sr=seaRoute(Math.min(oi,di),Math.max(oi,di));if(sr)add('sea',di,sr.len,sr.len/COG_MPD,sell,sr);}
+    const told=new Set(); // a load missed for want of a dealer or a driver is noted once a visit for each good and kind of carriage, not again for each market it might have gone to
+    for(;;){ // the best load that pays, then the next, while there are dealers, drivers and goods
+      let b=null,bs=0,bq=0;
+      for(const k of C){if(k.dead)continue;const q=Math.min(k.cap,sp[k.g],tradeRoom(k.m,k.ratio,inb));if(!(q>0.5)){k.dead=true;continue;}const sc=k.rate*q;if(sc>bs){bs=sc;b=k;bq=q;}} // (what can go only falls as loads go: a load passed over stays passed over)
+      if(!b)break;
+      const g=b.g,di=b.di,d=S[di],sea=b.mode==='sea',river=b.mode==='river';
+      if(!o.storage||BEASTS.includes(g))o.stores[g]-=bq; // a drove: the spare beasts, walked to market
+      const c={origin:oi,dest:di,good:g,qty:bq,value:bq*price(d,g),poly:b.mode==='cart'?b.leg.poly:null,len:b.len,departDay:day(),arriveDay:day()+b.days,robbed:false,sea,unit:b.unit};if(river)c.river=true;
+      const tk=(b.mode==='cart'?'cart:':'boat:')+g;if(!ladeOut(c,o,told.has(tk))){const why=ladeOut.why;told.add(tk); // the load does not go, and neither will its like
+        for(const k of C)if(why==='market'?k.g===g:k.di===di&&(why==='driver'?(k.mode==='cart')===(b.mode==='cart'):k.u>=b.u))k.dead=true; // nothing of it on sale here at the price; no driver of the kind here or there; no dealer here or there with the silver for a unit of it, or of anything dearer to that market
+        continue;}
+      if(!c.poly)c.poly=river?(b.leg.a===oi?b.leg.route.poly:[...b.leg.route.poly].reverse()):oi<di?b.leg.poly:[...b.leg.poly].reverse();
+      W.caravans.push(c);sp[g]-=c.qty;inb.set(b.m.k,(inb.get(b.m.k)||0)+c.qty);
+      if(b.mode==='cart'){const rr=W.roads.find(r=>(r.a===oi&&r.b===di)||(r.a===di&&r.b===oi));if(rr)rr.vol=(rr.vol||0)+1;}
+    }
+  }
+}
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
@@ -11963,77 +12040,7 @@ function tickEconomy(){
     // a lord's towns owe the crown only its feudal aid, their rents being his
     // (the crown's tax is a hearth-penny paid by each household from its purse, once a year: tickTenure)
   }
-  // caravans
-  if(W.caravans.length<TRAFFIC_CAP/2&&day()%2===0){ // a load goes when a merchant finds the margin and a carter is free (the cap is only what can be drawn)
-    const destinationPrices=caravanPriceIndex(W.settlements);
-    for(let oi=(day()>>1)&1;oi<W.settlements.length;oi+=2){ // every place, every fourth day (half of them each second day): its dealers look over what it has to spare
-      const o=W.settlements[oi];
-      if(closedToTrade(o))continue;if(W.caravans.length>=TRAFFIC_CAP/2)break;
-      const cands=[];const sell=GOODS.filter(g=>LU[g]!==undefined?spareOf(o,g)>(g==='horses'?2:6):o.stores[g]>o.pop*(NEED[g]||0)*30+5)/* what it has beyond a month's own needs */,po={};for(const g of sell)po[g]=price(o,g); // what it has to sell, and at what
-      if(!sell.length)continue;
-      const destinations=caravanPriceCandidates(destinationPrices,o,po,sell);
-      for(let ci=0;ci<(destinations?destinations.length:W.settlements.length);ci++){
-        const di=destinations?destinations[ci].di:ci,destinationGoods=destinations?destinations[ci].goods:sell;
-        if(di===oi)continue;const d=W.settlements[di];if(metroOf(d)===metroOf(o))continue; // one market already
-        if(closedToTrade(d,o.pos)||closedToTrade(o,d.pos))continue; // emergent quarantine, sealed gates, or the besiegers astride the road
-        const distance=dist2d(o.pos.x,o.pos.z,d.pos.x,d.pos.z),carriage=freight(o,1,distance*1.2,'cart');
-        for(const g of destinationGoods){
-          const quote=price(d,g),margin=quote-po[g],carry=carriage+quote*(0.05+MOD.tax/100*0.14); // the freight at the going rate, the tolls, a little lost on the way
-          if(margin>carry){
-            const r=route(oi,di);if(!r)continue;
-            const fear=(1-Math.min(1,o.infected/Math.max(1,o.pop)*5))*(1-Math.min(1,d.infected/Math.max(1,d.pop)*5)); // carters shun a town with the pestilence in it, the more the worse
-            const score=(margin-carry-r.len/1000*0.04)*fear/Math.max(600,r.len);if(score<=0)continue;
-            cands.push({score,di,g,r,unit:margin-carry});
-          }
-        }
-      }
-      cands.sort((x,y)=>y.score-x.score);
-      let tried=0;for(const best of cands){ // the best load that someone (a dealer of either market, and a carter) will take
-        const o2=W.settlements[oi],dd=W.settlements[best.di];
-        const qty=LU[best.g]!==undefined?Math.min(spareOf(o2,best.g),best.g==='horses'?12:best.g==='cattle'?30:80):Math.min(o2.stores[best.g]*0.4,60); // a drove: the spare beasts, walked to market
-        if(!o2.storage||BEASTS.includes(best.g))o2.stores[best.g]-=qty;
-        const c={origin:oi,dest:best.di,good:best.g,qty,value:qty*price(dd,best.g),
-          poly:best.r.poly,len:best.r.len,departDay:day(),arriveDay:day()+(best.r.time??best.r.len)/CART_MPD,robbed:false,
-          sea:false,unit:best.unit};
-        if(!ladeOut(c,o2,tried++>0))continue;
-        W.caravans.push(c);
-        const rr=W.roads.find(r=>(r.a===oi&&r.b===best.di)||(r.a===best.di&&r.b===oi));
-        if(rr)rr.vol=(rr.vol||0)+1;
-        break;
-      }
-    }
-  }
-  // (no 'ambient' carts: a cart goes where the price difference pays its way)
-  // river barges between river-linked settlements (faster and safer than the road)
-  if(W.riverPairs&&W.riverPairs.length&&W.caravans.filter(c=>c.river).length<5&&chance('sim',0.4*MOD.trade)){
-    const pr=pick('sim',W.riverPairs);
-    const downstream=chance('sim',0.5);
-    const oi=downstream?pr.a:pr.b,di=downstream?pr.b:pr.a;
-    const o=W.settlements[oi],d2=W.settlements[di];
-    if(!closedToTrade(o)&&!closedToTrade(d2)){
-      const g=GOODS.filter(x=>LU[x]===undefined).reduce((a,b)=>spareOf(o,a)>spareOf(o,b)?a:b);
-      if(spareOf(o,g)>25){
-        const qty=Math.min(o.stores[g]*0.3,70);if(!o.storage)o.stores[g]-=qty;
-        const poly=downstream?pr.route.poly:[...pr.route.poly].reverse();
-        {const c2=ladeOut({origin:oi,dest:di,good:g,qty,value:qty*price(d2,g),poly,len:pr.route.len,
-          departDay:day(),arriveDay:day()+pr.route.len/BARGE_MPD,robbed:false,sea:false,river:true},o);if(c2)W.caravans.push(c2);}
-      }
-    }
-  }
-  // cogs between harbors
-  const harbors=W.settlements.map((s,i)=>s.harbor?i:-1).filter(i=>i>=0);
-  if(harbors.length>=2&&W.caravans.filter(c=>c.sea).length<6&&chance('sim',0.3*MOD.trade)){
-    const ai=pick('sim',harbors);let bi=pick('sim',harbors);
-    if(ai!==bi){
-      const a=W.settlements[ai],b=W.settlements[bi];
-      const g=pick('sim',['fish','grain','cloth','wine','wool','stone','timber']); // the sea is the cheap road for heavy things
-      if(spareOf(a,g)>50&&!closedToTrade(a)&&!closedToTrade(b)){ // cogs used to sail into plague ports and sieges
-        const qty=Math.min(a.stores[g]*0.4,90);if(!a.storage)a.stores[g]-=qty;
-        const sr=seaRoute(ai,bi);if(!sr){if(!a.storage)a.stores[g]+=qty;}else{const poly=sr.poly,len=sr.len;
-        {const c2=ladeOut({origin:ai,dest:bi,good:g,qty,value:qty*price(b,g),poly,len,departDay:day(),arriveDay:day()+len/COG_MPD,robbed:false,sea:true},a);if(c2)W.caravans.push(c2);}}
-      }
-    }
-  }
+  tickTrade(); // carts, barges and cogs: what each place's dealers send where it pays
   for(const c of W.caravans)if(!c._staffed){c._staffed=true;if(!c.crew&&!W.prehistory)crewFor(c);}
   // arrivals
   const besieged=W.settlements.filter(t=>t.siegeBy);
@@ -16622,7 +16629,7 @@ function animateWorld(dt,now){
     G.comet.lookAt(G.comet.position.x+1000,G.comet.position.y+400,G.comet.position.z);
   }else G.comet.visible=false;
   /* --- traffic: carts, barges and cogs on their own clock --- */
-  if(W.caravans)for(const c of W.caravans)ensureCaravanDisplay(c);
+  if(W.caravans){const D=trafficDrawn(W.caravans,simDay);for(const c of W.caravans)if(D.has(c))ensureCaravanDisplay(c);} // the nearest, as many as can be drawn
   let ci=0,cogI=0,bargeI=0,dotI=0;
   const unitScale=clamp(cam.cur.dist*0.0035,1,6); // keep traffic legible from altitude
   const showDots=cam.cur.dist>900,vm=visPace(),T=G.traffic||[];
@@ -20056,10 +20063,17 @@ What happens is decided by quantities the economy produces, not by numbers cross
     his mill and his market take; the crown's is a hearth-penny from each household, customs and tolls
     from the merchants, and aids from the lords. Hosts, garrisons and the watch are paid to the households
     their men come from; castellans to their own; sell-swords carry their pay out of the realm.
-  - **Merchants and carters:** every few days the dealers of each place look over what it has to spare and
-    send the best load someone will take: a merchant household of the place, or a dealer of the market the
-    goods will go to riding out to buy (strangers come only by sea), and a carter (by road) or boatman (by
-    water) of either place who is free; a carter who trades on his own account drives his own load. The driver is away for the trip and
+  - **Merchants and carters:** every fourth day the dealers of each place weigh every load they might send,
+    by road, by river barge and by coastal cog: what it would fetch where it goes against its price here, its
+    own freight, the tolls and a little lost on the way, for each day the driver is gone. They send the best,
+    then the next, while one pays: a merchant household of the place, or a dealer of the market the goods
+    will go to riding out to buy (strangers come only by sea), with the silver for it, and a carter (by road)
+    or boatman (by water) of either place who is free; a carter who trades on his own account drives his own
+    load. A market takes the stock its buyers would draw down while the good keeps (to half a year), more
+    the further its price stands above what a load costs laid down there; what lies on sale there and what
+    is already on the road or the water to it counts against that, so a gap draws loads enough to close it
+    and not a glut. Nothing else caps the trade: the carters and boatmen, the dealers' purses and the goods
+    on sale are its limits. The driver is away for the trip and
     back, and is paid his freight on delivery at the place's going rate, which rises when loads wait for want
     of a driver and falls when drivers stand idle. The merchant pays the market toll and the crown's aid on
     what he brings, and will not sell at the far end below what the load cost him laid down there: the
@@ -20488,7 +20502,9 @@ What happens is decided by quantities the economy produces, not by numbers cross
   Fences follow the parcel lines: wattle, paling, then low stone walls.
 - Trade consignments run on the sim clock, but what you see is their traffic:
   each sends out a small convoy of carts (one per unit of goods), barges or
-  cogs that travel at a walking pace in real time.
+  cogs that travel at a walking pace in real time. The screen draws the loads
+  nearest the eye, 140 carts and eight cogs and eight barges at most; the
+  rest still go, and count in the roads' traffic.
 - Events are marked where they happen: a ring in the colour of their kind and
   a short scene (bells and confetti for a feast, a slow toll for a death,
   dust and arrows for a battle, smoke over a robbed road, stump fires in an
