@@ -66,7 +66,13 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Reserves (#50): commodityInheritance and transferOwnership blend an heir's reserve with the inherited one by quantity
  // (costBlend) instead of keeping the dearer. A reserve is a seller's price floor, not a quantity, title, claim or journal
  // writer; transfers and their order are unchanged. reserve-cost.test.mjs covers both paths.
- assert.equal(digest(source.slice(a,b)),"07670421beb0ee37faef3470b10c1280cb9d202259f69392546225ded7054064");
+ // World save (#48): the accessors and Proxies a world holds are made by named binders that the living code and worldLoad both
+ // call (householdHerdBind, householdFieldsBind, settlementPopBind, commodityStoreBind, commodityAccountViews, commodityCargoQtyBind,
+ // furlongRightsBind, buildingRightsBind, ownershipLard), moved out of their callers with their closures' source text unchanged;
+ // the views are noted in COMMODITY_VIEW_PROXIES and keep their targets; the ledger gains static historyState/historyAdopt over
+ // its private state. No writer, journal event or order changed: world graphs, RNG and annals equal the previous build (42 and
+ // 1001 sea, 40 days), and world-save.test.mjs covers the round trip.
+ assert.equal(digest(source.slice(a,b)),"c1ca0b3b214b7800a15d823212af618985525d5b2654fbd220f7e4cb4d5e751a");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

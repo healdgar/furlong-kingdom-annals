@@ -2297,26 +2297,26 @@ const ROLE_NAME={seat:'seat of the crown',fort:'fortress town',border:'border fo
    Institutions stay where they were founded and are rebuilt larger on the
    same ground; fires clear districts that are rebuilt in stone on straighter
    streets; sieges raze suburbs that grow back. Every town keeps its story. */
-function layoutSettlement(s){
-  const idx=W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
+function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldLoad): its closures are made again over it, and nothing is laid out
+  const idx=saved?saved.idx:W.settlements.indexOf(s),rng=layoutRng(idx),rr=()=>rng(),rpick=a=>a[Math.floor(rng()*a.length)];
   const pondOptions=[];
-  let isCap=s.kind==='capital',isTown=s.kind==='town',isVil=s.kind==='village';
-  const role=s.role||(isCap?'seat':isTown?'market':'farm');s.role=role;
-  const C=s.pos;let R0=isCap?440:isTown?310:170,Rmax=R0; // the reach of the built-up town; it widens as the town outgrows it
-  const count=Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:isTown?280:48);
-  const HW=isCap?3.4:isTown?3:2.4,RHW=isVil?3.2:4;
-  riverStrips();
+  let isCap=saved?saved.isCap:s.kind==='capital',isTown=saved?saved.isTown:s.kind==='town',isVil=saved?saved.isVil:s.kind==='village';
+  const role=saved?saved.role:s.role||(isCap?'seat':isTown?'market':'farm');if(!saved)s.role=role;
+  const C=saved?saved.C:s.pos;let R0=saved?saved.R0:isCap?440:isTown?310:170,Rmax=saved?saved.Rmax:R0; // the reach of the built-up town; it widens as the town outgrows it
+  const count=saved?saved.count:Math.min(isCap?Math.round(s.pop/4):Math.round(s.pop/4.2),isCap?620:isTown?280:48);
+  const HW=saved?saved.HW:isCap?3.4:isTown?3:2.4,RHW=saved?saved.RHW:isVil?3.2:4;
+  if(!saved)riverStrips();
   const cellOK=(x,z)=>{const ci=toCell(x),cj=toCell(z),i=cIdx(ci,cj);return !W.water[i]&&slopeAt(ci,cj)<0.35&&W.h[i]>1;};
   const buildable=(x,z)=>cellOK(x,z)&&!riverAt(x,z,1)&&!lakeAt(s,x,z,2);
-  s.streets=[];s.places=[];s.roadSpoke={};s.history=[];s.remnants=[];s.oldWalls=[];s.relicWalls=[];s.burns=[];
-  s.wallRad=null;s.wallKind=null;s.natDef=0;s.plazaR=0;s.coreR=Rmax;s.radius=80;s.wallR=80;
+  if(!saved){s.streets=[];s.places=[];s.roadSpoke={};s.history=[];s.remnants=[];s.oldWalls=[];s.relicWalls=[];s.burns=[];
+  s.wallRad=null;s.wallKind=null;s.natDef=0;s.plazaR=0;s.coreR=Rmax;s.radius=80;s.wallR=80;}
   const segH=makeHash(24),placed=makeHash(16);
-  let curE=0;
-  const era=AD(),early=era<1000,motteAge=era<1070; // what the builders of this age know how to build
-  const E=early?(isVil?2:3):isCap?6:isTown?5:3;
-  const FRAC=early?(E===2?[0.5,1]:[0.3,0.65,1]):isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
+  let curE=saved?saved.curE:0;
+  const era=saved?saved.era:AD(),early=saved?saved.early:era<1000,motteAge=saved?saved.motteAge:era<1070; // what the builders of this age know how to build
+  const E=saved?saved.E:early?(isVil?2:3):isCap?6:isTown?5:3;
+  const FRAC=saved?saved.FRAC:early?(E===2?[0.5,1]:[0.3,0.65,1]):isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
   const agoYears=e=>Math.round((E-e)*(isVil?70:55)/10)*10;
-  let live=false;const hist=(e,t)=>s.history.push(live?{yr:year(),t}:{ago:agoYears(e),t}); // live entries are dated in the annals' own years
+  let live=saved?saved.live:false;const hist=(e,t)=>s.history.push(live?{yr:year(),t}:{ago:agoYears(e),t}); // live entries are dated in the annals' own years
   const addSeg=(a,b,hw,st)=>{const o={a,b,hw,st,x:(a.x+b.x)/2,z:(a.z+b.z)/2};segH.add(o,dist2d(a.x,a.z,b.x,b.z)/2+hw+2);};
   const addStreet=(pts,hw,kind,extra)=>{
     if(pts.length<2)return null;
@@ -2404,16 +2404,16 @@ function layoutSettlement(s){
   const extent=q=>{const d=liveB().map(b=>dist2d(b.x,b.z,C.x,C.z)).sort((x,y)=>x-y);return d.length?d[Math.min(d.length-1,Math.floor(d.length*q))]:30;};
 
   /* ---- the roads come first: inside town they are the high streets ---- */
-  W.roads.forEach((r,ri)=>{
+  if(!saved)W.roads.forEach((r,ri)=>{
     if(r.a!==idx&&r.b!==idx)return;
     const path=r.a===idx?r.path:[...r.path].reverse(),pts=[];
     for(const p of path){if(dist2d(p.x,p.z,C.x,C.z)>Rmax)break;pts.push({x:p.x,z:p.z});}
     if(pts.length>=2){addStreet(pts,RHW,'road',{ri});s.roadSpoke[ri]=pts;}
   });
-  const roads=s.streets.filter(t=>t.kind==='road');
+  const roads=saved?saved.roads:s.streets.filter(t=>t.kind==='road');
   /* a mill dam above the town: the river is held back to drive the mills, and the pond spreads into a lake
      (Hamburg's Alster was dammed so, c.1190) */
-  if(s.river&&!isVil&&rr()<(role==='crossing'?0.6:0.35)*(early?0.35:1)){
+  if(!saved&&s.river&&!isVil&&rr()<(role==='crossing'?0.6:0.35)*(early?0.35:1)){
     let bst=null,bk=-1,bd=1e9;
     for(const rs of W.rivStrips)if(!rs.canal)rs.pts.forEach((q,k)=>{const d=dist2d(q.x,q.z,C.x,C.z);if(d<bd){bd=d;bst=rs;bk=k;}});
     if(bst&&bd<Rmax*0.6)for(let k=bk;k>8&&!s.lake;k--){
@@ -2444,17 +2444,17 @@ function layoutSettlement(s){
   const addPlace=(p,kind)=>{p.kind=kind;s.places.push(p);
     const edge=[];for(let k=0;k<=PLN;k++){const a=k/PLN*Math.PI*2;edge.push({x:p.x+Math.cos(a)*(p.r[k%PLN]+0.5),z:p.z+Math.sin(a)*(p.r[k%PLN]+0.5)});}
     addStreet(edge,0.5,'edge',{market:kind==='market'});};
-  const[t0x,t0z]=roads.length?roadTan(roads[0],2):[1,0];
-  const rAng=Math.atan2(t0z,t0x);
-  let foundLine='';
+  const[t0x,t0z]=saved?[saved.t0x,saved.t0z]:roads.length?roadTan(roads[0],2):[1,0];
+  const rAng=saved?saved.rAng:Math.atan2(t0z,t0x);
+  let foundLine=saved?saved.foundLine:'';
   /* like Göttingen: an older farming village with its own church stood a little way along the road;
      the trading town was founded beside it, and the village stayed outside the first wall */
   // how the town began: grown about an older village (Göttingen), a Roman grid (Metz), founded in one
   // stroke as a planned market (Freiburg), or twin cores — a cathedral-burg and a merchants' waterfront (Hamburg)
-  const mode=s.forceMode||(isVil?'village':early?'grown':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown');
-  s.mode=mode;
-  let oldVil=null;
-  if(mode==='grown'&&(role==='market'||role==='crossing'||role==='seat')&&roads.length){
+  const mode=saved?saved.mode:s.forceMode||(isVil?'village':early?'grown':role==='border'?'roman':(isCap&&rr()<0.3)?'roman':(role==='market'&&rr()<0.55)?'planned':role==='port'?'twin':'grown');
+  if(!saved)s.mode=mode;
+  let oldVil=saved?saved.oldVil:null;
+  if(!saved){if(mode==='grown'&&(role==='market'||role==='crossing'||role==='seat')&&roads.length){
     const rd=roads[Math.floor(rr()*roads.length)];
     for(let i=0;i<rd.pts.length&&!oldVil;i++){
       const q=rd.pts[i],d=dist2d(q.x,q.z,C.x,C.z);if(d<150)continue;if(d>240)break;
@@ -2473,8 +2473,8 @@ function layoutSettlement(s){
   }else if(mode==='grown'||mode==='roman'){ // the market place (or the old forum) where the roads meet
     const L=mode==='roman'?(isCap?26:20):isCap?30:22,Wd=mode==='roman'?L:isCap?15:11;
     for(const sc of[1,0.8,0.6]){const p=blob(C.x,C.z,L*sc,Wd*sc,rAng,mode==='roman'?0.1:0.3);if(placeOK(p)){addPlace(p,'market');break;}}
-  }
-  let plazaC=s.places.find(p=>p!==oldVil)||{x:C.x,z:C.z,r:new Array(PLN).fill(8)};
+  }}
+  let plazaC=saved?saved.plazaC:s.places.find(p=>p!==oldVil)||{x:C.x,z:C.z,r:new Array(PLN).fill(8)};
   const faceCentre=(x,z,cx,cz)=>{const m=Math.atan2(z-cz,x-cx);return -Math.atan2(Math.cos(m),-Math.sin(m));};
   const aroundPlace=(arch,tier,hm,scale,district,extra,P)=>{ // an institution on the edge of a place, facing it
     P=P||plazaC;
@@ -2510,12 +2510,12 @@ function layoutSettlement(s){
       addStreet(P,hw,'quay',{serviceLinked:true});if(dist2d(p.x,p.z,plan.path.at(-1).x,plan.path.at(-1).z)>1)addStreet(plan.path,1.6,'alley',{straight:true,serviceAccess:'quay'});
       G.roadsDirty=true;break;}});};
   const quayAccess=st=>!st.gone&&!st.hidden&&!!st.serviceLinked; // every quay is laid with its lane
-  const ux=Math.cos(rAng),uz=Math.sin(rAng),vx=-uz,vz=ux;
+  const ux=saved?saved.ux:Math.cos(rAng),uz=saved?saved.uz:Math.sin(rAng),vx=saved?saved.vx:-uz,vz=saved?saved.vz:ux;
   const lineRuns=(ax,az,bx,bz,ok)=>{ // a straight line split into its usable runs
     const out=[];let run=[];for(const q of resample([{x:ax,z:az},{x:bx,z:bz}],8)){if(ok(q.x,q.z))run.push(q);else{if(run.length>=3)out.push(run);run=[];}}
     if(run.length>=3)out.push(run);return out;};
-  let church=null;
-  if(mode==='roman'){ // Divodurum: a grid of streets about the forum; its wall a rectangle
+  let church=saved?saved.church:null;
+  if(!saved){if(mode==='roman'){ // Divodurum: a grid of streets about the forum; its wall a rectangle
     const hl=isCap?125:92,hw=isCap?96:70,sp=isCap?42:37;
     for(let o=-hw;o<=hw+0.1;o+=sp){if(Math.abs(o)<1)continue; // the road through the forum is the decumanus
       for(const r of lineRuns(C.x-ux*hl+vx*o,C.z-uz*hl+vz*o,C.x+ux*hl+vx*o,C.z+uz*hl+vz*o,(x,z)=>buildable(x,z)&&!inPlace(x,z,2)))addStreet(r,HW,'grid',{straight:true,roman:true});}
@@ -2565,9 +2565,9 @@ function layoutSettlement(s){
         if(path.length>3)addStreet(path,2.2,'lane',{straight:true,castlePath:true});
       }
     }
-  }
-  let keep=s._hillKeep||null;delete s._hillKeep;
-  if(!keep&&(role==='seat'||role==='fort')){ // a tower keep on the highest ground near the crossing of the roads
+  }}
+  let keep=saved?saved.keep:s._hillKeep||null;if(!saved)delete s._hillKeep;
+  if(!saved){if(!keep&&(role==='seat'||role==='fort')){ // a tower keep on the highest ground near the crossing of the roads
     let best=null,bh=-1e9;
     if(motteAge){ // score the complete earthwork and courtyard on fixed samples, without consuming simulation RNG
       for(let rf=65;rf<=155;rf+=15)for(let ai=0;ai<32;ai++){
@@ -2630,9 +2630,9 @@ function layoutSettlement(s){
       if(q.length>=3)layQuays(shoreRoadRuns(s,q,4),4);
     }
     foundLine=role==='port'?'Began as a landing on the shore, where boats could be drawn up out of the swell.':'Began as a row of fishers’ huts above the shingle.';
-  }
-  const quay=s.streets.find(t=>t.kind==='quay'&&!t.gone);
-  if(mode==='twin'&&quay){ // Hamburg: the bishop's cathedral-burg on the dry rise, the count's merchant town on the water
+  }}
+  const quay=saved?saved.quay:s.streets.find(t=>t.kind==='quay'&&!t.gone);
+  if(!saved){if(mode==='twin'&&quay){ // Hamburg: the bishop's cathedral-burg on the dry rise, the count's merchant town on the water
     let best=null,bh=-1e9;
     for(let r=90;r<=230;r+=20)for(let a=0;a<24;a++){const x=C.x+Math.cos(a/24*6.283)*r,z=C.z+Math.sin(a/24*6.283)*r,f={x,z,w:ARCH.temple[0],d:ARCH.temple[1],rot:rr()*Math.PI};
       if(fits(f,6)&&hAt(x,z)>bh){bh=hAt(x,z);best=f;}}
@@ -2684,21 +2684,21 @@ function layoutSettlement(s){
     if(!foundLine)foundLine=role==='crossing'?'A hamlet grew up at the ford where the road crosses the river; a bridge replaced the ford in its second age.':'Settled on the riverbank for the water and the fishing.';
   }
   if(!foundLine)foundLine=isVil?({farm:'A handful of farms about a green, where the plough-land is good.',timber:'A clearing of woodcutters and charcoal-burners at the forest’s edge.',mining:'Huts of miners under the scarp, where the ore comes near the surface.'}[role]||'A handful of farms about a green.')
-    :'Farms and an alehouse about a green where the roads meet; a weekly market was granted in its second age.';
-  const vilName=oldVil?rpick(NAMEB.pfx).replace(/[aeiou]?$/,'')+rpick(['ingi','ithi','ede','heim','um']):'';
-  let focus=null;
-  if(oldVil){
+    :'Farms and an alehouse about a green where the roads meet; a weekly market was granted in its second age.';}
+  const vilName=saved?saved.vilName:oldVil?rpick(NAMEB.pfx).replace(/[aeiou]?$/,'')+rpick(['ingi','ithi','ede','heim','um']):'';
+  let focus=saved?saved.focus:null;
+  if(!saved){if(oldVil){
     hist(0,`The old village of ${vilName}: farms about a green, with a little church, beside the road.`);
     const oc=aroundPlace('temple',1,0.7,0.62,'temple',{old:true,q:'village'},oldVil);
     oldVil.vil=true;focus=oldVil;
-  }else hist(0,foundLine);
+  }else hist(0,foundLine);}
   const foundTown=()=>{
     if(oldVil)hist(1,foundLine.replace(/^Farms and an alehouse about a green where the roads meet/,'The market town was founded beside the old village, where the roads meet')+
       (oldVil?` The old village kept its own church, outside the town’s bounds.`:''));
     if(!church)church=aroundPlace('temple',isVil?1:2,isVil?0.7:0.85,isVil?0.65:0.8,'temple');
     if(!isVil){aroundPlace('tavern',1,1,1,'market');if(era>=1150)aroundPlace('hall',2,1,1,'market');} // no guildhall before there are guilds
   };
-  if(!oldVil)foundTown();
+  if(!saved&&!oldVil)foundTown();
   /* ---- frontage: the lots along each street, and who builds there ---- */
   const candsOf=st=>{
     if(st.gone||st.planQ||st.kind==='alley')return []; // a planned street is not built along until it is opened; an alley is a way through, not a frontage
@@ -2716,7 +2716,7 @@ function layoutSettlement(s){
      walk, the traffic of the realm passing along the road, travellers at the gate, boats at the quay), and it
      shares that custom with the rivals already near; noisome trades keep away from homes and the market.
      Everything else is a home. (Christaller's threshold and range, von Thünen's rents, at street scale.) */
-  const HOME=new Set(['house','longhouse','burgher']);
+  const HOME=saved?saved.HOME:new Set(['house','longhouse','burgher']);
   const nearN=(x,z,R,pred)=>{let n=0;for(const o of placed.near(x,z,R))if(!o.removed&&o.state!=='gone'&&pred(o)&&dist2d(x,z,o.x,o.z)<R)n++;return n;};
   const passing=st=>{const k=st.kind;
     if(k==='road')return st.ri!=null?0.2+0.8*(roadTraffic()[st.ri]||0):0.35;
@@ -2795,7 +2795,7 @@ function layoutSettlement(s){
   const gapFor=c=>isVil?4.5:(burnAt(c.mx,c.mz)?0.3:c.d<Rmax*0.25?0.35:c.d<Rmax*0.5?1:2.2);
   const keyOf=c=>(focus?dist2d(c.mx,c.mz,focus.x,focus.z):c.d)+c.j+(c.st.neu?-120:0)+(c.st.kind==='road'?-22:c.st.market?-30:c.st.kind==='quay'?-12:0)
     +(s.wallRad&&wallSide(c.mx,c.mz)>0?140:0);
-  let built=s.buildings.length;
+  let built=saved?saved.built:s.buildings.length;
   const fill=(target,maxD)=>{
     const all=[];
     for(const st of s.streets)if(!st.hidden)for(const c of candsOf(st))if(!c.done&&c.d<maxD&&frontageAccess(s,c))all.push(c);
@@ -2966,7 +2966,7 @@ function layoutSettlement(s){
     return cs.sort((p,q)=>keyOf(p)-keyOf(q));};
   const churchOn=(c,scale,extra)=>{const f=frontFoot(c,'temple',2,rr);f.w*=scale;f.d*=scale;if(!fits(f,1.5))return null;c.done=true;
     const b=place('temple',2,f,'temple',scale,{inst:true,...(extra||{})});if((b.castle||b.friary||b._graveyard)&&churchAccess(b))return b;unplace(b);c.done=false;return null;};
-  let parishes=0,friaryDone=false,neuDone=false;
+  let parishes=saved?saved.parishes:0,friaryDone=saved?saved.friaryDone:false,neuDone=saved?saved.neuDone:false;
   const parish=e=>{
     if(parishes>=(isCap?3:1))return;const ext=extent(0.8);
     for(const c of openCands(c=>c.d<ext&&c.d>60))if(!churches().some(b=>dist2d(b.x,b.z,c.mx,c.mz)<(isCap?170:190))&&churchOn(c,0.8)){
@@ -3000,8 +3000,8 @@ function layoutSettlement(s){
       }
     }
   };
-  const wallAges=s.walls>0?(isCap?(mode==='roman'?[2,4]:[1,4]):role==='border'||role==='fort'?[2,4]:isTown?[2]:[1]):[];
-  const bastioned=isCap||role==='border'||role==='fort'; // their last wall is built on the new Italian trace
+  const wallAges=saved?saved.wallAges:s.walls>0?(isCap?(mode==='roman'?[2,4]:[1,4]):role==='border'||role==='fort'?[2,4]:isTown?[2]:[1]):[];
+  const bastioned=saved?saved.bastioned:isCap||role==='border'||role==='fort'; // their last wall is built on the new Italian trace
   const citadel=e=>{ // Metz: a star citadel astride the wall, a quarter razed for it and its glacis
     const S=isCap?92:78,roadPts=s.streets.filter(t=>t.kind==='road'||t.kind==='mstreet').flatMap(t=>t.pts);
     let best=null,bs=-1e9;
@@ -3020,7 +3020,7 @@ function layoutSettlement(s){
       const f={x:best.x+vx*o-ux*14,z:best.z+vz*o-uz*14,w:6,d:24,rot:-best.a};place('longhouse',2,f,'keep',1.1,{inst:true,barracks:true});}
     hist(e,`A citadel was raised astride the walls on the ${['eastern','southern','western','northern'][Math.round(((best.a%6.2832)+6.2832)%6.2832/1.5708)%4]} side; ${gone.length} houses of the old quarter were razed for it and its glacis, and a garrison quartered there for good.`);
   };
-  for(let e=0;e<E;e++){
+  if(!saved){for(let e=0;e<E;e++){
     curE=e;
     if(e===1&&oldVil){focus=null;foundTown();}
     if(!isVil&&!neuDone&&era>=1150&&e===Math.max(2,E-3)&&(role==='crossing'||isCap&&s.river))neustadt(e);
@@ -3067,7 +3067,7 @@ function layoutSettlement(s){
   s.paveR=isVil?0:extent(0.45);
   // what the future may build: gaps in today's frontage first, then lanes not yet laid (hidden until someone builds on them)
   curE=E;
-  branch(isCap?10:isTown?6:3,true);
+  branch(isCap?10:isTown?6:3,true);}
   const queue=again=>{ // open frontage today (every other step: a house is wider than the step), nearest the heart first; again: plots whose houses have since gone (burned, sacked, deserted, cleared) are open once more
     const q=[];
     for(const st of s.streets)if(!st.gone)candsOf(st).forEach((c,i)=>{
@@ -3102,7 +3102,7 @@ function layoutSettlement(s){
     {const n=isCap?8:isTown?5:2,t=fromTracks(n);if(n>t)branch(n-t,true,Rmax*0.8);}
     return true;
   };
-  s.growSlots=queue();
+  if(!saved)s.growSlots=queue();
   /* the same processes, driven by the live history instead of the generated past */
   const liveOps={
     wall(){ // raise the first wall, or a wider one when the town has outgrown the old
@@ -3319,13 +3319,13 @@ function layoutSettlement(s){
     s.roadSpoke[ri]=[...via,...outward];(s.joinOut||(s.joinOut={}))[ri]=outward;s._joinVer=(s._joinVer||{});s._joinVer[ri]=streetVer();
     return {joined};
   };
-  for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
+  if(!saved)for(const R of[s.hillCastle,s.burgRing,s.bailey])if(R)for(const b of[...liveB()]) // anything built before the ring was set out, standing on its line, gives way
     if(!b.inst&&Math.abs(dist2d(b.x,b.z,R.x,R.z)-wallRadAt(R,Math.atan2(b.z-R.z,b.x-R.x)))<Math.hypot(b.w,b.d)/2+2)unplace(b);
   s._lay={laneClear:st=>!pathHitsBldg(st.pts,st.hw),fits,place,placed,segH,archFor,tierFor,gapFor,nearStreet,queue,extend,buildLot,reuse,joinRoad,townPath,rejoin,churchAccess,serviceAccess,quayAccess,finishYards:()=>{for(const b of s.buildings)if(b.arch==='temple'&&!b.removed&&!b.castle&&!b.friary){reserveChurchyard(b);finishChurchyard(s,b,addStreet);}},live:liveOps};
   // History owns a stable context object; observing it never advances a random stream.
-  const context={};s._lay.historyState=()=>Object.assign(context,{idx,role,C,count,HW,RHW,era,early,motteAge,E,FRAC,roads,t0x,t0z,rAng,mode,ux,uz,vx,vz,quay,vilName,HOME,TRADES,wallAges,bastioned,
+  const context=saved||{};s._lay.historyState=()=>Object.assign(context,{idx,role,C,count,HW,RHW,era,early,motteAge,E,FRAC,roads,t0x,t0z,rAng,mode,ux,uz,vx,vz,quay,vilName,HOME,TRADES,wallAges,bastioned,
     isCap,isTown,isVil,R0,Rmax,curE,live,foundLine,oldVil,plazaC,church,keep,focus,built,parishes,friaryDone,neuDone});
-  s._lay.historyRng=rng;fortPrepare(s);for(const b of churches())churchAccess(b);
+  s._lay.historyRng=rng;if(!saved){fortPrepare(s);for(const b of churches())churchAccess(b);}
   // Commit a speculative millpond only after the final town fabric can supply
   // both a dry mill parcel and a connected, river-safe service lane.
   const pondWet=(L,x,z)=>hAt(x,z)<L.y&&inPoly(L.poly,x,z),lineWet=(L,pts)=>{
@@ -3340,12 +3340,12 @@ function layoutSettlement(s){
       const b=place('mill',1,sites[i],'artisan',1,{inst:true,millWater:sites[i].millWater});serviceAccess(b,plan);return s.mill=b;}
     return null;};
   let pondAccepted=false;
-  for(const L of pondOptions){s.lake=L;if(!pondClear(L)){s.lake=null;continue;}
+  if(!saved)for(const L of pondOptions){s.lake=L;if(!pondClear(L)){s.lake=null;continue;}
     pondAccepted=!!siteMill();
     if(pondAccepted){hist(1,'The river was dammed above the town to drive its mill; a contained mill-pond spread into a lake.');break;}
     s.lake=null;
   }
-  if(!pondAccepted){s.lake=null;if(s.river)siteMill();}
+  if(!saved&&!pondAccepted){s.lake=null;if(s.river)siteMill();}
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   for(const s of W.settlements)if(s._lay&&s._lay.rejoin)s._lay.rejoin();
@@ -3699,13 +3699,16 @@ function householdMemberClear(h){const result=h.members.clear();householdMemberI
 function householdMemberIndexAdopt(world=W){const map=world.households,C={map,entries:new Map(),byHousehold:new WeakMap(),active:[],next:0,size:0,valid:true,iterating:0};if(HOUSEHOLD_MEMBER_INDEXES.get(world)?.iterating)householdMemberIndexInvalidate(world);HOUSEHOLD_MEMBER_INDEXES.set(world,C);if(!map||Object.getPrototypeOf(map)!==HOUSEHOLD_NATIVE_MAP){C.valid=false;return false;}let iterator;try{iterator=HOUSEHOLD_MAP_ENTRIES.call(map);}catch{C.valid=false;return false;}for(const[id,h]of iterator){const members=householdMemberIndexSet(h);if(!members||C.byHousehold.has(h)){C.valid=false;return false;}const entry={h,members,order:C.next++};C.entries.set(id,entry);C.byHousehold.set(h,entry);entry.nonempty=HOUSEHOLD_SET_SIZE.call(members)>0;if(entry.nonempty)C.active.push(entry);}C.size=HOUSEHOLD_MAP_SIZE.call(map);return !!householdMemberIndex(world);}
 function* nonemptyHouseholds(){const C=householdMemberIndex();if(!C){yield* (W.households||new Map()).values();return;}C.iterating++;let order=-1;try{while(true){if(HOUSEHOLD_NATIVE_SET.values!==HOUSEHOLD_SET_VALUES||HOUSEHOLD_NATIVE_SET[Symbol.iterator]!==HOUSEHOLD_SET_ITERATOR)householdMemberIndexInvalidate();if(!C.valid)throw Error('Unmanaged household registry mutation during indexed iteration');let lo=0,hi=C.active.length;while(lo<hi){const m=(lo+hi)>>>1;if(C.active[m].order<=order)lo=m+1;else hi=m;}if(lo===C.active.length)return;const entry=C.active[lo];order=entry.order;yield entry.h;}}finally{C.iterating--;}}
 function newHousehold(p){const h={household:true,id:'hh'+((W._hhID=(W._hhID||0)+1)),head:p,members:new Set(),assets:{w:0,_debt:0,_owe:[]},population:new HouseholdPopulation(),hunger:0};
-  h.home=p&&W.settlements[p.si];Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});householdRegister(h);return h;}
+  h.home=p&&W.settlements[p.si];householdHerdBind(h);householdRegister(h);return h;}
+// The binders below make a world's accessors, for the living and again for a saved world (worldLoad); what each closes over is in the world.
+function householdHerdBind(h){Object.defineProperty(h.assets,'herd',{configurable:true,enumerable:true,get(){const home=h.head&&W.settlements[h.head.si]||h.home;return home?stockOf(home,h).animals:undefined;},set(v){const home=h.head&&W.settlements[h.head.si]||h.home;if(home)stockOf(home,h).animals=v||{};}});}
 function bindHousehold(p,h){if(p._hh===h)return h;invalidateFolkIndex();const old=p._hh;if(old)householdMemberDelete(old,p);
   if(!old)for(const k of HH_FIELDS){const d=Object.getOwnPropertyDescriptor(p,k);if(d&&'value'in d&&d.value!=null){if(k==='w'||k==='_debt'||k==='_inc')h.assets[k]=(h.assets[k]||0)+d.value;
     else if(k==='_owe')(h.assets._owe||(h.assets._owe=[])).push(...d.value);else if(k==='herd'){const H=h.assets.herd||(h.assets.herd={});for(const g of BEASTS)H[g]=(H[g]||0)+(d.value[g]||0);}else h.assets[k]=d.value;}}
-  p._hh=h;householdMemberAdd(h,p);for(const k of HH_FIELDS)Object.defineProperty(p,k,{configurable:true,enumerable:true,
+  p._hh=h;householdMemberAdd(h,p);householdFieldsBind(p,h);return h;}
+function householdFieldsBind(p,h,keys=HH_FIELDS){for(const k of keys)Object.defineProperty(p,k,{configurable:true,enumerable:true,
     get(){return k==='_fill'?h.assets[k]:h.head===p?h.assets[k]:k==='herd'||k==='_owe'?undefined:0;},
-    set(v){if(h.head===p)h.assets[k]=v;}});return h;}
+    set(v){if(h.head===p)h.assets[k]=v;}});}
 function householdAccount(p){if(!p||p.merc)return null;if(p.household)return p;if(p._hh)return p._hh;
   const q=oldHouseholdHead(p),h=q._hh||newHousehold(q);bindHousehold(q,h);if(p!==q)bindHousehold(p,h);return h;}
 function householdHead(p){const h=householdAccount(p);return h&&h.head&&!h.head.dead?h.head:p;}
@@ -3720,9 +3723,10 @@ function householdsOf(s){if(s._householdsD===day()&&s._householdsN===(s.folk||[]
   let weights=0;const sizes=new Map(),si=W.settlements.indexOf(s);for(const h of H){let n=0;for(const p of h.members)if(!p.dead&&p.si===si)n++;sizes.set(h,Math.max(1,n));h.census=h.census||new Map();weights+=Math.max(1,n);}
   const changed=old.length!==H.size||[...H].some(h=>!h.population.has(s)||(h.census||(h.census=new Map())).get(s)!==sizes.get(h));
   if(changed)for(const h of H)h.population.set(s,total*sizes.get(h)/Math.max(1,weights));for(const h of H)h.census.set(s,sizes.get(h));
-  if(!s._populationReady){Object.defineProperty(s,'pop',{configurable:true,enumerable:true,get(){return populationOf(this);},
-    set(v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(!Number.isFinite(v)||v<0)return;const H=this.households||[],old=H.reduce((n,h)=>n+(h.population.get(this)||0),0);for(const h of H)h.population.set(this,old>0?v*(h.population.get(this)||0)/old:v/Math.max(1,H.length));}});s._populationReady=true;}
+  if(!s._populationReady){settlementPopBind(s);s._populationReady=true;}
   s._householdsD=day();s._householdsN=(s.folk||[]).length;s._householdsV=W._folkRevision||0;return s.households;}
+function settlementPopBind(s){Object.defineProperty(s,'pop',{configurable:true,enumerable:true,get(){return populationOf(this);},
+    set(v){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(!Number.isFinite(v)||v<0)return;const H=this.households||[],old=H.reduce((n,h)=>n+(h.population.get(this)||0),0);for(const h of H)h.population.set(this,old>0?v*(h.population.get(this)||0)/old:v/Math.max(1,H.length));}});}
 function householdSize(s,p){const h=householdAccount(p);householdsOf(s);return h?h.population.get(s)||0:0;}
 function householdPortion(p,f=0){const old=householdAccount(p);if(!old)return null;if(old.members.size===1)return old;
   const h=newHousehold(p);bindHousehold(p,h);p.own=true;
@@ -4016,6 +4020,18 @@ globalThis.CommodityBalanceLedger = (() => {
       DAILY.set(this, { ownerId, assert, volumes: { ...volumes }, rows: new Map(), locations: new Map(), flows: new Map(), notes: new Map(),
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: new Map(),
         orderRanks: new Map(), nextOrderRank: 0 });
+    }
+    // A saved world takes its ledgers up again (worldSave, worldLoad): the private order of rows, owners and facilities goes
+    // with it, and the day's buffers; the query caches stay behind and fill again as they are asked.
+    static historyState(ledger) {
+      const s = DAILY.get(ledger); if (!s) fail('not a ledger');
+      return { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
+        ownerFacilities: s.ownerFacilities, orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank };
+    }
+    static historyAdopt(ledger, s) {
+      DAILY.set(ledger, { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
+        usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: s.ownerFacilities,
+        orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank });
     }
     _assert() { DAILY.get(this).assert(); }
     ownerId(owner) { return ownerIdString(DAILY.get(this).ownerId(owner), 'ownerId'); }
@@ -4340,7 +4356,7 @@ globalThis.CommodityBalanceLedger = (() => {
 })();
 
 /* Runtime adapters for numeric commodity custody. */
-const COMMODITY_ACCOUNT_VIEWS=new WeakMap();
+const COMMODITY_ACCOUNT_VIEWS=new WeakMap(),COMMODITY_VIEW_PROXIES=new WeakSet(); // the views, known as such (worldSave never writes one as data)
 function commodityActive(s){return s.storage?.version===3;}
 function commodityPhysical(g){return g==='char'?'timber':g;}
 function commodityTownTotal(K,g){return K.total(g)+(g==='timber'?K.total('char'):0);}
@@ -4356,6 +4372,9 @@ function commodityInit(s){
 }
 function commodityBindGood(s,g){
   const K=s.storage;if(BEASTS.includes(g))return;const D=Object.getOwnPropertyDescriptor(s.stores,g);if(D?.get)return;if(D?.value>0&&commodityTownTotal(K,g)===0)K.adjust('yard',g,null,'unassigned',D.value,'new-good-migration');
+  commodityStoreBind(s,K,g);
+}
+function commodityStoreBind(s,K,g){
   Object.defineProperty(s.stores,g,{configurable:true,enumerable:true,get(){return commodityTownTotal(K,g);},set(v){
     if(!Number.isFinite(v)||v<0)storageInvariantFault('Invalid commodity stock '+g);
     const d=v-commodityTownTotal(K,g);if(d>0)K.adjust(storageSource(s,g),g,null,'unassigned',d,'production');
@@ -4374,13 +4393,18 @@ function commoditySetAccount(s,o,kind,g,value){
 }
 function commodityBindAccount(s,o,x){
   const prior=COMMODITY_ACCOUNT_VIEWS.get(x);if(prior?.K===s.storage)return;storageRegisterOwner(o);
-  const raw={held:{...x.held},sale:{...x.sale}},views={},K=s.storage;
+  const raw={held:{...x.held},sale:{...x.sale}},targets={};
+  for(const kind of ['held','sale'])targets[kind]=Object.fromEntries(Object.entries(raw[kind]).filter(([g])=>BEASTS.includes(g)));
+  commodityAccountViews(s,o,x,targets);delete x.storageClaimTables;
+}
+// The views over an owner's balances; their targets keep his beasts, which the ledger does not (worldSave keeps them).
+function commodityAccountViews(s,o,x,targets){const views={},K=s.storage;
   for(const kind of ['held','sale']){
-    const target=Object.fromEntries(Object.entries(raw[kind]).filter(([g])=>BEASTS.includes(g)));
-    views[kind]=new Proxy(target,{get(t,g){if(typeof g!=='string'||BEASTS.includes(g))return t[g];const q=K.quantity(o,g,kind);return q>0?q:undefined;},set(t,g,v){if(BEASTS.includes(g)){t[g]=v;return true;}commoditySetAccount(s,o,kind,g,v);return true;},deleteProperty(t,g){if(BEASTS.includes(g))delete t[g];else commoditySetAccount(s,o,kind,g,0);return true;},ownKeys(t){return [...new Set([...Reflect.ownKeys(t),...[...K.entries({owner:o,availability:kind})].filter(r=>!K.locations.get(r.location).transit).map(r=>r.good)])];},getOwnPropertyDescriptor(t,g){if(BEASTS.includes(g))return Object.getOwnPropertyDescriptor(t,g);const q=K.quantity(o,g,kind);return q>0?{value:q,writable:true,enumerable:true,configurable:true}:undefined;}});
+    const target=targets[kind];
+    COMMODITY_VIEW_PROXIES.add(views[kind]=new Proxy(target,{get(t,g){if(typeof g!=='string'||BEASTS.includes(g))return t[g];const q=K.quantity(o,g,kind);return q>0?q:undefined;},set(t,g,v){if(BEASTS.includes(g)){t[g]=v;return true;}commoditySetAccount(s,o,kind,g,v);return true;},deleteProperty(t,g){if(BEASTS.includes(g))delete t[g];else commoditySetAccount(s,o,kind,g,0);return true;},ownKeys(t){return [...new Set([...Reflect.ownKeys(t),...[...K.entries({owner:o,availability:kind})].filter(r=>!K.locations.get(r.location).transit).map(r=>r.good)])];},getOwnPropertyDescriptor(t,g){if(BEASTS.includes(g))return Object.getOwnPropertyDescriptor(t,g);const q=K.quantity(o,g,kind);return q>0?{value:q,writable:true,enumerable:true,configurable:true}:undefined;}}));
     Object.defineProperty(x,kind,{configurable:true,enumerable:true,get(){return views[kind];},set(v){const keys=new Set([...Object.keys(views[kind]),...Object.keys(v||{})]);for(const g of keys)views[kind][g]=v?.[g]||0;}});
   }
-  delete x.storageClaimTables;COMMODITY_ACCOUNT_VIEWS.set(x,{K,views});
+  COMMODITY_ACCOUNT_VIEWS.set(x,{K,views,targets});
 }
 function commodityCreditPurchase(s,who,g,q,completed=false){if(!commodityActive(s)||BEASTS.includes(g)){addHeld(s,who,g,q,completed);return;}if(g==='char'&&q>0){const K=s.storage,o=accountOwner(who);let left=q;for(const r of K.entries({owner:o,good:'timber',availability:'held'})){if(K.locations.get(r.location).transit)continue;const v=Math.min(left,r.qty);K.consume(r,v,'conversion');K.adjust(r.location,'char',o,'held',v,'conversion');left-=v;if(!(left>0))break;}if(left>1e-10)storageInvariantFault('Unbacked purchased charcoal');}}
 function commodityTransfer(s,from,to,g,q,kind='sale',destination='held'){if(!(q>0))return;const K=s.storage;stockOf(s,to);K.transfer({owner:accountOwner(from),good:g,availability:kind},q,accountOwner(to),{availability:destination,cause:'purchase'});}
@@ -4410,7 +4434,8 @@ function commodityExposed(K){return [...K.entries({exposedOnly:true})];}
 function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const bills=new Map(),routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?Math.max(0,means(payer)-(bills.get(payer)||0))/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0)bills.set(payer,(bills.get(payer)||0)+q*unitCost);K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}for(const[payer,v]of bills)buildWorks(s,v,payer,'carriage'); /* each owner pays the day's carrying in one bill (#23, #15: a bill a lot, each paying every hand) */s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+(K.locations.get(r.location).balances.get(r.good)?.get(r.owner)?.get(r.availability)||0)*K.volume(r.good),0)};}
 function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);let unassigned=0;for(const good of g==='timber'?['timber','char']:[g])for(const r of K.entries({good})){const n=K.locations.get(r.location);if(n.transit)continue;const q=r.qty*Math.min(1,rate*(n?.protection??4));K.consume(r,q,n?.exposed?'exposure-loss':'stored-spoilage');if(r.owner===null)unassigned+=q;}if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
 function commodityBuildingReport(s,b){const K=s.storage,n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const r of K.entries({location:n.id})){const g=commodityPhysical(r.good);goods[g]=(goods[g]||0)+r.qty;const id=storageOwnerId(r.owner);owners.set(id,(owners.get(id)||0)+r.qty*K.volume(r.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
-function commodityCargoOut(c,s){const K=s.storage,id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});K.transfer({owner:accountOwner(c.m),good:c.good,availability:'held'},c.qty,accountOwner(c.m),{location:id,availability:'transit',cause:'dispatch'});c.storageCargo={origin:s,id};Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){return [...K.entries({location:id})].reduce((n,r)=>n+r.qty,0);}});}
+function commodityCargoOut(c,s){const K=s.storage,id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});K.transfer({owner:accountOwner(c.m),good:c.good,availability:'held'},c.qty,accountOwner(c.m),{location:id,availability:'transit',cause:'dispatch'});c.storageCargo={origin:s,id};commodityCargoQtyBind(c,K,id);}
+function commodityCargoQtyBind(c,K,id){Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){return [...K.entries({location:id})].reduce((n,r)=>n+r.qty,0);}});}
 function commodityCargoArrive(c,d){const cargo=c.storageCargo;if(!cargo)return;const A=cargo.origin.storage,B=storageInit(d);for(const r of [...A.entries({location:cargo.id})]){stockOf(d,r.owner);A.consume(r,r.qty,'cargo-departure');B.adjust('yard',r.good,r.owner,'sale',r.qty,'arrival');}storageBindGood(d,c.good);}
 function commodityCargoRaid(c,fence,thief='out'){const cargo=c.storageCargo;if(!cargo)return 0;const A=cargo.origin.storage,B=fence?storageInit(fence):null;let kept=0;for(const r of [...A.entries({location:cargo.id})]){A.consume(r,r.qty,'cargo-robbery');if(B){const q=r.qty*.6;stockOf(fence,thief);B.adjust('yard',r.good,accountOwner(thief),'sale',q,'cargo-stolen-arrival');storageBindGood(fence,r.good);kept+=q;}}return kept;}
 function commodityGiveFood(s,g,q,source){if(!(q>0))return;if(!Number.isFinite(q))storageInvariantFault('Invalid relief distribution at '+s.name+' day '+day()+': requested '+q+' '+g+', cause relief');const H=householdsOf(s);if(!H.length)return;const weights=H.map(h=>Math.max(0,h.population.get(s)||0)*(.1+h.hunger)),total=weights.reduce((a,b)=>a+b,0),K=s.storage,owner=source===undefined?null:accountOwner(source),availability=source===undefined?'unassigned':'held',goods=g==='char'&&source===undefined?['char','timber']:[g],liveHave=()=>{let n=0;for(const good of goods)for(const r of K.entries({owner,good,availability}))if(!K.locations.get(r.location)?.transit)n+=r.qty;return n;},have=liveHave(),tolerance=Number.EPSILON*Math.max(q,have)*Math.max(32,H.length*16);if(q>have+tolerance)storageInvariantFault('Unbacked relief distribution at '+s.name+' day '+day()+': requested '+q+' '+g+', available '+have+', owner '+storageOwnerId(owner)+', availability '+availability+', cause relief');const amount=Math.min(q,have),shares=[];let left=amount;for(let i=0;i<H.length;i++){const v=i===H.length-1?left:Math.min(left,amount*(total>0?weights[i]/total:1/H.length));shares.push(v);left-=v;}for(let i=0;i<H.length;i++){let v=shares[i];if(!(v>0))continue;const h=H[i],recipient=accountOwner(h);if(source!==undefined&&recipient===owner)continue;const available=liveHave();if(v>available){const excess=v-available;if(i===H.length-1&&excess<=tolerance)v=available;else storageInvariantFault('Unbacked relief recipient at '+s.name+' day '+day()+': requested '+v+' '+g+', available '+available+', owner '+storageOwnerId(owner)+', recipient '+storageOwnerId(recipient)+', cause relief');}if(!(v>0))continue;if(source!==undefined){stockOf(s,h);K.transfer({owner,good:g,availability:'held'},v,h,{availability:'held',cause:'relief'});}else addHeld(s,h,g,v);}}
@@ -4636,8 +4661,11 @@ function giveFood(s,g,q,source){if(commodityActive(s))return commodityGiveFood(s
 function initOwnership(s){if(s._ownershipReady)return;s._ownershipReady=true;const old=s._lard;householdsOf(s);
   for(const g of ['grain','fish'])giveFood(s,g,old?old[g]||0:Math.min(s.stores[g]||0,s.pop*NEED[g]*30));
   if(old)for(const g of Object.keys(old))if(g!=='grain'&&g!=='fish')addHeld(s,lordAcct(s),g,old[g]||0);
-  s._lard=new Proxy({}, {get(_,g){return heldTotal(s,g);},set(_,g,v){storageTitleKnownDirty(s,g);const was=heldTotal(s,g),delta=v-was;if(delta>1e-9)giveFood(s,g,delta);
-    else if(delta<0&&was>0)for(const x of s._owners.values())if(x.held[g])x.held[g]*=Math.max(0,v)/was;return true;},ownKeys(){return [...new Set([...s._owners.values()].flatMap(x=>Object.keys(x.held)))];},getOwnPropertyDescriptor(){return {enumerable:true,configurable:true};}});}
+  s._lard=ownershipLard(s);}
+// The old larder, read and written through the owners' pantries. The world holds the Proxy; OWNERSHIP_LARDS names its place (worldSave).
+const OWNERSHIP_LARDS=new WeakMap();
+function ownershipLard(s){const P=new Proxy({}, {get(_,g){return heldTotal(s,g);},set(_,g,v){storageTitleKnownDirty(s,g);const was=heldTotal(s,g),delta=v-was;if(delta>1e-9)giveFood(s,g,delta);
+    else if(delta<0&&was>0)for(const x of s._owners.values())if(x.held[g])x.held[g]*=Math.max(0,v)/was;return true;},ownKeys(){return [...new Set([...s._owners.values()].flatMap(x=>Object.keys(x.held)))];},getOwnPropertyDescriptor(){return {enumerable:true,configurable:true};}});OWNERSHIP_LARDS.set(P,s);return P;}
 class OwnedMarket extends Map {
   constructor(s,g,kind='sale'){super();this.s=s;this.g=g;this.kind=kind;}
   get(w){return stockOf(this.s,w)[this.kind][this.g];}
@@ -4657,12 +4685,17 @@ function ownerShares(w,seen=new Set()){if(w&&w.dead&&w._estateShares)return w._e
 function transferOwnership(from,shares){shares=shares.flatMap(([to,f])=>ownerShares(to).map(([x,q])=>[x,f*q]));for(const s of W.settlements){const M=s._owners,x=M&&M.get(from);if(!x)continue;if(commodityActive(s)){commodityInheritance(s,from,shares);continue;}if(s.storage){storageTitles(s);for(const lot of s.storage.matching({owner:from})){const qty=lot.qty;let left=qty;for(let i=0;i<shares.length;i++){const[to,f]=shares[i],q=i===shares.length-1?left:Math.min(left,qty*f);if(q>0){s.storage.transfer(lot,to,q,lot.availability);left-=q;}}}}const snapshot={held:{...x.held},sale:{...x.sale},reserve:{...x.reserve},animals:{...x.animals}};storageClaimReplace(x,'held',{});storageClaimReplace(x,'sale',{});x.reserve={};x.animals={};
   for(const[to,f]of shares){const y=stockOf(s,to),had={};for(const g in snapshot.reserve)had[g]=y.sale[g]||0;for(const type of ['held','sale','animals'])for(const g in snapshot[type]){const dest=type==='animals'&&!(to&&to.household)?'sale':type;y[dest][g]=(y[dest][g]||0)+snapshot[type][g]*f;}for(const g of Object.keys(snapshot.held).concat(Object.keys(snapshot.sale)))storageTitleKnownDirty(s,g);for(const g in snapshot.reserve){const r=costBlend(y.reserve[g],had[g],snapshot.reserve[g],(snapshot.sale[g]||0)*f);if(r>0)y.reserve[g]=r;}}
   }}
-function bindPropertyRights(s){const resolve=id=>{const p=typeof id==='number'&&id>=0?((W._pm||folkIndex()).get(id)||folkIndex().get(id)):null;return p?{owner:householdAccount(p),beneficiary:p}: {owner:id,beneficiary:null};};
+function propertyRightsResolve(id){const p=typeof id==='number'&&id>=0?((W._pm||folkIndex()).get(id)||folkIndex().get(id)):null;return p?{owner:householdAccount(p),beneficiary:p}: {owner:id,beneficiary:null};}
+function bindPropertyRights(s){const resolve=propertyRightsResolve;
   if(s._rightsF!==(s.furl||[]).length){for(const f of s.furl||[])if(!f.title){f.title={own:resolve(f.own),work:resolve(f.wk)};
-    Object.defineProperty(f,'own',{configurable:true,enumerable:true,get(){return this.title.own.beneficiary?this.title.own.beneficiary.id:this.title.own.owner;},set(id){this.title.own=resolve(id);}});
-    Object.defineProperty(f,'wk',{configurable:true,enumerable:true,get(){const o=this.title.work.owner;return o&&o.household?o.head?o.head.id:-1:o;},set(id){this.title.work=resolve(id);}});}s._rightsF=(s.furl||[]).length;}
+    furlongRightsBind(f,resolve);}s._rightsF=(s.furl||[]).length;}
   if(s._rightsB!==(s.buildings||[]).length){for(const b of s.buildings||[]){if(Object.getOwnPropertyDescriptor(b,'ownerId')?.get)continue;if(!b.title)b.title=resolve(b.ownerId);
-    Object.defineProperty(b,'ownerId',{configurable:true,enumerable:true,get(){return this.title.beneficiary?this.title.beneficiary.id:this.title.owner;},set(id){this.title=resolve(id);}});}s._rightsB=(s.buildings||[]).length;}}
+    buildingRightsBind(b,resolve);}s._rightsB=(s.buildings||[]).length;}}
+function furlongRightsBind(f,resolve){
+    Object.defineProperty(f,'own',{configurable:true,enumerable:true,get(){return this.title.own.beneficiary?this.title.own.beneficiary.id:this.title.own.owner;},set(id){this.title.own=resolve(id);}});
+    Object.defineProperty(f,'wk',{configurable:true,enumerable:true,get(){const o=this.title.work.owner;return o&&o.household?o.head?o.head.id:-1:o;},set(id){this.title.work=resolve(id);}});}
+function buildingRightsBind(b,resolve){
+    Object.defineProperty(b,'ownerId',{configurable:true,enumerable:true,get(){return this.title.beneficiary?this.title.beneficiary.id:this.title.owner;},set(id){this.title=resolve(id);}});}
 function ownershipTick(){W._pm=folkIndex();for(const s of W.settlements){householdsOf(s);initOwnership(s);bindPropertyRights(s);}}
 function houseFolk(s){
   const homes=(s.buildings||[]).filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),cap=new Map();for(const b of homes){cap.set(b,capOf(b));b.hh=[];}
