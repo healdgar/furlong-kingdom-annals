@@ -26,12 +26,12 @@ test('at its worth or below a good is bought to the month\'s need and no further
   near(held(r,'cloth'),month(r,'cloth'));near(held(r,'tools'),month(r,'tools'));near(held(r,'timber'),month(r,'timber'));
 });
 
-test('bread at twice its worth is still bought nearly in full, and eaten by that share',()=>{
+test('bread at twice its worth is still bought nearly in full, and the family eats its need from what it has',()=>{
   const r=town();r.s._pxY={grain:0.5};provision(r); // no market near has grain to spare: its worth is its price here one year with another
   const need=r.eval('householdSize(s,H[0])*(NEED.grain+NEED.fish)*30');
   near(r.s._ration,Math.pow(2,-0.1));near(held(r,'grain')+held(r,'fish'),need*Math.pow(2,-0.1));assert.ok(r.s._ration>0.9);
   const before=held(r,'grain')+held(r,'fish');r.eval('eatHouseholds(s,folkIndex())');
-  near(before-held(r,'grain')-held(r,'fish'),need/30*r.s._ration);near(r.eval('householdAccount(H[0]).hunger'),1-r.s._ration);
+  near(before-held(r,'grain')-held(r,'fish'),need/30);near(r.eval('householdAccount(H[0]).hunger'),0); // it bought less, and goes short only when that runs out
 });
 
 test('a small purse buys its bread, then keeps back its rent and the next bread before fuel, tools or cloth',()=>{
@@ -61,7 +61,14 @@ test('a good\'s worth follows the cost of its stuff, and what it costs to bring 
   r.eval('s.px.wool=4');V=r.eval('goodWorth(s)');near(V.cloth,4/0.8);
   r.eval("W.settlements.push({name:'mart',pos:{x:1000,z:0},pop:10,stores:{cloth:200,grain:5},px:{cloth:2,grain:0.1},infected:0})");
   const carry=r.eval("freight(W.settlements[1],1,1200,'cart')"),toll=12/100*0.35; // a crown town's aid on what is brought in (ladeIn)
-  V=r.eval('goodWorth(s)');near(V.cloth,2*(1+toll)+carry);
+  const keep=Math.pow(1-r.eval('SPOIL.cloth'),1200/r.eval('CART_MPD')); // what is still fit to sell when it arrives
+  V=r.eval('goodWorth(s)');near(V.cloth,(2*(1+toll)+carry)/keep);
   near(V.grain,0); // five grain is no more than a month's need of its own and five over: none to spare, and no worth known here
   r.eval("W.settlements[1].px.cloth=6");near(r.eval('goodWorth(s)').cloth,5); // dearer to bring than to weave
+});
+
+test('a good\'s worth is the cost of bringing a month\'s need, not of the cheapest sliver: a glut that cannot fill the month sets nothing',()=>{
+  const r=town();r.eval("s.pop=1000;W.settlements.push({name:'glut',pos:{x:500,z:0},pop:10,stores:{fish:40},px:{fish:0.01},infected:0},{name:'port',pos:{x:2000,z:0},pop:10,stores:{fish:5000},px:{fish:1},infected:0})");
+  const V=r.eval('goodWorth(s)'),fr=r.eval("freight(W.settlements[2],1,2400,'cart')"),toll=12/100*0.35,keep=Math.pow(1-r.eval('SPOIL.fish'),2400/r.eval('CART_MPD'));
+  near(V.fish,(1*(1+toll)+fr)/keep); // the glut's thirty-odd fish are not a month for a thousand souls: the port's price sets it
 });
