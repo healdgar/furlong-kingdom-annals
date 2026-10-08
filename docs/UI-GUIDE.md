@@ -38,9 +38,10 @@ Keys: `Space` pause, `1`–`5` the speeds above, `L` Life pace.
   houses and the line of succession (click a name to inspect it).
 - **Overlays**: territories, tongues, trade, land and property value, land
   use, production and stores, prosperity, plague, unrest.
-- **Kingdom accounts**: the realm's ledger: the treasury, the great houses,
-  household purses, flows across the realm's border, and each town's balance
-  sheet.
+- **Kingdom accounts**: the realm's ledger: the treasury, the crown's book
+  (its receipts and payments by reason: hearth tax, sales, rents, entry fines,
+  merchet…), the great houses' books, household purses, flows across the
+  realm's border, and each town's balance sheet.
 - **Annals**: the chronicle, filtered by **All, Crown, War, Trade, Fates**;
   export it as a text file or copy a link to this realm.
 - **Rates** and **Acts**: Providence's dials and deeds (plague, dragon, fire,
@@ -54,6 +55,20 @@ To raise or lower taxes, rule, then open **Menu → Crown → Overview**: the
 the realm; a slider and a box set it. A great house sets its **tenant dues**
 there instead (50–160% of customary dues). Heavier rates fill the purse and
 breed unrest, and sour the houses; the Kingdom accounts show what comes in.
+The crown's book opens under the tax rate; a lord's under **Explain your
+house accounts**, with what the hall paid in kind (liveries) beside the purse.
+
+Each town you rule has its **customs of the manor** under **Governance**, one
+row for each custom with **Lower** and **Raise** (a quarter of the realm's
+custom a step, up to four times it): the heir's entry fine (years of the
+holding's rent), merchet (a soul's years of bread), the toll at each toll house
+and pannage (shares of the load and of a pig's price). Below them, the
+villeins' holdings commuted to a money rent, n of m, and the order for their
+services: **Commute services**, **Keep them in hand** (no more are commuted;
+those commuted stay so), or **As the reeve reckons** (the lord commutes where
+his rent grain brought him less than the money rent, and the villein can pay).
+A town's card says whether the lord's mill is let, to whom, for how much and
+until when, and how many villein holdings are commuted.
 
 ## Cards
 
