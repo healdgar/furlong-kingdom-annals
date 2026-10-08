@@ -139,6 +139,12 @@ Line numbers drift, so find code by name.
 
 ## Open findings
 
+- **Late-world growth (the farm, 42 sea on the batch-8 build, saves AD 860 → 890; people 2,592 → 3,007).** CPU per day 0.2 → 1.2 s on the farm (profiled from the saves at low load: 291 → 943 ms). It follows dead records, not the living world:
+  - spent cargo locations in the commodity ledger: 32,030 → 185,867 facilities, 185,663 of them `cargo:` transit locations, 85 holding anything (a location per load, never retired);
+  - ended households: 2,794 of 4,554 have no living member, kept for their `successors`, with 17,395 owner records in places, 58 holding anything;
+  - living households' goods scattered over places: 416 households hold goods in 11+ places (6 at AD 860), grain on sale away from home 8,560 times (families that moved left it behind).
+  - The ledger's settlement, spoilage, journal encoding and the garbage collector carry the growth (settle 38 → 166 ms/day, encode 32 → 146, spoil 22 → 104, GC 26 → 149).
+  - Plan (batch 10, before #37): retire spent cargo locations and ended households' empty records (exact, an agent is on it); then a family that leaves a place sells or carries its goods (behaviour); then measure cost per living person over a long run, and bring the user a sampling or inference design for whatever living part still explodes.
 - **Batch 6 soak at year 5 (1aa50a1, in the cloud).** Measured on Node 22 and headless Chromium with SwiftShader, two worlds at a time on 4 cores (load about 2–3), so not comparable with the Mac's batch-4 numbers:
 
   | World | ms/day | Famine at year 5 | Capital hunger | Crown at year 5 |
@@ -166,6 +172,7 @@ Line numbers drift, so find code by name.
 
 ## Rules the user set that CLAUDE.md doesn't spell out
 
+- **The simulation must not grind to a halt as the world grows** (2026-10-08). Find what grows; retire what is dead; and where the living economy itself explodes, sample or infer that part realistically instead of calculating it in full.
 - **The historical answer is the right one** (2026-10-08), except where the detail would unbalance the game. Decide design questions that way and record the choice; ask only where history gives no answer or the detail would weigh on play.
 - Subagents run on Opus, never Sonnet or Haiku. A Fable agent may be asked for ideas when stuck, never for the coding.
 - Never use the `mcp__furlong__*` tools. They drive the user's live game.
