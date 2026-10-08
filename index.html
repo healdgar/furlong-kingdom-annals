@@ -596,11 +596,21 @@ function sfc32(a,b,c,d){const next=function(){a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=
 function seedStreams(seed,fate){ // the map seed shapes the land; the fate seed (if any) the history lived on it
   function mix(n){n=Math.imul(n^n>>>15,n|1);n^=n+Math.imul(n^n>>>7,n|61);return(n^n>>>14)>>>0;}
   const s=seed>>>0,f=fate?mix((fate>>>0)+0x51ed):0;
-  return {
+  const R={
     gen: sfc32(mix(s),mix(s+0x9e37),mix(s+0x85eb),mix(s+0xc2b2)),
     sim: sfc32(mix((s+0x1b87)^f),mix((s+0x27d4)^f),mix((s+0x1656)^f),mix((s+0x9c83)^f)),
     folk: sfc32(mix((s+0x3c6e)^f),mix((s+0x4a1d)^f),mix((s+0x5b2f)^f),mix((s+0x6d3a)^f)) // the common folk's lives: kept apart so they do not stir the chronicle's dice
   };
+  /* the institutions' own dice (abbeys, guilds, courts, offices): apart, so their throws stir neither the chronicle's nor the folk's.
+     The stream is made with the others but joins their reckoning (Object.entries(RS): the digests, the history archive) only at its
+     first throw, so a realm where no institution has yet cast a die reckons its dice exactly as before. Its state() before then is
+     the fresh one; restore() joins it, as a throw does (put a saved state back through restore, never by assigning RS.inst). */
+  const inst=sfc32(mix((s+0x7e15)^f),mix((s+0x8f29)^f),mix((s+0xa04b)^f),mix((s+0xb16d)^f)),
+    join=()=>Object.defineProperty(R,'inst',{value:inst,writable:true,enumerable:true,configurable:true}),
+    first=()=>{join();return inst();};
+  first.state=inst.state;first.restore=st=>{join();inst.restore(st);};
+  Object.defineProperty(R,'inst',{value:first,writable:true,enumerable:false,configurable:true});
+  return R;
 }
 /* ---------------- one realm, one history, in every engine ----------------
    ECMAScript lets each engine round Math.sin, exp, log, pow, hypot and their kin its own way, and engines do: Chrome 154
@@ -3477,6 +3487,13 @@ function newFamily(s,si,founder){
   W.fams.push({n,c,k,tr,home:si,b:day()});return W.fams.length-1;}
 const famName=p=>p&&p.sur?p.sur:p&&p.fam>=0&&W.fams[p.fam]?W.fams[p.fam].n:'';
 const folkName=p=>p.gn+(famName(p)?' '+famName(p):'');
+/* Offices (#35–#43): the named people of a lordship, an abbey, a guild or a town are household heads holding an office, p.office (one
+   of OFFICES), and p.officeFor, whom he serves: a house's index (0 the crown), an abbey's or guild's key ('abbey:3'), or none for his
+   own place's office (a moneyer, a mayor). Being a head he still eats, marries and dies with his household; the office lapses with him
+   and his master fills it again. Great officers (an abbot, a justice) are notables with a role of their own instead. None is held yet. */
+const OFFICES={steward:'steward',clerk:'clerk',bailiff:'bailiff',moneyer:'moneyer',collector:'collector',master:'schoolmaster',warden:'warden',cellarer:'cellarer',mayor:'mayor',lender:'lender'};
+function officeHeld(p){return p&&!p.dead&&p.office&&Object.hasOwn(OFFICES,p.office)?p.office:null;}
+function officeTitle(p){const o=officeHeld(p);if(!o)return null;const f=p.officeFor,c=corpOf(f),who=typeof f==='number'?houseName(f):c?c.name:W.settlements[p.si]?.name;return OFFICES[o]+(who?' of '+who:'');} // "steward of House Gamsburg"
 /* one soul */
 let PID=1;
 function mkPerson(s,si,o){
@@ -9514,6 +9531,7 @@ function accountBalances(town=null){
   const person=p=>{if(p&&!p.merc)account(p._hh||p);};
   if(!town&&W.households)for(const a of W.households.values())account(a);
   if(!town)for(let i=1;i<W.houses.length;i++)by.houses+=W.houses[i]?.gold||0;
+  for(const[k,L]of [['abbeys',W.abbeys],['guilds',W.guilds]])if(L){by[k]=0;for(const c of L)if(!town||W.settlements[c.si]===town)by[k]+=c.gold||0;} // abbeys and guilds hold their own chests (none until the first is founded)
   for(const s of places){for(const p of s.folk||[])if(!town||!p.dead)person(p);by.townFunds+=s.murage||0;by.craftFunds+=s._poolCash||0;for(const v of Object.values(s._poolBy||{}))by.craftFunds+=v||0;
     for(const b of s.buildings||[])if(b.ch&&!churches.has(b.ch)){churches.add(b.ch);by.church+=b.ch.fund||0;}}
   if(!town){for(const a of W.armies||[])for(const p of a.men||[])person(p);for(const t of W.travellers||[])person(t.p||t);for(const t of W.levies||[])person(t.p||t);
@@ -9527,7 +9545,7 @@ function accountBalances(town=null){
   return{by,debt,total:Object.values(by).reduce((a,b)=>a+b,0),goods};
 }
 function accountSheetHTML(town=null,prefix='ledger'){
-  const B=accountBalances(town),names={crown:'Royal treasury',houses:'Great houses',households:'Household purses',church:'Church fabric funds',townFunds:'Town wall funds',craftFunds:'Craft and market funds',hoard:'Dragon hoard',escrow:'Money held for projects'};
+  const B=accountBalances(town),names={crown:'Royal treasury',houses:'Great houses',households:'Household purses',church:'Church fabric funds',townFunds:'Town wall funds',craftFunds:'Craft and market funds',hoard:'Dragon hoard',escrow:'Money held for projects',abbeys:'Abbey chests',guilds:'Guild chests'};
   const rows=Object.entries(B.by).filter(([k,v])=>!town||!['crown','houses','hoard','escrow'].includes(k)).map(([k,v])=>[names[k],detailNumber(v)]);
   rows.push(['Total coin'+(town?' in these accounts':''),detailNumber(B.total)]);
   let h=detailTable(prefix+'-accounts',(town?'Town':'Kingdom')+' balance sheet · '+esc(dateStr()),['Account','Gold'],rows);
@@ -9985,6 +10003,7 @@ function inspectorCard(pk,full=false){
       h+=row('Household',`${hh===p?'':'of '+esc(folkName(hh))+'; '}worth ${Math.round(hh.w)} crowns${hh._debt>0.5?` (owing ${Math.round(hh._debt)})`:''}${strips.length?`; works ${strips.length} strip${strips.length>1?'s':''} (${ha.toFixed(1)} ha)${strips.some(f=>f.ten==='crop'&&f.own!==hh.id)?', some as a sharecropper':''}`:tills(hh,s)?'; no land: a labourer for wages':''}${own.filter(f=>f.wk!==hh.id).length?`; lets ${own.filter(f=>f.wk!==hh.id).length} to sharecroppers`:''}`);}}
     {const hh=detailHead(p);if(hh.w!==undefined){const counts={};for(const {head} of detailHouseholds(s))if(head?.tr&&!head.outlawCampId)counts[head.tr]=(counts[head.tr]||0)+1;const inc=tradeIncome(s,hh.tr,counts),herd=s._owners?.get(p._hh||hh._hh)?.animals||{},rh=hh.bh&&hh.bh.rural?(hh.bh.ownerId===hh.id?'their own farmstead out on the land':'a farmstead on the land they work, let by its owner'):null;
       h+=row('Living',`${hh.tr?esc(hh.tr):'labouring'}: about ${Math.round(inc)} crowns a year here${beastsWord(herd)?`; ${beastsWord(herd)}`:''}${rh?`; lives in ${rh}`:''}${p!==hh&&ageYrs(p)>=18&&!p.sp?(p.own?'; has set up house':'; still under the family roof'):''}`);}}
+    {const o=officeTitle(p);if(o)h+=row('Office',esc(o));}
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
     h+=`<div class="note"><a class="tr" data-tree="${tKey(p)}">Family tree</a></div>`;
     if(full){h+=detailHousehold(s,p);h+=detailTable('detail-skills','Learning and skills',['Skill','Ability'],SKILLS.map((k,i)=>[esc(k),`${esc(skillWord(p.sk?.[i]||0)||'untaught')} · ${detailNumber((p.sk?.[i]||0)*100)}%`]));}
@@ -10778,7 +10797,7 @@ function syncOwner(s){ // the town changed hands: its fields go with it
 }
 function hostPay(a){return a.strength*(a.standing?0.1:0.25)*PL();} // a host's month: customary wages in the price level (the household's sworn men are kept at the hall and cost less than a levy)
 function watchPay(s){return (s.garrison||0)*0.2*PL();} // a garrison's month, customary wages
-function book(h,k,v){if(h){const L=h.led||(h.led={});L[k]=(L[k]||0)+v;const Y=h.ledY||(h.ledY={});Y[k]=(Y[k]||0)+v;}} // a house's running ledger: where its gold came from and went
+function book(h,k,v){if(h){const L=h.led||(h.led={});L[k]=(L[k]||0)+v;const Y=h.ledY||(h.ledY={});Y[k]=(Y[k]||0)+v;}} // a house's running ledger (an abbey's, a guild's): where its gold came from and went
 function hostTarget(hi){const h=W.houses[hi],pop=W.settlements.filter(s=>s.owner===hi).reduce((t,s)=>t+s.pop,0);return Math.max(60,pop*(hi===0?0.03:0.035)*(h.might||1))*(hi>0?1+clamp((h.gold||0)/20000,0,0.5):1);} // a full purse hires swords
 function ensureHosts(){ // every house keeps a household host at its seat, topped up from its people
   W.houses.forEach((h,hi)=>{
@@ -10857,7 +10876,7 @@ function landSuccession(){
 function tickDomains(){ // monthly: owners, hosts, the frontier, and private wars
   if(!W.land||day()%30!==20)return;
   // (the furlongs the crown bought pay their rent in kind at harvest, like any lord's)
-  if(day()%360===20)for(const h of W.houses){h.ledPrev=h.ledY||{};h.ledY={};} // the year's accounts are closed
+  if(day()%360===20)for(const L of [W.houses,W.abbeys,W.guilds])for(const h of L||[]){h.ledPrev=h.ledY||{};h.ledY={};} // the year's accounts are closed (the houses', the abbeys', the guilds')
   for(const s of W.settlements)if(s.owner===0&&!s.siegeBy){const need=garrisonNeed(s)*1.1;if(s.garrison>need*1.2){const go=(s.garrison-need)*0.15;s.garrison-=go;s.pop+=go*0.8;}} // the crown's garrisons too
   if(day()%(360*3)===20)lordsRoads();
   for(const s of W.settlements)syncOwner(s);
@@ -13823,6 +13842,13 @@ function tickMetro(){
         ()=>`Tolls are taken twice between ${b.name} and ${a.name}, whose houses now touch: ${houseName(seller)} and ${houseName(buyer)} cannot agree a price.`,
         ()=>`${b.name} would take ${a.name} in as a ward; ${houseName(seller)} holds out${purse(buyer)<price?`, and ${houseName(buyer)} has not the ${price.toLocaleString()} crowns to buy it`:''}.`]));}}}
 function houseName(hi){return hi>0&&W.houses[hi]?W.houses[hi].name:'the crown';}
+/* Lords' whereabouts (#39, also #37 and #41): h.at={si,until,why} on the house (W.houses[hi]; the crown's is house 0) is where its lord
+   and his household are: the place si, until the day until (none: until he leaves), and why he went ('court', 'parliament', 'war').
+   A lord goes as a party along the roads and is drawn on them (the journey is its own record, as an envoy's is); h.at is set when he
+   arrives and dropped when he sets out again. With none, or once it has run out, he is at his seat: the crown at the capital, a house at
+   h.seat while it holds it, else at the first place it holds; a house with no place is nowhere (-1). Nothing moves a lord yet. */
+function lordSeat(hi){const h=W.houses[hi];if(!h||h.exiled)return -1;if(hi===0)return W.settlements.indexOf(W.capital);const s=W.settlements[h.seat];return s&&s.owner===hi?h.seat:W.settlements.findIndex(t=>t.owner===hi);}
+function lordAt(hi){const a=W.houses[hi]?.at;return a&&W.settlements[a.si]&&!(day()>=a.until)?a.si:lordSeat(hi);} // the place index where house hi's lord is today
 /* ---------------- holdings beneath the lords. Every strip has a holder and a worker: a villein who owes the lord labour, a free
    tenant who owes him a small quit-rent, a leaseholder who pays money, a sharecropper who gives half the crop to whoever owns
    the strip, or the lord's own demesne worked by hired hands. Each household keeps a purse: its share of the harvest, its
@@ -13870,6 +13896,15 @@ function settleTenure(s,si,heads){ // strips without a holder are given out: the
     let best=tillers[0];for(const h of tillers)if((h._strips||0)<(best._strips||0))best=h;best._strips=(best._strips||0)+1;
     const tn=tenureNew();f.ten=tn;f.own=tn==='lease'?-1:best.id;f.wk=best.id;}}
 const dueOn=(si,period,salt)=>(day()+si*salt)%period===0; // each place keeps its own day in each round, so the realm's reckonings are spread across the year
+/* A place's rolls (#37's pleas, a guild's searches, an abbey's alms): short lists of what happened there, which its next session reads,
+   kept on whatever holds them (rollOf(s,'pleas'), rollOf(s.court,'pleas')) as {rows,over} and made with the first record. A roll keeps
+   its last n rows, dropping the oldest first and counting what it dropped by kind in over, so nothing grows with the years and no pass
+   scans place against place. ROLL_N is what a card shows of one, as the recent annals and the advisor's news show twelve lines; a court
+   keeps its pending pleas to 64 (#37). */
+const ROLL_N=12;
+function rollOf(o,key){return o[key]||(o[key]={rows:[],over:{}});}
+function rollAdd(R,rec,n=ROLL_N){R.rows.push(rec);while(R.rows.length>n){const k=R.rows.shift().kind??'';R.over[k]=(R.over[k]||0)+1;}return rec;}
+function rollTake(R){const out={rows:R.rows,over:R.over};R.rows=[];R.over={};return out;} // a session reads the roll and clears it
 function tickTenure(){
   if(!W.land)return;const due=W.settlements.map((s,si)=>dueOn(si,360,37));if(!due.some(Boolean))return; // each place's year of tenure falls on its own day
   const PM=folkIndex(),kids=new Map(),spouse=new Map();
@@ -13915,19 +13950,30 @@ function tickTenure(){
 /* =========================================================================
    MONEY AND OWNERSHIP: every coin comes from someone and goes to someone.
    Accounts: a household (its head's purse, p.w), a great house (h.gold), the crown (W.treasury),
-   a church (its fabric fund), a town (its murage chest), or 'out' (beyond the realm: foreign merchants,
-   sell-swords). Every building has an owner; goods are offered for sale by whoever made them and paid
+   a church (its fabric fund), a town (its murage chest), an abbey or a guild (its chest, c.gold), or 'out'
+   (beyond the realm: foreign merchants, sell-swords). Every building has an owner; goods are offered for sale by whoever made them and paid
    for by whoever takes them.
    ========================================================================= */
 function lordAcct(s){return s&&s.owner>0&&W.houses[s.owner]&&!W.houses[s.owner].exiled?W.houses[s.owner]:'crown';}
 function houseAcct(hi){return hi>0&&W.houses[hi]&&!W.houses[hi].exiled?W.houses[hi]:'crown';}
+/* Abbeys and guilds (#35, #43): owners of their own beside the houses, each one record with a chest, kept in W.abbeys and W.guilds,
+   which come with the first of their kind (a realm with none carries neither list). A record is {kind, id, name, si (its place), gold
+   (its chest), led/ledY (its book, kept by book() as a house's is), storageOwnerId (its key as an owner of goods, 'abbey:3', which a
+   building it owns carries as its ownerId)} and what its own system adds: an abbey's order, founder and religious; a guild's trade,
+   wardens and dues. Its id is its place in the list and never changes: one that ends is marked gone, not taken out. Its chest is filled
+   and spent only by transfer(), and acct() and means() reckon it as they do a house's gold, so it never carries a person's gn, a
+   church's ch or a place's buildings and pos. It starts empty: a founder's gift comes by transfer, under a label of its own. */
+function corpFound(kind,o){const L=kind==='abbey'?W.abbeys||(W.abbeys=[]):kind==='guild'?W.guilds||(W.guilds=[]):null;if(!L)throw Error('No such body: '+kind);
+  const c=Object.assign({},o,{kind,id:L.length,gold:0});c.storageOwnerId=kind+':'+c.id;L.push(c);return c;}
+function corpOf(k){if(typeof k!=='string')return null;const i=k.indexOf(':'),t=k.slice(0,i),L=t==='abbey'?W.abbeys:t==='guild'?W.guilds:null;return L&&L[+k.slice(i+1)]||null;} // an owner key ('abbey:3', 'guild:1') to its record
+const isCorp=x=>!!x&&(x.kind==='abbey'?W.abbeys:x.kind==='guild'?W.guilds:null)?.[x.id]===x;
 function acct(x,v){if(!Number.isFinite(v)){if(v===v)return;flow('!nan',1);return;} // (a sum that is not a number is a fault, counted, never paid)
   if(x&&x.household){if(x.successors){for(const[to,f]of x.successors)acct(to,v*f);return;}x.assets.w=(x.assets.w||0)+v;if(v>0)x.assets._inc=(x.assets._inc||0)+v;return;}
   if(x&&x.gn!==undefined&&!x.merc){if(x.dead&&x._estateShares&&v>0){for(const[to,f]of x._estateShares)acct(to,v*f);}else acct(householdAccount(x),v);return;}
   if(!v||!x||x==='out'){if(v&&!x)flow('<>lost',v);return;}
   for(let k=0;k<6&&x.gn!==undefined&&x.dead;k++){if(x._heir)x=x._heir;else{const t=W.settlements[x.si];x=t?lordAcct(t):'crown';break;}}
-  /* a dead man's dues go to his heir */if(x==='crown'){W.treasury+=v;if(v>0)W._crInc=(W._crInc||0)+v;return;}if(x.ch&&x.gn===undefined){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;if(v>0)x._inc=(x._inc||0)+v;}
-const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&W.houses.includes(x);
+  /* a dead man's dues go to his heir */if(x==='crown'){W.treasury+=v;if(v>0)W._crInc=(W._crInc||0)+v;return;}if(x.ch&&x.gn===undefined){x.ch.fund+=v;return;}if(x.buildings&&x.pos){x.murage=(x.murage||0)+v;return;}if(x.gn!==undefined){x.w=(x.w||0)+v;if(v>0)x._inc=(x._inc||0)+v;return;}x.gold=(x.gold||0)+v;if(v>0)x._inc=(x._inc||0)+v;} // (a house, an abbey or a guild: its chest)
+const isHouse=x=>x&&typeof x==='object'&&x.gn===undefined&&!x.ch&&!x.pos&&(W.houses.includes(x)||isCorp(x)); // whoever keeps a book (book()): a great house, or an abbey or a guild, which keep theirs the same way
 function flow(k,v){const F=W._flow||(W._flow={});F[k]=(F[k]||0)+v;} // money that came into the realm or left it, by cause
 function transfer(from,to,v,why){if(!(v>0))return 0;if(from&&from!=='out'){const m=means(from);if(!(m>0))return 0;if(v>m)v=m;} /* no one pays out what he has not got: what he owes stays owed (arrears), it is not coined */if(to==='out')flow('>'+(why||'?'),v);else if(from==='out')flow('<'+(why||'?'),v);else if(!from)flow('<'+(why||'paid')+'*',v);acct(from,-v);acct(to,v);if(why){if(isHouse(from))book(from,why,-v);if(isHouse(to))book(to,why,v);}return v;}
 function creditOf(s,h){ // what a lender will advance a household for its bread: what it could sell to pay (its beasts at half their price, its strips), and what its trade brings in a year beyond its own bread, less what it owes already (#23: a quarter of one soul's year, for every household alike, before)
@@ -13951,7 +13997,7 @@ function ownerOf(b,s){ // who owns this building: decided once (lazily), then ke
   if(occ&&(s.kind==='village'||(occ.w||0)>propValue(b)*6||b.rural))return b.ownerId=occ.id; // a cottager, a farmer, a householder of means: his own roof
   const rich=s.folk?headsOf(s).filter(h=>!h.role&&(h.w||0)>propValue(b)*10).sort((a,c)=>(c.w||0)-(a.w||0))[0]:null; // else a landlord of the town, or the lord
   return b.ownerId=rich?rich.id:'lord';}
-function ownerAcct(b,s){const o=ownerOf(b,s);if(b.title&&b.title.owner&&b.title.owner.household)return b.title.owner.head||b.title.owner;if(o==='lord')return lordAcct(s||b.s);if(o==='church'){const c=parishOf(s||b.s);return c?(c.ch||chOf(c),c):lordAcct(s||b.s);}if(o==='town')return s||b.s;const P=W._pm||(W._pm=folkIndex()),p=P.get(o);return p&&!p.dead?p:lordAcct(s||b.s);}
+function ownerAcct(b,s){const o=ownerOf(b,s);if(b.title&&b.title.owner&&b.title.owner.household)return b.title.owner.head||b.title.owner;if(o==='lord')return lordAcct(s||b.s);if(o==='church'){const c=parishOf(s||b.s);return c?(c.ch||chOf(c),c):lordAcct(s||b.s);}if(o==='town')return s||b.s;const c=corpOf(o);if(c&&!c.gone)return c;const P=W._pm||(W._pm=folkIndex()),p=P.get(o);return p&&!p.dead?p:lordAcct(s||b.s);}
 /* the market: what each seller has offered and not yet sold, by good; a buyer pays the sellers in proportion to what they offered */
 function mkt(s,g){const M=s.mkt||(s.mkt={});if(!(M[g] instanceof OwnedMarket)){const old=M[g];M[g]=new OwnedMarket(s,g);if(old)for(const[w,q]of old)M[g].set(w,q);}return M[g];}
 function rsv(s,g){const R=s.rsv||(s.rsv={});if(!(R[g] instanceof OwnedMarket)){const old=R[g];R[g]=new OwnedMarket(s,g,'reserve');if(old)for(const[w,q]of old)R[g].set(w,q);}return R[g];} // the least each seller will take

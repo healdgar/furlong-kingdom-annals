@@ -1,6 +1,6 @@
 # Missing institutions: design notes
 
-Status: design notes only (2026-10-07). Nothing here is in the game yet. These notes cover #35–#43 in `docs/ISSUES.md`, and tie them to #20–#23 and to the technology proposal (#44, `docs/TECH-TREE.md`).
+Status: design notes (2026-10-07). The groundwork (step 1 of *Order of work*) is in the game; no system is yet. These notes cover #35–#43 in `docs/ISSUES.md`, and tie them to #20–#23 and to the technology proposal (#44, `docs/TECH-TREE.md`).
 
 ## Why now
 
@@ -52,21 +52,30 @@ These rules apply to all nine.
 
 - **Accounts.**
   - Two new owner kinds join households, houses, the crown, churches, town chests and `'out'`: an **abbey** and a **guild**. Each is a record with a purse, known to `acct`, `means` and `transfer`, and registered as a commodity-ledger owner so it can hold stores.
+    - Built: `corpFound(kind,o)` makes one in `W.abbeys` or `W.guilds` (each list comes with its first record): `{kind, id, name, si, gold, led/ledY}` plus the system's own fields. The chest starts empty; a founder's gift is a `transfer`. `id` is the place in the list and never changes; an ended one is marked `gone`.
+    - Its owner key `'abbey:3'` / `'guild:1'` is its `storageOwnerId` in the commodity ledger and the `ownerId` of a building it owns (`corpOf` resolves it; `ownerAcct` pays it).
+    - `acct` and `means` reckon its `gold` as a house's. `isHouse` now means "keeps a book", so `transfer` and the market's sales book its side too.
+    - The year's books close for abbeys and guilds with the houses'. The accounts panel and the soak's money census count each chest once.
   - Every payment goes through `transfer(from,to,v,why)`. A house's side is booked with `book()` under a new label. `transfer` already pays only what the payer has; what it cannot pay is kept as an arrear on a named record, never coined.
+  - The crown keeps no labelled book today (`economy-probe --probe crown` reads its flows from outside). Giving it one adds fields to `W`, so it lands with #36 or #39, whose agent owns the revenue labels.
 - **Records, not crowds.**
   - An institution is one owner with a purse, land, stores, a building and a few named people.
   - The named people are household heads holding an office: a new `office` field on the head (steward, clerk, bailiff, moneyer, collector, master, warden). Being a head, each still eats, marries and dies. Great officers (abbot, justice) are notables made by `mkNotable` with a new role.
+    - Built: `p.office` is a key of `OFFICES` (the seven, and the notes' cellarer, mayor and lender; `master` reads "schoolmaster"). `p.officeFor` is whom he serves: a house index (0 the crown), an abbey's or guild's key, or none for his place's own office.
+    - `officeHeld(p)` is null once he is dead. `officeTitle(p)` reads "steward of House Gamsburg", shown on the person card.
   - Monks, nuns and scholars away from home are counted on their institution, not kept as people, once they leave their household. The leaving is a real event in that household.
 - **Hooks, not loops.**
   - Every new act happens inside a pass that already runs: `tickTenure` (each place's yearly day, `dueOn(si,360,37)`), `tickHouseholds` (`dueOn(si,360,29)`), `tickMarket` and `shareOutput` (monthly, `dueOn(si,30,11)`), `tickDomains` (the 20th of each month), `tickEconomy` (the crown's monthly reckoning), `tickChurches` (each place's own day), and the single events `inherit`, `marryHouseholds`, `borrow`, `repay`, `ladeIn` and `tickShips`.
   - A court session is a new place-day of its own, `dueOn(si,90,salt)`.
   - Events append to short, bounded lists on the place, which the next session reads. Nothing scans all places against all places.
+    - Built: `rollOf(holder,key)` makes `{rows,over}` on its first record. `rollAdd(roll,rec,n)` keeps the last `n` rows (`ROLL_N`, 12, what a card shows; a court passes 64) and counts the dropped by `kind` in `over`. `rollTake` hands a session the roll and clears it.
 - **Quantities and customs.**
   - Each decision compares two quantities that exist in the state.
   - A rate that was historically a custom or a decree is held on the place, the house or the crown, set in the world, and named in a comment as the allowed exception. Examples: an heir's entry fine, merchet, a toll, the rate of a lay subsidy, a usury ban, an amercement cap. The player may change it by a journaled command.
   - No price is clamped or pinned.
 - **Determinism.**
   - Institutions draw from a new stream, `'inst'`, made by `seedStreams`. Their draws therefore do not shift the `'sim'` and `'folk'` streams. History still changes once behaviour changes; re-baseline the affected tests when each system lands.
+    - Built: `rand('inst')` and its kin. The stream joins `Object.entries(RS)` (digests, the history archive) only at its first throw, so a realm with no institution reckons its dice as before. A saved state goes back through `RS.inst.restore`, which joins it too.
   - Use the game's own math functions once #45 lands.
   - Every lever is a journaled command (`runCmd` → `{k:'c'}`, or `setRulerRate` → `{k:'set'}`).
 - **Worker and screen.**
@@ -292,7 +301,10 @@ These rules apply to all nine.
 **2. Actors and state.**
 - Existing: the crown, the houses, towns (`s.murage`, the town chest), the capital, petitions.
 - New: `W.estates`, holding past sessions (day, length, why called, grant) and grants (rate, places assessed, collected, arrears).
-- New, **the lords' whereabouts**: `h.at`, the place a lord's household is at and until when. The game has none today except an army's commander. It is used here and by #37 and #41.
+- New, **the lords' whereabouts**: `h.at`, the place a lord's household is at and until when. It is used here and by #37 and #41.
+  - Built (the groundwork): `h.at={si,until,why}` on the house (the crown's is house 0). `until` may be left out: there until he leaves.
+  - `lordAt(hi)` gives the place he is at. With no `h.at`, or once it has run out, that is `lordSeat(hi)`: the capital for the crown, `h.seat` while the house holds it, else its first place, or -1.
+  - Nothing sets `h.at` yet: the journeys (`W.lordParties`) set it on arrival and drop it on leaving.
 - New, per town: `s.commune`, holding the charter year, the farm, the term and the mayor (a head with office `mayor`); the burgesses; collectors (heads with office `collector` while a grant is gathered).
 
 **3. Hooks.**

@@ -50,7 +50,7 @@ const numeric=o=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>typeof 
 // Explicit semantic projection: presentation buffers, camera interpolation,
 // visual caches, and DOM state are omitted. Simulation journals and RNG are kept.
 export function captureExpression(){return `(()=>{
- const own=o=>o==null?'unassigned':typeof o!=='object'?typeof o+':'+o:o.household?'household:'+o.id:W.houses?.includes(o)?'house:'+W.houses.indexOf(o):W.settlements?.includes(o)?'settlement:'+W.settlements.indexOf(o):o.id!=null?'entity:'+o.id:o.name?'name:'+o.name:o.arch?'building:'+o.arch+':'+o.x+':'+o.z:'object';
+ const own=o=>o==null?'unassigned':typeof o!=='object'?typeof o+':'+o:o.household?'household:'+o.id:W.houses?.includes(o)?'house:'+W.houses.indexOf(o):W.settlements?.includes(o)?'settlement:'+W.settlements.indexOf(o):(o.kind==='abbey'||o.kind==='guild')&&o.storageOwnerId?o.storageOwnerId:o.id!=null?'entity:'+o.id:o.name?'name:'+o.name:o.arch?'building:'+o.arch+':'+o.x+':'+o.z:'object';
  const nums=o=>Object.fromEntries(Object.entries(o||{}).filter(([,v])=>typeof v==='number').sort(([a],[b])=>a.localeCompare(b)));
  const person=p=>p&&({id:p.id,b:p.b,dd:p.dd,dead:!!p.dead,alive:p.alive,sx:p.sx,si:p.si,household:p._hh?.id??null,w:p.w,debt:p._debt,lifeEventCount:p.ev?.length||0,traits:p.traits,skills:p.sk});
  const people=new Map();const add=p=>{if(p&&Number.isInteger(p.id)&&!people.has(p.id))people.set(p.id,person(p));};
