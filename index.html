@@ -11913,6 +11913,11 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
       cash-=full*a;laid+=full*a;const L2=O[g]||(O[g]=[]);pl.ord.push([g,L2.length,cut]);L2.push([h,q*a]);}
     pl.cash=cash;}
   const G2={};for(const g in O)G2[g]=clearMarket(s,g,O[g]); // each good cleared once for the whole town
+  { // what a household could not get of the food it chose, it seeks in the others on sale, the cheapest at the table first: a food no one offers, at the price its last sale left, does not leave it short of its month (as topUpFood does day by day)
+    const gap=plan.map(pl=>{let q=0;for(const[g,i]of pl.ord)if(FOODS.includes(g))q+=O[g][i][1]-G2[g][i];return q;});
+    if(gap.some(q=>q>1e-9))for(const g of FOODS.slice().sort((a,b)=>price(s,a)/(1-CUT[a])-price(s,b)/(1-CUT[b]))){if(!(avail(s,g,price(s,g))>0))continue;
+      const L2=O[g]||(O[g]=[]),i0=L2.length,J=[];plan.forEach((pl,j)=>{if(gap[j]>1e-9){pl.ord.push([g,L2.length,CUT[g]]);L2.push([pl.h,gap[j]]);J.push(j);}});if(!J.length)break;
+      const got=clearMarket(s,g,L2.slice(i0));G2[g]=(G2[g]||[]).concat(got);J.forEach((j,k)=>{gap[j]-=got[k];});}}
   for(const pl of plan){const h=pl.h,Ld=pantry(s,pl.owner);let fg=0,spent=0;
     for(const[g,i,cut]of pl.ord){const got=G2[g][i],p=price(s,g);spent+=got*p+craftWork(s,h,MARGIN[g],got*p*cut/(1-cut));const gift=accountOwner(h)!==accountOwner(pl.owner);if(gift)storageGiftTitle(s,h,pl.owner,g,got);commodityCreditPurchase(s,pl.owner,g,got,gift);if(FOODS.includes(g))fg+=got;} // the miller, baker, carter and tailor take their part
     const fill=pl.fq>0?Math.min(1,(fg+pl.home)/(pl.fq+pl.home)):1,n=pl.n;
@@ -14247,7 +14252,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
    ========================================================================= */
 const TRADE_W={baker:1.2,butcher:1,brewer:1.2,cook:0.8,miller:1,smith:1,carpenter:1.2,mason:0.9,thatcher:0.8,cooper:0.6,potter:0.6,weaver:1,dyer:0.6,tailor:0.8,shoemaker:0.8,tanner:0.6,glover:0.4,
   chandler:0.6,merchant:1.6,spicer:0.7,carter:1,boatman:0.8,roper:0.5,salter:0.4,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,woodcutter:0.9,forester:0.4,fisher:1,miner:0.8,quarryman:0.7,reeve:0.3}; // the share of what families spend that comes to each trade
-const PRODUCE={fisher:'fish',boatman:'fish',woodcutter:'timber',forester:'timber',miner:'ore',smith:'tools',weaver:'cloth',dyer:'cloth'}; // trades that live by selling what they make, not by a share of the town's spending
+const PRODUCE={fisher:'fish',boatman:'fish',woodcutter:'timber',forester:'timber',miner:'ore',smith:'tools',weaver:'cloth',dyer:'cloth',butcher:'meat'}; // trades that live by selling what they make, not by a share of the town's spending
 const foodYr=()=>(NEED.grain*GOODBASE.grain+NEED.fish*GOODBASE.fish)*360*((typeof W!=='undefined'&&W&&W._pl)||1); // a year's bread and fish at the realm's going prices
 function tradeCounts(s){if(s._tcY===year())return s._tc;const c={};for(const h of headsOf(s))if(h.tr&&!h.outlawCampId)c[h.tr]=(c[h.tr]||0)+1;s._tc=c;s._tcY=year();marketTradeIndexRecord(W,s,c);return c;}
 function jobYear(s){ // the year's reckoning of the trades: what those in each earned (net of their stuff), and what work went undone or to strangers for want of hands
