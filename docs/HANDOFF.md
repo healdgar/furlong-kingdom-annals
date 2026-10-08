@@ -218,3 +218,7 @@ Line numbers drift, so find code by name.
   - A road with no toll house is mended by the lords at either end as a customary duty (the landholders' duty to the king's highway), whether or not it pays them, but only out of what their chests hold beyond their reserve.
   - Toll houses may stand from AD 850, as Carolingian bridge and road tolls did.
   - A mill's farm is paid at the quarter days out of the takings, not a year in advance; a farmer in arrears is not let the mill again, and his arrear goes to the pleas roll for #37.
+- **Growth of the late world (2026-10-08):** retiring dead records is a bug fix, done first (batch 10). Then, agreed:
+  1. a crumb of stock below a soul's day of food (0.01 units, or the same worth of another good) is lost as spoiled;
+  2. a family that moves sells or carries the goods it held where it lived;
+  3. spoilage inferred in closed form when a store is touched, instead of reckoned for every store every day ("seems reasonable").
