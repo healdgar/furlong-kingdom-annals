@@ -75,7 +75,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Meat (batch 9): STORAGE_GOODS gains meat's volume; commodityClearMarket lends for every food (FOODS), not grain and fish alone;
  // herdProduce no longer counts the swine's bacon as grain (their meat comes at Martinmas); winterFeed reads its loss rate as STARVE.
  // No lot, title, claim or journal writer changes; meat.test.mjs and the ownership and storage fixtures cover these lines.
- assert.equal(digest(source.slice(a,b)),"5112cb73892e5be13f567984d5680721585806ffb4c33978de52ffcb115c28be");
+ // The manor's dues (#36, batch 9): commodityClearMarket and commoditySpoil also tally the lord's grain sold, eaten at his table and
+ // rotted (lordSold, lordRot: s._lg, read at the year's reckoning for his mill farms and commutation), and a crown's sale is booked
+ // in its labelled book. Tallies and books only: no lot, title, claim or journal writer changes; customary-dues.test.mjs covers them.
+ assert.equal(digest(source.slice(a,b)),"0c4c65f5b4769ba25d0426c40c516e032adc821556c1be6c182a410e22913e48");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
