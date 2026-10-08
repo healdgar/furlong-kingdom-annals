@@ -87,7 +87,7 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // drops only their cached quantities. No quantity, title, claim or balance writer changed, and no settlement is written or withheld
  // that was not before: with the retired places and records taken out, world graphs, RNG, annals and the journal's deltas, flows
  // and notes equal deab546 (1001 sea 150 days, 42 sea 3600 days); world-save.test.mjs covers the saved spent set.
- assert.equal(digest(source.slice(a,b)),"0dd207a137b6b629b988259251f00c5d2ba9e767a68604240d6b5ae0281da40e");
+ assert.equal(digest(source.slice(a,b)),"3e9e7bb9bfb352521f56e9084656b73bc85d67b0412c6a74461b787b5ee5d9c7");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
