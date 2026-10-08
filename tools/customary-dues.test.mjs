@@ -22,16 +22,29 @@ const house=r=>r.W.houses[1];
 const gold=r=>r.coins()+(house(r).gold||0); // every purse in the realm: the households, the crafts' pools, the treasury and the house
 const strip=(id,o={})=>({k:0,ten:'villein',own:id,wk:id,area:1e4,dom:0,lord:-1,...o});
 
-test('the mill is let to the miller who offers most, and while the farm runs its multure is his and the farm the lord\'s',()=>{
+test('the mill is let to the miller who offers most, whatever his purse; its multure is then his, and the farm is paid the lord at the quarter days',()=>{
   const r=manor({strips:[strip(2)],buildings:[{arch:'mill'}]});
-  r.eval("H[0].tr='miller';H[0].w=200;H[2].tr='miller';H[2].w=40;H[1].w=0;householdAccount(H[0]).population.set(s,4);s.buildings[0]._tk={mult:100,suit:2};s._lgL=new Map([[W.houses[1],{got:200,out:150,rot:50,coin:100}]])");
+  r.eval("H[0].tr='miller';H[0].w=0;H[2].tr='miller';H[2].w=500;H[1].w=0;householdAccount(H[0]).population.set(s,4);householdAccount(H[2]).population.set(s,6);s.buildings[0]._tk={mult:100,suit:2};s._lgL=new Map([[W.houses[1],{got:200,out:150,rot:50,coin:100}]])");
   const before=gold(r),fy=r.eval('foodYr()');
   r.eval('farmMills(s,0)');const F=r.s.buildings[0].farm;
   assert.ok(F,'let: the best offer beats what the mill brought the lord kept in hand (100 multure at half its price, and 2 of grinding)');
-  assert.equal(F.who,1);near(F.rent,102-4*fy);near(house(r).gold,F.rent);near(r.H[0].w,200-F.rent);near(house(r).led['mill farm'],F.rent);near(gold(r),before);
+  assert.equal(F.who,1,'the smaller household offers more: an empty purse does not stop him');near(F.rent,102-4*fy);near(house(r).gold,0,'nothing is paid at the letting');
   r.eval("s._made={grain:100};shareOutput(s,0,folkIndex(),headsOf(s))");
   near(r.eval("mkt(s,'grain').get(H[0])"),6);near(r.s.buildings[0]._tk.mult,6); // the multure, a sixteenth and more, is the farmer's to sell
   near(r.eval("mkt(s,'grain').get(W.houses[1])"),94*0.38);near(r.eval('s._lg.get(W.houses[1]).got'),94*0.38); // the lord's grain here: his villein's rent in kind, not the multure
+  r.eval('H[0].w=200');for(const d of [91,181,271]){r.eval(`day=()=>${d};farmQuarters(s)`);}
+  near(house(r).led['mill farm'],F.rent*3/4);assert.equal(F.q,3);near(F.arr,0);
+  r.eval('day=()=>361;farmMills(s,0)');near(house(r).led['mill farm'],F.rent);near(house(r).gold,F.rent);near(r.H[0].w,200-F.rent);near(F.paid,F.rent);near(gold(r),before+200);
+});
+
+test('what a farmer cannot pay at a quarter day is an arrear on the farm, rolled for the manor court; behind at the year\'s end, he is not let it again',()=>{
+  const setup=(other)=>{const r=manor({buildings:[{arch:'mill'}]});
+    r.eval(`H[0].tr='miller';H[0].w=0;householdAccount(H[0]).population.set(s,4);${other?"H[2].tr='miller';householdAccount(H[2]).population.set(s,6);":''}s.buildings[0]._tk={mult:100,suit:2};s._lgL=new Map([[W.houses[1],{got:200,out:150,rot:50,coin:100}]]);farmMills(s,0)`);return r;};
+  const r=setup(true),F=r.s.buildings[0].farm;assert.equal(F.who,1);
+  r.eval('day=()=>91;farmQuarters(s);H[0].w=s.buildings[0].farm.rent/8;day=()=>181;farmQuarters(s)');near(F.arr,F.rent/4+F.rent/4-F.rent/8);
+  assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who]))")),[['farm',1],['farm',1]]);near(house(r).led['mill farm'],F.rent/8);
+  r.eval('day=()=>361;s.buildings[0]._tk={mult:100,suit:2};farmMills(s,0)');assert.equal(r.s.buildings[0].farm.who,3,'let to the next bidder, whose offer still beats the keeping');
+  const alone=setup(false);alone.eval('day=()=>361;s.buildings[0]._tk={mult:100,suit:2};farmMills(s,0)');assert.equal(alone.s.buildings[0].farm,undefined,'no one else: the lord takes it in hand');
 });
 
 test('the lord keeps his mill in hand when its multure sells at its price',()=>{

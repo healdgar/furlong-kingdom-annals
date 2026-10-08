@@ -13986,7 +13986,8 @@ function rollAdd(R,rec,n=ROLL_N){R.rows.push(rec);while(R.rows.length>n){const k
 function rollTake(R){const out={rows:R.rows,over:R.over};R.rows=[];R.over={};return out;} // a session reads the roll and clears it
 /* THE MANOR'S DUES (#36): what a lord drew from his manor beside the rents in kind, reckoned at each place's year of tenure (tickTenure).
    - His mill, and a bakehouse of his, is let for the year to the miller (baker) of the place or the next who offers most for it, when the
-     offer is worth more than the mill brought him kept in hand; while the farm runs, its multure and the grinding paid there are the
+     offer is worth more than the mill brought him kept in hand; the farm is paid at the place's quarter days out of the takings, and a
+     farmer behind with it at the year's end is not let it again. While the farm runs, its multure and the grinding paid there are the
      farmer's (millHolder). Where a place has no miller or baker of its own, its families owe suit to the lord's mill and oven and pay there.
    - Villeins' week-work is commuted to a money rent when that rent is worth more than what the lord's share in kind brought him, sold or
      eaten at his own table, not rotted; the rent is fixed then and is the custom of the holding ever after. The ruler may order it, or keep
@@ -14034,16 +14035,23 @@ function manorRents(s,si,T,PM,p){ // the year's money rents of commuted holdings
     f.svc='money';f.qrent=q;f._arr=0;f._arrN=0;writeFurlong(f);n++;} // the rent is fixed now, at this year's price: the custom of the holding thereafter
   if(n&&!s._commuted){s._commuted=true;if(!W.prehistory)emit('trade',2,s.pos,`The villeins of ${s.name} commute their week-work for a money rent.`);}
   return n;}
-function farmMills(s,si){ // the year's letting of the lord's mill and bakehouse: to the miller (baker) here or at the next place who offers most for the year's takings over his household's bread, and no more than he has, when that is more than the mill brought the lord kept in hand
+function farmQuarter(s,b,last){ // a quarter of the farm falls due, out of the takings, as farms were paid at the quarter days; at the year's end every quarter not yet paid. What the farmer cannot pay is an arrear on the farm, pleaded at the manor court (#37)
+  const F=b.farm;if(!F||F.q>=4)return;const p=(W._pm||folkIndex()).get(F.who),n=last?4-F.q:1;
+  if(!p||p.dead){F.q=4;F.until=day();return;} // the farmer is gone: the farm ends, and the lord has his mill again
+  const lord=ownerAcct(b,s),owed=F.rent/4*n+(F.arr||0),paid=transfer(p,lord,owed,b.arch==='bakery'?'oven farm':'mill farm');if(lord===lordAcct(s))lordTake(s,paid);
+  F.q+=n;F.paid=(F.paid||0)+paid;F.arr=owed-paid;if(F.arr>1e-6)rollAdd(rollOf(s,'pleas'),{kind:'farm',d:day(),who:F.who,v:F.arr});else F.arr=0;}
+function farmQuarters(s){for(const b of s.buildings||[])if(b.farm&&b.farm.until>day())farmQuarter(s,b,false);} // the place's quarter day
+function farmMills(s,si){ // the year's letting of the lord's mill and bakehouse: to the miller (baker) here or at the next place who offers most for the year's takings over his household's bread, when that is more than the mill brought the lord kept in hand; the rent is paid at the quarter days out of the takings (farmQuarter)
   const p=yearPrice(s,'grain'),near=nearestOther(s,si),fy=foodYr();
   for(const b of s.buildings||[]){const mill=b.arch==='mill'||b.arch==='windmill';if(!mill&&b.arch!=='bakery'||b.removed||b.farm&&b.farm.until>day())continue; // (a term still running ends at a later reckoning)
-    const T=b._tk;b._tk={mult:0,suit:0};const was=b.farm;if(was)delete b.farm;if(b.state!=='sound'||!s._lgL||ownerOf(b,s)!=='lord')continue; // no whole year's takings yet: the reeve keeps it
-    const lord=ownerAcct(b,s),mult=T?T.mult:0,suit=T?T.suit:0,keep=mult*(lordYield(s,lord)||0)+suit,takings=mult*p+suit,tr=mill?'miller':'baker'; // kept in hand: the multure he sold or ate, and the grinding paid there (no repairs are paid for a mill yet)
-    let best=null,bid=0;for(const t of near?[s,near]:[s])for(const h of headsOf(t)){if(h.tr!==tr||h.outlawCampId)continue;const v=Math.min(takings-Math.max(1,householdSize(t,h))*fy,means(h));if(v>bid){bid=v;best=h;}}
+    const T=b._tk;b._tk={mult:0,suit:0};const was=b.farm;if(was){farmQuarter(s,b,true);delete b.farm;} // the year's last quarter, and what is still owed
+    if(b.state!=='sound'||!s._lgL||ownerOf(b,s)!=='lord')continue; // no whole year's takings yet: the reeve keeps it
+    const lord=ownerAcct(b,s),mult=T?T.mult:0,suit=T?T.suit:0,keep=mult*(lordYield(s,lord)||0)+suit,takings=mult*p+suit,tr=mill?'miller':'baker',behind=was&&was.arr>1e-6?was.who:-1; // kept in hand: the multure he sold or ate, and the grinding paid there (no repairs are paid for a mill yet)
+    let best=null,bid=0;for(const t of near?[s,near]:[s])for(const h of headsOf(t)){if(h.tr!==tr||h.outlawCampId||h.id===behind)continue;const v=takings-Math.max(1,householdSize(t,h))*fy;if(v>bid){bid=v;best=h;}} // a farmer behind with his farm at the year's end is not let it again
     if(!best||!(bid>keep))continue; // the lord's reeve keeps it
-    const rent=transfer(best,lord,bid,mill?'mill farm':'oven farm');if(lord===lordAcct(s))lordTake(s,rent);b.farm={who:best.id,rent,until:day()+360,last:{mult,suit,keep}}; // the year's farm, paid at the letting
-    if(!was||was.who!==best.id)life(best,`Took the farm of the ${mill?'mill':'bakehouse'} at ${s.name}, for ${Math.round(rent)} a year`);
-    if(mill&&!s._millLet){s._millLet=true;if(!W.prehistory)emit('trade',2,s.pos,`The lord's mill at ${s.name} is let to ${folkName(best)} for ${Math.round(rent)} a year.`);}}}
+    b.farm={who:best.id,rent:bid,from:day(),until:day()+360,q:0,paid:0,arr:0,last:{mult,suit,keep}}; // let for the year: a quarter of the rent at each of the place's quarter days
+    if(!was||was.who!==best.id)life(best,`Took the farm of the ${mill?'mill':'bakehouse'} at ${s.name}, for ${Math.round(bid)} a year`);
+    if(mill&&!s._millLet){s._millLet=true;if(!W.prehistory)emit('trade',2,s.pos,`The lord's mill at ${s.name} is let to ${folkName(best)} for ${Math.round(bid)} a year.`);}}}
 function merchet(s,w){ // a villein's daughter weds by her lord's leave, and the leave is bought (#36): her household pays it where it holds villein land, as heriot is found (inherit)
   const B=householdAccount(w);if(!B||!s.furl)return 0;const ids=new Set();for(const p of B.members)ids.add(p.id);const f=s.furl.find(f=>f.ten==='villein'&&(ids.has(f.wk)||ids.has(f.own)));if(!f)return 0;
   const lord=stripLord(f,s),paid=transfer(B,lord,customOf(s,'merchet')*foodYr(),'merchet');if(lord===lordAcct(s))lordTake(s,paid);return paid;}
@@ -14065,7 +14073,7 @@ function manorOrdersHTML(s,si){ // the customs of a manor, beside the dues: one 
 function manorLines(s){ // the settlement card's lines on the manor: the mill's farm, the villeins' services, customs changed by order (#36); reads only
   const out=[],si=W.settlements.indexOf(s),who=id=>{const P=W._folkIndex||W._pm;let p=P&&P.get(id);if(!p)for(const t of W.settlements){p=(t.folk||[]).find(q=>q.id===id);if(p)break;}return p;};
   for(const b of s.buildings||[]){if(b.removed||b.state!=='sound')continue;const mill=b.arch==='mill'||b.arch==='windmill';if(!mill&&b.arch!=='bakery')continue;const F=b.farm,p=F&&F.until>day()?who(F.who):null,o=b.ownerId;
-    if(p&&!p.dead)out.push([mill?'Mill':'Bakehouse',`The ${mill?'mill':'bakehouse'} is let to ${esc(folkName(p))} for ${Math.round(F.rent)} a year, to ${W.startAD+Math.floor(F.until/360)}`]);
+    if(p&&!p.dead)out.push([mill?'Mill':'Bakehouse',`The ${mill?'mill':'bakehouse'} is let to ${esc(folkName(p))} for ${Math.round(F.rent)} a year, to ${W.startAD+Math.floor(F.until/360)}${F.arr>0?`; ${Math.round(F.arr)} of it in arrears`:''}`]);
     else if(mill&&(o==='lord'||o===undefined))out.push(['Mill',`The lord keeps the mill in hand${b._tk&&b._tk.mult>0?`; ${Math.round(b._tk.mult)} grain of multure this year`:''}`]);}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein');if(V.length)out.push(['Villein holdings',`${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent${s.svc==='money'?', by order':s.svc==='works'?'; services kept in hand by order':''}`]);
   const C=s.custom?Object.keys(CUSTOMS).filter(k=>s.custom[k]!=null&&s.custom[k]!==CUSTOMS[k]):[];if(C.length)out.push(['Customs',C.map(k=>`${esc((CUSTOM_NAMES[k]||[k])[0])} ${CUSTOM_NAMES[k]?.[2]?+(s.custom[k]*100).toFixed(2)+'%':+s.custom[k].toFixed(3)}`).join('; ')]);
@@ -14074,7 +14082,8 @@ function manorCmd(cmd,arg){const[a,k,v]=String(arg).split(':'),s=W.settlements[+
   if(cmd==='s-custom'){if(!Object.hasOwn(CUSTOMS,k)||!(+v>=0)||+v>CUSTOMS[k]*4)return;(s.custom||(s.custom={}))[k]=+v;}
   else if(cmd==='s-svc'&&['money','works','auto'].includes(k))s.svc=k;} // 'auto': as the lord's reeve reckons
 function tickTenure(){
-  if(!W.land)return;const due=W.settlements.map((s,si)=>dueOn(si,360,37));if(!due.some(Boolean))return; // each place's year of tenure falls on its own day
+  if(!W.land)return;const due=W.settlements.map((s,si)=>dueOn(si,360,37));W.settlements.forEach((s,si)=>{if(!due[si]&&dueOn(si,90,37))farmQuarters(s);}); // the mill's farm falls due at the place's quarter days (#36)
+  if(!due.some(Boolean))return; // each place's year of tenure falls on its own day
   const PM=folkIndex(),kids=new Map(),spouse=new Map();
   for(const p of PM.values()){for(const par of[p.pa,p.ma])if(par){const L=kids.get(par.id)||[];L.push(p);kids.set(par.id,L);}if(p.sp)spouse.set(p.sp.id,p);}
   const hf=(W.drought?0.4:1)*(MOD.harvest||1);let sales=0,bigBuyer=null;
