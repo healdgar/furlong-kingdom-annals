@@ -1,7 +1,7 @@
 // A household buys need × (price/worth)^-ε of each good and never more than its need, where a good's worth is what it costs to make
-// here or to bring here; a short purse pays for its bread, then keeps back its rent, then buys fuel, tools, cloth and last the rich man's
-// table (#51, the user's decision of 2026-10-08). Before, every household bought its full need at any price, out of a fixed share of its
-// purse for each good, and kept nothing back for its rent.
+// here or to bring here; a short purse pays for its bread, then keeps back its rent and the next month's bread, then buys fuel, tools,
+// cloth and last the rich man's table (#51, the user's decision of 2026-10-08). Before, every household bought its full need at any
+// price, out of a fixed share of its purse for each good, and kept nothing back for its rent.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {realm,near} from './ownership-fixture.mjs';
@@ -34,19 +34,19 @@ test('bread at twice its worth is still bought nearly in full, and eaten by that
   near(before-held(r,'grain')-held(r,'fish'),need/30*r.s._ration);near(r.eval('householdAccount(H[0]).hunger'),1-r.s._ration);
 });
 
-test('a small purse buys its bread, then keeps back its rent before fuel, tools or cloth',()=>{
+test('a small purse buys its bread, then keeps back its rent and the next bread before fuel, tools or cloth',()=>{
   const bread=1.5/0.7,rent=5; // a month's grain for five at 1, with the miller's and the baker's part; the year's rent of the house
-  const r=town({cash:bread+rent,px:{cloth:1}});r.eval(`H[0].bh={arch:'house',ownerId:'lord',_rent:${rent},hh:[H[0]]}`);
+  const r=town({cash:2*bread+rent,px:{cloth:1}});r.eval(`H[0].bh={arch:'house',ownerId:'lord',_rent:${rent},hh:[H[0]]}`);
   near(r.eval('rentDue(s,H[0])'),rent);provision(r);
   near(held(r,'grain')+held(r,'fish'),7.5*0.2);
   for(const g of ['timber','tools','cloth'])near(held(r,g),0);
-  assert.ok(r.H[0].w>=rent,`${r.H[0].w} kept for a rent of ${rent}`); // the rent is there on the tenure day (and the miller's part, for here they grind their own)
-  const free=town({cash:bread+rent,px:{cloth:1}});provision(free); // its own roof: the same purse buys the rest
+  assert.ok(r.H[0].w>=rent+bread,`${r.H[0].w} kept for a rent of ${rent}`); // the rent is there on the tenure day, and the bread at the next market (and the miller's part, for here they grind their own)
+  const free=town({cash:2*bread+rent,px:{cloth:1}});provision(free); // its own roof: the same purse buys the rest
   for(const g of ['timber','tools','cloth'])near(held(free,g),month(free,g));
 });
 
-test('what is left after bread and rent goes to fuel first, then tools, then cloth',()=>{
-  const fuel=0.09*3/0.8,r=town({cash:1.5/0.7+fuel+0.27});provision(r); // the carter's part on the fuel; half the month's tools
+test('what is left after the bread and what is kept back goes to fuel first, then tools, then cloth',()=>{
+  const fuel=0.09*3/0.8,r=town({cash:2*1.5/0.7+fuel+0.27});provision(r); // the carter's part on the fuel; half the month's tools
   near(held(r,'timber'),month(r,'timber'));near(held(r,'tools'),month(r,'tools')/2);near(held(r,'cloth'),0);
 });
 
