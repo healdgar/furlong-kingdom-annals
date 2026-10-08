@@ -85,23 +85,42 @@ for(const commodity of [false,true]){
     assert.ok(held(rich,0,'grain')<month*0.6,`${held(rich,0,'grain')} of bread: the meat it ate is bread it does not buy`);
   });
 
-  test(`a butcher buys beasts only when the carcass pays for the beast, for the meat the place will take (${how})`,()=>{
+  test(`a butcher buys beasts only when the carcass, less his part, pays for the beast; from whoever keeps them, as many as the herd breeds (${how})`,()=>{
     for(const pig of [4,5]){
-      const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:40,cattle:10,sheep:20');
-      r.eval(`H[0].tr='butcher';s._dAvg={meat:30};s._want={swine:10,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:${pig},cattle:12,sheep:3,meat:3});offer(s,'swine','crown',40);offer(s,'cattle','crown',10);offer(s,'sheep','crown',20);provision(s,H,new Map())`);
-      near(r.s.stores.cattle,10);near(r.s.stores.sheep,20); // an ox's carcass at 3 fetches 12, no more than the ox; a sheep's 1.8: neither pays
-      if(pig===5){near(r.s.stores.swine,40);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.5, at 5
-      near(r.s.stores.swine,20);near(sale(r,'H[0]','meat'),30);near(r.eval("rsv(s,'meat').get(H[0])"),80/30); // twenty pigs for thirty of meat, at what they cost him
+      const r=place({commodity,households:3,cash:200});herd(r,'swine:30,cattle:10,sheep:20'); // no bread on sale: the purses move only by the beasts
+      r.eval(`H[0].tr='butcher';H[1].herd={swine:10};s.hm={bred:{swine:6,cattle:1,sheep:3}};s._graze={till:0};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:${pig},cattle:12,sheep:3,meat:4});offer(s,'cattle','crown',10);offer(s,'sheep','crown',20);provision(s,H,new Map())`);
+      near(r.s.stores.cattle,10);near(r.s.stores.sheep,20); // an ox's carcass at 4, less his quarter, fetches 12, no more than the ox; a sheep's 1.8
+      if(pig===5){near(r.s.stores.swine,30);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.5, at 5
+      near(r.s.stores.swine,24);near(r.eval('H[1].herd.swine'),10-2);near(r.H[1].w,200+2*4);near(r.W.treasury,4*4); // the month's six pigs, a third of them the family's and the rest the lord's, each paid at its price
+      near(sale(r,'H[0]','meat'),9);near(r.eval("rsv(s,'meat').get(H[0])"),24/9); // their meat, at what they cost him
     }
-    const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:5');
-    r.eval("H[0].tr='butcher';s._dAvg={meat:30};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:4,cattle:12,sheep:3,meat:3});offer(s,'swine','crown',5);provision(s,H,new Map())");
-    near(r.s.stores.swine,5);near(r.eval('s._dem.swine'),20); // the sows the place keeps are not his: the twenty pigs he sought are wanted at its market, for the drovers to bring
+    const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:7');
+    r.eval("H[0].tr='butcher';s.hm={bred:{swine:6}};s._graze={till:0};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:4,meat:4});provision(s,H,new Map())");
+    near(r.s.stores.swine,5); // the five sows that farrow the place's want are not his
   });
 
-  test(`pannage is the pigs fed on the mast × the custom × a pig's price, paid to the wood's lord, and nothing for his own pigs (${how})`,()=>{
+  test(`a household lays in only food that keeps the month: fish it buys day by day (${how})`,()=>{
+    const r=place({commodity,households:1,grain:0,fish:100});r.eval("s.px.meat=1;provision(s,H,new Map())"); // meat at a stale price and none on sale; only fish to be had
+    near(held(r,0,'fish'),0);near(held(r,0,'meat'),0);
+    r.eval('eatHouseholds(s,folkIndex())');near(r.eval('householdAccount(H[0]).hunger'),0); // the day's fish, bought as it is eaten
+  });
+
+  test(`the table's meat gives way to its price against meat's worth, as wine does (${how})`,()=>{
+    const r=place({commodity,households:1,cash:1000,grain:100});herd(r,'swine:10');
+    r.eval("s.px.swine=4;s.px.meat=9;s.stores.meat=100;offer(s,'meat','crown',100);provision(s,H,new Map())"); // a pig at 4, its carcass 1.5, the butcher's quarter: meat is worth 3.56 here
+    near(r.s._goodsWorth.meat,4/1.5/0.75);near(held(r,0,'meat'),r.eval('householdSize(s,H[0])*FOOD*30')*Math.pow(9/(4/1.5/0.75),-1.5));
+  });
+
+  test(`a cow's and a ewe's yield is what the herd gives: milk at the price of bread, a fleece, and the year's increase at the beast's price (${how})`,()=>{
+    const r=place({commodity});r.eval("Object.assign(s.px,{grain:2,cattle:12,sheep:3,wool:4})");
+    near(r.eval("beastYield(s,'cattle')"),0.1*12*2+0.22*12);near(r.eval("beastYield(s,'sheep')"),0.008*12*2+0.012*12*4+0.4*3);
+    near(r.eval('BEAST_YR.cattle()'),0.1*12*2+0.22*12);
+  });
+
+  test(`pannage is the pigs fed on the mast × the custom × a pig's price the year round, paid to the wood's lord, and nothing for his own pigs (${how})`,()=>{
     for(const pann of [1e6,1.25]){
       const r=place({commodity,households:3,cash:100});herd(r,'swine:10');
-      r.eval("W.houses[1]={name:'Vane',gold:0};W.houses[2]={name:'Other',gold:0};s.owner=1;s.px.swine=4;H[0].herd={swine:4};H[1].herd={swine:2};H[2].w=0.1;H[2].herd={swine:1};s.furl=[{state:LS.WOOD,lord:1,area:1e4},{state:LS.WOOD,lord:-1,area:1e4},{state:LS.WOOD,lord:2,area:5e4}]"); // the third family can pay a tenth
+      r.eval("W.houses[1]={name:'Vane',gold:0};W.houses[2]={name:'Other',gold:0};s.owner=1;s.px.swine=40;s._pxY={swine:4};H[0].herd={swine:4};H[1].herd={swine:2};H[2].w=0.1;H[2].herd={swine:1};s.furl=[{state:LS.WOOD,lord:1,area:1e4},{state:LS.WOOD,lord:-1,area:1e4},{state:LS.WOOD,lord:2,area:5e4}]"); // the third family can pay a tenth
       r.eval(`pannage(s,{pann:${pann}})`);const fed=Math.min(1,pann/0.25/10);
       near(r.eval('W.houses[1].gold'),(4+2)*fed*0.1*4+Math.min(0.1,1*fed*0.1*4));near(r.eval('W.houses[2].gold'),0); // the other lord's wood is not this place's mast
       near(r.H[0].w,100-4*fed*0.4);near(r.H[1].w,100-2*fed*0.4);

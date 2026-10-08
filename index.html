@@ -4643,7 +4643,7 @@ function consumeOwned(s,who,g,q){if(commodityActive(s)&&!BEASTS.includes(g))retu
 function consumeOwnStock(s,who,g,q){if(commodityActive(s)&&!BEASTS.includes(g)){const v=commodityConsume(s,who,g,q);return v+commodityConsume(s,who,g,q-v,'sale');}let got=consumeOwned(s,who,g,q);const L=mkt(s,g);let v=Math.max(0,Math.min(q-got,L.get(who)||0,s.stores[g]||0));if(v>0){if(s.storage&&!BEASTS.includes(g))v=storageConsumeSale(s,who,g,v);const left=(L.get(who)||0)-v;if(left>0)L.set(who,left);else{L.delete(who);rsv(s,g).delete(who);}if(!s.storage||BEASTS.includes(g))s.stores[g]-=v;got+=v;}return got;}
 function herdProduce(s){const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),owned={};for(const g of BEASTS)owned[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
   const lord=lordAcct(s),remainder=Object.fromEntries(BEASTS.map(g=>[g,Math.max(0,(s.stores[g]||0)-(owned[g]||0))]));
-  for(const[o,x]of [...owners,[lord,{animals:remainder}]]){const H=x.animals,food=(H.cattle||0)*0.1+(H.sheep||0)*0.008,wool=(H.sheep||0)*0.012; /* milk and cheese, counted as grain until there is a dairy good (#53); the pigs' meat comes at Martinmas (martinmas) */s.stores.grain+=food;s.stores.wool=(s.stores.wool||0)+wool;
+  for(const[o,x]of [...owners,[lord,{animals:remainder}]]){const H=x.animals,food=(H.cattle||0)*MILK.cattle+(H.sheep||0)*MILK.sheep,wool=(H.sheep||0)*FLEECE; /* milk and cheese, counted as grain until there is a dairy good (#53); the pigs' meat comes at Martinmas (martinmas) */s.stores.grain+=food;s.stores.wool=(s.stores.wool||0)+wool;
     if(o&&o.household)addHeld(s,o,'grain',food);else offer(s,'grain',o,food);offer(s,'wool',o,wool);}
   for(const[o]of owners){if(!o||!o.household)continue;const wool=(mkt(s,'wool').get(o)||0)+(pantry(s,o).wool||0),q=consumeOwnStock(s,o,'wool',wool*0.08);s.stores.cloth=(s.stores.cloth||0)+q*0.5;addHeld(s,o,'cloth',q*0.5);}}
 function winterFeed(s,snow){herdSync(s);const owners=[...(s._owners||new Map())].filter(([,x])=>BEASTS.some(g=>x.animals[g]>0)),totals={};for(const g of BEASTS)totals[g]=owners.reduce((n,[,x])=>n+(x.animals[g]||0),0);
@@ -11366,6 +11366,7 @@ function prodOf(s){ // a year's output by good (the same sums the economy runs d
 const HAND_TILTH=0.75; // ground dug by spade and mattock yields three-quarters of ploughed ground
 const WINTER_HAY=0.35*3,STARVE=0.1; // a beast's winter fodder by its livestock units: 0.35 a winter month (winterFeed), three months (#23: owners bought ten a year and their beasts ate one; the rest rotted, and its want drove hay to many times its price and the ploughland to meadow, #21); and a beast with no hay at all dies one winter month in ten (winterFeed)
 const LU={sheep:0.12,cattle:1,horses:1.1,swine:0.25},HERDR={sheep:0.4,cattle:0.22,horses:0.14,swine:0.9},BEASTS=['sheep','cattle','horses','swine'];
+const MILK={cattle:0.1,sheep:0.008},FLEECE=0.012; // a beast's month of milk and cheese (counted as grain until there is a dairy good, #53), and a sheep's month of wool (herdProduce)
 const CARCASS={cattle:4,swine:1.5,sheep:0.6,horses:0},MARTINMAS=8,LITTER=CARCASS.swine*HERDR.swine/(1+HERDR.swine); // the meat of a carcass, in food (a unit feeds a soul a hundred days): an ox, a baconer, a sheep, in about the proportions of medieval dressed weights (an ox three pigs, a sheep a third of one); horses were not eaten. Martinmas (11 November, the 'blood-month') falls in the ninth month from spring, the last of autumn: the mast is eaten and the grass gone, and what is not to be wintered is killed and salted. A pig's part of the year's litters is what the slaughter takes of the herd, the increase over the sows it keeps (martinmas), in meat
 function grazeOf(s){ // livestock units the place's land can carry, and what of it is what
   let past=0,wild=0,till=0,wood=0,hay=0;
@@ -11408,7 +11409,7 @@ function meatTo(s,o,q,fresh){ // a carcass's meat is its owner's: a family eats 
   if(o.household){const f=fresh?Math.min(q,(o.population.get(s)||0)*FOOD*FRESH):0;addHeld(s,o,'meat',q);if(f>0)o.assets._fresh=(o.assets._fresh||0)+f;salt(s,o.head&&!o.head.dead?o.head:o,(q-f)*v);}
   else{const c=salt(s,o,q*v);offer(s,'meat',o,q,c/q);}}
 function pannage(s,g){ // the pigs fed on the wood's mast this autumn pay its lord his custom (#36), so much a pig, a share of its price here: as many as the mast carries (grazeOf), and the lord's own pigs nothing. A family pays what it can; what it cannot is not paid (arrears, #37)
-  const St=s.stores.swine||0,v=customOf(s,'pannage')*price(s,'swine');if(!(St>0)||!(v>0))return;const fed=Math.min(1,g.pann/LU.swine/St),L=new Map();let wa=0;
+  const St=s.stores.swine||0,v=customOf(s,'pannage')*yearPrice(s,'swine');if(!(St>0)||!(v>0))return;const fed=Math.min(1,g.pann/LU.swine/St),L=new Map();let wa=0; // the pig's price the year round, not a dear month's
   for(const f of s.furl||[]){if(f.state!==LS.WOOD||f.lord!==s.owner&&f.lord>=0)continue;const l=f.lord>=0?houseAcct(f.lord):lordAcct(s);L.set(l,(L.get(l)||0)+f.area);wa+=f.area;} // the woods whose mast grazeOf reckons, by whose they are
   if(!(wa>0)){L.clear();L.set(lordAcct(s),wa=1);}
   for(const[o,n]of herdOwners(s,'swine')){if(!o.household)continue;const due=n*fed*v;for(const[l,a]of L)transfer(o,l,due*a/wa,'pannage');}}
@@ -11454,7 +11455,7 @@ function tickLivestock(){
     const used=St.sheep*LU.sheep+St.cattle*LU.cattle+St.horses*LU.horses,press=used/Math.max(1,g.cap);M.press=press;
     for(const k of BEASTS){
       const room=k==='swine'?1-St.swine*LU.swine/Math.max(1,g.pann):1-press;
-      if(room>0)herdBirth(s,k,Math.max(0.3,St[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1)); // they breed while there is grass; the surplus waits for the drovers
+      {const q=room>0?Math.max(0.3,St[k])*HERDR[k]/12*skill*clamp(room,0,1)*(winter?0.2:1):0;if(q>0)herdBirth(s,k,q);const B=M.bred||(M.bred={});B[k]=B[k]==null?q:B[k]*11/12+q/12;} // they breed while there is grass; the surplus waits for the drovers. What they breed, a month with another, is what the butchers may take (provision)
       if(St[k]>want[k]*1.8)herdCull(s,k,(St[k]-want[k]*1.8)*0.15); // what no drover will take goes to the shambles, and its meat is its owners'
       if(s.siegeBy)herdCull(s,k,St[k]*0.04); // shut in, the beasts are eaten
     }
@@ -11790,8 +11791,8 @@ function ladeIn(c,d){let m=c.m||'out';if(m!=='out'&&m.dead)m=lordAcct(W.settleme
 const BOUGHT=['timber','cloth','tools','wine','spice','silk'];
 const ELASTIC={grain:0,fish:0,meat:0,timber:0.3,tools:0.6,cloth:1.2,wine:1.5,spice:2,silk:2}; // how far a household's want of a good gives way as its price rises above what the good is worth (goodWorth): it buys its need × (price/worth)^-ε, and never more than its need. Bread does not give way at all (the user, 2026-10-08: food is inelastic; at 0.1 a gap trade left open made families with coin buy and eat a fifth less bread, though it was cheap): it is bought to need as far as the purse goes, first of all. Fuel and timber give way a little, tools more, cloth and wine much, spices and silk most. Behaviour constants decided by the user (2026-10-08, #51)
 const MARGIN={grain:['miller','baker'],fish:['salter'],timber:['carter'],cloth:['tailor'],tools:[],wine:['brewer'],spice:['spicer'],silk:['tailor'],meat:[]}; // whose work stands between the market and the table. Meat comes to market dressed: the butcher's work is in his price, as the smith's is in his tools', and the lord's salt was paid for when his larder salted it (SALTING), so no one takes a part of it again at the table
-const CUT={grain:0.3,fish:0.25,meat:0}; // of what a food costs at the table, the part its MARGIN trades take: the miller's and the baker's of bread, the salter's of fish; nothing of meat
-const TABLE=1; // of a household's spare coin, the part that went to the butcher among the sundries buys meat for its table now: his living is the meat he sells (provision)
+const CUT={grain:0.3,fish:0.25,meat:0},SHAMBLES=0.25; // of what a food costs at the table, the part its MARGIN trades take: the miller's and the baker's of bread, the salter's of fish; nothing of meat. Of the meat a butcher sells, his part for the killing, the dressing and the stall: a quarter, as the salter's of fish (provision, goodWorth)
+const TABLE=1,TABLE_E=ELASTIC.wine; // of a household's spare coin, the part that went to the butcher among the sundries buys meat for its table now: his living is the meat he sells (provision). The table's meat is a want beyond the food need, and gives way to its price against meat's worth as wine does; the meat of the food need does not
 const SUNDRY={cook:0.8,cooper:0.6,potter:0.6,shoemaker:0.8,tanner:0.6,glover:0.4,chandler:0.6,roper:0.5,wheelwright:0.5,bowyer:0.3,fletcher:0.3,hunter:0.4,thatcher:0.4,carpenter:0.5},SUNDRY_W=Object.values(SUNDRY).reduce((a,b)=>a+b,TABLE);
 // Source fragment for the external, year-scoped market trade index.
 // Inline this into index.html; the WeakMap is deliberately not save state.
@@ -11904,7 +11905,7 @@ function goodWorth(s){ // what each good the households buy is worth here: what 
   const toll=s.owner>0&&!inRevolt(s.owner)?0.05*(s.works&&s.works.market?1.6:1)+MOD.tax/100*0.14:MOD.tax/100*0.35; // the market toll and the crown's aid on what is brought to sell (ladeIn)
   const from=closedToTrade(s)?[]:W.settlements.filter(t=>t!==s&&metroOf(t)!==M&&!closedToTrade(t)).map(t=>{const len=dist2d(t.pos.x,t.pos.z,s.pos.x,s.pos.z)*1.2;return [t,freight(t,1,len,'cart'),len/CART_MPD];}); // every market that trades, the freight of a load from it at its going rate, as the caravans reckon it, and the days on the road
   for(const g in ELASTIC){const sea=far.some(f=>f.g[g]);
-    let w=g==='tools'?(s._smiths>0&&own.ore>0&&own.timber>0?0.75*(own.ore+own.timber):Infinity):g==='cloth'?(own.wool>0?own.wool/0.8:Infinity):Infinity; // iron and charcoal where there is a smithy; wool, for every cottage spins and weaves
+    let w=g==='tools'?(s._smiths>0&&own.ore>0&&own.timber>0?0.75*(own.ore+own.timber):Infinity):g==='cloth'?(own.wool>0?own.wool/0.8:Infinity):g==='meat'?Math.min(...['cattle','swine','sheep'].map(k=>own[k]>0&&s.stores[k]>0?own[k]/CARCASS[k]/(1-SHAMBLES):Infinity)):Infinity; // iron and charcoal where there is a smithy; wool, for every cottage spins and weaves; a beast of the place's herds, killed and dressed
     if(sea&&s.harbor)w=Math.min(w,GOODBASE[g]); // the strangers sell at the quay for what the far ports ask
     const want=s.pop*(NEED[g]||0)*30,C=[];let farC=Infinity;
     for(const[t,fr,days]of from){const keep=Math.pow(1-(SPOIL[g]||0),days); // what is still fit to sell when it arrives
@@ -11940,9 +11941,9 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
       cash-=full*a;laid+=full*a;const L2=O[g]||(O[g]=[]);pl.ord.push([g,L2.length,cut]);L2.push([h,q*a]);}
     pl.cash=cash;}
   const G2={};for(const g in O)G2[g]=clearMarket(s,g,O[g]); // each good cleared once for the whole town
-  { // what a household could not get of the food it chose, it seeks in the others on sale, the cheapest at the table first: a food no one offers, at the price its last sale left, does not leave it short of its month (as topUpFood does day by day)
+  { // what a household could not get of the food it chose, it lays in from the others on sale that keep the month as bread keeps (salted meat), the cheapest at the table first: a food no one offers, at the price its last sale left, does not leave it short of its month. A food that rots in the crock sooner (fish) it buys day by day as it eats (topUpFood): laid in for a month, most of it would rot (the gate of batch 9: the capital's households spent their purses on the crown's fish for a month, and a tenth of its souls were left without a coin)
     const gap=plan.map(pl=>{let q=0;for(const[g,i]of pl.ord)if(FOODS.includes(g))q+=O[g][i][1]-G2[g][i];return q;});
-    if(gap.some(q=>q>1e-9))for(const g of FOODS.slice().sort((a,b)=>price(s,a)/(1-CUT[a])-price(s,b)/(1-CUT[b]))){if(!(avail(s,g,price(s,g))>0))continue;
+    if(gap.some(q=>q>1e-9))for(const g of FOODS.slice().sort((a,b)=>price(s,a)/(1-CUT[a])-price(s,b)/(1-CUT[b]))){if((SPOIL[g]||0)>SPOIL.grain||!(avail(s,g,price(s,g))>0))continue;
       const L2=O[g]||(O[g]=[]),i0=L2.length,J=[];plan.forEach((pl,j)=>{if(gap[j]>1e-9){pl.ord.push([g,L2.length,CUT[g]]);L2.push([pl.h,gap[j]]);J.push(j);}});if(!J.length)break;
       const got=clearMarket(s,g,L2.slice(i0));G2[g]=(G2[g]||[]).concat(got);J.forEach((j,k)=>{gap[j]-=got[k];});}}
   for(const pl of plan){const h=pl.h,Ld=pantry(s,pl.owner);let fg=0,spent=0;
@@ -11953,7 +11954,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
     const left=(h.gn!==undefined?(h.w||0)-pl.keep:0);if(h.gn!==undefined&&left>0){const sund=Math.min(left*0.5,n*foodYr()*0.3/12); /* what is left once the rent and the next bread are kept back */for(const tr in SUNDRY)craftWork(s,h,[tr],sund*SUNDRY[tr]/SUNDRY_W);let table=sund*TABLE/SUNDRY_W;
       const free=(h.w||0)-pl.rent-n*foodYr()*0.5;if(free>0){const rate=clamp(0.04+0.02*trait(h,GB)-0.015*trait(h,GD),0.01,0.1),v=free*rate; // what is held beyond half a year's bread is spent, month by month, as the household's temper goes
         pay2.push([h,v*0.3]);for(const tr in SUNDRY)craftWork(s,h,[tr],v*0.4*SUNDRY[tr]/SUNDRY_W);table+=v*0.4*TABLE/SUNDRY_W;craftWork(s,h,['brewer','cook'],v*0.15);craftWork(s,h,['tailor'],v*0.15);}
-      const q=Math.min(table/price(s,'meat'),n*FOOD*30-(Ld.meat||0));if(q>0)tab.push([h,q,pl.owner]);}} // pots, shoes, candles, barrels; and from those with means, servants and day-labour, the crafts, the alehouse and the tailor; and meat for the table, the more the more a household has to spare, up to a month of its food (it is eaten with the bread, and less bread is bought: eatHouseholds)
+      const pm=price(s,'meat'),w=s._goodsWorth&&s._goodsWorth.meat,q=Math.min(table/pm,n*FOOD*30*(w>0&&pm>w?Math.pow(pm/w,-TABLE_E):1)-(Ld.meat||0));if(q>0)tab.push([h,q,pl.owner]);}} // pots, shoes, candles, barrels; and from those with means, servants and day-labour, the crafts, the alehouse and the tailor; and meat for the table, the more the more a household has to spare, up to a month of its food (it is eaten with the bread, and less bread is bought: eatHouseholds)
   if(tab.length){const got=clearMarket(s,'meat',tab.map(([h,q])=>[h,q]));tab.forEach(([,,o],i)=>{if(got[i]>0)commodityCreditPurchase(s,o,'meat',got[i]);});} // the tables' meat, cleared once for the town
   { // in a hungry month the neighbours help: each household with more than its own year's need gives toward the others' bread, as its warmth moves it
     let short=0;for(const pl of plan)if(pl.h.gn!==undefined&&(pl.h._fill??1)<1)short+=pl.fq*(1-pl.h._fill);
@@ -11978,15 +11979,16 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   const wcap=((s._dyers||0)*0.5+s.pop*0.0008)*30;
   if(wcap>0&&price(s,'cloth')*0.8>price(s,'wool')){const wv=heads.filter(h=>h.tr==='weaver'||h.tr==='dyer'),by=wv.length?wv:heads.length?heads:[lordAcct(s)],work=Math.min(wcap,wanted('cloth'))/by.length;
     if(work>0)for(const h of by){const need=Math.max(0,work-(pantry(s,h).wool||0));if(!(need>0))continue;const c=purchase(s,'wool',h,need);commodityCreditPurchase(s,h,'wool',purchase.got);if(h.gn!==undefined&&wv.length)h._inc=(h._inc||0)-c;}}
-  { // the butchers buy beasts when the carcass fetches more as meat than the beast costs, for the meat the place will take (as the crafts do, #51): its month's want of meat, one month with another, less what lies unsold at the price. They buy what the place need not keep through the winter (the pigs beyond the sows that farrow its want again, as at Martinmas; the cattle and sheep beyond its want), the beast that gives its meat cheapest first, and what they seek and cannot have here the drovers hear of (tickTrade). Each beast is killed at once at the shambles and its meat offered at no less than it cost him; a town butcher sold his meat fresh within the month and salted none, so he buys no salt (one good stands for fresh and salted meat alike)
-    const bu=heads.filter(h=>h.tr==='butcher'),pm=price(s,'meat');let want=bu.length?Math.max(0,(s._dAvg?.meat||0)-avail(s,'meat',pm)):0;
-    if(want>0){herdSync(s);const kinds=['cattle','swine','sheep'].filter(k=>price(s,k)<CARCASS[k]*pm).sort((a,b)=>price(s,a)/CARCASS[a]-price(s,b)/CARCASS[b]);
-      for(const k of kinds){const pk=price(s,k),n0=want/CARCASS[k],can=Math.min(n0,Math.max(0,(s.stores[k]||0)-((s._want&&s._want[k])||0)/(k==='swine'?1+HERDR.swine:1)));
-        if(k===kinds[0]&&n0>can){const D=s._dem||(s._dem={});D[k]=(D[k]||0)+n0-can;} // sought, and not to be had here
-        if(!(can>0))continue;
-        for(const h of bu){const c=purchase(s,k,h,can/bu.length,pk),n=purchase.got;if(!(n>0))continue;s.stores[k]=Math.max(0,s.stores[k]-n);if(s._herdLast)s._herdLast[k]=s.stores[k];
-          const q=n*CARCASS[k];if(s.storage)storageBindGood(s,'meat');s.stores.meat=(s.stores.meat||0)+q;offer(s,'meat',h,q,c/q);h._inc=(h._inc||0)-c;want-=q;}
-        if(!(want>0))break;}}}
+  { // the butchers: of each kind of beast whose carcass at the price of meat, less the butcher's part (SHAMBLES), is worth more than the beast here, they buy from whoever keeps them (the families and the lord, at the beast's price) as much each month as the herd breeds a month with another (tickLivestock), beyond the plough's teams and the breeding stock, kill it at the shambles and offer its meat at no less than it cost; so a dear price of meat brings slaughter wherever beasts are, a cheap one stops it, and the herds are never drawn below what they breed back. A town butcher sold fresh and salted none, so he buys no salt (one good stands for fresh and salted meat alike)
+    const bu=heads.filter(h=>h.tr==='butcher');
+    if(bu.length&&s.hm&&s.hm.bred){herdSync(s);const pm=price(s,'meat'),g=s._graze||grazeOf(s),D=s._dem||(s._dem={}),S=s._sold||(s._sold={});
+      for(const k of ['cattle','swine','sheep']){const pk=price(s,k);if(!(CARCASS[k]*pm*(1-SHAMBLES)>pk))continue;
+        const keep=Math.max((s._want&&s._want[k]||0)/(1+HERDR[k]),k==='cattle'?(g.till/6-(s.stores.horses||0)*0.4)/0.6:0); // the breeding stock that breeds the place's want back, and the oxen its ploughs want (tickLivestock's reckoning)
+        let n=Math.min(s.hm.bred[k]||0,Math.max(0,(s.stores[k]||0)-keep));if(!(n>0))continue;const O2=herdOwners(s,k),T=O2.reduce((t,[,v])=>t+v,0);if(!(T>0))continue;
+        for(const h of bu){const m=Math.min(n/bu.length,Math.max(0,means(h))/pk);if(!(m>0))continue;let got=0,c=0;
+          for(const[o,v]of O2){if(accountOwner(h)===o)continue;const q=herdTake(s,o,k,Math.min(m*v/T,Math.max(0,means(h))/pk));if(!(q>0))continue;c+=transfer(h,o,q*pk,'sales');got+=q;} // he pays each owner for each beast he takes, as far as his purse goes
+          if(!(got>0))continue;D[k]=(D[k]||0)+got;S[k]=(S[k]||0)+got; // a sale at the market's price, as the drovers' are
+          const q=got*CARCASS[k];if(s.storage)storageBindGood(s,'meat');s.stores.meat=(s.stores.meat||0)+q;offer(s,'meat',h,q,c/q);h._inc=(h._inc||0)-c;}}}}
   }
 function payCrafts(s,heads){ // the crafts and trades take in what the town's families paid them this month, a better shop and a better hand taking more
   const C=heads.filter(h=>!tills(h,s)&&h.tr&&!PRODUCE[h.tr]),wt=h=>(TRADE_W[h.tr]||0.5)*(1+0.3*(h.bh&&!h.bh.removed?h.bh.tier:0))*(0.8+0.2*(h.sk?h.sk[KCr]||0:0));let tw=0;for(const h of C)tw+=wt(h);
@@ -14407,8 +14409,8 @@ function living(o){return foodYr()*(2*(o._fill??1)+0.1*Math.log1p(Math.max(0,o._
 function youngPull(o){return foodYr()*0.5*Math.log10(1+o.pop)/3;} // to the young, a bigger place is a better chance of a match
 /* beasts are the families' own: the village herd is their beasts grazing the common together, and the lord's;
    calves and lambs are the owners', losses fall on them, and each family buys, keeps or sells as its beasts are worth to it */
-function beastYield(s,k){return k==='sheep'?price(s,'wool')*0.55:k==='swine'?price(s,'meat')*LITTER:price(s,k)*(k==='cattle'?0.12:0.06);} // what a beast brings in a year at the place's prices: a fleece and a lamb; milk and dung; its part of the litters, in meat; a horse's work hired out (the shares of BEAST_YR)
-const BEAST_YR={cattle:k=>GOODBASE.cattle*0.12,sheep:k=>GOODBASE.wool*0.55,swine:k=>GOODBASE.meat*LITTER,horses:k=>GOODBASE.horses*0.06}; // milk and dung; a fleece and a lamb; a litter for the pot (LITTER); a horse's work hired out
+function beastYield(s,k){return k==='horses'?price(s,k)*0.06:k==='swine'?price(s,'meat')*LITTER:(MILK[k]||0)*12*price(s,'grain')+(k==='sheep'?FLEECE*12*price(s,'wool'):0)+HERDR[k]*price(s,k);} // what a beast brings in a year at the place's prices, the same quantities the herd yields: a cow's or a ewe's milk and cheese (herdProduce, at the price of bread), a fleece, and the year's increase (HERDR) at the beast's price; a pig's part of the litters, in meat; a horse's work hired out (the shares of BEAST_YR)
+const BEAST_YR={cattle:k=>MILK.cattle*12*GOODBASE.grain+HERDR.cattle*GOODBASE.cattle,sheep:k=>MILK.sheep*12*GOODBASE.grain+FLEECE*12*GOODBASE.wool+HERDR.sheep*GOODBASE.sheep,swine:k=>GOODBASE.meat*LITTER,horses:k=>GOODBASE.horses*0.06}; // beastYield at the realm's base prices: milk and a calf; milk, a fleece and a lamb; a litter for the pot (LITTER); a horse's work hired out
 function herdOf(h,s){const account=householdAccount(h);s=s||W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
 function herdLoss(s,k,q){const was=s.stores[k]||0;if(!(was>0&&q>0))return;const lost=Math.min(q,was),f=(was-lost)/was;for(const x of (s._owners||new Map()).values())for(const kind of ['animals','sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;s.stores[k]=was-lost;if(s._herdLast)s._herdLast[k]=s.stores[k];}
 function herdBirth(s,k,q){const was=s.stores[k]||0;s.stores[k]=was+q;if(was>0)for(const x of (s._owners||new Map()).values())if(x.animals[k])x.animals[k]*=(was+q)/was;if(s._herdLast)s._herdLast[k]=(s._herdLast[k]||0)+q;if(typeof herdVisualBirth==='function')herdVisualBirth(s,k,q);}
@@ -14498,7 +14500,7 @@ function tickHouseholds(){
       { // the family's beasts: what they bring in, what their winter keep costs, and whether to buy or sell
         const H=herdOf(h,s),hay=price(s,'hay'),press=(s.hm&&s.hm.press)||0.8; // the winter's hay at what it fetches (#23: floored at 0.3 before); cheap hay makes beasts cheap to keep, and the crowded common's cost below limits them
         {let hy=-(pantry(s,h).hay||0);for(const k of BEASTS)hy+=(H[k]||0)*LU[k]*WINTER_HAY;if(hy>0){purchase(s,'hay',h,Math.min(hy,Math.max(0,(h.w||0)-roof-n*foodYr()/12)/Math.max(1e-6,hay)));commodityCreditPurchase(s,h,'hay',purchase.got);}} // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market) // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market)
-        const keep=k=>LU[k]*(WINTER_HAY*hay+GOODBASE.grain*Math.max(0,press-0.8)*3)+(k==='swine'?customOf(s,'pannage')*price(s,'swine'):0); // hay for the winter, and dear grazing on a crowded common; and a pig's pannage (pannage)
+        const keep=k=>LU[k]*(WINTER_HAY*hay+GOODBASE.grain*Math.max(0,press-0.8)*3)+(k==='swine'?customOf(s,'pannage')*yearPrice(s,'swine'):0); // hay for the winter, and dear grazing on a crowded common; and a pig's pannage (pannage)
         const strips=(s.furl||[]).filter(f=>f.wk===h.id).length,tiller=TILLERS.has(h.tr)||tills(h,s);
         const worth=k=>BEAST_YR[k]()+(k==='cattle'&&tiller&&(H.cattle||0)<Math.min(4,strips*0.5)?foodYr()*0.5:0)+(k==='horses'&&(h.tr==='carter'||h.tr==='merchant')&&(H.horses||0)<2?foodYr():0)-keep(k); // an ox for his share of the plough team; a horse for the carter
         const owned=BEASTS.reduce((t2,k)=>t2+(H[k]||0),0);
