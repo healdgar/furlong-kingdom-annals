@@ -4,10 +4,15 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 ## Where things stand
 
-- **`main` (1aa50a1)** is released to Pages and the container image. The claude.ai artifact is still v86 (08446b7): the cloud agent did not publish it (see Waiting on the user). `main` now carries:
-  - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo (`_popValid`, `_popTotal`) left out of the world graph (`HISTORY_SCRATCH`). Driver parity (Node loop, soak page, worker build) is equal on 42 sea and 1001 sea at days 360 and 720. Every world's history changed once, so soak figures from batches 1–4 don't carry over.
-  - **batch 6, the economy (#50, #51):** a seller's reserve is the average cost of what he has on sale, set on whoever holds the goods; the crafts buy their stuff for what the place wants of the ware, less what lies unsold.
-- **Branches.** Work goes on `claude/friendly-bardeen-luem2o`, now level with `main`. The remote `determinism` branch is merged but could not be deleted from the cloud.
+- **`main`** is released to Pages and the container image (batch 7, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
+  - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
+  - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
+  - **batch 7, exact apart from the ward rule:**
+    - the world save, phase A (#48, `docs/WORLD-SAVE.md`), and the farm (`tools/farm.mjs`);
+    - the institutions' groundwork (step 3.1);
+    - street graphs and road bounds as scratch, so drawing the townsfolk leaves the world as it was (#27);
+    - wards bought only out of what lies beyond the buyer's reserve (#52).
+- **Branches.** Work goes on `claude/friendly-bardeen-luem2o`, level with `main` after each release. The remote `determinism` branch is merged but could not be deleted from the cloud.
 - Nothing else is unpushed.
 
 ## Next, in order
@@ -34,16 +39,20 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 V8 startup snapshots restore a world exactly but can't chain (each build starts from Node's own snapshot), and building one runs about 2.6× slower. The late-world farm and shipped checkpoints both need a real serializer. Requirements (user): loadable in a browser, independent of engine and Node version, versioned against the build, compact.
 
-- **Phase A, done on a branch (awaiting the test runner's gate):** `worldSave()`/`worldLoad()` save and load a world at a day's end, in Node (`docs/WORLD-SAVE.md`).
+- **Phase A, done and released (batch 7):** `worldSave()`/`worldLoad()` save and load a world at a day's end, in Node (`docs/WORLD-SAVE.md`).
   - W and the module state are kept as data; closures are made again by their makers: `layoutSettlement(s,saved)` and the named binders the living code also calls, every closure's source text unchanged.
   - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 23 more days equal.
   - The document for 42 sea on day 37: 15.6 MB, 7.7 MB gzipped.
+- **The farm tool is built:** `tools/farm.mjs` plays a world in segments.
+  - Each segment runs in a fresh realm loaded from the last save. Its first `--check` days must match the days the saving realm played on.
+  - It writes the save (`<world>-AD<year>.fws.gz`, about 8 MB gzipped) and a census line per save.
+  - Tried: 42 sea to AD 852 in one-year segments. This host plays about 160 ms of CPU a day in year 1.
 - **Phase B, next:**
-  - longer worlds (a chained save every year to 1066, each continuation checked against the uninterrupted run);
-  - the browser worker's resume (`RawOutcomeJournal`, the IndexedDB archive's continuation);
-  - then the farm.
+  - run the farm to 1066 on one world, then the others. Long chains are the real test: a closure that first appears late fails a save loudly.
+  - the browser worker's resume (`RawOutcomeJournal`, the IndexedDB archive's continuation), which is #6.
+  - the census items not yet in `tools/farm.mjs`: lots far from their house (#28), foundings per decade, castles by kind, and a hot-list profile per era.
 
-Then build the farm:
+The farm, as planned:
 
 - **Segments:** 10-year segments, each well under 15 CPU-minutes.
 - **Milestones:** AD 850, 900, 950, 1000, 1066, 1250, 1450. They line up with the era starts of #49.
@@ -59,13 +68,16 @@ Then build the farm:
 
 ### 3. Institutions, in the order of `docs/SYSTEMS.md`
 
-1. **Groundwork:**
-   - owner kinds `abbey` and `guild` in `acct`, `means`, `transfer` and the ledger;
-   - offices on household heads;
-   - an `'inst'` RNG stream;
-   - lords' whereabouts `h.at = {si, until, why}`;
-   - bounded per-place record lists;
-   - a soak `inst` section.
+1. **Groundwork: done (batch 7), inert until a system uses it.**
+   - **Abbeys and guilds:** `corpFound(kind,o)` makes a record in `W.abbeys` or `W.guilds`, lists that appear with the first record. Each record has a chest, a book and `storageOwnerId:'abbey:N'`. `corpOf('abbey:3')` finds one; `acct`, `means`, `transfer`, `book`, `isHouse` and `ownerAcct` know them.
+   - **Offices:** `p.office` (one of `OFFICES`) and `p.officeFor`; `officeHeld`, `officeTitle`.
+   - **The `'inst'` dice:** made by `seedStreams`. They join `RS` (its digests and saves) only at their first throw.
+   - **Whereabouts:** `h.at={si,until,why}` on the house, and `lordAt(hi)`, which falls back to `lordSeat(hi)`.
+   - **Rolls:** `rollOf`, `rollAdd` (keeps the last `ROLL_N`=12, or n) and `rollTake`.
+   - **The soak's `inst` section,** and abbeys and guilds in its money census.
+   - **Left to the systems:**
+     - The crown keeps no labelled book: adding `W.houses[0].led` changes history, so it goes with #36 or #39, whichever owns the revenue labels.
+     - #35 must make the abbey the title owner of its grange, because a string `ownerId` routes no goods.
 2. **#36** (lords' customary income), **#37** (courts, as `tickJustice`), **#39** (estates), **#35** (Cistercian abbeys), **#38** (credit), then **#41, #40, #43, #42**. Also **#46** (the Church) and **#47** (crusades).
 
 - The user's decisions are in `docs/SYSTEMS.md` § Decisions.
@@ -115,9 +127,15 @@ Line numbers drift, so find code by name.
   - Self time, largest first: `quantity`, the garbage collector, `walk`, `entries`, `nestedSet3`.
   - Money audits were clean: residual 0, nothing minted, nothing paid to nobody, no faults.
   - The year-4 drop in population on 2002 land is a plague (summer AD 853).
+- **Batch 7 soak (cloud, after the host changed):** the histories equal batch 6's on all six worlds, so the ward rule never fired. Money stayed clean and the `inst` section is all zero.
+  - The container restarted on a slower host (kernel fc-v77 → fc-v80), so the soak's ms/day rose 50–100% with no code cause.
+  - On one host, the old and new builds take the same CPU: 114.9 s against 114.6 s for 720 days of 42 sea.
+  - Compare timings only within one host.
 - **Prices run away** where little is offered (#51): 26–28 place-goods above 10× base on 42 sea by year 3, 16 on 2002 land by year 5.
-- **The 15 km world** is the one that got worse with batch 6 (famine 2 → 10%, capital hunger 0.12 → 0.28 at year 5). Its crown also bought a ward for nearly all of its chest (#52). Not yet diagnosed.
-- **#27, still open:** `streetGraph` keeps its graph on the place (`s._sg`). The simulation reads that graph too, so a view that builds it early could change a later outcome if a change escapes its key.
+- **The 15 km world** got worse with batch 6 (famine 2 → 10%, capital hunger 0.12 → 0.28 at year 5).
+  - Its capital starves on supply and on dealers holding dear loads (#23 in ISSUES), as it did on batch 5.
+  - In batch 6's first history its crown emptied its chest on beasts its reeve bought (#52, the reeve's part is next).
+- **#27:** `simulation-worker-check --views true` passes in full now. Still open: the play check's inspections, and `price()` filling `s.px[g]` on a first read.
 
 ## Rules the user set that CLAUDE.md doesn't spell out
 

@@ -29,7 +29,7 @@ const SETUP={crown:`(()=>{const T=globalThis.__probe={year:{},rows:[]};let why=n
     const t0=transfer;globalThis.transfer=function(from,to,v,w){const o=why;why=(w||'?')+(from==='crown'?'>'+kind(to):'');try{return t0.apply(this,arguments);}finally{why=o;}};
     for(const n of ['purchase','commodityClearMarket']){const f=globalThis[n];globalThis[n]=function(s,g){const o=why;why=(o?o+'/':'')+'sale:'+g+'@'+(s===W.capital?'capital':s.kind);try{return f.apply(this,arguments);}finally{why=o;}};}
     let tv=W.treasury;Object.defineProperty(W,'treasury',{configurable:true,enumerable:true,get(){return tv;},set(x){const d=x-tv;tv=x;if(!d)return;let k;
-      if(why)k='T:'+why;else{const L=new Error().stack.split('\\n');let i=2;while(L[i]&&/at (acct|Object\\.set) /.test(L[i]))i++;const m=/at (\\S+)/.exec(L[i]||'');k='W:'+(m?m[1]:'?');}add((d>0?'+':'-')+k,d);}});})()`,
+      if(why)k='T:'+why;else{const L=new Error().stack.split('\\n');let i=2;while(L[i]&&/at (acct|spend|Object\\.set) /.test(L[i]))i++;const m=/at (\\S+)/.exec(L[i]||'');k='W:'+(m?m[1]:'?');}add((d>0?'+':'-')+k,d);}});})()`,
   capital:'globalThis.__probe={rows:[]}',locked:'globalThis.__probe={rows:[]}',prices:'globalThis.__probe={rows:[]}'};
 const READ={crown:`__probe.rows.push([day(),Math.round(W.treasury),Math.round(W.settlements.reduce((t,s)=>t+s.pop,0)),Math.round(W.capital.pop)])`,
   capital:`(()=>{const s=${PLACE==='capital'?'W.capital':'W.settlements['+(+PLACE)+']'},si=W.settlements.indexOf(s),ten={};for(const f of tilledOf(s,si))ten[f.ten]=(ten[f.ten]||0)+1;
