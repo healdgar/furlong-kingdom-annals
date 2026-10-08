@@ -18492,6 +18492,279 @@ async function replaySave(o,progress){ // grow the days again, giving each comma
   if(!MODEL_ONLY){buildTracks();rebuildFences();rebuildRoadMesh();rebuildDetails();rebuildWalls();VISUAL.settle();lastSeasonKey='';
     if(o.cam)restoreSavedCamera(o.cam);}
   emit('crown',4,W.capital.pos,`The annals are taken up again in AD ${AD()}${o.name?` (“${o.name}”)`:''}.`+(o.build!==buildId()?' This save was made in another build of the game: the realm may have unfolded differently.':''));}
+/* =========================================================================
+   WORLD SAVE: the world itself at a day's end, in one compact document. Loaded into a fresh realm, the days go on exactly as
+   they would have in the world that was saved. Every object the day keeps is written as data, and no closure is stored: each
+   is made again by the maker that made it (layoutSettlement, makeHash, the binders) over the state the document holds; a
+   Proxy, by the code that keeps it. Caches outside the world stay behind and fill again as they are asked. A document is
+   bound to its build (the game script's SHA-256): another build will not read it, and replays the classic save (the seed and
+   the ruler's commands) its header carries instead. docs/WORLD-SAVE.md says what is kept, made again and left behind.
+   ========================================================================= */
+// Nodes: 1 object, 2 array, 3 dense array, 4 map, 5 set, 6 buffer, 7 view, 8 function, 9 proxy.
+// Values: 0 undefined, 1 null, 2 false, 3 true, 4 integer (zigzag), 5 float64, 6 string, 7 node, 8 bigint; 16-255 a small integer.
+const WORLD_SAVE={format:'furlong-world',version:1,magic:'FURLW1',families:null,
+  classes:['Object',null,'Array','Map','Set','HouseholdPopulation','OwnedMarket','CommodityBalanceLedger'],
+  views:['Int8Array','Uint8Array','Uint8ClampedArray','Int16Array','Uint16Array','Int32Array','Uint32Array','Float32Array','Float64Array','BigInt64Array','BigUint64Array','DataView']};
+class WorldSaveWriter{
+  constructor(){this.b=new Uint8Array(1<<16);this.n=0;this.fl=[];}
+  room(k){if(this.n+k<=this.b.length)return;let c=this.b.length*2;while(c<this.n+k)c*=2;const b=new Uint8Array(c);b.set(this.b.subarray(0,this.n));this.b=b;}
+  u8(v){this.room(1);this.b[this.n++]=v;}
+  uv(v){this.room(8);while(v>127){this.b[this.n++]=v%128|128;v=Math.floor(v/128);}this.b[this.n++]=v;}
+  f64(v){this.fl.push(v);}
+  raw(u){this.room(u.length);this.b.set(u,this.n);this.n+=u.length;}
+  text(s){this.uv(s.length);this.room(s.length*3);for(let i=0;i<s.length;i++){let c=s.charCodeAt(i);while(c>127){this.b[this.n++]=c%128|128;c=c>>>7;}this.b[this.n++]=c;}}
+  // A section: its numbers that are not small integers first, as eight byte planes from the sign and exponent down (the
+  // compressor finds the planes alike), then its bytes.
+  bytes(){const k=this.fl.length,D=new DataView(new ArrayBuffer(8*k)),head=[];for(let i=0;i<k;i++)D.setFloat64(8*i,this.fl[i],true);
+    let v=k;while(v>127){head.push(v%128|128);v=Math.floor(v/128);}head.push(v);
+    const out=new Uint8Array(head.length+8*k+this.n);out.set(head,0);let at=head.length;for(let p=7;p>=0;p--)for(let i=0;i<k;i++)out[at++]=D.getUint8(8*i+p);
+    out.set(this.b.subarray(0,this.n),at);return out;}
+}
+class WorldSaveReader{
+  constructor(b,n=0){this.b=b;this.n=n;this.fv=null;this.fi=0;}
+  u8(){return this.b[this.n++];}
+  uv(){let v=0,m=1,c;do{c=this.b[this.n++];v+=(c&127)*m;m*=128;}while(c&128);return v;}
+  f64(){return this.fv[this.fi++];}
+  section(){const k=this.uv(),D=new DataView(new ArrayBuffer(8*k));for(let p=7;p>=0;p--)for(let i=0;i<k;i++)D.setUint8(8*i+p,this.b[this.n++]);
+    this.fv=new Float64Array(k);for(let i=0;i<k;i++)this.fv[i]=D.getFloat64(8*i,true);this.fi=0;}
+  text(){const k=this.uv(),u=new Array(k);for(let i=0;i<k;i++){let c=0,s=0,x;do{x=this.b[this.n++];c|=(x&127)<<s;s+=7;}while(x&128);u[i]=c;}
+    let out='';for(let i=0;i<k;i+=8192)out+=String.fromCharCode.apply(null,u.slice(i,i+8192));return out;}
+}
+const worldSaveCodeHash=s=>{let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193);}return h>>>0;};
+async function worldSaveSHA256(text){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(d)].map(n=>n.toString(16).padStart(2,'0')).join('');}
+async function worldSaveZip(bytes){return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());}
+async function worldSaveUnzip(bytes){bytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);return bytes[0]===0x1f&&bytes[1]===0x8b?new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()):bytes;}
+function worldSaveHeader(bytes){const m=WORLD_SAVE.magic;for(let i=0;i<m.length;i++)if(bytes[i]!==m.charCodeAt(i))throw Error('That is not a saved Furlong world.');
+  const k=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(m.length,true),at=m.length+4;
+  const header=JSON.parse(new TextDecoder().decode(bytes.subarray(at,at+k)));if(header.format!==WORLD_SAVE.format)throw Error('That is not a saved Furlong world.');return {header,body:at+k};}
+// The accessors a world may hold, by their source text, with the binder that makes each (read off the binders themselves).
+function worldSaveFamilies(){if(WORLD_SAVE.families)return WORLD_SAVE.families;const F=new Map(),src=f=>Function.prototype.toString.call(f);
+  const probe=(family,o,keys)=>{for(const k of keys){const d=Object.getOwnPropertyDescriptor(o,k);if(d.get)F.set(src(d.get),family);if(d.set)F.set(src(d.set),family);}};
+  {const p={},h={assets:{}};householdFieldsBind(p,h,['w']);probe('hh',p,['w']);householdHerdBind(h);probe('herd',h.assets,['herd']);}
+  {const s={stores:{}};settlementPopBind(s);probe('pop',s,['pop']);commodityStoreBind(s,null,'grain');probe('store',s.stores,['grain']);}
+  {const x={};commodityAccountViews({storage:null},null,x,{held:{},sale:{}});probe('view',x,['held','sale']);COMMODITY_ACCOUNT_VIEWS.delete(x);}
+  {const c={};commodityCargoQtyBind(c,null,'');probe('cargo',c,['qty']);}
+  {const f={},b={};furlongRightsBind(f,propertyRightsResolve);probe('furlong',f,['own','wk']);buildingRightsBind(b,propertyRightsResolve);probe('building',b,['ownerId']);}
+  {const h=makeHash(1);F.set(src(h.add),'hash');F.set(src(h.near),'hash');}
+  return WORLD_SAVE.families=F;}
+// Save at a day's end: the day's goods are settled (journaled, as a classic save does) and the outcome journal committed first.
+async function worldSave({source=null,sourceSHA256=null}={}){
+  if(typeof W==='undefined'||!W||W.prehistory||REPLAYING)throw Error('A world is saved only between its days of play');
+  for(const s of W.settlements)if(s.storage&&!commodityActive(s))throw Error('A world kept in the old lot ledger cannot be saved');
+  await STORAGE_OUTCOMES.flush();const J=STORAGE_OUTCOMES.journal;if(J&&(J.rows?.length||J.pending?.size))throw Error('The outcome journal has not committed');
+  const sha=sourceSHA256||(source!=null?await worldSaveSHA256(source):STORAGE_OUTCOMES.meta?.sourceSHA256||null);if(!sha)throw Error('A world is saved only with its build\'s identity (the game\'s source)');
+  const {saved,cam,...save}=saveDocument(''),body=worldSaveEncode();
+  const header=new TextEncoder().encode(JSON.stringify({format:WORLD_SAVE.format,version:WORLD_SAVE.version,build:buildId(),sourceSHA256:sha,world:worldHash(),
+    seed:SEED,fate:FATE,coast:COAST_PREF,startAD:START_AD,day:day(),ad:AD(),realm:W.name,nodes:body.nodes,save}));
+  const m=WORLD_SAVE.magic,out=new Uint8Array(m.length+4+header.length+body.bytes.length);for(let i=0;i<m.length;i++)out[i]=m.charCodeAt(i);
+  new DataView(out.buffer).setUint32(m.length,header.length,true);out.set(header,m.length+4);out.set(body.bytes,m.length+4+header.length);return out;
+}
+function worldSaveEncode(){
+  const journal=STORAGE_OUTCOMES.journal,ledgers=[],claims=[],src=f=>Function.prototype.toString.call(f);
+  for(const s of W.settlements){
+    if(s.storage){const st=CommodityBalanceLedger.historyState(s.storage),assert=st.assert===storageOutcomeAssert?'outcome':src(st.assert)==='()=>{}'?'none':null;
+      if(st.ownerId!==storageOwnerId||!assert)throw Error('The ledger at '+s.name+' answers to another owner or assertion');
+      ledgers.push([s.storage,{volumes:st.volumes,rows:st.rows,locations:st.locations,flows:st.flows,notes:st.notes,ownerFacilities:st.ownerFacilities,orderRanks:st.orderRanks,nextOrderRank:st.nextOrderRank},assert]);}
+    const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C)claims.push([s,{map:C.map,size:C.size,next:C.next,ready:C.ready,fallback:C.fallback,goods:C.goods,unsafe:C.unsafe,offers:C.offers??null,
+      records:C.map instanceof Map?[...Map.prototype.values.call(C.map)].filter(x=>C.records.has(x)).map(x=>[x,C.records.get(x)]):[]}]);
+  }
+  const NI=NOTABLE_INDEXES.get(W),root={history:HISTORY.roots(),extra:{annalMeta:ANNAL_META,hashStamp:HASH_STAMP,resumed:RESUMED,arithmetic:storageArithmeticNext,
+    faults:{n:SIM_FAULTS.n,first:SIM_FAULTS.first,list:SIM_FAULTS.list},journal:journal?{seq:journal.seq,chunk:journal.chunk,committed:journal.committed,characters:journal.encodedCharacters}:null,
+    notables:!!NI?.supported&&NI.archive===W.notables&&NI.length===W.notables.length,households:HOUSEHOLD_MEMBER_INDEXES.get(W)?.valid===true,ledgers,claims}};
+  // The walk: every node once, in the order it is first met; an object's own keys in their order, accessors unread.
+  const N=new WorldSaveWriter(),ids=new Map(),nodes=[null],up=[0],via=[''],strings=new Map(),shapeRoot={next:new Map(),id:-1},shapes=[],codes=new Map(),codeList=[];
+  const classes=new Map([[Object.prototype,0],[null,1],[Array.prototype,2],[Map.prototype,3],[Set.prototype,4],[HouseholdPopulation.prototype,5],[OwnedMarket.prototype,6],[CommodityBalanceLedger.prototype,7]]);
+  const accessors=[],ownerOf={assets:new Map(),stores:new Map()},accounts=new Map(),layouts=[],hashes=[],ledgerNodes=[];
+  const path=id=>{const p=[];for(;id>0;id=up[id]){const k=via[id];p.push(typeof k==='number'?'['+k+']':k);}return 'world save'+p.reverse().join('');};
+  const str=s=>{let i=strings.get(s);if(i===undefined)strings.set(s,i=strings.size);return i;};
+  let out=N,from=0,key='';
+  const ref=v=>{let id=ids.get(v);if(id===undefined){id=nodes.length;ids.set(v,id);nodes.push(v);up.push(from);via.push(key);}return id;};
+  const val=v=>{switch(typeof v){
+    case 'undefined':out.u8(0);return;case 'boolean':out.u8(v?3:2);return;
+    case 'number':if(Number.isInteger(v)&&v<=2**51&&v>=-(2**51)&&!Object.is(v,-0)){const z=v<0?-2*v-1:2*v;if(z<240)out.u8(16+z);else{out.u8(4);out.uv(z);}}else{out.u8(5);out.f64(v);}return;
+    case 'string':out.u8(6);out.uv(str(v));return;case 'bigint':out.u8(8);out.uv(str(String(v)));return;
+    case 'symbol':throw Error('A world cannot keep a symbol, at '+path(from)+'.'+String(key));
+    default:if(v===null){out.u8(1);return;}out.u8(7);out.uv(ref(v));}};
+  const shape=(keys,flags)=>{let t=shapeRoot;for(let i=0;i<keys.length;i++){let m=t.next.get(keys[i]);if(!m)t.next.set(keys[i],m=new Map());let c=m.get(flags[i]);if(!c)m.set(flags[i],c={next:new Map(),id:-1});t=c;}
+    if(t.id<0){t.id=shapes.length;shapes.push([keys.map(str),flags.slice()]);}return t.id;};
+  const props=(v,id)=>{const keys=Reflect.ownKeys(v),flags=new Array(keys.length),ds=new Array(keys.length);
+    for(let i=0;i<keys.length;i++){if(typeof keys[i]==='symbol')throw Error('A world cannot keep a symbol key, at '+path(id));const d=Object.getOwnPropertyDescriptor(v,keys[i]);ds[i]=d;
+      flags[i]=(d.enumerable?1:0)|(d.configurable?2:0)|(d.writable?4:0)|('value'in d?0:8);}
+    out.uv(shape(keys,flags));
+    for(let i=0;i<keys.length;i++){const d=ds[i],k=keys[i];from=id;key='.'+k;
+      if(flags[i]&8){val(d.get);val(d.set);accessors.push([id,k,d.get?ids.get(d.get):0,d.set?ids.get(d.set):0,flags[i]]);continue;}
+      const x=d.value;val(x);if(x&&typeof x==='object'){if(k==='_lay')layouts.push(id);else if(k==='historyCells')hashes.push(id);else if((k==='assets'||k==='stores')&&!ownerOf[k].has(x))ownerOf[k].set(x,id);}}};
+  ref(root);
+  for(let id=1;id<nodes.length;id++){const v=nodes[id];
+    if(typeof v==='function'){const s=src(v);let c=codes.get(s);if(c===undefined){codes.set(s,c=codeList.length);codeList.push(s);}
+      N.u8(8);N.uv(c);const st=typeof v.state==='function'?v.state():null;if(st){N.u8(1);N.uv(st.length);from=id;key='.state';for(const x of st)val(x);}else N.u8(0);continue;}
+    if(OWNERSHIP_LARDS.has(v)){N.u8(9);N.uv(str('lard'));from=id;key='.s';val(OWNERSHIP_LARDS.get(v));continue;}
+    if(COMMODITY_VIEW_PROXIES.has(v))throw Error('A world keeps an owner\'s ledger view as data, at '+path(id));
+    if(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.nodeType)throw Error('A world cannot keep a drawn object, at '+path(id));
+    if(v instanceof ArrayBuffer){N.u8(6);N.uv(v.byteLength);N.raw(new Uint8Array(v));continue;}
+    if(ArrayBuffer.isView(v)){const k=WORLD_SAVE.views.indexOf(v.constructor.name);if(k<0)throw Error('A world cannot keep a '+v.constructor.name+', at '+path(id));
+      N.u8(7);N.uv(k);from=id;key='.buffer';val(v.buffer);N.uv(v.byteOffset);N.uv(v instanceof DataView?v.byteLength:v.length);continue;}
+    const proto=Object.getPrototypeOf(v),c=classes.get(proto),ext=Object.isExtensible(v)?1:0;
+    if(c===undefined||v instanceof Date||v instanceof RegExp)throw Error('A world cannot keep a '+(proto?.constructor?.name||'strange object')+', at '+path(id));
+    if(v instanceof Map){if(c!==3&&c!==5&&c!==6)throw Error('A strange Map at '+path(id));N.u8(4);N.uv(c);N.u8(ext);const es=[...Map.prototype.entries.call(v)];N.uv(es.length);from=id;
+      for(let i=0;i<es.length;i++){key='<'+i+'>';val(es[i][0]);val(es[i][1]);}
+      for(const[o,x]of es){const r=x&&typeof x==='object'&&COMMODITY_ACCOUNT_VIEWS.get(x);if(!r||accounts.has(x))continue; // an owner's account, keyed by its owner: its views' targets keep the beasts
+        const s=W.settlements.find(q=>q.storage===r.K);if(!s)throw Error('An account keeps a ledger of no place, at '+path(id));key='.targets';accounts.set(x,[s,o,nodes[ref(r.targets)]]);}
+      props(v,id);continue;}
+    if(v instanceof Set){if(c!==4)throw Error('A strange Set at '+path(id));N.u8(5);N.u8(ext);const es=[...Set.prototype.values.call(v)];N.uv(es.length);from=id;
+      for(let i=0;i<es.length;i++){key='{'+i+'}';val(es[i]);}props(v,id);continue;}
+    if(Array.isArray(v)){if(c!==2)throw Error('A strange array at '+path(id));const n=v.length,keys=Reflect.ownKeys(v);let dense=ext&&keys.length===n+1&&keys[n]==='length',xs=null;
+      if(dense){xs=new Array(n);for(let i=0;i<n;i++){const d=Object.getOwnPropertyDescriptor(v,i);if(!('value'in d)||!d.enumerable||!d.configurable||!d.writable){dense=false;break;}xs[i]=d.value;}}
+      if(dense){N.u8(3);N.uv(n);from=id;for(let i=0;i<n;i++){key=i;val(xs[i]);}}else{N.u8(2);N.u8(ext);props(v,id);}continue;}
+    if(c>1&&c!==7)throw Error('A strange object at '+path(id));if(c===7)ledgerNodes.push(id);N.u8(1);N.uv(c);N.u8(ext);props(v,id);
+  }
+  out=new WorldSaveWriter();const M=out,need=v=>{if(v&&(typeof v==='object'||typeof v==='function')&&!ids.has(v))throw Error('A maker\'s argument is not in the world');return v;};
+  // Makers: what they make is found again by its keys from what they return (a place's layout, and its context) or from the hash.
+  const made=new Map(),makers=[],plain=x=>typeof x==='function'||x&&typeof x==='object'&&(x instanceof Map||Object.getPrototypeOf(x)===Object.prototype);
+  const mark=(v,mi,base,keys)=>{const id=ids.get(v);if(id===undefined||made.has(id))return;made.set(id,[mi,base,keys]);if(typeof v==='function'||v instanceof Map)return;
+    for(const k of Reflect.ownKeys(v)){const d=Object.getOwnPropertyDescriptor(v,k);if('value'in d&&plain(d.value))mark(d.value,mi,base,[...keys,k]);}};
+  for(const sid of layouts){const s=nodes[sid],L=Object.getOwnPropertyDescriptor(s,'_lay').value;if(typeof L.historyState!=='function')continue;
+    const ctx=HISTORY.layouts.get(s);if(!ctx||!ids.has(ctx)||ids.get(L)===undefined)throw Error('A place laid out outside the realm, at '+path(sid));
+    const mi=makers.length;makers.push(['layout',sid,ids.get(ctx),ids.get(L)]);mark(L,mi,0,[]);const T=Object.getOwnPropertyDescriptor(ctx,'TRADES')?.value;if(T)mark(T,mi,1,['TRADES']);}
+  for(const hid of hashes){const h=nodes[hid];if(made.has(hid)||Object.getPrototypeOf(h)!==Object.prototype)continue;const near=Object.getOwnPropertyDescriptor(h,'near')?.value;
+    if(typeof near!=='function'||worldSaveFamilies().get(src(near))!=='hash'||typeof near.cell!=='number')throw Error('A strange spatial hash at '+path(hid));
+    const mi=makers.length;makers.push(['hash',hid,near.cell]);mark(h,mi,0,[]);}
+  // Binders: an accessor's binder and what it closes over, from its owner.
+  const FAM=worldSaveFamilies(),groups=new Map(),bound=new Set();
+  for(const[owner,k,g,s,flags]of accessors){const fam=FAM.get(src(nodes[g]||nodes[s]));if(!fam||fam==='hash'||(g&&s&&FAM.get(src(nodes[s]))!==fam)||made.has(owner))throw Error('An accessor no binder makes, at '+path(owner)+'.'+k);
+    const id=owner+':'+fam;let G=groups.get(id);if(!G)groups.set(id,G={fam,owner,slots:[]});G.slots.push([k,g,s,flags]);if(g)bound.add(g);if(s)bound.add(s);}
+  const binders=[];
+  for(const{fam,owner,slots}of groups.values()){const o=nodes[owner],keys=slots.map(x=>x[0]),own=k=>Object.getOwnPropertyDescriptor(o,k)?.value,fail=()=>{throw Error('A '+fam+' accessor whose maker cannot be found again, at '+path(owner));};let args;
+    switch(fam){
+      case 'hh':{const h=own('_hh');if(!h||!keys.every(k=>HH_FIELDS.includes(k)))fail();args=[h];break;}
+      case 'herd':{const hid=ownerOf.assets.get(o),h=nodes[hid];if(!h||Object.getOwnPropertyDescriptor(h,'household')?.value!==true||keys.join()!=='herd')fail();args=[h];break;}
+      case 'pop':if(keys.join()!=='pop')fail();args=[];break;
+      case 'store':{const s=nodes[ownerOf.stores.get(o)],K=s&&Object.getOwnPropertyDescriptor(s,'storage')?.value;if(!K)fail();args=[s,K];break;}
+      case 'view':{const a=accounts.get(o);if(!a||keys.join()!=='held,sale')fail();args=a;break;}
+      case 'cargo':{const c=own('storageCargo'),K=c?.origin?.storage;if(!K||keys.join()!=='qty')fail();args=[K,c.id];break;}
+      case 'furlong':if(keys.join()!=='own,wk')fail();args=[];break;
+      case 'building':if(keys.join()!=='ownerId')fail();args=[];break;
+      default:fail();}
+    binders.push([fam,owner,args.map(need),slots]);}
+  for(let id=1;id<nodes.length;id++)if(typeof nodes[id]==='function'&&!made.has(id)&&!bound.has(id))throw Error('A closure no maker makes again ('+src(nodes[id]).slice(0,60)+'), at '+path(id));
+  for(const id of ledgerNodes)if(!ledgers.some(([K])=>ids.get(K)===id))throw Error('A ledger outside the realm\'s places, at '+path(id));
+  // The document: strings, shapes, codes, classes; then makers, binders and anchors; then the nodes.
+  M.uv(makers.length);for(const m of makers){M.text(m[0]);M.uv(m[1]);if(m[0]==='layout'){M.uv(m[2]);M.uv(m[3]);}else val(m[2]);}
+  const madeList=[...made].sort((a,b)=>a[0]-b[0]);M.uv(madeList.length);for(const[id,[mi,base,keys]]of madeList){M.uv(id);M.uv(mi);M.u8(base);M.uv(keys.length);for(const k of keys)M.uv(str(k));}
+  M.uv(binders.length);for(const[fam,owner,args,slots]of binders){M.text(fam);M.uv(owner);M.uv(args.length);for(const a of args)val(a);M.uv(slots.length);for(const[k,g,s,f]of slots){M.uv(str(k));M.uv(g);M.uv(s);M.u8(f);}}
+  M.uv(ids.get(ANNAL_META)??0);M.uv(nodes.length-1);
+  const S=new WorldSaveWriter();S.uv(strings.size);for(const s of strings.keys())S.text(s);
+  S.uv(shapes.length);for(const[keys,flags]of shapes){S.uv(keys.length);for(let i=0;i<keys.length;i++){S.uv(keys[i]);S.u8(flags[i]);}}
+  S.uv(codeList.length);for(const s of codeList){S.uv(worldSaveCodeHash(s));S.uv(s.length);}
+  S.uv(WORLD_SAVE.classes.length);for(const c of WORLD_SAVE.classes)S.text(String(c));
+  const a=S.bytes(),b=M.bytes(),n=N.bytes(),body=new Uint8Array(a.length+b.length+n.length);body.set(a,0);body.set(b,a.length);body.set(n,a.length+b.length);return {bytes:body,nodes:nodes.length-1};
+}
+function worldSaveHold(){throw Error('A world being loaded was read before it was bound');}
+// Load into a fresh realm, in place of startSimulation: the world and its module state, then the days go on (simTick).
+async function worldLoad(doc,{outcomeJournal=null,source=null,sourceSHA256=null}={}){
+  if(typeof W!=='undefined'&&W)throw Error('A world is taken up only in a fresh realm');
+  const bytes=await worldSaveUnzip(doc),{header,body}=worldSaveHeader(bytes);
+  if(header.version!==WORLD_SAVE.version)throw Object.assign(Error('This world was saved in another format'),{code:'format',save:header.save});
+  const sha=sourceSHA256||(source!=null?await worldSaveSHA256(source):STORAGE_OUTCOMES.meta?.sourceSHA256||null);
+  if(!sha)throw Error('A world is taken up only by a build that knows its own identity (the game\'s source)');
+  if(header.sourceSHA256!==sha)throw Object.assign(Error('This world was saved by another build of the game'),{code:'build',save:header.save});
+  if(header.world!==worldHash())throw Object.assign(Error('This world belongs to another realm: '+header.world),{code:'realm',save:header.save});
+  if(outcomeJournal)STORAGE_OUTCOMES.journal=outcomeJournal;
+  SEED=header.seed>>>0;FATE=header.fate>>>0;worldSaveDecode(bytes,body);return W;
+}
+function worldSaveDecode(bytes,at){
+  const R=new WorldSaveReader(bytes,at),S=[];R.section();for(let i=0,n=R.uv();i<n;i++)S.push(R.text());
+  const shapes=[];for(let i=0,n=R.uv();i<n;i++){const k=R.uv(),keys=new Array(k),flags=new Array(k);for(let j=0;j<k;j++){keys[j]=S[R.uv()];flags[j]=R.u8();}shapes.push([keys,flags]);}
+  const codes=[];for(let i=0,n=R.uv();i<n;i++)codes.push([R.uv(),R.uv()]);
+  for(let i=0,n=R.uv();i<n;i++)if(R.text()!==String(WORLD_SAVE.classes[i]))throw Error('This world was saved with other classes');
+  // A value before the nodes are made: a node is {r:id}.
+  const raw=()=>{const t=R.u8();if(t>15)return t%2?-(t-15)/2:(t-16)/2;switch(t){case 0:return undefined;case 1:return null;case 2:return false;case 3:return true;case 4:{const z=R.uv();return z%2?-(z+1)/2:z/2;}
+    case 5:return R.f64();case 6:return S[R.uv()];case 7:return {r:R.uv()};case 8:return BigInt(S[R.uv()]);}throw Error('An unreadable value');};
+  R.section();const makers=[];for(let i=0,n=R.uv();i<n;i++){const kind=R.text();makers.push(kind==='layout'?[kind,R.uv(),R.uv(),R.uv()]:[kind,R.uv(),raw()]);}
+  const madeList=[];for(let i=0,n=R.uv();i<n;i++){const id=R.uv(),mi=R.uv(),base=R.u8(),k=R.uv(),keys=[];for(let j=0;j<k;j++)keys.push(S[R.uv()]);madeList.push([id,mi,base,keys]);}
+  const binders=[];for(let i=0,n=R.uv();i<n;i++){const fam=R.text(),owner=R.uv(),args=[];for(let j=0,m=R.uv();j<m;j++)args.push(raw());const slots=[];for(let j=0,m=R.uv();j<m;j++)slots.push([S[R.uv()],R.uv(),R.uv(),R.u8()]);binders.push([fam,owner,args,slots]);}
+  const annal=R.uv(),N=R.uv(),obj=new Array(N+1),off=new Float64Array(N+1),foff=new Float64Array(N+1),made=new Uint8Array(N+1),kind=new Uint8Array(N+1),views=[],proxies=[],states=new Map(),fcode=new Map();
+  for(const[id]of madeList)made[id]=1;if(annal){obj[annal]=ANNAL_META;made[annal]=2;}
+  const skip=()=>{const t=R.u8();if(t===4||t===6||t===7||t===8)R.uv();else if(t===5)R.fi++;};
+  const skipProps=sh=>{const f=sh[1];for(let i=0;i<f.length;i++){skip();if(f[i]&8)skip();}};
+  // First pass: every node found and made, empty; views once their buffers are.
+  R.section();for(let id=1;id<=N;id++){off[id]=R.n;foff[id]=R.fi;const k=R.u8();kind[id]=k;
+    switch(k){
+      case 1:{const c=R.uv();R.u8();skipProps(shapes[R.uv()]);if(!made[id])obj[id]=c===0?{}:c===1?Object.create(null):c===7?Object.create(CommodityBalanceLedger.prototype):null;if(obj[id]===null)throw Error('An object of a strange class');break;}
+      case 2:R.u8();skipProps(shapes[R.uv()]);if(!made[id])obj[id]=[];break;
+      case 3:for(let i=0,n=R.uv();i<n;i++)skip();if(!made[id])obj[id]=[];break;
+      case 4:{const c=R.uv();R.u8();for(let i=0,n=2*R.uv();i<n;i++)skip();skipProps(shapes[R.uv()]);if(!made[id])obj[id]=c===3?new Map():c===5?new HouseholdPopulation():c===6?new OwnedMarket():null;if(obj[id]===null)throw Error('A Map of a strange class');break;}
+      case 5:R.u8();for(let i=0,n=R.uv();i<n;i++)skip();skipProps(shapes[R.uv()]);if(!made[id])obj[id]=new Set();break;
+      case 6:{const n=R.uv(),b=new ArrayBuffer(n);new Uint8Array(b).set(bytes.subarray(R.n,R.n+n));R.n+=n;obj[id]=b;break;}
+      case 7:{const c=R.uv(),b=raw().r,o=R.uv(),n=R.uv();views.push([id,WORLD_SAVE.views[c],b,o,n]);break;}
+      case 8:{fcode.set(id,R.uv());if(R.u8()){const st=[];for(let i=0,n=R.uv();i<n;i++)st.push(raw());states.set(id,st);}break;}
+      case 9:{const kind=S[R.uv()],s=raw().r;if(kind!=='lard')throw Error('A strange Proxy');proxies.push([id,s]);break;}
+      default:throw Error('An unreadable node');}}
+  for(const[id,name,b,o,n]of views)obj[id]=new globalThis[name](obj[b],o,n);
+  const PENDING={};let pending=0;
+  const val=()=>{const t=R.u8();if(t>15)return t%2?-(t-15)/2:(t-16)/2;switch(t){case 0:return undefined;case 1:return null;case 2:return false;case 3:return true;case 4:{const z=R.uv();return z%2?-(z+1)/2:z/2;}
+    case 5:return R.f64();case 6:return S[R.uv()];case 7:{const id=R.uv(),o=obj[id];if(o===undefined){pending=id;return PENDING;}return o;}case 8:return BigInt(S[R.uv()]);}throw Error('An unreadable value');};
+  const later=[],holds=[],closed=[];
+  const clear=o=>{const ks=Reflect.ownKeys(o);if(ks.length)for(const k of ks)if(k!=='length'||!Array.isArray(o))delete o[k];};
+  const define=(o,sh,tolerant,fast)=>{const[keys,flags]=sh;for(let i=0;i<keys.length;i++){const k=keys[i],f=flags[i];
+    if(f&8){const g=val(),s=val();if(g===PENDING||s===PENDING){Object.defineProperty(o,k,{get:g===undefined?undefined:worldSaveHold,set:s===undefined?undefined:worldSaveHold,enumerable:!!(f&1),configurable:true});if(!tolerant)holds.push([o,k]);}
+      else Object.defineProperty(o,k,{get:g,set:s,enumerable:!!(f&1),configurable:!!(f&2)});continue;}
+    let v=val();if(v===PENDING){v=undefined;if(!tolerant)later.push([o,k,f,pending]);Object.defineProperty(o,k,{value:v,writable:true,enumerable:true,configurable:true});continue;}
+    if(f===7&&fast&&k!=='__proto__')o[k]=v;else if(k==='length'&&Array.isArray(o)&&f===4)o.length=v;else Object.defineProperty(o,k,{value:v,writable:!!(f&4),enumerable:!!(f&1),configurable:!!(f&2)});}};
+  const fill=(id,tolerant=false)=>{R.n=off[id];R.fi=foff[id];const k=R.u8(),o=obj[id];
+    switch(k){
+      case 1:{const c=R.uv(),ext=R.u8();clear(o);define(o,shapes[R.uv()],tolerant,c<2);if(!ext)closed.push(o);break;}
+      case 2:{const ext=R.u8();clear(o);define(o,shapes[R.uv()],tolerant,true);if(!ext)closed.push(o);break;}
+      case 3:{const n=R.uv();clear(o);o.length=0;for(let i=0;i<n;i++){const v=val();if(v===PENDING){o[i]=undefined;if(!tolerant)later.push([o,i,7,pending]);}else o[i]=v;}break;}
+      case 4:{R.uv();const ext=R.u8(),n=R.uv();Map.prototype.clear.call(o);for(let i=0;i<n;i++){const a=val(),b=val();if(a===PENDING||b===PENDING)throw Error('A closure kept in a Map');Map.prototype.set.call(o,a,b);}
+        clear(o);define(o,shapes[R.uv()],tolerant,false);if(!ext)closed.push(o);break;}
+      case 5:{const ext=R.u8(),n=R.uv();Set.prototype.clear.call(o);for(let i=0;i<n;i++){const a=val();if(a===PENDING)throw Error('A closure kept in a Set');Set.prototype.add.call(o,a);}
+        clear(o);define(o,shapes[R.uv()],tolerant,false);if(!ext)closed.push(o);break;}}};
+  const check=(id,f)=>{const c=codes[fcode.get(id)],s=typeof f==='function'?Function.prototype.toString.call(f):'';if(!c||s.length!==c[1]||worldSaveCodeHash(s)!==c[0])throw Error('A closure made again differs from the one saved (node '+id+')');obj[id]=f;};
+  // The makers, over their inputs: a layout's context is filled first (what it names may not be made yet), then each maker runs.
+  for(const m of makers)if(m[0]==='layout')fill(m[2],true);
+  for(const[kind,a,b,c]of makers){
+    if(kind==='hash')obj[a]=makeHash(b);
+    else if(kind==='layout'){const s=obj[a];layoutSettlement(s,obj[b]);obj[c]=s._lay;s._lay.historyState();}
+    else throw Error('A strange maker: '+kind);}
+  for(const[id,s]of proxies)obj[id]=ownershipLard(obj[s]);
+  for(const[id,mi,base,keys]of madeList){const m=makers[mi];let o=m[0]==='layout'?(base?obj[m[2]]:obj[m[3]]):obj[m[1]];
+    for(const k of keys)o=Object.getOwnPropertyDescriptor(o,k)?.value;if(o===undefined)throw Error('A maker did not make again what was saved (node '+id+')');
+    if(fcode.has(id))check(id,o);else obj[id]=o;}
+  // Every object filled in its saved order; accessors held open for their binders.
+  for(let id=1;id<=N;id++)if(kind[id]<=5)fill(id);
+  // The binders, over the filled world; then what they made is found by its place.
+  const bind={hh:(o,[h],keys)=>householdFieldsBind(o,h,keys),herd:(o,[h])=>{if(h.assets!==o)throw Error('A herd away from its household');householdHerdBind(h);},
+    pop:o=>settlementPopBind(o),store:(o,[s,K],keys)=>{if(s.stores!==o)throw Error('Stores away from their place');for(const g of keys)commodityStoreBind(s,K,g);},
+    view:(o,[s,owner,targets])=>commodityAccountViews(s,owner,o,targets),cargo:(o,[K,id])=>commodityCargoQtyBind(o,K,id),
+    furlong:o=>furlongRightsBind(o,propertyRightsResolve),building:o=>buildingRightsBind(o,propertyRightsResolve)};
+  for(const[fam,owner,args,slots]of binders){const o=obj[owner],a=args.map(x=>x&&typeof x==='object'&&'r'in x?obj[x.r]:x);if(!bind[fam])throw Error('A strange binder: '+fam);
+    bind[fam](o,a,slots.map(x=>x[0]));
+    for(const[k,g,s,f]of slots){const d=Object.getOwnPropertyDescriptor(o,k);if(!d||!!d.enumerable!==!!(f&1)||!!d.configurable!==!!(f&2))throw Error('A binder made another accessor: '+fam+' '+k);
+      if(g)check(g,d.get);else if(d.get)throw Error('A binder made a getter where none was saved: '+fam+' '+k);
+      if(s)check(s,d.set);else if(d.set)throw Error('A binder made a setter where none was saved: '+fam+' '+k);}}
+  for(const[o,k]of holds)if(Object.getOwnPropertyDescriptor(o,k).get===worldSaveHold)throw Error('An accessor no binder made again: '+String(k));
+  for(const[o,k,f,id]of later){if(typeof obj[id]!=='function')throw Error('A closure no maker made again (node '+id+')');
+    Object.defineProperty(o,k,{value:obj[id],writable:!!(f&4),enumerable:!!(f&1),configurable:!!(f&2)});}
+  for(const id of fcode.keys())if(typeof obj[id]!=='function')throw Error('A closure no maker made again (node '+id+')');
+  for(const[id,st]of states)obj[id].restore(st);
+  for(const o of closed)Object.preventExtensions(o);
+  worldSaveInstall(obj[1]);
+}
+// The module's own state, from a loaded world: the scalars, the dice, the ledgers' private order, the indexes and the journal.
+function worldSaveInstall({history:H,extra:X}){
+  const g=H.globals,p=H.playback;W=H.world;
+  SEED=g.SEED;FATE=g.FATE;COAST_PREF=g.COAST_PREF;START_AD=g.START_AD;PID=g.PID;NID=g.NID;armyN=g.armyN;campN=g.campN;entryCount=g.entryCount;
+  JOURNAL=g.JOURNAL;MOD=g.MOD;allLines=g.allLines;REPLAYING=g.REPLAYING;speedIdx=p.speedIdx;lastSpeed=p.lastSpeed;sovPausedFrom=p.sovPausedFrom;simAccum=p.simAccum;
+  RS=seedStreams(SEED,FATE);for(const[k,st]of Object.entries(H.rng))(RS[k]||(RS[k]=sfc32(0,0,0,0))).restore(st);
+  HISTORY.layouts=H.layouts;HASH_STAMP=X.hashStamp;RESUMED=X.resumed;storageArithmeticNext=X.arithmetic;Object.assign(SIM_FAULTS,X.faults);
+  for(const[K,st,assert]of X.ledgers)CommodityBalanceLedger.historyAdopt(K,{...st,ownerId:storageOwnerId,assert:assert==='outcome'?storageOutcomeAssert:()=>{}});
+  for(const[s,c]of X.claims)STORAGE_ACTIVE_CLAIMS.set(s,{map:c.map,size:c.size,next:c.next,records:new WeakMap(c.records),goods:c.goods,unsafe:c.unsafe,ready:c.ready,fallback:c.fallback,...(c.offers?{offers:c.offers}:{})});
+  if(X.notables)notableIndexRebuild(W);else NOTABLE_INDEXES.set(W,{supported:false});
+  householdMemberIndexAdopt(W);if(!X.households)householdMemberIndexInvalidate(W);
+  const J=STORAGE_OUTCOMES.journal;if(J&&X.journal){if(J.seq!==0||J.rows?.length)throw Error('A world is taken up only by a fresh outcome journal');
+    J.seq=X.journal.seq;J.chunk=X.journal.chunk;J.committed=X.journal.committed;J.encodedCharacters=X.journal.characters;}
+}
 /* ============================ THE ADVISOR'S DOOR ============================
    The whole game as three tools for any agent, on any model: search(q), discover(scope), execute(tool, args).
    The tools are read off the live interface, not listed by hand: every button, slider, list and box the player can use

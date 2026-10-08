@@ -32,12 +32,16 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 ### 2. World serializer (#48, #49)
 
-V8 startup snapshots restore a world exactly but can't chain (each build starts from Node's own snapshot), and building one runs about 2.6× slower. The late-world farm and shipped checkpoints both need a real serializer:
+V8 startup snapshots restore a world exactly but can't chain (each build starts from Node's own snapshot), and building one runs about 2.6× slower. The late-world farm and shipped checkpoints both need a real serializer. Requirements (user): loadable in a browser, independent of engine and Node version, versioned against the build, compact.
 
-- **What it saves:** W, module state, RNG streams, ledgers and journals.
-- **Closures** (`makeHash`, `s._lay.live`) are rebuilt by their makers.
-- **Verified** when a save, a load and a continued run give the same digest as an uninterrupted run (`tools/model-run.cjs` digests).
-- **Requirements:** loadable in a browser, independent of engine and Node version, versioned against the build, compact.
+- **Phase A, done on a branch (awaiting the test runner's gate):** `worldSave()`/`worldLoad()` save and load a world at a day's end, in Node (`docs/WORLD-SAVE.md`).
+  - W and the module state are kept as data; closures are made again by their makers: `layoutSettlement(s,saved)` and the named binders the living code also calls, every closure's source text unchanged.
+  - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 23 more days equal.
+  - The document for 42 sea on day 37: 15.6 MB, 7.7 MB gzipped.
+- **Phase B, next:**
+  - longer worlds (a chained save every year to 1066, each continuation checked against the uninterrupted run);
+  - the browser worker's resume (`RawOutcomeJournal`, the IndexedDB archive's continuation);
+  - then the farm.
 
 Then build the farm:
 
@@ -52,18 +56,6 @@ Then build the farm:
 - **Studies:** short runs resumed from a milestone.
 - **Cost estimate:** 1–3 CPU-hours per world to 1066.
 - **Build:** run the farm on the determinism build (now `main`).
-- **Research done (read-only, a planning agent, 2026-10-08):**
-  - **State outside `W` to save:** the scalars in `HISTORY.roots()`, `ANNAL_META`, `HASH_STAMP`, the commodity ledger's private `DAILY` state (`orderRanks`, `nextOrderRank`, `ownerFacilities`, `volumes`; not in today's digest) and the outcome journal's `seq`/`chunk`/`committed`.
-  - **Indexes to re-adopt:** `notableIndexRebuild`, `householdMemberIndexAdopt`, the storage claim ranks, and the commodity account views.
-  - **Caches to drop:** `ROUTING`, `ARMY_ROUTES.memory`, `MARKET_TRADE_INDEXES`, `G._seaChart` and the like.
-  - **Closures with makers:** the `HH_FIELDS` accessors (`bindHousehold`), `s.pop`, `s.stores[g]`, the account `held`/`sale` Proxies, `bindPropertyRights`' `own`/`wk`/`ownerId`, `makeHash` (on `W.rivHash`, `W.treeHash` and `s._lay`), the sfc32 streams.
-  - **The hardest piece is `s._lay`:** it closes over 119 bindings of `layoutSettlement`, twelve of them written by its closures (all twelve already in `historyState`). `layoutSettlement` must be split so its closures can be built from a saved context without generating.
-  - **Classes to restore:** `HouseholdPopulation` (fill it via `Map.prototype.set`), `OwnedMarket`, `CommodityBalanceLedger`.
-  - **Proposed:**
-    - a `HistoryGraph`-ordered node table with makers matched by exact source text;
-    - a header holding the game script's SHA-256, `buildId()`, `worldHash()` and the classic save, falling back to replay when the hash differs;
-    - save only between ticks, after `STORAGE_OUTCOMES.wait()`, `commoditySettleAll()` and a flush;
-    - verify by save at day N, load in a fresh realm, then equal capture, equal digests after M ≥ 360 days, and a chained save.
 
 ### 3. Institutions, in the order of `docs/SYSTEMS.md`
 
