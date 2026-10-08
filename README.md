@@ -650,9 +650,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
     families and a third to their lord.
   - **Ways are kept up by use:** a lane with no house on it grasses over (and comes back with the first
     house). A king's road with toll houses on it is mended by their owners, from the year's tolls first and
-    their purses after; one with none by the lords at either end, while the market dues of the loads it
-    brings them pay the roadmen; mended as far as it is paid for, else it wears to a rutted track, narrower
-    and slower, never quite gone.
+    their chests after; one with none by the lords of the places at either end, each his half, as custom
+    binds them whether or not the road pays them. Each lays out only what his chest holds beyond its
+    reserve; a road mended only in part, or not at all, wears to a rutted track, narrower and slower, never
+    quite gone.
   - **Tolls (pontage and pavage):** a lord (or the crown, or a town from its chest) fits out the house
     where a road leaves his place, at the gate or the bridgehead, as a toll house, buying it from its owner,
     where the custom on the loads that went over the road last year would pay its keeper, its part of the

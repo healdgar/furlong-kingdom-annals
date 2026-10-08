@@ -20,7 +20,7 @@ const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^
 const line=n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||assert.fail('no const '+n);
 const CUSTOMS=source.slice(source.indexOf('const CUSTOMS='),source.indexOf('};',source.indexOf('const CUSTOMS='))+2);
 const TOLLS=[CUSTOMS,line('TOLL_HOMES'),line('dueOn'), // TEN_SHARE comes with the fixture (#36's manor)
-  ...['customOf','acctLabel','tollStands','tollKeeper','tollWage','roadTolls','wayToll','payTolls','tollSite','tollGiveUp','tollReview','tickWays',
+  ...['customOf','acctLabel','hostTarget','chestReserve','tollStands','tollKeeper','tollWage','roadTolls','wayToll','payTolls','tollSite','roadSpare','tollGiveUp','tollReview','tickWays',
   'assartFine','stripYield','assartSpare','assarter','assartPays','assart'].map(fn)].join('\n');
 const PAY=(source.match(/^const HUNGRY_HANDS=.*$/m)?.[0]||'')+'\n'+['book','dayHands','hungryHands','payAmong','buildWorks','workers_','lordTake'].map(fn).join('\n');
 
@@ -55,7 +55,7 @@ test('a load pays at every toll house on its way, the custom of each place on it
   near(W.houses[1].gold-g0,2,'two in the hundred to House A, at its gate');near(W.houses[1].led.tolls,2);near(H[2].w-b0,1,'the realm\'s custom to the burgher who owns the other');
   near(lordsHouse._tk,2);near(burghersHouse._tk,1);
   const aid=100*12/100*0.35;near(W.treasury-tr0,aid,'the crown has its market dues, and no toll');near(w0-m.w,3+aid,'the dealer paid both');
-  near(W.roads[1]._mkA,aid,'the market\'s dues are kept against the road the load came in by');r.audit();
+  r.audit();
   // a man pays no toll to himself
   r.C.c={origin:0,dest:1,good:'grain',qty:10,cost:100,m:H[2],_tl:[lordsHouse,burghersHouse]};const h2=H[2].w;r.eval('ladeIn(c,t)');near(h2-H[2].w,2+aid);r.audit();
 });
@@ -93,12 +93,23 @@ test('a road with toll houses is mended by their owners, from the year\'s tolls 
   assert.equal(b.arch,'house','four taken against a keeper and a road wanting twelve: the toll is given up');r.audit();
 });
 
-test('a road with no toll house is mended by the lords at either end while the market dues of its loads pay for it, each by his own',()=>{
+test('a road with no toll house is mended by the lords at either end, each his half, by custom, and each only from his chest beyond its reserve',()=>{
   const r=world(),{H,W}=r;H[5].tr='mason';r.C.day=()=>360;r.t.folk=[];
-  W.roads=[{a:0,b:1,len:5000,cond:0.5,_mkA:6,_mkB:2}];r.snap();const g0=W.houses[1].gold,tr0=W.treasury;r.eval('tickWays()');
-  near(W.roads[0].cond,0.35,'eight in dues against ten of mending: it wears');near(W.houses[1].gold,g0);near(W.treasury,tr0);r.audit();
-  r.C.day=()=>720;Object.assign(W.roads[0],{_mkA:9,_mkB:3});r.snap();r.eval('tickWays()');
-  near(g0-W.houses[1].gold,7.5,'House A, whose market took nine of twelve');near(tr0-W.treasury,2.5,'the crown three');near(W.roads[0].cond,0.55);near(W.roads[0]._mkY,12);r.audit();
+  W.roads=[{a:0,b:1,len:5000,cond:0.5}];r.snap();const g0=W.houses[1].gold,tr0=W.treasury;r.eval('tickWays()');
+  near(g0-W.houses[1].gold,5,'House A its half, though the road brings its market nothing');
+  near(W.treasury,tr0,'the crown holds no more than its war chest (a host of sixty for twenty-five months): nothing from it');
+  near(W.roads[0]._upY,5);near(W.roads[0].cond,0.5+0.35*0.5-0.15,'half mended: it wears a little');assert.equal(W.roads[0]._mkA,undefined,'no market dues are kept for it');r.audit();
+  r.C.day=()=>720;W.treasury=2000;W.houses[1]._incA=(W.houses[1].gold-2)/3;r.snap();const g1=W.houses[1].gold,tr1=W.treasury;r.eval('tickWays()');
+  near(g1-W.houses[1].gold,2,'House A only what lies beyond a quarter\'s revenue');near(tr1-W.treasury,5,'the crown, with five hundred beyond its reserve, its half');
+  near(W.roads[0]._upY,7);near(W.roads[0].cond,0.525+0.35*0.7-0.15);r.audit();
+  r.C.day=()=>1080;W.houses[1]._incA=W.houses[1].gold/3;W.treasury=1500;r.snap();const g2=W.houses[1].gold;r.eval('tickWays()');
+  near(W.houses[1].gold,g2,'a lord at his reserve pays nothing');near(W.treasury,1500);near(W.roads[0]._upY,0);r.audit();
+});
+
+test('a toll house\'s owner at his reserve mends from the year\'s tolls only',()=>{
+  const r=world(),{H,s,W}=r;H[5].tr='mason';r.C.day=()=>360;
+  const b=bldg(r,s,{keeper:H[1],owner:'lord'});b._tk=8;W.roads=[{a:0,b:1,len:5000,cond:0.5}];W._tollsDirty=true;W.houses[1]._incA=W.houses[1].gold/3;r.snap();
+  r.eval('tickWays()');near(W.roads[0]._upY,8-0.2*12,'the takings less the keeper\'s pay, and nothing from a chest at its reserve');near(W.roads[0]._upT,8-0.2*12);r.audit();
 });
 
 test('a toll house is set up only where the custom on last year\'s loads would pay a keeper, a part of the road and the house over a dozen years',()=>{

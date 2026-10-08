@@ -10000,8 +10000,8 @@ function inspectorCard(pk,full=false){
     h+=row('Length',(polyLen(r.path)/1000).toFixed(1)+' km');
     h+=row('Traffic',(r.vol||0)>3?'busy':(r.vol||0)>1?'steady':(r.vol||0)>0.2?'light':'quiet');
     {const T=(r._tolls||[]).filter(tollStands),up=r._upW||0;if(T.length)h+=row('Tolls',T.map(b=>`at ${esc(b.s.name)}, for ${esc(acctLabel(ownerAcct(b,b.s)))}: ${Math.round(b._tkY||0)} last year`).join('; '));
-      h+=row('Kept by',T.length?'the owners of its toll houses, from the tolls first and their purses after':'the lords at either end, while the market dues of the loads it brings them pay for it');
-      if(r._upY!=null)h+=row('Mending',r._upY>0?`${Math.round(r._upY)} last year (it wants ${Math.round(up)})${T.length?`, ${Math.round(r._upT||0)} of it from the tolls`:''}`:`none last year: it wears${T.length?'':` (its loads brought the markets at either end ${Math.round(r._mkY||0)}; the mending wants ${Math.round(up)})`}`);}
+      h+=row('Kept by',T.length?'the owners of its toll houses, from the tolls first and their chests after':'the lords at either end, each his half, by the custom of the realm');
+      if(r._upY!=null)h+=row('Mending',r._upY>0?`${Math.round(r._upY)} last year of the ${Math.round(up)} it wants${T.length?`, ${Math.round(r._upT||0)} of it from the tolls`:''}${r._upY<up-0.5?': the rest unpaid, it wears':''}`:`none last year of the ${Math.round(up)} it wants: no keeper had it beyond his reserve, and it wears`);}
     const carts=(W.caravans||[]).filter(c=>!c.sea&&!c.river&&day()>=c.departDay&&day()<c.arriveDay&&((c.origin===r.a&&c.dest===r.b)||(c.origin===r.b&&c.dest===r.a))).length;
     if(carts)h+=row('On the road now',carts+' cart'+(carts>1?'s':''));
     const camps=W.banditCamps.filter(c=>r.path.some(q=>dist2d(q.x,q.z,c.x,c.z)<500)).length;if(camps)h+=row('Danger',`<span style="color:#c0392b">${camps} outlaw camp${camps>1?'s':''} near the road</span>`);
@@ -11773,10 +11773,9 @@ function ladeOut(c,o,quiet){ladeOut.why=null;const mode=c.sea||c.river?'boat':'c
   (o._loads||(o._loads={}))[mode]=(o._loads[mode]||0)+1;
   life(drv,`${mode==='cart'?'Carted':'Shipped'} ${Math.round(got)} ${c.good} from ${o.name} to ${dest?dest.name:'market'}${m!==drv&&m!=='out'?' for '+folkName(m):''}`);if(m!=='out'&&m!==drv)life(m,`Sent ${Math.round(got)} ${c.good} to ${dest?dest.name:'market'}`);return c;}
 function ladeIn(c,d){let m=c.m||'out';if(m!=='out'&&m.dead)m=lordAcct(W.settlements[c.origin]); // a merchant who died on the road: his goods to his lord
-  const val=c.cost||0,lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;let dues=payTolls(c,m,val),mk=0; // dues on what the goods cost him, not on a price no one may pay: first the pontage and pavage at each toll house it passed
-  if(lord){const tl=transfer(m,lord,val*0.05*(d.works&&d.works.market?1.6:1),'markets');dues+=tl;mk=tl;lordTake(d,tl);dues+=transfer(m,'crown',val*(MOD.tax/100)*0.14);} // the market toll and the crown's aid, on what is brought to sell
-  else{mk=transfer(m,'crown',val*(MOD.tax/100)*0.35);dues+=mk;}
-  {const L=c._ris,r=L&&L.length?W.roads[L[L.length-1]]:null;if(r&&mk>0){if(r.a===c.dest)r._mkA=(r._mkA||0)+mk;else r._mkB=(r._mkB||0)+mk;}} // what the market here took, against the road the load came in by: the lords keep a road their markets live by (tickWays)
+  const val=c.cost||0,lord=d.owner>0&&!inRevolt(d.owner)?W.houses[d.owner]:null;let dues=payTolls(c,m,val); // dues on what the goods cost him, not on a price no one may pay: first the pontage and pavage at each toll house it passed
+  if(lord){const tl=transfer(m,lord,val*0.05*(d.works&&d.works.market?1.6:1),'markets');dues+=tl;lordTake(d,tl);dues+=transfer(m,'crown',val*(MOD.tax/100)*0.14);} // the market toll and the crown's aid, on what is brought to sell
+  else dues+=transfer(m,'crown',val*(MOD.tax/100)*0.35);
   const drv=c.drv&&!c.drv.dead?householdHead(c.drv):null;if(c.fee>0&&drv&&drv!==m)transfer(m,drv,c.fee,'freight'); // the carter is paid on delivery
   if(m!=='out'&&m.gn!==undefined)m._inc=(m._inc||0)-dues-(drv!==m?c.fee||0:0);
   const unit=((c.cost||0)+(c.fee||0)+dues)/Math.max(1e-6,c.qty);if(c.commodityArrived){const who=c.m||'out';reserveAt(d,c.good,who,Math.max(0,(mkt(d,c.good).get(who)||0)-c.qty),c.qty,unit);}else offer(d,c.good,m,c.qty,unit);} // he sells as the town buys, never below what the load cost him laid down here: the price, the freight, the tolls // he sells in the market as the town buys, but not below what the load cost him
@@ -14595,6 +14594,9 @@ function payTolls(c,m,val){ // a load in: at each toll house it passed, the cust
 function tollSite(s,ri){ // the house lived in that stands furthest out along the road where it leaves the place (at the gate, or the bridgehead): its household will keep the toll
   let best=null,bd=-1;for(const b of s.buildings)if(b.st&&b.st.kind==='road'&&b.st.ri===ri&&b.state==='sound'&&!b.removed&&TOLL_HOMES.has(b.arch)&&tollKeeper(b)){const d=dist2d(b.x,b.z,s.pos.x,s.pos.z);if(d>bd){bd=d;best=b;}}
   return best;}
+function roadSpare(o,s){ // what a payer may lay out on a road: a house's chest or the crown's beyond its reserve (chestReserve: the duty never empties a chest, #52), a household's purse beyond its year's bread, a town's or a body's chest
+  if(o==='crown')return Math.max(0,W.treasury-chestReserve(0));const hi=W.houses.indexOf(o);if(hi>0)return Math.max(0,(o.gold||0)-chestReserve(hi));
+  if(o&&(o.household||o.gn!==undefined))return Math.max(0,means(o)-Math.max(1,householdSize(s,o))*foodYr());return Math.max(0,means(o));}
 function tollGiveUp(b){ // the toll does not pay its keeper and its part of the road: the house is lived in as a house again
   b.arch=b.home0||'house';b.h=ARCH[b.arch][2]*(0.8+0.25*(b.tier||0));b._tollSince=null;vacantResidentialChanged(b.s,b);updateBuildingInstance(b);W._tollsDirty=true;
   if(!W.prehistory)emit('trade',2,{x:b.x,z:b.z},`The toll at ${b.s.name} is given up: the loads that pass no longer pay its keeper and the mending of the road.`);}
@@ -14613,9 +14615,11 @@ function tollReview(r,ri,T,up){ // once a year on each road, after its reckoning
     if(!W.prehistory)emit('trade',3,{x:b.x,z:b.z},`${id==='town'?`The burgesses of ${s.name} set`:payer==='crown'?'The crown sets':`${payer.name||'The lord'} sets`} a toll ${br?'at the bridge':'at the gate'} of ${s.name} on the road to ${o?o.name:'the next town'}: ${br?'pontage':'pavage'} on every load that passes.`);}}
 /* the ways, once a year: a lane with no house on it is not kept and grasses over (it comes back with the first house built on it);
    a king's road with toll houses on it is mended by their owners, from the year's tolls first and their purses after (the grant of a toll
-   bound its holder to the road); one with none by the lords at either end, while the market dues the loads it brings them pay the roadmen;
-   mended as far as it is paid for, else it wears to a rutted track: slower, narrower, never quite gone (#36: it was mended while tolls that
-   no one collected would have repaid it) */
+   bound its holder to the road); one with none by the lords of the places at either end (the crown where it is lord), each for his half,
+   as the custom of the realm binds the landholders whose land the highway crosses, whether or not it pays them. Every payer lays out only
+   what his chest holds beyond its reserve (roadSpare); mended as far as it is paid for, else it wears to a rutted track: slower, narrower,
+   never quite gone (#36: it was mended while tolls that no one collected would have repaid it). A road left unmended is neglect for the
+   courts to present (#37: no court yet). */
 function tickWays(){
   let dirty=false;
   W.settlements.forEach((s,si)=>{if(!dueOn(si,360,41))return;const on=new Set();for(const b of s.buildings)if(!b.removed&&b.state!=='gone'&&b.st)on.add(b.st);
@@ -14625,11 +14629,11 @@ function tickWays(){
     const T=(r._tolls||[]).filter(tollStands),K=new Map();let paid=0,fromT=0;
     for(const b of T){const o=ownerAcct(b,b.s),k=tollKeeper(b),e=K.get(o)||K.set(o,{tk:0,wg:0,s:b.s}).get(o);e.tk+=b._tk||0;b._wgY=k&&accountOwner(k)!==accountOwner(o)?transfer(o,k,tollWage()*Math.min(1,(day()-(b._tollSince??-1e9))/360),'tolls'):0;e.wg+=b._wgY;} // the keepers' year
     if(K.size){let tk=0;for(const e of K.values())tk+=e.tk; // the toll houses' owners, each by what his took
-      for(const[o,e]of K){const v=Math.min(tk>0?up*e.tk/tk:up/K.size,Math.max(0,means(o)));if(v>0){buildWorks(e.s,v,o,'road upkeep');paid+=v;fromT+=Math.min(v,Math.max(0,e.tk-e.wg));}}}
-    else{const dA=r._mkA||0,dB=r._mkB||0; // the lords at either end, each by the market dues it brought him
-      if(dA+dB>=up)for(const[o,s,d]of[[lordAcct(A),A,dA],[lordAcct(B),B,dB]]){const v=Math.min(up*d/(dA+dB),Math.max(0,means(o)));if(v>0){buildWorks(s,v,o,'road upkeep');paid+=v;}}}
+      for(const[o,e]of K){const sh=tk>0?up*e.tk/tk:up/K.size,t=Math.min(sh,Math.max(0,e.tk-e.wg),Math.max(0,means(o))),v=t+Math.min(sh-t,Math.max(0,roadSpare(o,e.s)-t)); // the takings first, then his chest beyond its reserve
+        if(v>0){buildWorks(e.s,v,o,'road upkeep');paid+=v;fromT+=t;}}}
+    else for(const s of[A,B]){const o=lordAcct(s),v=Math.min(up/2,roadSpare(o,s));if(v>0){buildWorks(s,v,o,'road upkeep');paid+=v;}} // the lords at either end, each his half
     r.cond=clamp(c0+0.35*Math.min(1,paid/up)-0.15,0.15,1); // a fifth better mended in full, three-twentieths worse unmended
-    r._upY=paid;r._upW=up;r._upT=fromT;r._mkY=(r._mkA||0)+(r._mkB||0);r._mkA=r._mkB=0;r._wvY=r._wv||0;r._wv=0;for(const b of T){b._tkY=b._tk||0;b._tk=0;} // the year's account, kept for its card
+    r._upY=paid;r._upW=up;r._upT=fromT;r._wvY=r._wv||0;r._wv=0;for(const b of T){b._tkY=b._tk||0;b._tk=0;} // the year's account, kept for its card
     tollReview(r,ri,T,up);
     if(Math.abs((r.cond??1)-c0)>1e-6)dirty=true;});
   if(dirty){W.routes={};G.roadsDirty=true;}}
@@ -20419,9 +20423,10 @@ What happens is decided by quantities the economy produces, not by numbers cross
     families and a third to their lord.
   - **Ways are kept up by use:** a lane with no house on it grasses over (and comes back with the first
     house). A king's road with toll houses on it is mended by their owners, from the year's tolls first and
-    their purses after; one with none by the lords at either end, while the market dues of the loads it
-    brings them pay the roadmen; mended as far as it is paid for, else it wears to a rutted track, narrower
-    and slower, never quite gone.
+    their chests after; one with none by the lords of the places at either end, each his half, as custom
+    binds them whether or not the road pays them. Each lays out only what his chest holds beyond its
+    reserve; a road mended only in part, or not at all, wears to a rutted track, narrower and slower, never
+    quite gone.
   - **Tolls (pontage and pavage):** a lord (or the crown, or a town from its chest) fits out the house
     where a road leaves his place, at the gate or the bridgehead, as a toll house, buying it from its owner,
     where the custom on the loads that went over the road last year would pay its keeper, its part of the
@@ -21018,7 +21023,8 @@ raft, split, join, hold, disband).
 
 A toll house's card shows its toll, for whom it is taken, its keeper's pay and
 its takings this year and last; a town's card lists its toll houses; a road's
-card says who keeps it and what its mending cost last year against its tolls.
+card says who keeps it (its toll houses' owners, or the lords at either end by
+custom) and what of its mending was paid last year, and from the tolls.
 
 To march a host (an army): open its card, choose **Orders → Order a march**,
 then click a town, an enemy host to attack, or open ground to camp.
