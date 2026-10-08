@@ -187,7 +187,7 @@ Line numbers drift, so find code by name.
 
 ## Waiting on the user
 
-- **Publish the claude.ai artifact** from `main` (1aa50a1): `index.html`, with `assets/` and `LICENSE` as files. The cloud agent left it to your machine; it is still v86.
+- **Publish the claude.ai artifact** from `main` (deab546, batch 9): `index.html`, with `assets/` and `LICENSE` as files. The cloud agent left it to your machine; it is still v86.
 - **Delete the merged `determinism` branch** on GitHub; the proxy here refuses branch deletion.
 
 ## Questions for the user
