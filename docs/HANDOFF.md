@@ -22,6 +22,7 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
     - the institutions' groundwork (step 3.1);
     - street graphs and road bounds as scratch, so drawing the townsfolk leaves the world as it was (#27);
     - wards bought only out of what lies beyond the buyer's reserve (#52).
+- **Batch 9 in progress** on `claude/friendly-bardeen-luem2o` (meat, with #36): three agents in worktrees, one each for meat (the good, the Martinmas slaughter, butchers, three foods, pannage), the manor (mill and oven farms, suit of mill, commutation, entry fines, merchet, liveries, the crown's book, the customs rows) and the roads (pontage and pavage, upkeep from tolls, toll houses, assarts). The customs table (`CUSTOMS`, `customOf`) is in the tree. Then the gate: the full suite, a six-world soak and the economy probes, with the farm paused.
 - **Branches.** Work goes on `claude/friendly-bardeen-luem2o`, level with `main` after each release. The remote `determinism` branch is merged but could not be deleted from the cloud.
 - Nothing else is unpushed.
 
