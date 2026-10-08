@@ -4,7 +4,7 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 ## Where things stand
 
-- **`main`** is released to Pages and the container image (batch 7, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
+- **`main`** is released to Pages and the container image (batch 8, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
   - **batch 8, prices answered by supply (#51, #52):**
@@ -179,18 +179,14 @@ Line numbers drift, so find code by name.
 
 (none open)
 
-## Next after batch 8 (proposed to the user, awaiting answers)
-
-- **Meat as a third food:**
-  - made by slaughtering the herds' increase in the autumn, salted to keep;
-  - eaten within the inelastic food need, chosen against bread and fish by price;
-  - the better-off eat more.
-  - Questions: within the need or as an extra want, and with #36 as batch 9?
-- **#36, lords' customary income**, next in the institutions order.
-
 ## Decided by the user (2026-10-08)
 
 - **Prices (#51):** prices come from supply and demand only; `reprice` stays as it is. A price that stays high means supply is not answering fast enough.
   - **Trade must answer quickly:** carts, river barges, coastal cogs and sea trade. Manufacturing may be slow, as it is in life.
   - **Demand is elastic by how critical a good is.** A household buys need × (price / worth)^(−ε). Worth is the cost of making or bringing the good. Food is inelastic (ε 0; the user, after batch 8's first soak showed 0.1 starving families with coin wherever trade left a gap): bread is bought to need as far as the purse goes. ε is 0.3 for fuel and building timber, 0.6 for tools, 1.2 for cloth, 1.5 for wine, and 2 for spice and silk.
   - **A household short of money pays for food first, then shelter** (the rent it owes), then fuel, tools, cloth, and luxuries last.
+- **Meat (batch 9, with #36):** meat is a third food, inside the inelastic food need, so it helps with food prices and famine.
+  - It is made by slaughtering the herds' increase in the autumn, by butchers in towns; the swine's litter for the pot becomes real meat.
+  - Households fill the need with the cheapest of bread, fish and meat by price, as they choose between grain and fish now; the better-off eat more meat.
+  - Salted meat keeps for months; fresh meat spoils in days.
+  - It ties to #36 through pannage and liveries, and lands with #36 as batch 9.
