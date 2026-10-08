@@ -3929,10 +3929,11 @@ globalThis.CommodityBalanceLedger = (() => {
   function stamp(A, n) { if (own(A, 'since')) A.since = n; else Object.defineProperty(A, 'since', { value: n, writable: true, configurable: true }); }
   const POWERS = new Map(); // a day's share kept → its powers [1, f, f·f, (f·f)·f, …]: products, the same in every engine, each reckoned once
   function power(f, k) { let P = POWERS.get(f); if (P === undefined) POWERS.set(f, P = [1, f]); while (P.length <= k) P.push(P[P.length - 1] * f); return P[k]; }
-  const ripened = (q, f, k, crumb) => { const v = f === 1 ? q : q * power(f, k); return v < crumb ? 0 : v; };
+  const ripened = (q, f, k, crumb) => { const v = f === 1 ? q : q * (k === 1 ? f : power(f, k)); return v < crumb ? 0 : v; };
   function ripe(ledger, clock, facility, good, A, q) { // q as it stands today (clock: the good's, or undefined)
-    if (clock === undefined || facility.transit) return q;
-    const k = clock.n - (A.since ?? 0); return k > 0 ? ripened(q, 1 - Math.min(1, clock.rate * (facility.protection ?? 4)), k, ledger.crumbs[good] ?? 0) : q;
+    if (clock === undefined) return q;
+    const k = clock.n - (A.since ?? 0); if (k <= 0 || facility.transit) return q;
+    return ripened(q, 1 - Math.min(1, clock.rate * (facility.protection ?? 4)), k, ledger.crumbs[good] ?? 0);
   }
   const QUANTITY_TERM_RANKS = [], QUANTITY_TERM_QTYS = []; // scratch for quantity(): it never re-enters
   const quantityRank = (state, id, good, owner, kind) => state.orderRanks.get(id)?.get(good)?.get(owner)?.get(kind) ?? Number.MAX_SAFE_INTEGER;
