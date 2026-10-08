@@ -97,7 +97,14 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // of its held goods alone; its beasts as before. homeward (at each place's market) offers what a family living elsewhere left there and
  // is not worth carrying (held to sale, cause offered, reserve dropped), and waifs gives what the market did not take to the lord (cause
  // waif). No other writer changed; ledger-growth.test.mjs covers the rules, the migration fixtures their new expectations.
- assert.equal(digest(source.slice(a,b)),"a5041580c1590a2005d2280a31ebbbd0738114679a7e6c82e359c1c2ce0c4bce");
+ // Spoilage in closed form (#55, batch 10b, behaviour): the ledger keeps each good's clock of days of spoilage (spoilage: {n, rate},
+ // ripen) and on each owner's store of a good at a facility the count it was last settled at (since, non-enumerable on its Map); every
+ // read (quantity, total, entries, _quantityAt, _usedStats, _plan) gives the store as it stands, compounded in closed form with a crumb
+ // gone, and every write (_set) first settles the store (_settle: the loss written by _put, journaled as exposure-loss or stored-spoilage,
+ // and handed to the spoiled hook). commoditySpoil ripens the good and settles only the place's unsold output; commoditySpoiled notes
+ // the month's loss, pending output, the lord's rot and an emptied seller's reserve; the storage report reads balances as they stand.
+ // The quantity, total and used caches are dated by the clock. No other writer changed; ledger-growth.test.mjs covers the closed form.
+ assert.equal(digest(source.slice(a,b)),"ff911268abbc409cdd926388f190b97f1c494b95f6cb5adb90081d76153983cd");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

@@ -76,7 +76,7 @@ test('commuting removes the villein\'s extra share in kind and puts a money rent
 
 test('a lord\'s grain at a place is reckoned as it goes: sold or eaten for its price, spoiled for nothing',()=>{
   const r=manor({commodity:true});r.eval("s.stores.grain=100;offer(s,'grain',W.houses[1],100);lordGot(s,W.houses[1],100);H[0].w=50;purchase(s,'grain',H[0],20)");
-  const before=r.eval("mkt(s,'grain').get(W.houses[1])");r.eval("spoilOwned(s,'grain',0.05)");const T=r.eval('s._lg.get(W.houses[1])');
+  const before=r.eval("mkt(s,'grain').get(W.houses[1])");r.eval("spoilOwned(s,'grain',0.05);s.storage.settleStores()");const T=r.eval('s._lg.get(W.houses[1])'); // the rot is reckoned when his store is settled (#55)
   near(T.out,20);near(T.coin,20);near(T.rot,before-r.eval("mkt(s,'grain').get(W.houses[1])"));assert.ok(T.rot>0);
   r.eval('s._lg0=day()-360;manorYear(s,[])');near(r.eval('lordYield(s,W.houses[1])'),20/(20+T.rot));
 });

@@ -35,6 +35,7 @@ Property order, flags, frozen and non-extensible objects, null prototypes, holes
 - Query scratch on world objects (`__hs`, `_popValid`, `_popTotal`), as it stands.
 - `ANNAL_META`, `HASH_STAMP`, `RESUMED`, `storageArithmeticNext`, `SIM_FAULTS` (`n`, `first`, `list`).
 - Each commodity ledger's private state: volumes, the day's buffers, owners' facilities, row ranks and the next rank (`CommodityBalanceLedger.historyState` and `historyAdopt`).
+- Each ledger's spoilage as world data: each good's clock of days of spoilage and its rate (`spoilage`), the crumbs (`crumbs`), and on each owner's store of a good at a facility the count it was last settled at (`since`, a non-enumerable property of its Map). A store's quantity today follows from these in closed form (#55).
 - Each place's active claim records (`STORAGE_ACTIVE_CLAIMS`): ranks, ready and fallback.
 - Each account's view targets, which hold its beasts.
 - The outcome journal's `seq`, `chunk`, `committed` and character count.
@@ -58,7 +59,7 @@ No closure is stored. Every function in the world must be one a maker or binder 
   - `furlongRightsBind` and `buildingRightsBind` (property rights).
 
   The living code calls the same binders; their closures' source text is what it was.
-- **Indexes adopted**: notables (`notableIndexRebuild`) and household members (`householdMemberIndexAdopt`), in the mode they were saved in; the ledgers take up their saved private state.
+- **Indexes adopted**: notables (`notableIndexRebuild`) and household members (`householdMemberIndexAdopt`), in the mode they were saved in; the ledgers take up their saved private state, with `commoditySpoiled` as the hook that hears what a settled store lost (the save refuses a ledger with another).
 - **RS** is seeded again, then each stream restored.
 
 ## Left behind

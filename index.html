@@ -3923,6 +3923,15 @@ globalThis.CommodityBalanceLedger = (() => {
     return OMIT;
   }
   const OMIT = Symbol('omit');
+  // Spoilage in closed form (#55): an owner's store of a good at a facility (its availabilities' Map) keeps, as 'since', the count of its
+  // place's days of spoilage of that good (the ledger's clock) when it was last settled; what it holds on any later day follows from the
+  // day's share lost at that facility, compounded, and a store fallen below its crumb is gone.
+  function stamp(A, n) { if (own(A, 'since')) A.since = n; else Object.defineProperty(A, 'since', { value: n, writable: true, configurable: true }); }
+  const ripened = (q, f, k, crumb) => { const v = f === 1 ? q : q * (k === 1 ? f : Math.pow(f, k)); return v < crumb ? 0 : v; }; // the game's own pow (DM), as every engine gives it
+  function ripe(ledger, facility, good, A, q) { // q as it stands today
+    const clock = ledger.spoilage.get(good); if (clock === undefined || facility.transit) return q;
+    const k = clock.n - (A.since ?? 0); return k > 0 ? ripened(q, 1 - Math.min(1, clock.rate * (facility.protection ?? 4)), k, ledger.crumbs[good] ?? 0) : q;
+  }
   const QUANTITY_TERM_RANKS = [], QUANTITY_TERM_QTYS = []; // scratch for quantity(): it never re-enters
   const quantityRank = (state, id, good, owner, kind) => state.orderRanks.get(id)?.get(good)?.get(owner)?.get(kind) ?? Number.MAX_SAFE_INTEGER;
   function metadataOf(id, data, prior) {
@@ -4035,28 +4044,32 @@ globalThis.CommodityBalanceLedger = (() => {
   }
 
   return class CommodityBalanceLedger {
-    constructor({ realmId = 0, day = 0, ownerId = defaultOwnerId, volumes = {}, assert = () => {} } = {}) {
+    constructor({ realmId = 0, day = 0, ownerId = defaultOwnerId, volumes = {}, assert = () => {}, crumbs = {}, spoiled = null } = {}) {
       if (typeof ownerId !== 'function') fail('ownerId must be a function');
       if (typeof assert !== 'function') fail('assert must be a function');
+      if (spoiled !== null && typeof spoiled !== 'function') fail('spoiled must be a function');
+      if (!crumbs || typeof crumbs !== 'object' || Array.isArray(crumbs)) fail('crumbs must be a good-to-quantity object');
+      for (const [g, v] of Object.entries(crumbs)) if (!g || typeof v !== 'number' || !Number.isFinite(v) || v < 0) fail('crumbs must be finite nonnegative numbers');
       if (!Number.isSafeInteger(realmId) || realmId < 0) fail('realmId must be a nonnegative safe integer');
       if (!volumes || typeof volumes !== 'object' || Array.isArray(volumes)) fail('volumes must be a good-to-volume object');
       for (const [g, v] of Object.entries(volumes)) if (!g || typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) fail('volumes must be positive finite numbers');
       this.version = 3; this.realmId = realmId; this.day = finiteNonnegative(day, 'day'); this.settlementRevision = 0; this.facilities = new Map(); this.locations = this.facilities;
-      DAILY.set(this, { ownerId, assert, volumes: { ...volumes }, rows: new Map(), locations: new Map(), flows: new Map(), notes: new Map(),
+      this.spoilage = new Map(); this.crumbs = { ...crumbs }; // each good's clock of days of spoilage here ({n, rate}), and the least store kept
+      DAILY.set(this, { ownerId, assert, spoiled, volumes: { ...volumes }, rows: new Map(), locations: new Map(), flows: new Map(), notes: new Map(),
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: new Map(),
-        orderRanks: new Map(), nextOrderRank: 0, spent: new Set() });
+        orderRanks: new Map(), nextOrderRank: 0, spent: new Set(), epoch: 0 });
     }
     // A saved world takes its ledgers up again (worldSave, worldLoad): the private order of rows, owners and facilities goes
     // with it, and the day's buffers; the query caches stay behind and fill again as they are asked.
     static historyState(ledger) {
       const s = DAILY.get(ledger); if (!s) fail('not a ledger');
-      return { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
+      return { ownerId: s.ownerId, assert: s.assert, spoiled: s.spoiled, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
         ownerFacilities: s.ownerFacilities, orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank, spent: s.spent };
     }
     static historyAdopt(ledger, s) {
-      DAILY.set(ledger, { ownerId: s.ownerId, assert: s.assert, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
+      DAILY.set(ledger, { ownerId: s.ownerId, assert: s.assert, spoiled: s.spoiled ?? null, volumes: s.volumes, rows: s.rows, locations: s.locations, flows: s.flows, notes: s.notes,
         usedCache: new Map(), totalCache: new Map(), quantityCache: new Map(), ownerFacilities: s.ownerFacilities,
-        orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank, spent: s.spent || new Set() });
+        orderRanks: s.orderRanks, nextOrderRank: s.nextOrderRank, spent: s.spent || new Set(), epoch: 0 });
     }
     _assert() { DAILY.get(this).assert(); }
     ownerId(owner) { return ownerIdString(DAILY.get(this).ownerId(owner), 'ownerId'); }
@@ -4098,7 +4111,10 @@ globalThis.CommodityBalanceLedger = (() => {
         // Reuse the existing sequence; no second facility membership index.
         Object.defineProperty(facility, FACILITY_ORDER, { value: state.nextOrderRank++ });
       }
-      else Object.assign(facility, next);
+      else {
+        if (facility.protection !== next.protection || facility.transit !== next.transit || facility.exposed !== next.exposed) this.settleStores({ location: id }); // what spoiled as it was kept
+        Object.assign(facility, next);
+      }
       if (queryChanged) invalidateFacilityQueries(state, facility);
       if (JSON.stringify(before) !== JSON.stringify(metadata)) recordLocation(this, id, before, metadata);
       return facility;
@@ -4128,11 +4144,11 @@ globalThis.CommodityBalanceLedger = (() => {
     }
     _usedStats(location) {
       const state = DAILY.get(this), cached = state.usedCache.get(location);
-      if (cached !== undefined) return cached;
+      if (cached !== undefined && cached.epoch === state.epoch) return cached;
       const facility = this._facility(location); let sum = 0, magnitude = 0, terms = 0;
       for (const [good, owners] of facility.balances) for (const availabilities of owners.values())
-        for (const quantity of availabilities.values()) { const term = quantity * this._volume(facility, good); sum += term; magnitude += Math.abs(term); terms++; }
-      const stats = { sum, magnitude, terms };
+        for (const quantity of availabilities.values()) { const term = ripe(this, facility, good, availabilities, quantity) * this._volume(facility, good); sum += term; magnitude += Math.abs(term); terms++; }
+      const stats = { sum, magnitude, terms, epoch: state.epoch };
       state.usedCache.set(location, stats);
       return stats;
     }
@@ -4142,17 +4158,55 @@ globalThis.CommodityBalanceLedger = (() => {
       return Math.max(0, facility.capacity - this.used(location)) / this._volume(facility, good);
     }
     _quantityAt(facility, good, owner, availability) {
-      if (availability !== undefined) return facility.balances.get(good)?.get(owner)?.get(availability) || 0;
-      let total = 0; const byOwner = facility.balances.get(good)?.get(owner);
-      if (byOwner) for (const q of byOwner.values()) total += q;
+      const byOwner = facility.balances.get(good)?.get(owner); if (!byOwner) return 0;
+      if (availability !== undefined) { const q = byOwner.get(availability); return q ? ripe(this, facility, good, byOwner, q) : 0; }
+      let total = 0; for (const q of byOwner.values()) total += ripe(this, facility, good, byOwner, q);
       return total;
     }
-    _set(facility, location, good, owner, availability, after, cause) {
+    // A store is settled before it changes: what spoiled since it was last settled is lost now, journaled as spoilage.
+    _set(facility, location, good, owner, availability, after, cause) { this._settle(facility, location, good, owner); this._put(facility, location, good, owner, availability, after, cause); }
+    _settle(facility, location, good, owner) {
+      const clock = this.spoilage.get(good); if (clock === undefined || facility.transit) return;
+      const A = facility.balances.get(good)?.get(owner); if (!A || A.since === clock.n) return;
+      const k = clock.n - (A.since ?? 0), f = 1 - Math.min(1, clock.rate * (facility.protection ?? 4)), crumb = this.crumbs[good] ?? 0, spoiled = DAILY.get(this).spoiled;
+      stamp(A, clock.n);
+      for (const [availability, q] of [...A]) {
+        const v = ripened(q, f, k, crumb); if (v === q) continue;
+        this._put(facility, location, good, owner, availability, v, facility.exposed ? 'exposure-loss' : 'stored-spoilage');
+        if (spoiled) spoiled(this, good, owner, availability, q - v, v);
+      }
+    }
+    // A day of spoilage of a good here: its clock moves on, and every store of it is a day riper, to be reckoned when it is next settled.
+    // A new rate (a salter come or gone) first settles every store of the good at the old one.
+    ripen(good, rate) {
+      this._assert(); finiteNonnegative(rate, 'rate');
+      let clock = this.spoilage.get(good);
+      if (clock === undefined) this.spoilage.set(good, clock = { n: 0, rate });
+      else if (clock.rate !== rate) { this.settleStores({ good }); clock.rate = rate; }
+      clock.n++; DAILY.get(this).epoch++;
+    }
+    // Settle the stores here (of one good, one owner, one facility, or all), in the ledger's order.
+    settleStores(fields = {}) {
+      this._assert();
+      const hasGood = own(fields, 'good'), hasOwner = own(fields, 'owner'), state = DAILY.get(this);
+      const ids = hasOwner && hasGood ? [...ownerFacilitySet(state, fields.owner, fields.good) || []] : own(fields, 'location') ? [fields.location] : [...this.facilities.keys()];
+      for (const id of ids) {
+        const facility = this.facilities.get(id); if (!facility || facility.transit) continue;
+        for (const good of hasGood ? [fields.good] : [...facility.balances.keys()]) {
+          const owners = facility.balances.get(good); if (!owners) continue;
+          for (const owner of hasOwner ? [fields.owner] : [...owners.keys()]) this._settle(facility, id, good, owner);
+        }
+      }
+    }
+    _put(facility, location, good, owner, availability, after, cause) {
       const state = DAILY.get(this);
       const before = facility.balances.get(good)?.get(owner)?.get(availability) || 0;
       if (before === after) return;
       if (after === 0) nestedDelete3(facility.balances, good, owner, availability);
-      else nestedSet3(facility.balances, good, owner, availability, after);
+      else {
+        nestedSet3(facility.balances, good, owner, availability, after);
+        if (before === 0 && !facility.transit) { const A = facility.balances.get(good).get(owner); if (A.since === undefined) stamp(A, this.spoilage.get(good)?.n ?? 0); } // a new store stands as of today
+      }
       state.usedCache.delete(location);
       state.totalCache.delete(good);
       invalidateQuantity(state, owner, good);
@@ -4203,7 +4257,7 @@ globalThis.CommodityBalanceLedger = (() => {
         const owner = fields.owner, good = fields.good, availability = fields.availability;
         if (AVAILABILITY.has(availability) && (includeTransit || availability !== 'transit')) for (const id of ids) {
           const facility = this.facilities.get(id); if (!facility || !includeTransit && facility.transit || exposedOnly && !facility.exposed) continue;
-          const qty = facility.balances.get(good)?.get(owner)?.get(availability);
+          const A = facility.balances.get(good)?.get(owner), raw = A?.get(availability), qty = raw > 0 ? ripe(this, facility, good, A, raw) : 0;
           if (qty > 0) selected.push({ row: { location: id, good, owner, availability, qty }, rank: ranks.get(id)?.get(good)?.get(owner)?.get(availability) ?? Number.MAX_SAFE_INTEGER });
         }
         if (selected.length > 1) selected.sort((a, b) => a.rank - b.rank);
@@ -4216,18 +4270,18 @@ globalThis.CommodityBalanceLedger = (() => {
         const rank = ranks.get(location)?.get(good)?.get(owner)?.get(availability);
         selected.push({ row: { location, good, owner, availability, qty }, rank: rank ?? Number.MAX_SAFE_INTEGER });
       };
-      const scanOwners = (location, good, owners) => {
-        if (hasOwner) { const availabilities = owners.get(fields.owner); if (availabilities) scanAvailabilities(location, good, fields.owner, availabilities); }
-        else for (const [owner, availabilities] of owners) if (availabilities) scanAvailabilities(location, good, owner, availabilities);
+      const scanOwners = (location, facility, good, owners) => {
+        if (hasOwner) { const availabilities = owners.get(fields.owner); if (availabilities) scanAvailabilities(location, facility, good, fields.owner, availabilities); }
+        else for (const [owner, availabilities] of owners) if (availabilities) scanAvailabilities(location, facility, good, owner, availabilities);
       };
-      const scanAvailabilities = (location, good, owner, availabilities) => {
-        if (hasAvailability) addRow(location, good, owner, fields.availability, availabilities.get(fields.availability));
-        else for (const [availability, qty] of availabilities) addRow(location, good, owner, availability, qty);
+      const scanAvailabilities = (location, facility, good, owner, availabilities) => { // each balance as it stands today
+        if (hasAvailability) { const q = availabilities.get(fields.availability); if (q > 0) addRow(location, good, owner, fields.availability, ripe(this, facility, good, availabilities, q)); }
+        else for (const [availability, qty] of availabilities) addRow(location, good, owner, availability, qty > 0 ? ripe(this, facility, good, availabilities, qty) : qty);
       };
       const scan = (location, facility) => {
         if (!includeTransit && facility.transit || exposedOnly && !facility.exposed) return;
-        if (hasGood) { const owners = facility.balances.get(fields.good); if (owners) scanOwners(location, fields.good, owners); }
-        else for (const [good, owners] of facility.balances) if (owners) scanOwners(location, good, owners);
+        if (hasGood) { const owners = facility.balances.get(fields.good); if (owners) scanOwners(location, facility, fields.good, owners); }
+        else for (const [good, owners] of facility.balances) if (owners) scanOwners(location, facility, good, owners);
       };
       if (hasLocation) scan(fields.location, this._facility(fields.location));
       else for (const id of ids) { const facility = this.facilities.get(id); if (facility) scan(id, facility); }
@@ -4244,6 +4298,7 @@ globalThis.CommodityBalanceLedger = (() => {
       const state = DAILY.get(this), token = availability == null ? undefined : availability;
       let goods = state.quantityCache.get(owner); if (!goods) state.quantityCache.set(owner, goods = new Map());
       let slots = goods.get(good); if (slots === undefined) goods.set(good, slots = QUANTITY_SLOTS.pop() || new Array(12));
+      const clockN = this.spoilage.get(good)?.n ?? 0; if (slots.n !== clockN) { slots.fill(undefined); slots.n = clockN; } // a day riper: remembered totals are stale
       const scope = !!includeTransit || token === 'transit';
       const slot = (token === undefined ? 0 : token === 'held' ? 1 : token === 'sale' ? 2 : token === 'unassigned' ? 3 : token === 'transit' ? 4 : 5) * 2 + (scope ? 1 : 0);
       const hit = slots[slot]; if (hit !== undefined) return hit;
@@ -4253,15 +4308,15 @@ globalThis.CommodityBalanceLedger = (() => {
         const facility = this.facilities.get(id); if (!facility || !scope && facility.transit) continue;
         const rows = facility.balances.get(good)?.get(owner); if (!rows) continue;
         if (token !== undefined) {
-          const qty = rows.get(token) || 0;
+          const raw = rows.get(token) || 0, qty = raw > 0 ? ripe(this, facility, good, rows, raw) : 0;
           if (qty > 0 && (scope || token !== 'transit')) {
             if (n === 0) { qty0 = qty; id0 = id; kind0 = token; n = 1; }
             else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, token); termQty[n++] = qty; }
           }
-        } else for (const [kind, qty] of rows) if (qty > 0 && (scope || kind !== 'transit')) {
+        } else for (const [kind, raw] of rows) { const qty = raw > 0 ? ripe(this, facility, good, rows, raw) : 0; if (qty > 0 && (scope || kind !== 'transit')) {
           if (n === 0) { qty0 = qty; id0 = id; kind0 = kind; n = 1; }
           else { if (n === 1) { termRank[0] = quantityRank(state, id0, good, owner, kind0); termQty[0] = qty0; } termRank[n] = quantityRank(state, id, good, owner, kind); termQty[n++] = qty; }
-        }
+        } }
       }
       let total = 0;
       if (n === 1) total = qty0;
@@ -4275,8 +4330,8 @@ globalThis.CommodityBalanceLedger = (() => {
     total(good, includeTransit = false) {
       if (typeof good !== 'string' || !good) fail('good is required');
       const state = DAILY.get(this), scope = !!includeTransit;
-      let cached = state.totalCache.get(good);
-      if (cached?.has(scope)) return cached.get(scope);
+      let cached = state.totalCache.get(good); const clockN = this.spoilage.get(good)?.n ?? 0;
+      if (cached?.n === clockN && cached.has(scope)) return cached.get(scope);
       let total = 0;
       const facilities = [];
       for (const [id, goods] of state.orderRanks) if (goods.has(good)) {
@@ -4287,9 +4342,9 @@ globalThis.CommodityBalanceLedger = (() => {
         if (!scope && facility.transit) continue;
         const owners = facility.balances.get(good); if (!owners) continue;
         for (const availabilities of owners.values()) for (const [kind, qty] of availabilities)
-          if (scope || kind !== 'transit') total += qty;
+          if (scope || kind !== 'transit') total += ripe(this, facility, good, availabilities, qty);
       }
-      if (!cached) state.totalCache.set(good, cached = new Map()); cached.set(scope, total);
+      if (cached?.n !== clockN) { state.totalCache.set(good, cached = new Map()); cached.n = clockN; } cached.set(scope, total);
       return total;
     }
     _plan(fields, quantity) {
@@ -4298,7 +4353,7 @@ globalThis.CommodityBalanceLedger = (() => {
       const selector = { ...fields, includeTransit };
       // A complete balance address selects one cell; there is no ordering to recover.
       if (own(selector, 'location') && own(selector, 'good') && own(selector, 'owner') && own(selector, 'availability')) {
-        const facility = this._facility(selector.location), stored = facility.balances.get(selector.good)?.get(selector.owner)?.get(selector.availability);
+        const facility = this._facility(selector.location), stored = this._quantityAt(facility, selector.good, selector.owner, selector.availability);
         const sum = stored > 0 && AVAILABILITY.has(selector.availability) ? stored : 0;
         const tolerance = Number.EPSILON * Math.max(sum, quantity) * 8;
         if (quantity > sum + tolerance) fail('insufficient balance');
@@ -4401,7 +4456,7 @@ function commodityTownTotal(K,g){return K.total(g)+(g==='timber'?K.total('char')
 function commodityInit(s){
   const raw=Object.fromEntries(Object.keys(s.stores).map(g=>[g,s.stores[g]])),claims=[];
   for(const[o,x]of s._owners||[])claims.push([o,x,{held:{...x.held},sale:{...x.sale}}]);
-  const K=s.storage=new CommodityBalanceLedger({realmId:W.settlements.indexOf(s),day:day(),ownerId:storageOwnerId,assert:typeof storageOutcomeAssert==='function'?storageOutcomeAssert:()=>{},volumes:Object.fromEntries(Object.entries(STORAGE_GOODS).map(([g,v])=>[g,v.volume]).concat([['char',2]]))});
+  const K=s.storage=new CommodityBalanceLedger({realmId:W.settlements.indexOf(s),day:day(),ownerId:storageOwnerId,assert:typeof storageOutcomeAssert==='function'?storageOutcomeAssert:()=>{},volumes:Object.fromEntries(Object.entries(STORAGE_GOODS).map(([g,v])=>[g,v.volume]).concat([['char',2]])),crumbs:CRUMB,spoiled:commoditySpoiled});
   K.next=1;K.location('yard',{x:s.pos.x,z:s.pos.z,capacity:Infinity,exposed:true,protection:4});
   for(const[g,q]of Object.entries(raw))if(!BEASTS.includes(g)&&q>0)K.adjust('yard',g,null,'unassigned',q,'initial');
   for(const[o,x,tables]of claims){commodityBindAccount(s,o,x);for(const kind of ['held','sale'])for(const[g,q]of Object.entries(tables[kind]))if(!BEASTS.includes(g)&&q>0)commoditySetAccount(s,o,kind,g,q);}
@@ -4469,10 +4524,15 @@ function commodityFacilities(s){const K=s.storage,seen=new Set();for(const b of 
 function commodityDestroy(K,id){const n=K.locations.get(id);if(!n)return;K.location(id,{active:false});const rows=[...K.entries({location:id})];if(!rows.length)return;const yard=K.location('exposed:'+id,{x:n.x,z:n.z,capacity:Infinity,exposed:true,protection:4});for(const r of rows)K.transfer(r,r.qty,r.owner,{location:yard.id,availability:r.availability,cause:'facility-destroyed'});}
 function commodityAnyHeld(K,g){for(const o of K.owners(g,'held'))return true;return false;} // whether any owner holds the good
 function commodityExposed(K){return [...K.entries({exposedOnly:true})];}
-function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const bills=new Map(),routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?Math.max(0,means(payer)-(bills.get(payer)||0))/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0)bills.set(payer,(bills.get(payer)||0)+q*unitCost);K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}for(const[payer,v]of bills)buildWorks(s,v,payer,'carriage'); /* each owner pays the day's carrying in one bill (#23, #15: a bill a lot, each paying every hand) */s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+(K.locations.get(r.location).balances.get(r.good)?.get(r.owner)?.get(r.availability)||0)*K.volume(r.good),0)};}
-// A store spoils by its share of the day; what is left below a crumb (CRUMB) is swept out with it, lost as spoiled, and a seller left
-// with nothing on sale here has no reserve here.
-function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);let unassigned=0;for(const good of g==='timber'?['timber','char']:[g]){const crumb=CRUMB[good];for(const r of K.entries({good})){const n=K.locations.get(r.location);if(n.transit)continue;let q=r.qty*Math.min(1,rate*(n?.protection??4));if(r.qty-q<crumb)q=r.qty;if(!(q>0))continue;K.consume(r,q,n?.exposed?'exposure-loss':'stored-spoilage');if(r.owner===null)unassigned+=q;else{lordRot(s,good,r.owner,q);if(q===r.qty&&r.availability==='sale'&&s.rsv?.[good]&&!(K.quantity(r.owner,good,'sale')>0))rsv(s,good).delete(r.owner);}}}if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-unassigned);}
+function commodityStorageTick(s){const K=commodityFacilities(s);let work=800*Math.max(1,Math.floor((s.pop||0)/100)),moved=0,cost=0;const bills=new Map(),routes=new Map(),publicFacilities=[],privateFacilities=new Map();for(const b of s.buildings||[]){if(!STORAGE_TYPES[b.arch]||!b.storageId)continue;const n=K.locations.get(b.storageId);if(!n?.building)continue;const entry={n,order:K.facilityOrder(n.id)};if(n.public)publicFacilities.push(entry);else{let owned=privateFacilities.get(n.owner);if(!owned)privateFacilities.set(n.owner,owned=[]);owned.push(entry);}}publicFacilities.sort((a,b)=>a.order-b.order);for(const owned of privateFacilities.values())owned.sort((a,b)=>a.order-b.order);const shortlist=new Map(),sortCandidates=(a,b)=>a.d-b.d||a.order-b.order,routeCandidates=(a,g,entries)=>{const out=[];for(const{n,order}of entries){if(!n.active||!(K.free(n.id,g)>0))continue;const routeKey=a.id+'>'+n.id;let d=routes.get(routeKey);if(d===undefined){d=storageRoute(s,a,n);routes.set(routeKey,d);}if(Number.isFinite(d))out.push({n,d,order});}out.sort(sortCandidates);return out;};const exposedRows=commodityExposed(K);let exposedDestination=false;for(const row of exposedRows){if(!(work>0))break;const a=K.locations.get(row.location),key=a.id+'>'+row.good;let group=shortlist.get(key);if(!group)shortlist.set(key,group={public:null,private:new Map(),merged:new Map()});let candidates=group.merged.get(row.owner);if(!candidates){if(!group.public)group.public=routeCandidates(a,row.good,publicFacilities);let privateList=group.private.get(row.owner);if(!privateList){privateList=routeCandidates(a,row.good,privateFacilities.get(row.owner)||[]);group.private.set(row.owner,privateList);}candidates=[];let i=0,j=0;while(i<group.public.length||j<privateList.length)candidates.push(j>=privateList.length||i<group.public.length&&sortCandidates(group.public[i],privateList[j])<=0?group.public[i++]:privateList[j++]);group.merged.set(row.owner,candidates);}let left=row.qty;for(const{n,d}of candidates){if(!(work>0&&left>0))break;if(!n.active||!n.public&&n.owner!==row.owner)continue;const free=K.free(n.id,row.good);if(!(free>0))continue;const payer=row.owner||lordAcct(s),unitCost=d*.00002,q=Math.min(left,free,work/(20+d)/K.volume(row.good),unitCost>0?Math.max(0,means(payer)-(bills.get(payer)||0))/unitCost:Infinity);if(!(q>0))continue;if(unitCost>0)bills.set(payer,(bills.get(payer)||0)+q*unitCost);K.transfer(row,q,row.owner,{location:n.id,availability:row.availability,cause:'local-carriage'});if(n.exposed)exposedDestination=true;left-=q;work-=q*K.volume(row.good)*(20+d);moved+=q;cost+=q*unitCost;}}for(const[payer,v]of bills)buildWorks(s,v,payer,'carriage'); /* each owner pays the day's carrying in one bill (#23, #15: a bill a lot, each paying every hand) */s.storageReport={day:day(),moved,handlingCost:cost,exposed:exposedDestination?commodityExposed(K).reduce((q,r)=>q+r.qty*K.volume(r.good),0):exposedRows.reduce((q,r)=>q+K._quantityAt(K.locations.get(r.location),r.good,r.owner,r.availability)*K.volume(r.good),0)};}
+// A day of spoilage (#55): every store of the good is a day riper, its share of the day lost at its facility, compounded, and what falls
+// below a crumb (CRUMB) gone; the ledger reckons it in closed form when the store is next settled (bought from, sold to, eaten, moved, or at
+// the place's monthly reckoning), not store by store each day. The place's own unsold output is settled at once, for its pending output.
+function commoditySpoil(s,g,rate,K){if(!commodityActive(s)||K!==s.storage)K=commodityFacilities(s);for(const good of g==='timber'?['timber','char']:[g]){K.ripen(good,rate);K.settleStores({good,owner:null});}}
+// What a store lost when it was settled: the month's loss of the good for its price (s._lostM), the place's pending output that rotted
+// unsold, a lord's rotten grain; a seller left with nothing on sale here has no reserve here.
+function commoditySpoiled(K,good,owner,availability,lost,after){const s=W.settlements[K.realmId];if(s?.storage!==K)return;const g=commodityPhysical(good),M=s._lostM||(s._lostM={});M[g]=(M[g]||0)+lost;
+  if(owner===null){if(s._made?.[g])s._made[g]=Math.max(0,s._made[g]-lost);}else{lordRot(s,good,owner,lost);if(availability==='sale'&&!(after>0)&&s.rsv?.[good]&&!(K.quantity(owner,good,'sale')>0))rsv(s,good).delete(owner);}}
 function commodityBuildingReport(s,b){const K=s.storage,n=K.locations.get(b.storageId);if(!n)return null;const goods={},owners=new Map();for(const r of K.entries({location:n.id})){const g=commodityPhysical(r.good);goods[g]=(goods[g]||0)+r.qty;const id=storageOwnerId(r.owner);owners.set(id,(owners.get(id)||0)+r.qty*K.volume(r.good));}return {id:n.id,capacity:n.active?n.capacity:0,used:K.used(n.id),goods,owners:[...owners],protection:n.protection,public:n.public,marketDistance:storageRoute(s,n,(s.places||[]).find(p=>p.kind==='market')||s.pos)};}
 function commodityCargoOut(c,s){const K=s.storage,id='cargo:'+W.settlements.indexOf(s)+':'+K.next++;K.location(id,{capacity:Infinity,transit:true,protection:1,x:s.pos.x,z:s.pos.z});K.transfer({owner:accountOwner(c.m),good:c.good,availability:'held'},c.qty,accountOwner(c.m),{location:id,availability:'transit',cause:'dispatch'});c.storageCargo={origin:s,id};commodityCargoQtyBind(c,K,id);}
 function commodityCargoQtyBind(c,K,id){Object.defineProperty(c,'qty',{configurable:true,enumerable:true,get(){return [...K.entries({location:id})].reduce((n,r)=>n+r.qty,0);}});}
@@ -4692,7 +4752,8 @@ function winterFeed(s,snow){herdSync(s);const owners=[...(s._owners||new Map())]
   for(const[o,x]of [...owners,[lordAcct(s),{animals:remainder}]]){const H=x.animals,need=['sheep','cattle','horses'].reduce((n,g)=>n+(H[g]||0)*LU[g],0)*WINTER_HAY/3,eat=consumeOwnStock(s,o,'hay',need),short=need>0?1-eat/need:0;
     if(short>0.05){const loss=Math.min(STARVE,short*0.12)*(snow?1.4:1);for(const g of ['sheep','cattle','horses']){const q=(H[g]||0)*loss;if(H===remainder&&H[g]>0)for(const x of (s._owners||new Map()).values())for(const kind of ['sale','held'])if(x[kind][g]!==undefined)x[kind][g]*=1-loss;H[g]=(H[g]||0)-q;s.stores[g]=Math.max(0,(s.stores[g]||0)-q);}}}
   s._herdLast=Object.fromEntries(BEASTS.map(g=>[g,s.stores[g]||0]));}
-function spoilOwned(s,g,rate,phaseK){if(!(rate>0)&&!commodityActive(s))return;const was=s.stores[g]||0;try{spoilOwned0(s,g,rate,phaseK);}finally{const M=s._lostM||(s._lostM={});M[g]=(M[g]||0)+Math.max(0,was-(s.stores[g]||0));}} // what rotted this month, for the price; ore and stone do not rot, but their crumbs are swept out
+function spoilOwned(s,g,rate,phaseK){if(commodityActive(s)){spoilOwned0(s,g,rate,phaseK);return;} // the ledger notes what rotted as it settles each store (commoditySpoiled); ore and stone do not rot, but their crumbs are swept out
+  if(!(rate>0))return;const was=s.stores[g]||0;try{spoilOwned0(s,g,rate,phaseK);}finally{const M=s._lostM||(s._lostM={});M[g]=(M[g]||0)+Math.max(0,was-(s.stores[g]||0));}} // what rotted this month, for the price
 function spoilOwned0(s,g,rate,phaseK){if(s.storage){storageSpoil(s,g,rate,phaseK);return;}const f=Math.max(0,1-rate);s.stores[g]=Math.max(0,(s.stores[g]||0)*f);
   for(const x of (s._owners||new Map()).values()){if(x.held[g])x.held[g]*=f;if(x.sale[g])x.sale[g]*=f;if(g==='timber'&&x.held.char)x.held.char*=f;}
   if(s._made&&s._made[g])s._made[g]*=f;}
@@ -12074,7 +12135,7 @@ function reprice(s){ // each price rises when buyers wanted more than was sold, 
 function tickMarket(){
   const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
   W.settlements.forEach((s,si)=>{if(!due[si])return;const heads=heads_(s,()=>true),size=new Map();for(const p of s.folk||[]){if(p.dead)continue;const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
-    shareOutput(s,si,PM,heads);reconcile(s,heads);const left=homeward(s);provision(s,heads,size);waifs(s,left);payCrafts(s,heads);reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
+    shareOutput(s,si,PM,heads);reconcile(s,heads);const left=homeward(s);provision(s,heads,size);waifs(s,left);payCrafts(s,heads);if(commodityActive(s))s.storage.settleStores();/* the month's reckoning: every store settled, so the price knows what rotted (#55) */reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
     {const F=s.frt||(s.frt={cart:1,boat:1}),Wt=s._wait||{};for(const[mode,tr]of[['cart','carter'],['boat','boatman']]){const idle=heads.filter(h=>h.tr===tr&&!awayNow(h)).length,w=Wt[mode]||0;
       F[mode]=Math.max(0.05,(F[mode]??1)*Math.exp(0.2*Math.tanh(Math.log((w+0.2)/(idle*0.5+0.2)))));}s._wait={};} // loads waiting for a driver raise the going rate; idle drivers lower it
   });pl=0;pp=0;for(const s of W.settlements){if(!(s.pop>0))continue;pl+=(0.75*Math.log(Math.max(1e-9,price(s,'grain')/GOODBASE.grain))+0.25*Math.log(Math.max(1e-9,price(s,'fish')/GOODBASE.fish)))*s.pop;pp+=s.pop;}if(pp>0)W._pl=Math.exp(pl/pp);} // (a geometric mean: one famine town does not set the realm's wages) // the price level: rents, taxes, fees and wages are reckoned in it
@@ -18948,7 +19009,7 @@ function worldSaveEncode(){
   const journal=STORAGE_OUTCOMES.journal,ledgers=[],claims=[],src=f=>Function.prototype.toString.call(f);
   for(const s of W.settlements){
     if(s.storage){const st=CommodityBalanceLedger.historyState(s.storage),assert=st.assert===storageOutcomeAssert?'outcome':src(st.assert)==='()=>{}'?'none':null;
-      if(st.ownerId!==storageOwnerId||!assert)throw Error('The ledger at '+s.name+' answers to another owner or assertion');
+      if(st.ownerId!==storageOwnerId||!assert||st.spoiled!==commoditySpoiled)throw Error('The ledger at '+s.name+' answers to another owner, assertion or spoilage');
       ledgers.push([s.storage,{volumes:st.volumes,rows:st.rows,locations:st.locations,flows:st.flows,notes:st.notes,ownerFacilities:st.ownerFacilities,orderRanks:st.orderRanks,nextOrderRank:st.nextOrderRank,spent:st.spent},assert]);}
     const C=STORAGE_ACTIVE_CLAIMS.get(s);if(C)claims.push([s,{map:C.map,size:C.size,next:C.next,ready:C.ready,fallback:C.fallback,goods:C.goods,unsafe:C.unsafe,offers:C.offers??null,
       records:C.map instanceof Map?[...Map.prototype.values.call(C.map)].filter(x=>C.records.has(x)).map(x=>[x,C.records.get(x)]):[]}]);
@@ -19143,7 +19204,7 @@ function worldSaveInstall({history:H,extra:X}){
   JOURNAL=g.JOURNAL;MOD=g.MOD;allLines=g.allLines;REPLAYING=g.REPLAYING;speedIdx=p.speedIdx;lastSpeed=p.lastSpeed;sovPausedFrom=p.sovPausedFrom;simAccum=p.simAccum;
   RS=seedStreams(SEED,FATE);for(const[k,st]of Object.entries(H.rng))(RS[k]||(RS[k]=sfc32(0,0,0,0))).restore(st);
   HISTORY.layouts=H.layouts;HASH_STAMP=X.hashStamp;RESUMED=X.resumed;storageArithmeticNext=X.arithmetic;Object.assign(SIM_FAULTS,X.faults);
-  for(const[K,st,assert]of X.ledgers)CommodityBalanceLedger.historyAdopt(K,{...st,ownerId:storageOwnerId,assert:assert==='outcome'?storageOutcomeAssert:()=>{}});
+  for(const[K,st,assert]of X.ledgers)CommodityBalanceLedger.historyAdopt(K,{...st,ownerId:storageOwnerId,assert:assert==='outcome'?storageOutcomeAssert:()=>{},spoiled:commoditySpoiled});
   for(const[s,c]of X.claims)STORAGE_ACTIVE_CLAIMS.set(s,{map:c.map,size:c.size,next:c.next,records:new WeakMap(c.records),goods:c.goods,unsafe:c.unsafe,ready:c.ready,fallback:c.fallback,...(c.offers?{offers:c.offers}:{})});
   if(X.notables)notableIndexRebuild(W);else NOTABLE_INDEXES.set(W,{supported:false});
   householdMemberIndexAdopt(W);if(!X.households)householdMemberIndexInvalidate(W);
