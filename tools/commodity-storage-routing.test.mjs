@@ -14,7 +14,7 @@ test('commodity carriage partitions candidates across many owners and spoilage r
   const balances=new Map([['grain',new Map(rows.map(r=>[r.owner,new Map([['held',r.qty]])]))]]);
   const K={locations:new Map([['yard',{id:'yard',exposed:true,x:0,z:0,protection:4,balances}],...nodes.map(n=>[n.id,n])]),facilityOrder(id){return Number(id.slice(1));},free(id){calls.free++;const n=this.locations.get(id);return n.capacity-n.used;},volume(){return 1;},entries({good}={}){return rows.filter(r=>r.qty>0&&(!good||r.good===good));},transfer(r,q,owner,{location}){r.qty-=q;balances.get(r.good).get(r.owner).set(r.availability,r.qty);this.locations.get(location).used+=q;},consume(r,q){r.qty-=q;balances.get(r.good).get(r.owner).set(r.availability,r.qty);}};
   const s={pop:100,buildings:nodes.map(n=>({arch:'warehouse',storageId:n.id})),storage:K};
-  const context=vm.createContext({s,K,W:{},STORAGE_TYPES:{warehouse:{}},commodityActive:()=>true,day:()=>1,means:()=>1000,lordAcct:()=>({}),acct:()=>{},wages:()=>{},buildWorks:()=>{},calls,
+  const context=vm.createContext({s,K,W:{},STORAGE_TYPES:{warehouse:{}},CRUMB:{grain:.01},commodityActive:()=>true,day:()=>1,means:()=>1000,lordAcct:()=>({}),acct:()=>{},wages:()=>{},buildWorks:()=>{},calls,
     commodityFacilities(){calls.sync++;return K;},commodityExposed(){return rows.filter(r=>r.qty>0);},storageOwnerId(o){return o?.id||'unassigned';},storageRoute(){calls.route++;return 1;}});
   vm.runInContext(extract('commodityStorageTick')+'\n'+extract('commoditySpoil'),context);
   vm.runInContext('commodityStorageTick(s); for(let i=0;i<8;i++)commoditySpoil(s,"grain",.01,K)',context);

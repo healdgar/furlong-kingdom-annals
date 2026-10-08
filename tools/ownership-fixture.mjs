@@ -7,7 +7,7 @@ const names=['initHousePurse','creditOf','beastYield','unearned','buyBuildingMat
 names.push('suitMill','millHolder','lordTally','lordSold','lordRot','lordGot','lordYield','yearPrice','tenShare','stripLord','stripRent','manorYear','entryFine','stripBidder','manorRents','farmQuarter','farmQuarters','farmMills','merchet','liveries','manorCmd','bookKind','rollOf','rollAdd'); // the manor's dues (#36), which the market, the crafts and the weddings call
 const ownership=source.slice(source.indexOf('function oldHouseholdHead('),source.indexOf('function houseFolk(s)'));
 const functions=[...names,'publicOrderMen','publicOrderSuppression'].map(n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))?.[0]||'').join('\n');
-const constants=['GOODS','GOODBASE','NEED','SPOIL','LU','WINTER_HAY','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','ELASTIC','metroOf','CART_MPD','SUIT_MILL','TEN_SHARE','CUSTOM_NAMES','ROLL_N','FOODS','CUT','TABLE','CARCASS','MILK'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
+const constants=['GOODS','GOODBASE','NEED','SPOIL','LU','WINTER_HAY','MARGIN','PRODUCE','foodYr','BEAST_YR','HH_FIELDS','PARTIBLE','ELASTIC','metroOf','CART_MPD','SUIT_MILL','TEN_SHARE','CUSTOM_NAMES','ROLL_N','FOODS','CRUMB','CUT','TABLE','CARCASS','MILK'].map(n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||'').join('\n');
 
 export function realm({grain=20,fish=20,grainLard=0,fishLard=0,cash=20,crown=0,pop=150,households=1,commodity=false,transformSource,bootstrap=''}={}){
   const H=Array.from({length:households},(_,i)=>({id:i+1,gn:'household',w:cash,tr:'labourer',si:0}));

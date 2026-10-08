@@ -87,7 +87,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // drops only their cached quantities. No quantity, title, claim or balance writer changed, and no settlement is written or withheld
  // that was not before: with the retired places and records taken out, world graphs, RNG, annals and the journal's deltas, flows
  // and notes equal deab546 (1001 sea 150 days, 42 sea 3600 days); world-save.test.mjs covers the saved spent set.
- assert.equal(digest(source.slice(a,b)),"3e9e7bb9bfb352521f56e9084656b73bc85d67b0412c6a74461b787b5ee5d9c7");
+ // Crumbs (#55, batch 10b, behaviour): commoditySpoil sweeps out a store whose day's spoilage leaves less than CRUMB of it, whole,
+ // through the same consume and spoilage causes (journaled as spoilage; the stores, s._lostM, pending output and the lord's rot
+ // tally in step), and a seller left with nothing on sale there loses his reserve there, as commodityConsume does; spoilOwned
+ // calls it for goods that never rot too, for their crumbs. No other writer changed; ledger-growth.test.mjs covers the rule.
+ assert.equal(digest(source.slice(a,b)),"6fd24dba28c3b702ac653b8427b5f8f12b003e77a9c07f8f7197625a1cc4cb86");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
