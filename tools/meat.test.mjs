@@ -93,6 +93,9 @@ for(const commodity of [false,true]){
       if(pig===5){near(r.s.stores.swine,40);near(sale(r,'H[0]','meat'),0);continue;} // nor a pig's, 4.3, at 5
       near(r.s.stores.swine,20);near(sale(r,'H[0]','meat'),30);near(r.eval("rsv(s,'meat').get(H[0])"),80/30); // twenty pigs for thirty of meat, at what they cost him
     }
+    const r=place({commodity,households:2,cash:200,grain:100});herd(r,'swine:5');
+    r.eval("H[0].tr='butcher';s._dAvg={meat:30};s._want={swine:9.5,cattle:0,sheep:0,horses:0};Object.assign(s.px,{swine:4,cattle:12,sheep:3,meat:3});offer(s,'swine','crown',5);provision(s,H,new Map())");
+    near(r.s.stores.swine,5);near(r.eval('s._dem.swine'),20); // the sows the place keeps are not his: the twenty pigs he sought are wanted at its market, for the drovers to bring
   });
 
   test(`pannage is the pigs fed on the mast × the custom × a pig's price, paid to the wood's lord, and nothing for his own pigs (${how})`,()=>{
