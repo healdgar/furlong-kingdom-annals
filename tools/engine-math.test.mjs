@@ -53,6 +53,7 @@ const RUN=`const {parentPort,workerData:{source,rounded,nudged,seed,fate,coast,d
   (async()=>{await R('startSimulation({seed:'+seed+',fate:'+fate+',coast:'+JSON.stringify(coast)+',startAD:850,outcomeJournal:new OutcomeJournal(async e=>({chunk:e.chunk,first:e.first,last:e.last}),{maxPendingBytes:64*1024*1024})})');
     for(let i=0;i<days;i++){await R('STORAGE_OUTCOMES.wait()');R('simTick()');}
     if(census==='read')R('for(const s of W.settlements)void s.pop'); // a reader from outside the day: a panel, the soak's census, the screen's packets
+    if(census==='actors')R('for(let si=0;si<W.settlements.length;si++)workerRenderCitizens(si,{focus:W.settlements[si].pos,frac:0})'); // the townsfolk the screen draws, in every place
     if(census==='unread')R('for(const s of W.settlements){delete s._popValid;delete s._popTotal;}'); // as if nothing had ever summed them
     const g=R('(()=>{const g=new HistoryGraph(),f=g.capture(W,{skipQueryScratch:true});return JSON.stringify([f.root,[...g.state].sort(([a],[b])=>a-b),g.code]);})()');
     parentPort.postMessage({world:createHash('sha256').update(g).digest('hex'),rng:R('JSON.stringify(Object.entries(RS).map(([k,r])=>[k,r.state()]))'),annals:R('JSON.stringify(allLines)'),treasury:R('W.treasury')});})();`;
@@ -70,4 +71,10 @@ test('reading the world from outside the day leaves its graph as it was (the pop
   const unread=await engineRun(SOURCE,false,{census:'unread'}),read=await engineRun(SOURCE,false,{census:'read'});
   assert.equal(read.world,unread.world,'the world after eight days, every place\'s population read by a census or never summed');
   assert.equal(read.rng,unread.rng,'every RNG stream');
+});
+
+test('drawing the townsfolk leaves the world as it was (street graphs and road bounds are scratch, #27)',async()=>{
+  const played=await engineRun(SOURCE,false),drawn=await engineRun(SOURCE,false,{census:'actors'});
+  assert.equal(drawn.world,played.world,'the world after eight days, every place\'s townsfolk planned for the screen');
+  assert.equal(drawn.rng,played.rng,'every RNG stream');
 });
