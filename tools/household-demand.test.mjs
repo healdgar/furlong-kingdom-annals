@@ -26,10 +26,10 @@ test('at its worth or below a good is bought to the month\'s need and no further
   near(held(r,'cloth'),month(r,'cloth'));near(held(r,'tools'),month(r,'tools'));near(held(r,'timber'),month(r,'timber'));
 });
 
-test('bread at twice its worth is still bought nearly in full, and the family eats its need from what it has',()=>{
+test('bread at twice its worth is bought in full (food is inelastic), and the family eats its need from what it has',()=>{
   const r=town();r.s._pxY={grain:0.5};provision(r); // no market near has grain to spare: its worth is its price here one year with another
   const need=r.eval('householdSize(s,H[0])*(NEED.grain+NEED.fish)*30');
-  near(r.s._ration,Math.pow(2,-0.1));near(held(r,'grain')+held(r,'fish'),need*Math.pow(2,-0.1));assert.ok(r.s._ration>0.9);
+  near(r.s._ration,1);near(held(r,'grain')+held(r,'fish'),need);
   const before=held(r,'grain')+held(r,'fish');r.eval('eatHouseholds(s,folkIndex())');
   near(before-held(r,'grain')-held(r,'fish'),need/30);near(r.eval('householdAccount(H[0]).hunger'),0); // it bought less, and goes short only when that runs out
 });
