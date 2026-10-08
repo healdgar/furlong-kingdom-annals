@@ -11395,11 +11395,11 @@ function herdOwners(s,k){ // whose the place's beasts of a kind are: each family
   for(const[o,x]of s._owners||[]){const a=x.animals[k]||0;if(o&&o.household&&a>0){out.push([o,a]);fam+=a;}}
   for(const[w,v]of mkt(s,k).ownedEntries())if(w!==lord)sold+=v;
   const l=Math.max(0,(s.stores[k]||0)-fam-sold);if(l>0)out.push([lord,l]);return out;}
-function herdTake(s,o,k,q){ // an owner's beasts go to the shambles: a family's from its byre, the lord's from his pens at the market and then from what of the herd is no one else's
+function herdTake(s,o,k,q,pens=false){ // an owner's beasts go to the shambles: a family's from its byre (or a dealer's from his pens at the market), the lord's from his pens and then from what of the herd is no one else's
   q=Math.min(q,s.stores[k]||0);if(!(q>0))return 0;
-  if(o&&o.household){const H=stockOf(s,o).animals;q=Math.min(q,H[k]||0);H[k]-=q;}
-  else{const L=mkt(s,k),v=Math.min(q,L.get(o)||0);if(v>0){const left=L.get(o)-v;if(left>0)L.set(o,left);else{L.delete(o);rsv(s,k).delete(o);}}}
-  s.stores[k]-=q;if(s._herdLast)s._herdLast[k]=s.stores[k];return q;}
+  if(o&&o.household&&!pens){const H=stockOf(s,o).animals;q=Math.min(q,H[k]||0);H[k]-=q;}
+  else{const L=mkt(s,k),v=Math.min(q,L.get(o)||0);if(pens)q=v;if(v>0){const left=L.get(o)-v;if(left>0)L.set(o,left);else{L.delete(o);rsv(s,k).delete(o);}}}
+  if(!(q>0))return 0;s.stores[k]-=q;if(s._herdLast)s._herdLast[k]=s.stores[k];return q;}
 function herdCull(s,k,q,fresh=false){ // beasts killed from the whole herd, each owner's by his share of it; the carcasses are their owners' meat
   const H=herdOwners(s,k),n=H.reduce((t,[,v])=>t+v,0);if(!(n>0&&q>0))return;const f=Math.min(1,q/n);
   for(const[o,v]of H)meatTo(s,o,herdTake(s,o,k,v*f)*CARCASS[k],fresh);}
@@ -11694,8 +11694,8 @@ function tickWeather(){
 }
 
 /* ============================ ECONOMY ==================================== */
-function spareOf(s,g){ // what a place can send away: a hungry town keeps its food, and every town keeps a month's bread; of its meat, what its bread and fish leave short of the month
-  if(FOODS.includes(g))return s.hunger>0.05?0:(s.stores[g]||0)-Math.max(0,s.pop*FOOD*30-(g==='meat'?(s.stores.grain||0)+(s.stores.fish||0):0));
+function spareOf(s,g){ // what a place can send away: a hungry town keeps its food, and every town keeps a month's bread, of each food (the gate of batch 9: meat sent away whenever bread was in store went round the towns from dealer to dealer, eaten by no one, and its price stood at fifteen times its worth)
+  if(FOODS.includes(g))return s.hunger>0.05?0:(s.stores[g]||0)-s.pop*FOOD*30;
   if(LU[g]!==undefined)return (s.stores[g]||0)-(s._want?s._want[g]:1e9); // a place sells only the beasts it does not need
   if(g==='wool')return (s.stores.wool||0)-woolWant(s)*4;
   if(g==='stone')return (s.stores.stone||0)-(s._stoneWant||0);
@@ -11984,9 +11984,9 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
     if(bu.length&&s.hm&&s.hm.bred){herdSync(s);const pm=price(s,'meat'),g=s._graze||grazeOf(s),D=s._dem||(s._dem={}),S=s._sold||(s._sold={});
       for(const k of ['cattle','swine','sheep']){const pk=price(s,k);if(!(CARCASS[k]*pm*(1-SHAMBLES)>pk))continue;
         const keep=Math.max((s._want&&s._want[k]||0)/(1+HERDR[k]),k==='cattle'?(g.till/6-(s.stores.horses||0)*0.4)/0.6:0); // the breeding stock that breeds the place's want back, and the oxen its ploughs want (tickLivestock's reckoning)
-        let n=Math.min(s.hm.bred[k]||0,Math.max(0,(s.stores[k]||0)-keep));if(!(n>0))continue;const O2=herdOwners(s,k),T=O2.reduce((t,[,v])=>t+v,0);if(!(T>0))continue;
+        let n=Math.min(s.hm.bred[k]||0,Math.max(0,(s.stores[k]||0)-keep));if(!(n>0))continue;const lord=lordAcct(s),R=s.rsv&&s.rsv[k],O2=herdOwners(s,k);for(const[w,v]of mkt(s,k).ownedEntries())if(w!==lord&&v>0&&!(R&&R.get(w)>pk))O2.push([w,v,true]);const T=O2.reduce((t,[,v])=>t+v,0);if(!(T>0))continue; // and the drovers' beasts in the pens, from dealers content with the price
         for(const h of bu){const m=Math.min(n/bu.length,Math.max(0,means(h))/pk);if(!(m>0))continue;let got=0,c=0;
-          for(const[o,v]of O2){if(accountOwner(h)===o)continue;const q=herdTake(s,o,k,Math.min(m*v/T,Math.max(0,means(h))/pk));if(!(q>0))continue;c+=transfer(h,o,q*pk,'sales');got+=q;} // he pays each owner for each beast he takes, as far as his purse goes
+          for(const[o,v,pens]of O2){if(accountOwner(h)===o)continue;const q=herdTake(s,o,k,Math.min(m*v/T,Math.max(0,means(h))/pk),pens);if(!(q>0))continue;c+=transfer(h,o,q*pk,'sales');got+=q;} // he pays each owner for each beast he takes, as far as his purse goes
           if(!(got>0))continue;D[k]=(D[k]||0)+got;S[k]=(S[k]||0)+got; // a sale at the market's price, as the drovers' are
           const q=got*CARCASS[k];if(s.storage)storageBindGood(s,'meat');s.stores.meat=(s.stores.meat||0)+q;offer(s,'meat',h,q,c/q);h._inc=(h._inc||0)-c;}}}}
   }
@@ -20355,13 +20355,15 @@ What happens is decided by quantities the economy produces, not by numbers cross
     those who made them. Households buy the month's food, fuel, cloth and tools with what is in their
     purses. Food is bread, fish or salted meat, one for one, whichever is cheapest at the table: fish only
     for the days it stays the cheaper before it rots, salted meat for the month; a family eats its fish
-    first, then its bread and meat as they lie in the larder. The better-off buy meat for their table
-    besides, and buy that much less bread. What they cannot buy, they go without, and a town
+    first, then its bread and meat as they lie in the larder; only food that keeps the month is laid in,
+    fish is bought day by day. The better-off buy meat for their table besides, less the dearer it is
+    against what it costs to make, and buy that much less bread. What they cannot buy, they go without, and a town
     whose families cannot pay goes hungry with full barns. A household tops up to a month's need: what is
     still in the crock from last month is not bought again. A farming household keeps back its own bread
     till the next harvest and sells the rest.
     Smiths buy iron and charcoal, weavers wool, and butchers beasts, only when the work pays (a butcher
-    when the carcass fetches more as meat than the beast costs). A buyer takes his own stock first,
+    buys from the families, the lord and the drovers when the carcass, less his part, fetches more as meat
+    than the beast costs, and never more than the herds breed). A buyer takes his own stock first,
     then pays every seller content with the price in proportion; a craftsman or merchant will not sell
     below what his stuff cost him; the millers, bakers, carters and tailors take their margin.
   - **Prices** are found, not set: each month a good's price rises when buyers wanted more than was sold
