@@ -32,9 +32,10 @@ test('spoilage debits held and sale commodity balances without changing livestoc
 
 test('household migration moves charcoal custody as charcoal, not as timber',()=>{
   const r=fixture({households:1,grain:0,fish:0});
-  const destination={name:'remote',owner:0,pos:{x:1,z:1},stores:{grain:0,fish:0,timber:0},folk:[],buildings:[],pop:0};
+  const destination={name:'remote',owner:0,pos:{x:1,z:1},stores:{grain:0,fish:0,timber:0},folk:[],buildings:[],pop:0,px:{timber:3}};
   r.W.settlements.push(destination);
-  r.eval("s.stores.timber=10;addHeld(s,H[0],'char',4);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
+  // Charcoal is worth its timber at the new home, more than its carriage (#55): the carters' wages are paid by the household.
+  r.eval("buildWorks=(s,c,p,why)=>transfer(p,'crown',c,why);s.stores.timber=10;addHeld(s,H[0],'char',4);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
   near(r.s.stores.timber,6);near(destination.stores.timber,4);
   near(r.eval("pantry(s,H[0]).char||0"),0);near(r.eval("pantry(W.settlements[1],H[0]).char||0"),4);
   near(r.eval("W.settlements[1].storage.total('timber')+W.settlements[1].storage.total('char')"),4);

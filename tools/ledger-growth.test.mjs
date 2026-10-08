@@ -54,3 +54,41 @@ test('a lord\'s grain swept out as crumbs is tallied as his rot',()=>{
   r.eval("W.houses.push({name:'lord'});s.owner=0;lordAcct=()=>W.houses[0];s.stores.grain=.006;addHeld(s,W.houses[0],'grain',.006);spoilOwned(s,'grain',.0003)");
   near(r.eval('s._lg.get(W.houses[0]).rot'),.006);
 });
+
+// A family's goods follow it home, or are sold where they lie (#55).
+function homeAway(r,px={}){ // a second place 1,000 paces off, its prices given: the carters' freight there is .1512 a unit
+  r.W.settlements.push({name:'home',owner:0,pos:{x:1000,z:0},stores:{grain:0,fish:0},folk:[],buildings:[],pop:10,px:{grain:2,fish:2.5,cloth:7,wool:4,...px}});
+  r.eval("globalThis.bills=[];buildWorks=(s,c,p,why)=>{bills.push([s.name,c,why]);transfer(p,'crown',c,why);}");
+}
+const unit=(.12+1.2*.08)*.7;
+const at=(r,si,o,g,kind)=>r.eval(`W.settlements[${si}].storage?W.settlements[${si}].storage.quantity(accountOwner(${o}),'${g}','${kind}'):0`);
+
+test('a household that moves carries what is worth its carriage, pays the carters, and leaves the rest',()=>{
+  const r=fixture({households:1,grain:0,fish:0,cash:20});homeAway(r,{grain:.1});
+  r.eval("s.stores.grain=5;s.stores.cloth=2;addHeld(s,H[0],'grain',5);offer(s,'cloth',H[0],2,6);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
+  near(at(r,1,'H[0]','cloth','sale'),2);near(at(r,0,'H[0]','cloth','sale'),0);near(at(r,0,'H[0]','grain','held'),5);near(at(r,1,'H[0]','grain','held'),0);
+  near(r.eval("rsv(W.settlements[1],'cloth').get(householdAccount(H[0]))"),6+unit);assert.equal(r.eval("stockOf(s,householdAccount(H[0])).reserve.cloth"),undefined);
+  assert.equal(r.eval('bills.map(b=>b[0]+":"+b[2]).join()'),'fixture:carriage');near(r.eval('bills[0][1]'),2*unit);near(r.H[0].w,20-2*unit);
+  near(r.eval("s.stores.cloth+W.settlements[1].stores.cloth"),2);
+});
+
+test('a short purse carries the dearest goods first, as far as it pays',()=>{
+  const r=fixture({households:1,grain:0,fish:0,cash:.2});homeAway(r);
+  r.eval("s.stores.wool=3;s.stores.cloth=2;addHeld(s,H[0],'wool',3);addHeld(s,H[0],'cloth',2);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
+  near(at(r,1,'H[0]','cloth','held'),.2/unit);near(at(r,0,'H[0]','cloth','held'),2-.2/unit);near(at(r,0,'H[0]','wool','held'),3);near(r.H[0].w,0);
+});
+
+test('at the market, goods of a family living elsewhere go home or are offered, and the unsold are the lord\'s waif',()=>{
+  const r=fixture({households:1,grain:0,fish:0,cash:20});homeAway(r,{fish:.1});
+  r.eval("s.stores.grain=5;s.stores.fish=1;addHeld(s,H[0],'grain',5);offer(s,'fish',H[0],1,3);s.folk=[];H[0].si=1;W.settlements[1].folk=[H[0]];globalThis.left=homeward(s)");
+  near(at(r,1,'H[0]','grain','held'),5);near(at(r,0,'H[0]','grain','held'),0);near(at(r,0,'H[0]','fish','sale'),1);
+  assert.equal(r.eval("stockOf(s,householdAccount(H[0])).reserve.fish"),undefined,'offered at the price');
+  r.eval('waifs(s,left)');near(at(r,0,'H[0]','fish','sale'),0);near(r.eval("mkt(s,'fish').get('crown')"),1);
+  near(r.eval("s.stores.fish+s.stores.grain+W.settlements[1].stores.grain"),6);
+});
+
+test('a family with folk living here keeps its goods here; a dealer keeps his stock on sale where he sells',()=>{
+  const r=fixture({households:2,grain:0,fish:0,cash:20});homeAway(r);
+  r.eval("H[1].tr='merchant';s.stores.grain=7;addHeld(s,H[0],'grain',3);offer(s,'grain',H[1],4,1);s.folk=[H[0]];H[1].si=1;W.settlements[1].folk=[H[1]];globalThis.left=homeward(s)");
+  near(at(r,0,'H[0]','grain','held'),3);near(at(r,0,'H[1]','grain','sale'),4);assert.equal(r.eval('left'),null);assert.equal(r.eval('bills.length'),0);
+});

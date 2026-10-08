@@ -69,7 +69,7 @@ const STEP=i=>`(async()=>{const S=__sc,cmp=(a,b)=>a<b?-1:a>b?1:0,plain=v=>v===nu
 
 /* what a flow cause may do to goods. Anything not in MADE_OR_LOST only moves them: INTERNAL ones within a town, the rest between towns. */
 const MADE_OR_LOST=new Set(['initial','new-good-migration','adjustment','production','consumption','exposure-loss','stored-spoilage','physical-loss','conversion','construction-material','army-provisions','cargo-robbery','cargo-stolen-arrival','cargo-robbery-loss']);
-const INTERNAL=new Set(['transfer','purchase','sale','allocation','release','dispatch','facility-refit','facility-destroyed','market-roundoff','local-carriage','deposit','custody-move','inheritance','relief']);
+const INTERNAL=new Set(['transfer','purchase','sale','allocation','release','dispatch','facility-refit','facility-destroyed','market-roundoff','local-carriage','deposit','custody-move','inheritance','relief','offered','waif']);
 const PAIRED=[['cargo-departure','arrival']]; // a cargo's leaving one ledger and arriving in another are separate causes of one movement
 const violations=[],bad=(day,kind,detail)=>{if(violations.length<50)violations.push({day,kind,...detail});else violations.overflow=(violations.overflow||0)+1;};
 const sum=(o,k,q)=>{o[k]=(o[k]||0)+q;},tol=(terms,magnitude)=>Number.EPSILON*16*Math.max(1,terms)*(1+magnitude); // rounding of a sum of `terms` quantities

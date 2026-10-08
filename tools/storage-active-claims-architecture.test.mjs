@@ -91,7 +91,13 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // through the same consume and spoilage causes (journaled as spoilage; the stores, s._lostM, pending output and the lord's rot
  // tally in step), and a seller left with nothing on sale there loses his reserve there, as commodityConsume does; spoilOwned
  // calls it for goods that never rot too, for their crumbs. No other writer changed; ledger-growth.test.mjs covers the rule.
- assert.equal(digest(source.slice(a,b)),"6fd24dba28c3b702ac653b8427b5f8f12b003e77a9c07f8f7197625a1cc4cb86");
+ // A family's goods (#55, batch 10b, behaviour): moveHouseholdGoods takes a moving household's ledger goods, held and on sale, through
+ // carryHome (commodityMove, cause household-carriage, as far as each is worth more at the new home than the carters' freight and the purse
+ // pays it; the carriage paid through buildWorks; a seller's reserve moved with his stock, the carriage added) instead of storageMoveLots
+ // of its held goods alone; its beasts as before. homeward (at each place's market) offers what a family living elsewhere left there and
+ // is not worth carrying (held to sale, cause offered, reserve dropped), and waifs gives what the market did not take to the lord (cause
+ // waif). No other writer changed; ledger-growth.test.mjs covers the rules, the migration fixtures their new expectations.
+ assert.equal(digest(source.slice(a,b)),"a5041580c1590a2005d2280a31ebbbd0738114679a7e6c82e359c1c2ce0c4bce");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

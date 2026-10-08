@@ -3738,9 +3738,34 @@ function marryHouseholds(a,b){let A=householdAccount(a),B=householdAccount(b);if
   (A.assets._owe||(A.assets._owe=[])).push(...(B.assets._owe||[]));B.assets._owe=[];
   transferOwnership(B,[[A,1]]);for(const p of [...B.members])bindHousehold(p,A);B.successors=[[A,1]];B.head=null;
   for(const s of W.settlements){for(const f of s.furl||[]){if(f.own===b.id)f.own=a.id;if(f.wk===b.id)f.wk=a.id;}for(const x of s.buildings||[])if(x.title&&x.title.owner===B)x.title.owner=A;else if(x.ownerId===b.id)x.ownerId=a.id;for(const f of s.furl||[])if(f.title){for(const k of ['own','work'])if(f.title[k].owner===B)f.title[k].owner=A;}householdHeadsChanged(s);}}
-function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);herdSync(from);herdSync(to);const x=stockOf(from,h),y=stockOf(to,h);
-  for(const kind of ['held','animals'])for(const g in x[kind]){const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held'&&!BEASTS.includes(g))storageMoveLots(from,to,commodityActive(from)?g:physical,q,h,'held','household-arrival');if(!commodityActive(from)||kind==='animals'||BEASTS.includes(g)){x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;}storageTitleKnownDirty(from,g);storageTitleKnownDirty(to,g);if(!from.storage||kind==='animals'||BEASTS.includes(g)){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
+// A household that has moved takes its goods along (#55): in the ledger, those worth their carriage (carryHome); the rest lie at the old
+// place to be sold at its next market (homeward). Its beasts are driven along.
+function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);herdSync(from);herdSync(to);const x=stockOf(from,h),y=stockOf(to,h),ledger=commodityActive(from);if(ledger)carryHome(h,from,to);
+  for(const kind of ['held','animals'])for(const g in x[kind]){if(ledger&&kind==='held'&&!BEASTS.includes(g))continue;const physical=g==='char'?'timber':g,q=Math.min(x[kind][g]||0,from.stores[physical]||0);if(q>0){if(from.storage&&kind==='held'&&!BEASTS.includes(g))storageMoveLots(from,to,commodityActive(from)?g:physical,q,h,'held','household-arrival');if(!commodityActive(from)||kind==='animals'||BEASTS.includes(g)){x[kind][g]-=q;y[kind][g]=(y[kind][g]||0)+q;}storageTitleKnownDirty(from,g);storageTitleKnownDirty(to,g);if(!from.storage||kind==='animals'||BEASTS.includes(g)){from.stores[physical]-=q;to.stores[physical]=(to.stores[physical]||0)+q;}}}
   h.home=to;from._herdLast=Object.fromEntries(BEASTS.map(g=>[g,from.stores[g]||0]));to._herdLast=Object.fromEntries(BEASTS.map(g=>[g,to.stores[g]||0]));}
+// A family's goods where it does not live (#55: left by a move, a split or a wedding, or come to it by inheritance): what is worth more at its
+// home than the carters' freight there goes home on a cart the family hires and pays for (buildWorks, as all carriage is paid), the dearest at
+// home first as far as its purse goes; a seller's stock keeps its reserve, its carriage added. Returns what is left here, to be sold.
+function carryHome(h,from,to,kinds=['held','sale']){const K=from.storage;if(!commodityActive(from)||!to||from===to||!K.holds(h))return [];
+  const unit=freight(from,1,dist2d(from.pos.x,from.pos.z,to.pos.x,to.pos.z)*1.2,'cart'),x=stockOf(from,h),left=[];let purse=Math.max(0,means(h)),bill=0;
+  const rows=[...K.entries({owner:h})].filter(r=>kinds.includes(r.availability)).map((r,i)=>({r,i,w:price(to,commodityPhysical(r.good))})).sort((a,b)=>b.w-a.w||a.i-b.i);
+  for(const{r,w}of rows){const q=w>unit?Math.min(r.qty,unit>0?purse/unit:r.qty):0;
+    if(q>0){const sale=r.availability==='sale',B=storageInit(to),had=sale?B.quantity(h,r.good,'sale'):0,res=sale?(x.reserve[r.good]||0)+unit:0;
+      const moved=commodityMove(from,to,{owner:h,good:r.good,availability:r.availability,location:r.location},q,'household-carriage');purse-=moved*unit;bill+=moved*unit;
+      if(sale){reserveAt(to,r.good,h,had,moved,res);if(!(K.quantity(h,r.good,'sale')>0))delete x.reserve[r.good];}}
+    if(q<r.qty)left.push(r);}
+  if(bill>0)buildWorks(from,bill,h,'carriage');return left;}
+// At a place's market (#55): a living family none of whose folk live here, nor are on the road, has its goods here carried home if they are
+// worth it (carryHome); the rest is offered at the price, and what no one buys is the lord's, as waif (waifs). A dealer's stock on sale where
+// he sells it stays.
+function homeward(s){if(!commodityActive(s)||!s._owners)return null;const K=s.storage,si=W.settlements.indexOf(s);let left=null;
+  for(const o of [...s._owners.keys()]){if(!o||!o.household||!K.holds(o))continue;let alive=false,here=false;for(const p of o.members)if(!p.dead){alive=true;if(p.si===si||p.si<0){here=true;break;}}if(!alive||here)continue;
+    const home=o.head&&!o.head.dead&&W.settlements[o.head.si]||o.home;if(!home||home===s)continue;
+    for(const r of carryHome(o,s,home,DEALERS.includes(o.head?.tr)?['held']:['held','sale'])){const q=K.quantity(o,r.good,r.availability);if(!(q>0))continue;
+      if(r.availability==='held')K.transfer({owner:o,good:r.good,availability:'held'},q,o,{availability:'sale',cause:'offered'});
+      delete stockOf(s,o).reserve[r.good];(left||(left=[])).push([o,r.good]);}}
+  return left;}
+function waifs(s,left){if(!left)return;const K=s.storage,lord=lordAcct(s);for(const[o,g]of left){const q=K.quantity(o,g,'sale');if(!(q>0))continue;stockOf(s,lord);const had=K.quantity(lord,g,'sale');K.transfer({owner:o,good:g,availability:'sale'},q,lord,{availability:'sale',cause:'waif'});reserveAt(s,g,lord,had,q,0);}} // the waif cost the lord nothing
 function departHousehold(p,from,to,why){const h=householdAccount(p);if(!h||why==='bride'||h.movingTo===to)return;
   const remaining=[...h.members].filter(q=>q!==p&&!q.dead&&q.si===from);if(!remaining.length)return;
   const fraction=1/(remaining.length+1),newH=householdPortion(p,fraction),s=W.settlements[from],x=s._owners&&s._owners.get(h);
@@ -11796,6 +11821,7 @@ function frtRate(o,mode){const F=o.frt||(o.frt={cart:1,boat:1});return F[mode]??
 function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode)*PL();} // the beasts' keep and the driver's days, at the day's prices
 function driverFor(o,mode,m,d){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
   const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62;let L=heads_(o,ok);if(!L.length&&d)L=heads_(d,ok);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
+const DEALERS=['merchant','carter','boatman']; // the trades that buy a load to sell it elsewhere (merchantFor)
 function merchantFor(o,cost,d,unit){let best=null;const half=unit>0?unit:cost*0.5,scan=t=>{if(!t.folk)return;for(const h of householdsOf(t)){const p=h.head;if(!p||p.dead||p.role)continue;const tr=p.tr,w=p.w||0;if((tr==='merchant'||tr==='carter'||tr==='boatman')&&w>half&&(!best||(tr==='merchant'?best.tr!=='merchant'||w>(best.w||0):best.tr!=='merchant'&&w>(best.w||0))))best=p;}};scan(o);if(d&&d!==o)scan(d);return best;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
 function ladeOut(c,o,quiet){ladeOut.why=null;const mode=c.sea||c.river?'boat':'cart',wt=1+(c._wt||0),unit=price(o,c.good)*wt+freight(o,1,c.len,mode),m=merchantFor(o,c.qty*price(o,c.good)*wt+freight(o,c.qty,c.len,mode),W.settlements[c.dest],unit),want=m&&m!=='out'?Math.min(c.qty,Math.max(0,m.w||0)/unit):c.qty;if(want<c.qty){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=c.qty-want;c.qty=want;} /* a dealer buys as much of a load as his purse will pay for with its carriage (#23: a dealer needed half a full load's worth, so grain at a tenth of the capital's price never went to it) */if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}ladeOut.why='merchant';return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
   const drv=driverFor(o,mode,m,W.settlements[c.dest]);
@@ -12048,7 +12074,7 @@ function reprice(s){ // each price rises when buyers wanted more than was sold, 
 function tickMarket(){
   const due=W.settlements.map((s,si)=>dueOn(si,30,11));if(!due.some(Boolean))return;const PM=W._pm=folkIndex();let pl=0,pp=0; // each place's market month on its own day
   W.settlements.forEach((s,si)=>{if(!due[si])return;const heads=heads_(s,()=>true),size=new Map();for(const p of s.folk||[]){if(p.dead)continue;const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
-    shareOutput(s,si,PM,heads);reconcile(s,heads);provision(s,heads,size);payCrafts(s,heads);reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
+    shareOutput(s,si,PM,heads);reconcile(s,heads);const left=homeward(s);provision(s,heads,size);waifs(s,left);payCrafts(s,heads);reprice(s);pl+=(price(s,'grain')/GOODBASE.grain*0.75+price(s,'fish')/GOODBASE.fish*0.25)*s.pop;pp+=s.pop;
     {const F=s.frt||(s.frt={cart:1,boat:1}),Wt=s._wait||{};for(const[mode,tr]of[['cart','carter'],['boat','boatman']]){const idle=heads.filter(h=>h.tr===tr&&!awayNow(h)).length,w=Wt[mode]||0;
       F[mode]=Math.max(0.05,(F[mode]??1)*Math.exp(0.2*Math.tanh(Math.log((w+0.2)/(idle*0.5+0.2)))));}s._wait={};} // loads waiting for a driver raise the going rate; idle drivers lower it
   });pl=0;pp=0;for(const s of W.settlements){if(!(s.pop>0))continue;pl+=(0.75*Math.log(Math.max(1e-9,price(s,'grain')/GOODBASE.grain))+0.25*Math.log(Math.max(1e-9,price(s,'fish')/GOODBASE.fish)))*s.pop;pp+=s.pop;}if(pp>0)W._pl=Math.exp(pl/pp);} // (a geometric mean: one famine town does not set the realm's wages) // the price level: rents, taxes, fees and wages are reckoned in it
