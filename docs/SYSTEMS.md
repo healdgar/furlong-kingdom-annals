@@ -115,6 +115,7 @@ These rules apply to all nine.
 - Villein tenure, as a smaller crop share (`TEN_SHARE`: villein 0.62, free 0.85).
 - Heriot, in `inherit`.
 - Market tolls, in `ladeIn`; customs, in `tickShips`.
+- Pannage (batch 9, with meat): at Martinmas (`martinmas` in `tickLivestock`) each family pays the wood's lord `customOf(s,'pannage')` × the pig's price here for every pig the place's mast carries (`grazeOf(s).pann`), split by wood area among the lords of the wood strips grazeOf reckons (else `lordAcct(s)`); the lord's own pigs pay nothing; label `pannage`. A family pays what it can; arrears wait for #37. The families' keep of a pig (`tickHouseholds`) counts it.
 - Sale of the demesne when hands are dear, in `tickTenure`.
 - Road upkeep in `tickWays`, which reckons tolls it never collects (#36 note in `docs/ISSUES.md`).
 
