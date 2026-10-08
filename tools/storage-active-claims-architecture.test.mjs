@@ -63,7 +63,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Economy (#23): the market's bread loan is bounded by creditOf (what a lender judges a household can repay) instead of a
  // quarter-year; the loan itself is unchanged. No lot, title, claim or journal writer changes.
  // Economy (#23, #15): the storage tick bills each owner's carrying once per tick (the same sums, rounding apart); no lot, title, claim or journal writer changes.
- assert.equal(digest(source.slice(a,b)),"d395fc63a9d1775060284694508f4bf23b2089482ff9748c76811e263958b157");
+ // Reserves (#50): commodityInheritance and transferOwnership blend an heir's reserve with the inherited one by quantity
+ // (costBlend) instead of keeping the dearer. A reserve is a seller's price floor, not a quantity, title, claim or journal
+ // writer; transfers and their order are unchanged. reserve-cost.test.mjs covers both paths.
+ assert.equal(digest(source.slice(a,b)),"07670421beb0ee37faef3470b10c1280cb9d202259f69392546225ded7054064");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
