@@ -153,6 +153,7 @@ Line numbers drift, so find code by name.
 
 ## Rules the user set that CLAUDE.md doesn't spell out
 
+- **The historical answer is the right one** (2026-10-08), except where the detail would unbalance the game. Decide design questions that way and record the choice; ask only where history gives no answer or the detail would weigh on play.
 - Subagents run on Opus, never Sonnet or Haiku. A Fable agent may be asked for ideas when stuck, never for the coding.
 - Never use the `mcp__furlong__*` tools. They drive the user's live game.
 - Test in batches: no per-change soaks.
@@ -178,8 +179,7 @@ Line numbers drift, so find code by name.
 
 ## Questions for the user
 
-- **Roads with no toll house (batch 9, #36).** The lords at either end now mend such a road only while the market dues its loads bring them pay for the mending; busy through-roads with no toll house and little trade at their ends wear. The alternative is a customary duty to mend as far as their purses go, which wears fewer roads but spends lords' coin on roads that bring them nothing. The build has the first; say if you want the second.
-- **Toll houses from AD 850 (batch 9).** A lord sets one up wherever the tolls would pay its keeper, its part of the road and the house, from the start (Carolingian bridge and road tolls); the towns' own layout still raises them only from AD 1000. Say if they should wait for a year or for #44's learning.
+(none open)
 
 ## Decided by the user (2026-10-08)
 
@@ -192,3 +192,7 @@ Line numbers drift, so find code by name.
   - Households fill the need with the cheapest of bread, fish and meat by price, as they choose between grain and fish now; the better-off eat more meat.
   - Salted meat keeps for months; fresh meat spoils in days.
   - It ties to #36 through pannage and liveries, and lands with #36 as batch 9.
+- **History decides design questions** (2026-10-08), except where the detail would unbalance the game. Applied in batch 9:
+  - A road with no toll house is mended by the lords at either end as a customary duty (the landholders' duty to the king's highway), whether or not it pays them, but only out of what their chests hold beyond their reserve.
+  - Toll houses may stand from AD 850, as Carolingian bridge and road tolls did.
+  - A mill's farm is paid at the quarter days out of the takings, not a year in advance; a farmer in arrears is not let the mill again, and his arrear goes to the pleas roll for #37.
