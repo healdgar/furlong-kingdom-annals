@@ -7,6 +7,16 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 - **`main`** is released to Pages and the container image (batch 7, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
+  - **batch 8, prices answered by supply (#51, #52):**
+    - Trade answers a price: carts, barges and cogs choose loads by margin net of freight, dealers send load after load while one pays, and goods already on the way count. Only the drawing is capped (`trafficDrawn`).
+    - Households buy need × (price / worth)^(−ε). Worth is the cost of bringing a month's need, or of making the good. Food is inelastic; ε is 0.3 for timber, 0.6 for tools, 1.2 for cloth, 1.5 for wine and 2 for spice and silk.
+    - A short purse buys bread first, keeps back its rent and the next month's bread, then buys fuel, tools, cloth and luxuries.
+    - The reeve buys families' beasts only out of what lies beyond the chest's reserve.
+    - Gate, at year 5 against batch 7:
+      - runaway place-goods: 39 → 9 on 42 sea and 30 → 8 on 2002 land;
+      - famine: 0–1% on all six worlds;
+      - population: higher on four;
+      - money: clean.
   - **batch 7, exact apart from the ward rule:**
     - the world save, phase A (#48, `docs/WORLD-SAVE.md`), and the farm (`tools/farm.mjs`);
     - the institutions' groundwork (step 3.1);
@@ -43,6 +53,9 @@ V8 startup snapshots restore a world exactly but can't chain (each build starts 
   - W and the module state are kept as data; closures are made again by their makers: `layoutSettlement(s,saved)` and the named binders the living code also calls, every closure's source text unchanged.
   - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 23 more days equal.
   - The document for 42 sea on day 37: 15.6 MB, 7.7 MB gzipped.
+- **The farm keeps one build.** A save loads only into the build that made it, so pass `--src` with a frozen copy of the release.
+  - The first run reached AD 870 on batch 7 (1,670 buildings, 426 ms CPU/day in the 860s at load 1).
+  - That run cannot go on under batch 8; restart on the batch-8 release.
 - **The farm tool is built:** `tools/farm.mjs` plays a world in segments.
   - Each segment runs in a fresh realm loaded from the last save. Its first `--check` days must match the days the saving realm played on.
   - It writes the save (`<world>-AD<year>.fws.gz`, about 8 MB gzipped) and a census line per save.
@@ -165,6 +178,15 @@ Line numbers drift, so find code by name.
 ## Questions for the user
 
 (none open)
+
+## Next after batch 8 (proposed to the user, awaiting answers)
+
+- **Meat as a third food:**
+  - made by slaughtering the herds' increase in the autumn, salted to keep;
+  - eaten within the inelastic food need, chosen against bread and fish by price;
+  - the better-off eat more.
+  - Questions: within the need or as an extra want, and with #36 as batch 9?
+- **#36, lords' customary income**, next in the institutions order.
 
 ## Decided by the user (2026-10-08)
 

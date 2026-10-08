@@ -4,7 +4,8 @@
    can start from any of them, and a farm that stopped goes on from its last save.
 
    node tools/farm.mjs --world 42:42:sea --to 1066 --out tools/soak-results/farm-42 [--segment 10] [--check 30] [--from file]
-   Options: --km N (map size)  --segment years (10)  --milestones 900,950,1000,1066,1250,1450 (saves fall on these years too)
+   Options: --src file (the build to play: a farm keeps one build, for a save loads only into the build that made it; default index.html)
+            --km N (map size)  --segment years (10)  --milestones 900,950,1000,1066,1250,1450 (saves fall on these years too)
             --check days: after each save, the realm plays on this many days and the next segment's loaded realm must play the
                           same days (world graph, RNG, annals, commands, journal); 0: no check (default 30)
             --from file.fws.gz: go on from a save (its world must be the one named)
@@ -24,7 +25,7 @@ const [seed,fate,coast]=(A.world||'42:42:sea').split(':'),W0={seed:+seed,fate:+(
 const TO=+(A.to||1066),SEG=+(A.segment||10),CHECK=+(A.check??30),MILES=(A.milestones||'900,950,1000,1066,1250,1450').split(',').map(Number);
 const OUT=path.resolve(A.out||path.join(HERE,'soak-results','farm-'+W0.seed+'-'+W0.coast));fs.mkdirSync(OUT,{recursive:true});
 const ID=`${W0.seed}-${W0.fate}-${W0.coast}${W0.km?'-km'+W0.km:''}`,HASH=`#s=${W0.seed}&f=${W0.fate}&c=${W0.coast}&y=850${W0.km?'&km='+W0.km:''}`;
-const SOURCE=inlineGameScript(fs.readFileSync(path.join(HERE,'..','index.html'),'utf8'));
+const SOURCE=inlineGameScript(fs.readFileSync(path.resolve(A.src||path.join(HERE,'..','index.html')),'utf8'));
 const log=(...a)=>{const line=new Date().toISOString().slice(11,19)+' '+a.join(' ');console.log(line);fs.appendFileSync(path.join(OUT,'farm.log'),line+'\n');};
 
 // The census, read from outside the simulation: what the world has grown into by this year.
