@@ -302,3 +302,57 @@ test('save construction flushes active commodity settlements before returning th
   assert.equal(context.events[0].day, 7);
   assert.equal(context.events[0].deltas[0].after, 3);
 });
+
+const plain = x => JSON.parse(JSON.stringify(x)); // an event of the engine's realm, as the journal carries it
+
+test('a spent place of passage leaves with a settlement written anyway, and the settlement reducer agrees', async () => {
+  const { CommoditySettlementReducer } = await import('./commodity-settlement-reducer.mjs');
+  const ledger = make({ realmId: 2 }), reducer = new CommoditySettlementReducer(), owner = { id: 'carter' };
+  ledger.location('yard', { capacity: 100 });
+  ledger.adjust('yard', 'grain', owner, 'held', 10, 'harvest');
+  ledger.location('cargo:2:1', { capacity: Infinity, transit: true });
+  ledger.transfer({ owner, good: 'grain', availability: 'held' }, 4, owner, { location: 'cargo:2:1', availability: 'transit', cause: 'dispatch' });
+  reducer.apply(plain(ledger.settle(1)));
+  ledger.retire('cargo:2:1'); // not spent: it carries a load
+  assert.equal(ledger.holds(owner), true);
+  ledger.consume({ location: 'cargo:2:1', good: 'grain', owner, availability: 'transit' }, 4, 'cargo-departure');
+  ledger.retire('cargo:2:1'); ledger.retire('yard'); // only an empty place of passage is spent
+  assert.ok(ledger.facilities.has('cargo:2:1'), 'it stays until the day is settled');
+  const event = plain(ledger.settle(2)); reducer.apply(event);
+  assert.deepEqual(event.locations, [{ id: 'cargo:2:1', after: null }]);
+  assert.ok(!ledger.facilities.has('cargo:2:1') && ledger.facilities.has('yard'));
+  assert.deepEqual(reducer.snapshot()[0].locations.map(l => l.id), ['yard']);
+  assert.equal(ledger.quantity(owner, 'grain', 'held'), 6);
+});
+
+test('no settlement is written for a spent place alone: it waits for one written anyway, and goes with a saved ledger', () => {
+  const ledger = make({ realmId: 3 }), owner = { id: 'carter' };
+  ledger.location('yard', { capacity: 100 });
+  ledger.adjust('yard', 'grain', owner, 'held', 5, 'harvest');
+  ledger.location('cargo:3:1', { capacity: Infinity, transit: true });
+  ledger.transfer({ owner, good: 'grain', availability: 'held' }, 5, owner, { location: 'cargo:3:1', availability: 'transit', cause: 'dispatch' });
+  ledger.consume({ location: 'cargo:3:1', good: 'grain', owner, availability: 'transit' }, 5, 'cargo-robbery');
+  assert.equal(ledger.settle(1).revision, 1);
+  ledger.retire('cargo:3:1');
+  assert.equal(ledger.settle(2), null, 'nothing else changed: no settlement is written');
+  assert.ok(ledger.facilities.has('cargo:3:1'));
+  CommodityBalanceLedger.historyAdopt(ledger, { ...CommodityBalanceLedger.historyState(ledger) }); // a world saved and taken up
+  ledger.adjust('yard', 'grain', owner, 'held', 1, 'harvest');
+  const event = plain(ledger.settle(3));
+  assert.equal(event.revision, 2);
+  assert.deepEqual(event.locations, [{ id: 'cargo:3:1', after: null }]);
+  assert.ok(!ledger.facilities.has('cargo:3:1'));
+});
+
+test('an owner who holds nothing is forgotten by the quantity cache only', () => {
+  const ledger = make(), owner = { id: 'widow' };
+  ledger.location('yard', { capacity: 100 });
+  ledger.adjust('yard', 'fish', owner, 'held', 2, 'catch');
+  assert.equal(ledger.quantity(owner, 'fish', 'held'), 2);
+  assert.equal(ledger.forget(owner), false, 'an owner who holds something keeps his cache');
+  ledger.consume({ owner, good: 'fish', availability: 'held' }, 2);
+  assert.equal(ledger.quantity(owner, 'fish', 'held'), 0);
+  assert.equal(ledger.holds(owner), false);
+  assert.equal(ledger.forget(owner), true);
+  assert.equal(ledger.quantity(owner, 'fish', 'held'), 0);
+});
