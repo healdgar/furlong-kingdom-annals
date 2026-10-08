@@ -67,7 +67,8 @@ raft, split, join, hold, disband).
 
 A toll house's card shows its toll, for whom it is taken, its keeper's pay and
 its takings this year and last; a town's card lists its toll houses; a road's
-card says who keeps it and what its mending cost last year against its tolls.
+card says who keeps it (its toll houses' owners, or the lords at either end by
+custom) and what of its mending was paid last year, and from the tolls.
 
 To march a host (an army): open its card, choose **Orders → Order a march**,
 then click a town, an enemy host to attack, or open ground to camp.
