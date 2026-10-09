@@ -4,6 +4,7 @@ Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever
 
 ## Where things stand
 
+- **Paused by the user until Tuesday (2026-10-13).** Next: #37, courts and royal justice (`docs/SYSTEMS.md` § 4), the next step of "Next, in order". The farm (`tools/soak-results/farm-42-b10`, batch 10b's frozen build) was left running; a container restart stops it, and it resumes with `--from` its latest save.
 - **`main`** is released to Pages and the container image (batch 10b, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
