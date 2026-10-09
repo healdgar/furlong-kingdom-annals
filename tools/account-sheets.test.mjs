@@ -16,7 +16,7 @@ function fixture(){
   const W=freeze({treasury:100,houses:[{gold:999},{gold:30}],households:new Map([['family',family],['away',away]]),settlements:[a,b],dragon:{hoard:9},armies:[{men:[legacy,resident,{merc:true,w:1000}]}],travellers:[{p:legacy}],levies:[{p:legacy}],projects:[{type:'persuade',lever:'gold',pay:8},{type:'persuade',lever:'honour',pay:99}]});
   return {W,a,b};
 }
-function context(f=fixture(),extra={}){const C=vm.createContext({BEASTS:['sheep','cattle','horses','swine'],...f,...extra});vm.runInContext('"use strict";\n'+fn('accountBalances'),C);return C;}
+function context(f=fixture(),extra={}){const C=vm.createContext({BEASTS:['sheep','cattle','horses','swine'],year:()=>1,...f,...extra});vm.runInContext('"use strict";\n'+['accountBalances','cashStatementHTML','townCashHTML'].map(fn).join('\n'),C);return C;}
 
 test('kingdom census counts shared purses and church funds once, including absent families and project escrow',()=>{
   const f=fixture(),C=context(f),before=JSON.stringify(f.W),B=vm.runInContext('accountBalances()',C);

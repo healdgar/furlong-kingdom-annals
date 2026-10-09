@@ -154,8 +154,8 @@ for(const commodity of [false,true])test(`liveries pay servants in food the lord
 test('the crown keeps a book by the same labels as the houses, its sales among them',()=>{
   const r=manor();r.eval("H[0].w=50;transfer(H[0],'crown',5,'merchet');transfer('crown',H[1],2,'household');offer(s,'grain','crown',10);s.stores.grain=10;purchase(s,'grain',H[0],4)");
   const B=r.eval('W.crownBook');near(B.ledY.merchet,5);near(B.ledY.household,-2);near(B.ledY.sales,4);near(B.led.merchet,5);
-  r.eval(fn('ledgerHTML')+'\n'+fn('detailNumber')+';esc=x=>String(x);bookKind(W.houses[1],"liveries",-3)');const html=r.eval("ledgerHTML(W.crownBook,true,'The treasury')+ledgerHTML(W.houses[1],true)");
-  assert.ok(html.includes('The treasury, this year so far')&&html.includes('merchet')&&html.includes('sales'));assert.ok(html.includes('In kind, this year so far')&&html.includes('liveries'));
+  r.eval(['ledgerHTML','cashStatementHTML','detailTable','detailNumber'].map(fn).join('\n')+';W.startAD=850;dateStr=d=>"Day "+d;esc=x=>String(x);bookKind(W.houses[1],"liveries",-3)');const html=r.eval("ledgerHTML(W.crownBook,true,'The treasury')+ledgerHTML(W.houses[1],true)");
+  assert.ok(html.includes('The treasury')&&html.includes('year to date')&&html.includes('merchet')&&html.includes('grain')&&html.includes('Income')&&html.includes('Expenses'));assert.ok(html.includes('In kind, this year so far')&&html.includes('liveries'));
 });
 
 test('a journaled order sets a custom or commutes services the same way in a fresh realm, and the worker refuses a bad one',()=>{

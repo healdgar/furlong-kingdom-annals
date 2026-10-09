@@ -12,7 +12,7 @@
    and the summary shows the top ten with the change since that world's previous run.
 
    node tools/soak.mjs --seeds 11,22,33 --coast sea,land --years 100 --par 6 --out /tmp/soak
-   Options: --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
+   Options: --source path (frozen HTML; default index.html)  --seeds a,b  --coast sea,land (each seed once per coast; omit for the seed's own)  --years N  --par N
             --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year (0: none)  --profile-interval µs (1000)  --hotlist file (0: none)  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
             that makes or loses it, for the first N days of each year in --audit-years)  --audit-years 1,19 | all (default 1)  --audit-fns a,b (also attribute these global functions, nested inside the ticks)  --inventory 1 (independent daily matching)  --out dir  --chrome path
@@ -43,7 +43,7 @@ if(!Number.isInteger(YEARS)||YEARS<0||!Number.isInteger(PAR)||PAR<1||seeds.some(
 if(fs.existsSync(OUT)&&fs.readdirSync(OUT).some(n=>/\.(jsonl|cpuprofile)$/.test(n)))throw new Error('output already contains a run; choose a fresh --out directory');
 if(CPUS.some(n=>!(n>=1))||DEVICES.some(d=>!['laptop','phone'].includes(d))||SPEEDS_.some(n=>!Number.isInteger(n)||n<0||n>5)||RENDER&&[...RENDER].some(n=>!Number.isInteger(n)||n<0||n>YEARS))throw new Error('invalid rendering options');
 fs.mkdirSync(OUT,{recursive:true});
-const SOURCE=fs.readFileSync(path.join(ROOT,'index.html'));fs.writeFileSync(path.join(OUT,'index.snapshot.html'),SOURCE);
+const SOURCE=fs.readFileSync(A.source?path.resolve(A.source):path.join(ROOT,'index.html'));fs.writeFileSync(path.join(OUT,'index.snapshot.html'),SOURCE);
 const HOTLIST=A.hotlist==='0'?null:path.resolve(A.hotlist||path.join(ROOT,'tools/soak-results/hotlist.json'));
 const COMMIT=(()=>{try{const sha=execFileSync('git',['-C',ROOT,'rev-parse','--short','HEAD'],{stdio:['ignore','pipe','ignore']}).toString().trim();
   const dirty=execFileSync('git',['-C',ROOT,'status','--porcelain','--','index.html'],{stdio:['ignore','pipe','ignore']}).toString().trim();return sha+(dirty?'+dirty':'');}catch{return null;}})();

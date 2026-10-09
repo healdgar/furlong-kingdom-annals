@@ -33,7 +33,7 @@ const DRIFT_ALLOWED={
 const WORKER_ONLY={
   settlement:{stores:'goods: overlays and inspectors ask the worker',storage:'storage ledger',storageReport:'storage ledger',households:'household accounts',
     mkt:'markets',rsv:'reserved stock',px:'prices',res:'resources',frt:'freight rates',hm:'herd management (herds come from actor plans)',
-    history:'inspector text',oldWalls:'inspector count',dead:'the dead, for inspector links',growSlots:'building planner',roadSpoke:'layout planner',
+    history:'inspector text',cashY:'annual cash totals: reports ask the worker',cashPrev:'previous annual cash totals: reports ask the worker',oldWalls:'inspector count',dead:'the dead, for inspector links',growSlots:'building planner',roadSpoke:'layout planner',
     joinOut:'layout planner',landing:'shore landing for boats',burns:'generation burn scars',mill:'crosses as millId',
     custom:'the customs of the manor: the lord\'s and crown\'s panels and the settlement card ask the worker',pleas:'the manor court\'s roll (#37)',court:'court accounts and rulings: inspectors ask the worker'},
   building:{s:'crosses as si',title:'title accounts',hh:'households',st:'street link, for gate placement in the worker',why:'planner notes',

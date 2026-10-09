@@ -112,7 +112,9 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Courts (#37, batch 11b): departHousehold slices each native loan tuple before dividing its principal, preserving its date and
  // prior ruling across the split. Principal arithmetic, ownership, balances and journal writers are unchanged; justice.test.mjs
  // covers both portions, merger, voluntary repayment and estate retirement; world-save.test.mjs saves the native loan reference.
- assert.equal(digest(source.slice(a,b)),"8af59c3eede7024333fcf80dd69564740940cb2bc2326d6c97810bd3b113f656");
+ // Annual accounts: the two commodityClearMarket acct calls now carry the good and place as report labels.
+ // Their amounts, order, ownership, quantities and journal effects are unchanged; reviewed against 06eaf18.
+ assert.equal(digest(source.slice(a,b)),"fd2bc7b03b93636c20b071091fcafe5cdcb248f8181e1b0c463a5f507b620b15");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
@@ -134,6 +136,7 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // justice.test.mjs proves real funding, shared budgets, herd and money conservation, and an adjourned quote's lack of writes.
  // Wool supply (#51): sheepLand reads each freeholder's existing native animal row into phase-local land/food/feed budgets.
  // No commodity, claim, balance or journal writer changed; production-inputs.test.mjs covers real flocks, funding and land rights.
- assert.equal(digest(outside),"c2b67667f9addf998303063111b7c9d4e54f3864900bdf6f385134ea93883a0a");
+ // Annual accounts: the distraint transfer additionally names q.home; its payer, amount and animal decrement are unchanged.
+ assert.equal(digest(outside),"06b219d7a4d8fb5490ab572a570156ed5ca7915ee7f86b4cd2aaad54552438ca");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

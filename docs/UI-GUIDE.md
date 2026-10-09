@@ -41,7 +41,13 @@ Keys: `Space` pause, `1`–`5` the speeds above, `L` Life pace.
 - **Kingdom accounts**: the realm's ledger: the treasury, the crown's book
   (its receipts and payments by reason: hearth tax, sales, rents, entry fines,
   merchet…), the great houses' books, household purses, flows across the
-  realm's border, and each town's balance sheet.
+  realm's border, and each town's balance sheet. Annual cash statements show
+  income, expenses, surplus or deficit, opening and closing coin, and each
+  cause for this calendar year and last. Town accounts separate the public
+  chest from each lord's receipts and costs incurred there; those costs are
+  already included in the lord's domain accounts. Loans, gifts and land sales
+  are cash flows, not trading profit; goods paid in kind stand separately.
+  Older snapshots without these totals begin a partial year when resumed.
 - **Annals**: the chronicle, filtered by **All, Crown, War, Trade, Fates**;
   export it as a text file or copy a link to this realm.
 - **Rates** and **Acts**: Providence's dials and deeds (plague, dragon, fire,

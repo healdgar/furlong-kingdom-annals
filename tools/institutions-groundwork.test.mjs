@@ -12,7 +12,7 @@ const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^
 const line=n=>source.match(new RegExp('^const '+n+'=.*$','m'))?.[0]||assert.fail('no const '+n);
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
 const PROGRAM=[fn('sfc32'),fn('seedStreams'),line('isCorp'),line('isHouse'),line('OFFICES'),line('ROLL_N'),
-  ...['lordAcct','houseAcct','corpFound','corpOf','acct','flow','transfer','unearned','means','book','ownerOf','ownerAcct','storageOwnerId',
+  ...['lordAcct','houseAcct','corpFound','corpOf','cashRecord','acct','flow','transfer','unearned','means','book','ownerOf','ownerAcct','storageOwnerId',
     'houseName','lordSeat','lordAt','officeHeld','officeTitle','rollOf','rollAdd','rollTake','accountBalances'].map(fn)].join('\n');
 
 // a realm of three places: the capital (the crown's), a lord's seat and a village of his; one household with a purse
@@ -20,7 +20,7 @@ function realm(){
   const places=[{name:'Rougecastel',owner:0,buildings:[],pos:{x:0,z:0}},{name:'Gamsburg',owner:1,buildings:[],pos:{x:1,z:0}},{name:'Ashby',owner:1,buildings:[],pos:{x:2,z:0}}];
   const W={treasury:1000,houses:[{crown:true,name:'House Rougemont'},{name:'House Gamsburg',gold:500,seat:1}],settlements:places,capital:places[0]};
   const C=vm.createContext({W,D:100,BEASTS:['sheep','cattle','horses','swine'],householdAccount:p=>p._hh||null,folkIndex:()=>new Map(),parishOf:()=>null,chOf:()=>null});
-  vm.runInContext('"use strict";\nconst day=()=>D;\n'+PROGRAM,C);
+  vm.runInContext('"use strict";\nconst day=()=>D,year=()=>Math.floor(D/360)+1;\n'+PROGRAM,C);
   const household={household:true,id:7,assets:{w:50}};C.household=household;W.households=new Map([[7,household]]);
   const run=s=>vm.runInContext(s,C);
   const purses=()=>W.treasury+W.houses.reduce((t,h)=>t+(h.gold||0),0)+household.assets.w+[...(W.abbeys||[]),...(W.guilds||[])].reduce((t,c)=>t+c.gold,0);

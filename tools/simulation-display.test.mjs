@@ -32,7 +32,7 @@ function run(code,globals={}){
   // Fixtures supply the single model records under their new simulation owner.
   if(globals.G){globals.W??={};for(const k of ['land','bldList','rivStrips','tg','trackSet'])if(globals.G[k]!==undefined)globals.W[k]??=globals.G[k];}
   globals.MODEL_ONLY??=false;
-  globals.BACKGROUND??=null;const c=vm.createContext(globals);vm.runInContext(code,c);return c;}
+  globals.BACKGROUND??=null;const c=vm.createContext(globals);vm.runInContext(region('function castleRadius(', 'function segOutside(')+'\n'+code,c);return c;}
 
 test('display clock clamps queued backlog, rejects nonfinite interpolation, and never writes W.clock',()=>{
   const c=run('const day=()=>W.clock.day;\n'+region('function displayFrac(', 'function entityView('),{W:{clock:{day:42,frac:0.7}},G:{clockFrac:7},clamp:(v,a,b)=>Math.max(a,Math.min(b,v))});
