@@ -70,6 +70,14 @@ his rent grain brought him less than the money rent, and the villein can pay).
 A town's card says whether the lord's mill is let, to whom, for how much and
 until when, and how many villein holdings are commuted.
 
+Under **Justice**, the ruler sets the amercement cap for all his places
+(**Lower cap** / **Raise cap**). A court keeps back the next month’s bread
+and rent; a coinless family is pardoned. The town card’s **Court** link and
+**Open the court roll** show pending pleas, the next quarter day, named
+steward and clerk, receipts, fees and recent rulings. These first manor
+courts recover unpaid rents, entry fines and mill or oven farms. Royal
+justice and ordinary household loans are still to come.
+
 ## Cards
 
 Click anything on the map, or a name in a card or the annals, to open its

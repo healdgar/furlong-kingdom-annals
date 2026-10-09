@@ -42,7 +42,7 @@ test('what a farmer cannot pay at a quarter day is an arrear on the farm, rolled
     r.eval(`H[0].tr='miller';H[0].w=0;householdAccount(H[0]).population.set(s,4);${other?"H[2].tr='miller';householdAccount(H[2]).population.set(s,6);":''}s.buildings[0]._tk={mult:100,suit:2};s._lgL=new Map([[W.houses[1],{got:200,out:150,rot:50,coin:100}]]);farmMills(s,0)`);return r;};
   const r=setup(true),F=r.s.buildings[0].farm;assert.equal(F.who,1);
   r.eval('day=()=>91;farmQuarters(s);H[0].w=s.buildings[0].farm.rent/8;day=()=>181;farmQuarters(s)');near(F.arr,F.rent/4+F.rent/4-F.rent/8);
-  assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who]))")),[['farm',1],['farm',1]]);near(house(r).led['mill farm'],F.rent/8);
+  assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who]))")),[['farm',1]]);near(house(r).led['mill farm'],F.rent/8);
   r.eval('day=()=>361;s.buildings[0]._tk={mult:100,suit:2};farmMills(s,0)');assert.equal(r.s.buildings[0].farm.who,3,'let to the next bidder, whose offer still beats the keeping');
   const alone=setup(false);alone.eval('day=()=>361;s.buildings[0]._tk={mult:100,suit:2};farmMills(s,0)');assert.equal(alone.s.buildings[0].farm,undefined,'no one else: the lord takes it in hand');
 });
@@ -97,11 +97,11 @@ test('a lord whose rent grain sells at its price keeps the week-work; the ruler 
   r.eval("W.player.house=0;manorCmd('s-svc','0:auto')");assert.equal(r.s.svc,'money','only the lord of the place, or the crown in its own, gives the order');
 });
 
-test('arrears two years running return the holding to the lord, and each year\'s arrear is rolled for the manor court',()=>{
+test('arrears two years running return the holding to the lord, and the live arrear updates its one manor-court plea',()=>{
   const r=manor({strips:[strip(2,{svc:'money',qrent:20})]});const f=r.s.furl[0];r.eval('H[1].w=5');
   r.eval('manorRents(s,0,s.furl,folkIndex(),1)');near(house(r).gold,5);near(f._arr,15);assert.equal(f._arrN,1);assert.equal(f.wk,2);
   r.eval('manorRents(s,0,s.furl,folkIndex(),1)');assert.equal(f.wk,-1);assert.equal(f.own,-1);near(house(r).gold,5);
-  assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who,Math.round(x.v)]))")),[['arrears',2,15],['arrears',2,35]]);
+  assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who,Math.round(x.v)]))")),[['arrears',2,35]]);
 });
 
 // tickTenure itself, with the year's land-use choice left out

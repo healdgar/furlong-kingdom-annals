@@ -1,11 +1,11 @@
 # Handoff: state of work
 
-Written 2026-10-07 when work moved from the user's Mac to a cloud agent. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-08 on the user’s Mac after continuing the cloud agent’s handoff. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
-- **Paused by the user until Tuesday (2026-10-13).** Next: #37, courts and royal justice (`docs/SYSTEMS.md` § 4), the next step of "Next, in order". The farm (`tools/soak-results/farm-42-b10`, batch 10b's frozen build) was left running; a container restart stops it, and it resumes with `--from` its latest save.
-- **`main`** is released to Pages and the container image (batch 10b, see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
+- **Resumed by the user (2026-10-08).** #37 is in progress: manor courts first (`docs/SYSTEMS.md` § 4), the next step of "Next, in order". The farm (`tools/soak-results/farm-42-b10`, batch 10b's frozen build) was left running; a container restart stops it, and it resumes with `--from` its latest save.
+- **`main`** carries the tested #37 manor-court phase (batch 11a), after batch 10b; the release push deploys Pages and the container image (see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
   - **batch 8, prices answered by supply (#51, #52):**
@@ -66,7 +66,7 @@ V8 startup snapshots restore a world exactly but can't chain (each build starts 
 
 - **Phase A, done and released (batch 7):** `worldSave()`/`worldLoad()` save and load a world at a day's end, in Node (`docs/WORLD-SAVE.md`).
   - W and the module state are kept as data; closures are made again by their makers: `layoutSettlement(s,saved)` and the named binders the living code also calls, every closure's source text unchanged.
-  - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 23 more days equal.
+  - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 55 more days equal, crossing a court quarter day. The fixture includes rent, entry-fine and retired-farm pleas, with references to their live balances.
   - The document for 42 sea on day 37: 15.6 MB, 7.7 MB gzipped.
 - **The farm keeps one build.** A save loads only into the build that made it, so pass `--src` with a frozen copy of the release.
   - The first run reached AD 870 on batch 7 (1,670 buildings, 426 ms CPU/day in the 860s at load 1).
@@ -203,7 +203,7 @@ Line numbers drift, so find code by name.
 
 ## Waiting on the user
 
-- **Publish the claude.ai artifact** from `main` (ae3931b, batch 10b): `index.html`, with `assets/` and `LICENSE` as files. The cloud agent left it to your machine; it is still v86.
+- **Publish the claude.ai artifact** from current `main` (batch 11a, manor courts): `index.html`, with `assets/` and `LICENSE` as files. No Artifact publishing tool is available in this session; it remains v86.
 - **Delete the merged `determinism` branch** on GitHub; the proxy here refuses branch deletion.
 
 ## Questions for the user
@@ -229,3 +229,13 @@ Line numbers drift, so find code by name.
   1. a crumb of stock below a soul's day of food (0.01 units, or the same worth of another good) is lost as spoiled;
   2. a family that moves sells or carries the goods it held where it lived;
   3. spoilage inferred in closed form when a store is touched, instead of reckoned for every store every day ("seems reasonable").
+
+## Continuation, 2026-10-08: #37 manor courts
+
+- Synced the clean local main from bb94ec8 to 0315e8e; the remote handoff superseded the old determinism work. The user explicitly resumed the paused institution roadmap.
+- First court phase: `tickJustice` on each place’s quarter day after tenure. Existing #36 obligations use `courtPlead`, pointing to the actual rent or farm balance; repeated default updates one case. A voluntary payment, cleared debt or surrendered holding cannot be charged again. Entry fines retain their unpaid balance in the plea. Pending 64, recent rulings twelve, overflow counted by kind.
+- The court waits unless recoverable dues and amercements cover its two officials’ customary fees (each a day’s household bread). It chooses lettered household heads at the lord’s seat by law/letters, assigns steward and clerk, and reuses them. No new actor index. The only new household selection is quarterly and only when an office needs filling; inventoried with that scope and guarded by a no-repeat-search test. A temporary budget stops several pleas promising the same debtor’s coin.
+- Recovery and amercements spare the next month’s bread and roof rent. The amercement custom is a twentieth of harm and no more than a tenth of the spare purse by default. The journaled ruler cap applies to all his places. An amercement is assessed once per case; no additional personal walking budgets, commodity lots or household debt entries. All coin passes between the named debtor, creditor, lord and officers.
+- UI: settlement Court link, `court:si` inspection, read-only roll with links, Governance cap controls. Court state remains worker-owned; cards ask the worker, without projecting obligations or accounts. Soak reads sessions, adjournments, recovered dues, amercements and fees outside the simulation.
+- Intentionally changes histories. This is institution work, not an optimization or calibration result. Gate: 1,321/1,321 tests, including thirteen focused justice tests, command replay, worker projection and save/load continuation with court references. Final soak `tools/soak-results/courts-20261008-final`: seeds 42/1001, each its own fate, sea, three years serially; every year’s money residual zero, no faults or inventory failures, both overall checks pass. Eight sessions recovered 47.394 in existing dues, collected 1.045 in amercements and paid 1.518 to real officials. Load at the soak’s start: 6.90 / 6.85 / 5.79; no speedup claim. First two-year candidate soak is superseded by this final source: nonresident tenants now reserve bread for every living family member and rent at their home. Release order: embed, gate, stamp, commit, push main; Artifact tool unavailable, so that target remains pending.
+- Next within #37: old ordinary loans (date entries without upsetting inheritance/split/merge), beast distraint with a real buyer, trespass and assize, remaining land and marriage entries, riot/robbery/felony and neglected-road presentments; then sheriff/hundred, eyre, capital bench and credit/hardship effects. Do not mark #37 complete or start #39 before those phases. The other planned systems remain in docs/ISSUES.md and docs/SYSTEMS.md.

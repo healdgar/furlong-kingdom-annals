@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 01:01 UTC · after 6e9f4c6</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 02:16 UTC · after 0315e8e</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -9774,7 +9774,7 @@ function contextAnchor(pk){
   if(!pk)return null;if(BACKGROUND&&pk._anchor)return pk._anchor;
   let p=null;
   switch(pk.type){
-    case 'settlement':case 'wall':case 'beast':p=(pk.s||W.settlements[pk.si])?.pos;break;
+    case 'court':case 'settlement':case 'wall':case 'beast':p=(pk.s||W.settlements[pk.si])?.pos;break;
     case 'building':p=pk.b;break;
     case 'churchyard':p=pk.yard;break;
     case 'event':p=pk.ev?.pos;break;
@@ -9950,7 +9950,8 @@ function inspectorCard(pk,full=false){
   const flyToBtn=(button,label,fn)=>{follow={label,type:pk.type,code:inspectorPickCode(pk)};};
   full=!!full;
   const row=(k,v)=>`<div class="row${String(v).replace(/<[^>]*>/g,'').length>26?' long':''}"><span>${k}</span><b>${v}</b></div>`; // a long value reads left to right under itself, not squeezed against its label
-  if(pk.type==='settlement'){
+  if(pk.type==='court'){title.innerHTML='The hallmote';sub.textContent=pk.s.name;h=courtCard(pk.s,W.settlements.indexOf(pk.s));}
+  else if(pk.type==='settlement'){
     const s=pk.s,house=W.houses[s.owner],population=detailPopulation(s);
     setHTML(title,`<img src="${sigURL(s.owner)}">`+esc(s.name));
     sub.textContent=(ROLE_NAME[s.role]||s.kind)+(s.harbor&&s.role!=='port'?' · harbor':'')+(s.river?' · riverside':'')+' · '+house.name;
@@ -10250,6 +10251,7 @@ function inspectorPickCode(pk){
   if(pk.type==='settlement'){const i=W.settlements.indexOf(pk.s);return i>=0?'s'+i:null;}
   if(pk.type==='building')return buildingReference(pk.b,pk.b.s);
   if(pk.type==='churchyard')return graveyardReference(pk.b,pk.s);
+  if(pk.type==='court')return 'court:'+si;
   if(pk.type==='notable')return'n'+pk.n.id;
   if(pk.type==='person')return'p'+pk.p.id;
   if(pk.type==='army')return'a'+pk.a.id;
@@ -10281,7 +10283,7 @@ function workerInspectionCode(code){
   const forms={
     building:/^\d+:-?\d+(?:\.\d+)?:-?\d+(?:\.\d+)?:[a-z][a-z0-9_-]*$/,
     graveyard:/^\d+:-?\d+(?:\.\d+)?:-?\d+(?:\.\d+)?$/,
-    street:/^\d+:\d+$/,land:/^\d+:\d+$/,camp:/^\d+$/,
+    court:/^\d+$/,street:/^\d+:\d+$/,land:/^\d+:\d+$/,camp:/^\d+$/,
     family:/^\d+$/,household:/^\d+$/,surname:/^[^\u0000-\u001f]*$/,
     good:/^-?\d+:[a-z][a-z0-9_-]*$/,trade:/^-?\d+:[a-z][a-z0-9_-]*$/,structure:/^-?\d+:[a-z][a-z0-9_-]*$/,
     choose:/^[A-Za-z0-9_%-]+$/,road:/^\d+$/,river:/^\d+$/,wall:/^\d+:(?:town|outer|ward|bailey|hill|motte)$/,
@@ -14243,6 +14245,55 @@ const ROLL_N=12;
 function rollOf(o,key){return o[key]||(o[key]={rows:[],over:{}});}
 function rollAdd(R,rec,n=ROLL_N){R.rows.push(rec);while(R.rows.length>n){const k=R.rows.shift().kind??'';R.over[k]=(R.over[k]||0)+1;}return rec;}
 function rollTake(R){const out={rows:R.rows,over:R.over};R.rows=[];R.over={};return out;} // a session reads the roll and clears it
+/* THE HALLMOTE (#37, first phase): the quarter day's court hears existing dues, never a second copy of a rent.
+   A plea points to its holding or its farm; a later voluntary payment or surrender therefore clears the same debt.
+   Only a place's bounded roll is read. Officials are chosen at the lord's seat when business first pays their fees. */
+const JUSTICE_CUSTOM={cap:0.1,rate:0.05}; // the manor's customary amercement: a twentieth of harm, saving the household's next month's bread and rent; at most a tenth of its spare purse. The ruler may change the cap.
+function courtPlead(s,kind,who,v,ref,lord){
+  if(!(v>1e-6))return;const R=rollOf(s,'pleas'),old=R.rows.find(p=>p.kind===kind&&p.who===who&&p.ref===ref&&p.lord===lord);
+  if(old){old.v=kind==='entry'?old.v+v:v;return old;}return rollAdd(R,{kind,d:day(),who,v,ref,lord},64);}
+function courtOwed(p){
+  if(p.kind==='arrears')return p.ref?.wk===p.who?p.ref._arr||0:0;
+  if(p.kind==='farm')return p.ref?.who===p.who?p.ref.arr||0:0;
+  return p.kind==='entry'?p.v||0:0;}
+function courtSpare(s,p){const A=householdAccount(p),h=A?.head||p,home=W.settlements[h.si]||s;let n=0;for(const q of A?.members||[p])if(!q.dead)n++;return Math.max(0,means(p)-Math.max(1,n)*foodYr()/12-rentDue(home,h)/12);} // the next month's subsistence is not an amercement or a rent recovery
+function courtQuote(s,p,h,spare=courtSpare(s,h)){const owed=courtOwed(p),paid=Math.min(owed,spare),cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap;
+  return{owed,paid,fine:p.heard?0:Math.min(owed*JUSTICE_CUSTOM.rate,Math.max(0,spare-paid)*cap)};}
+function courtOfficials(si){
+  const s=W.settlements[si],hi=s.owner,H=W.houses[hi],seat=W.settlements[lordSeat(hi)];if(!H||!seat)return null;
+  const PM=W._pm||folkIndex(),J=H.justice||{},roles=['steward','clerk'],valid=(p,k)=>p&&!p.dead&&!p.outlawCampId&&p.si===W.settlements.indexOf(seat)&&householdHead(p)===p&&p.office===k&&p.officeFor===hi;
+  const picked=roles.map(k=>{const p=PM.get(J[k]);return valid(p,k)?p:null;});
+  if(picked.some(p=>!p)){const heads=headsOf(seat);for(let i=0;i<roles.length;i++){if(picked[i])continue;let best=null,score=-1;
+    for(const p of heads){if(picked.includes(p)||p.outlawCampId||ageYrs(p)<16||!(p.sk?.[KL]>0)||p.office&&!(p.officeFor===hi&&roles.includes(p.office)))continue;const v=p.sk?.[i?KL:KLaw]||0;if(v>score||v===score&&p.id<best.id){best=p;score=v;}}picked[i]=best;}}
+  if(picked.some(p=>!p))return null;
+  const fees=picked.map(p=>Math.max(1,householdSize(seat,p))*foodYr()/360);return{picked,fees,cost:fees[0]+fees[1]};}
+function courtSession(s,si){
+  const R=s.pleas;if(!R?.rows.length)return;const C=s.court||(s.court={sessions:0,adjourned:0,recovered:0,fines:0,fees:0,profit:0,roll:{rows:[],over:{}}}),Y=Math.floor(day()/360);
+  if(C.year!==Y){C.year=Y;C.profit=0;}C.next=day()+90;
+  const PM=W._pm||folkIndex(),lord=lordAcct(s),pending=[],budgets=new Map();let expected=0; // one temporary purse budget per debtor: several claims cannot promise the same coin
+  for(const p of R.rows){const h=PM.get(p.who);if(!h||h.dead||!(courtOwed(p)>1e-6))continue;pending.push(p);const A=accountOwner(h),spare=budgets.has(A)?budgets.get(A):courtSpare(s,h),q=courtQuote(s,p,h,spare);budgets.set(A,spare-q.paid-q.fine);expected+=q.fine+(p.lord===lord?q.paid:0);}
+  R.rows=pending;if(!pending.length)return;if(!(expected>2*foodYr()/360)){C.adjourned++;return;}const O=courtOfficials(si);if(!O||!(expected>O.cost)||!(means(lord)+expected>=O.cost)){C.adjourned++;return;} // no invented payroll, and a quiet court waits
+  let income=0,recovered=0,fines=0;const heard=[];
+  for(const p of pending){const h=PM.get(p.who),q=courtQuote(s,p,h),paid=transfer(h,p.lord,q.paid,'judgement of '+(p.kind==='farm'?'farm':p.kind==='entry'?'entry fine':'rent'));
+    if(p.kind==='arrears'){p.ref._arr=Math.max(0,q.owed-paid);if(!(p.ref._arr>1e-6))p.ref._arrN=0;}else if(p.kind==='farm'){p.ref.arr=Math.max(0,q.owed-paid);p.ref.paid=(p.ref.paid||0)+paid;}p.v=Math.max(0,q.owed-paid);
+    const fine=p.heard?0:transfer(h,lord,Math.min(q.fine,courtSpare(s,h)),'amercements');p.heard=true;recovered+=paid;fines+=fine;if(p.lord===lord)income+=paid;income+=fine;
+    rollAdd(C.roll,{kind:p.kind,d:day(),who:p.who,name:folkName(h),owed:q.owed,paid,fine,left:p.v,ruling:p.v>1e-6?'unpaid':'paid',pardoned:!(fine>0)});
+    if(p.v>1e-6)heard.push(p);}
+  R.rows=heard;const J=W.houses[s.owner].justice||(W.houses[s.owner].justice={});O.picked.forEach((p,i)=>{const k=i?'clerk':'steward';p.office=k;p.officeFor=s.owner;J[k]=p.id;});let fees=0;O.picked.forEach((p,i)=>{fees+=transfer(lord,p,O.fees[i],'court fees');});
+  C.sessions++;C.last=day();C.recovered+=recovered;C.fines+=fines;C.fees+=fees;C.profit+=income-fees;
+  if(income>0&&lord===lordAcct(s))lordTake(s,income); // the lord's book names the receipts; his seat's reckoning includes them
+  if(!W.prehistory)emit('trade',1,s.pos,`The hallmote at ${s.name} hears ${pending.length} pleas, recovers ${Math.round(recovered)} in dues and takes ${Math.round(fines)} in amercements.`);}
+function tickJustice(){W.settlements.forEach((s,si)=>{if(dueOn(si,90,37)&&s.pleas?.rows.length)courtSession(s,si);});}
+function justiceCmd(arg){const[a,k,v,...rest]=String(arg).split(':'),s=W.settlements[+a];if(rest.length||!s||!sovOn()||s.owner!==plyH()||k!=='cap'||!Number.isFinite(+v)||+v<0||+v>1)return;
+  const h=W.houses[s.owner];if(h)(h.justice||(h.justice={})).cap=+v;}
+function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||folkIndex(),person=(id,name)=>{const p=PM.get(id);return p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`;
+  let h=row('Place',`<a class="nm" data-nm="s${si}">${esc(s.name)}</a>`)+row('Pleas waiting',s.pleas?.rows.length||0)+row('Next quarter day',dateStr(day()+((90-(day()+si*37)%90)%90||90)))+row('Steward',person(J?.steward))+row('Clerk',person(J?.clerk));
+  if(C){h+=row('Sessions held / adjourned',C.sessions+' / '+C.adjourned)+row('Recovered / amercements / fees',Math.round(C.recovered)+' / '+Math.round(C.fines)+' / '+Math.round(C.fees))+row('This year’s net receipts',Math.round(C.year===Math.floor(day()/360)?C.profit:0));
+    for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind)} — ${Math.round(p.paid)} paid, ${Math.round(p.left)} owing; ${p.pardoned?'amercement pardoned':Math.round(p.fine)+' amerced'}.</p>`;
+    for(const[k,n]of Object.entries(C.roll.over))h+=row('Earlier '+esc(k)+' rulings',n);}
+  return h;}
+function justiceOrdersHTML(s,si){const cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap,lo=Math.max(0,+(cap-0.05).toFixed(2)),hi=Math.min(1,+(cap+0.05).toFixed(2));
+  return `<div class="dhead">Justice</div><div class="cstat"><span>Amercement cap</span><b>${+(cap*100).toFixed(2)}% of the spare purse</b></div><p>The lord's custom throughout his places. The next month's bread and rent are kept back; a coinless family is pardoned.</p><div class="hb"><button data-cmd="s-justice" data-arg="${si}:cap:${lo}"${cap===0?' disabled':''}>Lower cap</button><button data-cmd="s-justice" data-arg="${si}:cap:${hi}"${cap===1?' disabled':''}>Raise cap</button></div><a class="nm" data-nm="court:${si}">Open the court roll</a>`;}
 /* THE MANOR'S DUES (#36): what a lord drew from his manor beside the rents in kind, reckoned at each place's year of tenure (tickTenure).
    - His mill, and a bakehouse of his, is let for the year to the miller (baker) of the place or the next who offers most for it, when the
      offer is worth more than the mill brought him kept in hand; the farm is paid at the place's quarter days out of the takings, and a
@@ -14275,7 +14326,7 @@ function stripLord(f,s){return f.lord>=0?houseAcct(f.lord):lordAcct(s);}
 function stripRent(s,f,p){return f.ten==='villein'&&f.svc==='money'?f.qrent:(f._lqL||0)*p;} // a holding's yearly rent: its money rent, or the lord's share of last year's crop at the price
 function manorYear(s,T){const full=s._lg0!=null&&day()-s._lg0>=360;s._lgL=full?s._lg||new Map():null;s._lg=new Map();s._lg0=day(); // the year's crop of each strip and the lord's part of it, and what his grain brought him, closed: a whole year's, else none (the first reckoning finds only part of one, and a rent fixed on it would be fixed for good)
   for(const f of T){f._cyL=full?f._cy||0:0;f._lqL=full?f._lq||0:0;f._cy=0;f._lq=0;}}
-function entryFine(s,f,h,v,lord=stripLord(f,s)){const paid=transfer(h,lord,v,'entry fines');if(lord===lordAcct(s))lordTake(s,paid);if(v-paid>1e-6)rollAdd(rollOf(s,'pleas'),{kind:'entry',d:day(),who:h.id,v:v-paid});return paid;} // what he cannot pay is owed, and pleaded at the manor court (#37)
+function entryFine(s,f,h,v,lord=stripLord(f,s)){const paid=transfer(h,lord,v,'entry fines');if(lord===lordAcct(s))lordTake(s,paid);if(v-paid>1e-6)courtPlead(s,'entry',h.id,v-paid,f,lord);return paid;} // what he cannot pay is owed, and pleaded at the manor court (#37)
 function stripBidder(s,f,ll,r,p){ // a vacant holding goes to the tiller (of those not yet given one at this reckoning) who offers the lord most for it: what he can spare beyond a year's bread, and no more than the holding would leave him over its rent for the years the custom reckons a fine in. Land hunger raises the fine, empty land lowers it (#36: a frand() pick before)
   if(!ll.length)return null;const fy=foodYr(),worth=Math.max(0,(f._cyL||0)*tenShare(f)*p-(f.ten==='villein'&&f.svc==='money'?f.qrent:0))*customOf(s,'entryHeir');let top=-1,best=[];
   for(const h of ll){const v=Math.max(0,Math.min(means(h)-Math.max(1,householdSize(s,h))*fy,worth));if(v>top+1e-9){top=v;best=[h];}else if(v>top-1e-9)best.push(h);}
@@ -14286,7 +14337,7 @@ function manorRents(s,si,T,PM,p){ // the year's money rents of commuted holdings
     const lord=stripLord(f,s);
     if(f.svc==='money'){const h=PM.get(f.wk);if(!h||h.dead)continue; // empty: its crop was the lord's this year
       const owed=(f.qrent||0)+(f._arr||0),paid=transfer(h,lord,owed,'rents'),left=owed-paid;if(lord===lordAcct(s))lordTake(s,paid);
-      if(!(left>1e-6)){f._arr=0;f._arrN=0;continue;}f._arr=left;f._arrN=(f._arrN||0)+1;rollAdd(rollOf(s,'pleas'),{kind:'arrears',d:day(),who:h.id,v:left}); // owed, and pleaded at the manor court (#37)
+      if(!(left>1e-6)){f._arr=0;f._arrN=0;continue;}f._arr=left;f._arrN=(f._arrN||0)+1;courtPlead(s,'arrears',h.id,left,f,lord); // owed, and pleaded at the manor court (#37)
       if(f._arrN>=2){f._arr=0;f._arrN=0;f.wk=-1;f.own=-1;writeFurlong(f);life(h,`Gave up his holding at ${s.name} to the lord, two years behind with its rent`);} // two years behind: the lord takes it back, and lets it again
       continue;}
     if(s.svc==='works'||!(f._cyL>0))continue; // services kept in hand by order; or no crop last year to reckon a rent from
@@ -14298,7 +14349,7 @@ function farmQuarter(s,b,last){ // a quarter of the farm falls due, out of the t
   const F=b.farm;if(!F||F.q>=4)return;const p=(W._pm||folkIndex()).get(F.who),n=last?4-F.q:1;
   if(!p||p.dead){F.q=4;F.until=day();return;} // the farmer is gone: the farm ends, and the lord has his mill again
   const lord=ownerAcct(b,s),owed=F.rent/4*n+(F.arr||0),paid=transfer(p,lord,owed,b.arch==='bakery'?'oven farm':'mill farm');if(lord===lordAcct(s))lordTake(s,paid);
-  F.q+=n;F.paid=(F.paid||0)+paid;F.arr=owed-paid;if(F.arr>1e-6)rollAdd(rollOf(s,'pleas'),{kind:'farm',d:day(),who:F.who,v:F.arr});else F.arr=0;}
+  F.q+=n;F.paid=(F.paid||0)+paid;F.arr=owed-paid;if(F.arr>1e-6)courtPlead(s,'farm',F.who,F.arr,F,lord);else F.arr=0;}
 function farmQuarters(s){for(const b of s.buildings||[])if(b.farm&&b.farm.until>day())farmQuarter(s,b,false);} // the place's quarter day
 function farmMills(s,si){ // the year's letting of the lord's mill and bakehouse: to the miller (baker) here or at the next place who offers most for the year's takings over his household's bread, when that is more than the mill brought the lord kept in hand; the rent is paid at the quarter days out of the takings (farmQuarter)
   const p=yearPrice(s,'grain'),near=nearestOther(s,si),fy=foodYr();
@@ -14328,7 +14379,7 @@ function manorOrdersHTML(s,si){ // the customs of a manor, beside the dues: one 
     h+=`<div class="cstat"><span>${esc(n)}</span><b>${fmt(k,v)} ${esc(u)}${v!==base?` <span class="tag">realm ${fmt(k,base)}</span>`:''}</b></div><div class="hb"><button data-cmd="s-custom" data-arg="${si}:${k}:${lo}"${v<=0?' disabled':''} aria-label="Lower the ${esc(n.toLowerCase())} at ${esc(s.name)} to ${fmt(k,lo)}">Lower ${esc(n.toLowerCase())}</button><button data-cmd="s-custom" data-arg="${si}:${k}:${hi}"${v>=base*4?' disabled':''} aria-label="Raise the ${esc(n.toLowerCase())} at ${esc(s.name)} to ${fmt(k,hi)}">Raise ${esc(n.toLowerCase())}</button></div>`;}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein'),o=s.svc||'auto';
   h+=`<div class="cstat"><span>Villein holdings</span><b>${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent</b></div><div class="hb">${[['money','Commute services'],['works','Keep them in hand'],['auto','As the reeve reckons']].map(([k,l])=>`<button data-cmd="s-svc" data-arg="${si}:${k}" aria-pressed="${o===k}"${o===k?' disabled':''}>${l}</button>`).join('')}</div>`;
-  return h;}
+  return h+justiceOrdersHTML(s,si);}
 function manorLines(s){ // the settlement card's lines on the manor: the mill's farm, the villeins' services, customs changed by order (#36); reads only
   const out=[],si=W.settlements.indexOf(s),who=id=>{const P=W._folkIndex||W._pm;let p=P&&P.get(id);if(!p)for(const t of W.settlements){p=(t.folk||[]).find(q=>q.id===id);if(p)break;}return p;};
   for(const b of s.buildings||[]){if(b.removed||b.state!=='sound')continue;const mill=b.arch==='mill'||b.arch==='windmill';if(!mill&&b.arch!=='bakery')continue;const F=b.farm,p=F&&F.until>day()?who(F.who):null,o=b.ownerId;
@@ -14336,6 +14387,7 @@ function manorLines(s){ // the settlement card's lines on the manor: the mill's 
     else if(mill&&(o==='lord'||o===undefined))out.push(['Mill',`The lord keeps the mill in hand${b._tk&&b._tk.mult>0?`; ${Math.round(b._tk.mult)} grain of multure this year`:''}`]);}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein');if(V.length)out.push(['Villein holdings',`${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent${s.svc==='money'?', by order':s.svc==='works'?'; services kept in hand by order':''}`]);
   const C=s.custom?Object.keys(CUSTOMS).filter(k=>s.custom[k]!=null&&s.custom[k]!==CUSTOMS[k]):[];if(C.length)out.push(['Customs',C.map(k=>`${esc((CUSTOM_NAMES[k]||[k])[0])} ${CUSTOM_NAMES[k]?.[2]?+(s.custom[k]*100).toFixed(2)+'%':+s.custom[k].toFixed(3)}`).join('; ')]);
+  if(s.court||s.pleas?.rows.length)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year</a>`]);
   return out;}
 function manorCmd(cmd,arg){const[a,k,v]=String(arg).split(':'),s=W.settlements[+a];if(!s||!sovOn()||s.owner!==plyH())return; // a lord orders his own places, the crown its own
   if(cmd==='s-custom'){if(!Object.hasOwn(CUSTOMS,k)||!(+v>=0)||+v>CUSTOMS[k]*4)return;(s.custom||(s.custom={}))[k]=+v;}
@@ -15035,7 +15087,7 @@ function simTick(){
   simPart('tickPolitics',()=>tickPolitics());
   simPart('tickMilitary',()=>tickMilitary());simPart('tickDomains',()=>tickDomains());
   simPart('tickThreats',()=>tickThreats());
-  simPart('tickGrowth',()=>tickGrowth());simPart('tickLand',()=>tickLand());simPart('tickHistory',()=>tickHistory());simPart('tickProjects',()=>tickProjects());simPart('tickFolk',()=>tickFolk());simPart('tickLivestock',()=>tickLivestock());simPart('tickShips',()=>tickShips());simPart('tickStone',()=>tickStone());simPart('tickTravel',()=>tickTravel());simPart('tickErrands',()=>tickErrands());simPart('tickMetro',()=>tickMetro());simPart('tickTenure',()=>tickTenure());simPart('tickStreets',()=>tickStreets());simPart('tickChurches',()=>tickChurches());simPart('tickCastles',()=>tickCastles());simPart('tickCourts',()=>tickCourts());simPart('tickInfill',()=>tickInfill());simPart('tickSettlers',()=>tickSettlers());simPart('tickRepairs',()=>tickRepairs());simPart('tickVictory',()=>tickVictory());simPart('tickWallWorks',()=>tickWallWorks());simPart('tickGarrisons',()=>tickGarrisons());simPart('tickCallToArms',()=>tickCallToArms());simPart('tickMigration',()=>tickMigration());simPart('tickMarket',()=>tickMarket());simPart('tickHouseholds',()=>tickHouseholds());simPart('tickWays',()=>tickWays());simPart('tickTitles',()=>tickTitles());if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
+  simPart('tickGrowth',()=>tickGrowth());simPart('tickLand',()=>tickLand());simPart('tickHistory',()=>tickHistory());simPart('tickProjects',()=>tickProjects());simPart('tickFolk',()=>tickFolk());simPart('tickLivestock',()=>tickLivestock());simPart('tickShips',()=>tickShips());simPart('tickStone',()=>tickStone());simPart('tickTravel',()=>tickTravel());simPart('tickErrands',()=>tickErrands());simPart('tickMetro',()=>tickMetro());simPart('tickTenure',()=>tickTenure());simPart('tickJustice',()=>tickJustice());simPart('tickStreets',()=>tickStreets());simPart('tickChurches',()=>tickChurches());simPart('tickCastles',()=>tickCastles());simPart('tickCourts',()=>tickCourts());simPart('tickInfill',()=>tickInfill());simPart('tickSettlers',()=>tickSettlers());simPart('tickRepairs',()=>tickRepairs());simPart('tickVictory',()=>tickVictory());simPart('tickWallWorks',()=>tickWallWorks());simPart('tickGarrisons',()=>tickGarrisons());simPart('tickCallToArms',()=>tickCallToArms());simPart('tickMigration',()=>tickMigration());simPart('tickMarket',()=>tickMarket());simPart('tickHouseholds',()=>tickHouseholds());simPart('tickWays',()=>tickWays());simPart('tickTitles',()=>tickTitles());if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
   simPart('dragonWake',()=>{if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
@@ -15181,6 +15233,7 @@ function referenceInfoHTML(){
   return '<p>No current record.</p>';
 }
 function referenceTarget(code){const [kind,si,bi]=code.split(':'),s=W.settlements[+si];
+  if(kind==='court')return s?{pick:{type:'court',s},label:'Hallmote of '+s.name,town:s}:null;
   if(kind==='graveyard'){const parts=code.split(':'),b=s?.buildings.find(b=>b.x===+bi&&b.z===+parts[3]&&b._graveyard&&!b._graveyard.removed);return b?{pick:{type:'churchyard',s,b,yard:b._graveyard},label:'Graveyard of '+(b.nm||'the parish church'),town:s}:null;}
   if(kind==='building'){const parts=code.split(':'),b=s?.buildings.find(b=>b.x===+bi&&b.z===+parts[3]&&b.arch===parts[4]);return b?{pick:{type:'building',b},label:b.nm||ARCH[b.arch][4],town:s}:null;}
   if(kind==='street'){const st=s?.streets[+bi];return st?{pick:{type:'street',s,st},label:st.name||STREET_NAME[st.kind],town:s}:null;}
@@ -16249,6 +16302,7 @@ function runCmd(cmd,arg){
     case 'storage-commission':storagePlayerCommission(arg);break;
     case 's-work':{const[a,b]=arg.split(':');settlementWork(+a,b);break;}
     case 's-relief':case 's-garrison':case 's-callout':case 's-levy':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
+    case 's-justice':justiceCmd(arg);break;
     case 's-custom':case 's-svc':manorCmd(cmd,arg);break; // the customs of a manor, and its services commuted or kept in hand (#36)
     case 'a-order':case 'a-road':case 'a-raft':case 'a-objective':case 'a-hold':case 'a-release':case 'a-disband':case 'a-split':case 'a-merge':case 'a-garrison':armyCmd(cmd.slice(2),arg);break;
   }
@@ -18560,6 +18614,7 @@ function workerCommandTarget(e){
       if(c==='s-work'){
         const [si,k,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||!WORKS.some(w=>w[0]===k))throw Error('Invalid works command');return 'worker';
       }
+      if(c==='s-justice'){const [si,k,v,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||k!=='cap'||!/^\d+(\.\d+)?$/.test(v||'')||+v>1)throw Error('Invalid justice command');return 'worker';}
       if(c==='s-custom'||c==='s-svc'){
         const [si,k,v,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||(c==='s-custom'?!Object.hasOwn(CUSTOMS,k)||!/^\d+(\.\d+)?$/.test(v||'')||+v>CUSTOMS[k]*4:v!==undefined||!['money','works','auto'].includes(k)))throw Error('Invalid manor command');return 'worker';
       }
@@ -21167,6 +21222,14 @@ those commuted stay so), or **As the reeve reckons** (the lord commutes where
 his rent grain brought him less than the money rent, and the villein can pay).
 A town's card says whether the lord's mill is let, to whom, for how much and
 until when, and how many villein holdings are commuted.
+
+Under **Justice**, the ruler sets the amercement cap for all his places
+(**Lower cap** / **Raise cap**). A court keeps back the next month’s bread
+and rent; a coinless family is pardoned. The town card’s **Court** link and
+**Open the court roll** show pending pleas, the next quarter day, named
+steward and clerk, receipts, fees and recent rulings. These first manor
+courts recover unpaid rents, entry fines and mill or oven farms. Royal
+justice and ordinary household loans are still to come.
 
 ## Cards
 
