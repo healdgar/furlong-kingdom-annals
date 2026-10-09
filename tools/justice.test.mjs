@@ -1,4 +1,4 @@
-// The hallmote reads the live debts of #36. Its receipts pay real officers; no household's bread is seized.
+// The hallmote reads live debts and presentments. Its receipts pay real officers; no household's bread is seized.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +7,7 @@ const source=fs.readFileSync(process.env.FURLONG_TEST_SOURCE||new URL('../index.
 const fn=n=>{const m=source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'));assert.ok(m,n);return m[0];};
 const cst=n=>source.match(new RegExp('^const '+n+'=.*$','m'))[0];
 function court(){const r=realm({households:5,cash:0,grain:0,fish:0});
-  r.eval(['courtDebtor','courtOfficials','courtSession','tickJustice','courtCard','book','lordSeat','sovOn','plyH','workerCommandTarget','workerCommandIndexText','workerCommandString','runCmd','replayEntry','manorLines'].map(fn).join('\n')+'\n'+cst('dueOn'));
+  r.eval(['courtGrazing','courtDebtor','courtOfficials','courtSession','tickJustice','courtCard','book','lordSeat','sovOn','plyH','workerCommandTarget','workerCommandIndexText','workerCommandString','runCmd','replayEntry','manorLines'].map(fn).join('\n')+'\n'+['dueOn','LK','LS'].map(cst).join('\n'));
   Object.assign(r.C,{KL:0,KLaw:3,MODEL_ONLY:true,backgroundUserRequest:()=>false,workerCommandIsLocal:()=>false,esc:x=>String(x),dateStr:d=>'day '+d});
   r.eval('W.houses=[{name:"the Crown"},{name:"House Ash",seat:0,gold:0}];W.capital=s;s.owner=1;W.player={on:true,house:1};s.furl=[];tilledOf=s=>s.furl;for(const h of H)h.sk=[1,0,0,1];ownershipTick();for(const h of H)householdAccount(h).population.set(s,1);W._pm=folkIndex();');
   return r;}
@@ -188,4 +188,82 @@ test('loan requests reuse the month’s buyer reserve and a family without surpl
 
 test('an exiled owner’s manor uses the actual buyer’s royal reserve, rather than the absent lord’s chest',()=>{
   const r=court();r.eval('W.houses[1].exiled=true;W.treasury=100;H[2].herd={swine:5};s.stores.swine=5;chestReserve=hi=>{if(hi!==0)throw Error("wrong buyer reserve");return 10}');loan(r);assert.equal(r.s.pleas.rows.length,1);
+});
+
+test('the bread and ale assize records actual named craft payments, not a trade estimate or the sundry pool',()=>{
+  const r=court();r.eval(fn('payCrafts')+'\n'+source.match(/^const TRADE_W=[\s\S]*?;/m)[0]);Object.assign(r.C,{KCr:0,tills:()=>false});
+  r.eval('H[2].tr="baker";H[3].tr="brewer";H[4].tr="smith";s._poolBy={baker:40,brewer:20,smith:10};s._poolCash=100;payCrafts(s,H)');
+  const rows=r.s.pleas.rows;assert.equal(rows.length,2);near(rows[0].v,40);near(rows[1].v,20);assert.equal(rows[0].kind,'assize');assert.equal(rows[0].against,r.eval('householdAccount(H[2])'));
+  assert.ok(r.H[2].w>40,'sundry craft payments are paid but not called bread receipts');near(r.s._poolCash,0);assert.equal(Object.keys(r.s._poolBy).length,0);
+  r.eval('s._poolBy={baker:15};payCrafts(s,H)');near(rows[0].v,55);assert.equal(r.s.pleas.rows.length,2);
+});
+
+test('bread receipts wait for the twice-yearly great court while other dues are heard at the quarter day',()=>{
+  const r=court();r.eval('H[2].w=100;H[3].w=100;courtAssize(s,H[2],40)');plead(r,4,20);
+  r.eval('day=()=>90;tickJustice()');near(r.s.court.recovered,20);near(r.s.court.fines,1);assert.equal(r.s.pleas.rows.length,1);near(r.s.pleas.rows[0].v,40);near(r.H[2].w,100);
+  const before=total(r);r.eval('day=()=>180;tickJustice()');near(total(r),before);near(r.s.court.recovered,20);near(r.s.court.byKind.assize.fines,2);near(r.H[2].w,98);assert.equal(r.s.pleas.rows.length,0);
+  assert.equal(r.s.court.roll.rows.at(-1).ruling,'amerced');near(r.s.court.roll.rows.at(-1).left,0);r.eval('day=()=>360;tickJustice()');near(r.H[2].w,98,'the same licence receipts cannot be charged twice');
+});
+
+test('the assize uses each place’s own great court day, not the realm’s half-year',()=>{
+  const r=court();r.eval('W.settlements.unshift({...s,pleas:null});W.houses[1].seat=1;H.forEach(h=>h.si=1);H[2].w=100;courtAssize(s,H[2],40);day=()=>53;tickJustice()');
+  near(r.H[2].w,100);assert.equal(r.s.court.sessions,0);r.eval('day=()=>143;tickJustice()');near(r.H[2].w,98);assert.equal(r.s.court.sessions,1);
+});
+
+test('a fine-only case never recovers invented principal or forces a beast sale',()=>{
+  const r=court(),bread=r.eval('foodYr()/12');r.eval(`H[2].w=100;H[3].w=${bread};H[3].herd={swine:5};s.stores.swine=5;W.houses[1].gold=100;courtAssize(s,H[2],40);courtAssize(s,H[3],100);day=()=>180`);
+  const before=total(r);r.eval('chestReserve=()=>{throw Error("a fine cannot sell beasts")};courtSession(s,0)');
+  near(total(r),before);near(r.s.court.recovered,0);near(r.s.court.distraints,0);near(r.eval('herdOf(H[3],s).swine'),5);near(r.H[3].w,bread);near(r.s.court.byKind.assize.pardoned,1);assert.equal(r.s.pleas.rows.length,0);
+});
+
+test('all a family’s fines share its spare purse and respect the journaled cap',()=>{
+  const r=court(),bread=r.eval('foodYr()/12');r.eval(`H[2].w=${bread+10};courtAssize(s,H[2],1000);globalThis.A=householdAccount(H[2]);globalThis.P=courtPlead(s,'trespass',3,1000,A,W.houses[1]);P.against=A;justiceCmd('0:cap:0.1');day=()=>180`);
+  const before=total(r);r.eval('courtSession(s,0)');near(total(r),before);near(r.s.court.byKind.assize.fines,1);near(r.s.court.byKind.trespass.fines,0.9);near(r.H[2].w,bread+8.1);
+});
+
+test('grazing presentments value only the shortage, apportioned to beasts beyond the worked holding’s share',()=>{
+  const r=court();r.eval('s.furl=[{area:10000,state:LS.TILLED,ten:"free",wk:3,own:3},{area:10000,state:LS.TILLED,ten:"free",wk:4,own:4}];herdOf(H[2],s).cattle=8;herdOf(H[3],s).cattle=4;s.px.hay=10;headsOf=()=>{throw Error("no extra household census")};courtGrazing(s,{cap:10},12)');
+  const rows=r.s.pleas.rows;assert.equal(rows.length,1);assert.equal(rows[0].who,3);assert.equal(rows[0].kind,'trespass');near(rows[0].v,7);assert.equal(rows[0].against,r.eval('householdAccount(H[2])'));
+  r.eval('courtGrazing(s,{cap:10},12)');assert.equal(rows.length,1);near(rows[0].v,14,'another month’s harm joins the same pending case');
+});
+
+test('the lord’s excess beasts are not charged to an innocent family; another lord’s land grants no share',()=>{
+  const r=court();r.eval('s.furl=[{area:10000,state:LS.TILLED,ten:"free",wk:3,own:3},{area:10000,state:LS.TILLED,ten:"demesne"},{area:1000000,state:LS.TILLED,lord:2,wk:3,own:3}];herdOf(H[2],s).cattle=4;s.px.hay=10;courtGrazing(s,{cap:10},20)');
+  assert.equal(r.s.pleas,undefined);r.eval('herdOf(H[2],s).cattle=8;courtGrazing(s,{cap:10},20)');near(r.s.pleas.rows[0].v,10.5,'three of the ten excess livestock units belong to this household');
+});
+
+test('a fieldless common follows resident mouths, not dealers’ ownership rows or beasts on pannage',()=>{
+  const r=court();r.eval('herdOf(H[2],s).cattle=5;herdOf(H[3],s).swine=1000;s.px.hay=10;courtGrazing(s,{cap:10},5)');assert.equal(r.s.pleas,undefined,'ample grass creates no case');
+  r.eval('globalThis.A=householdAccount(H[2]);A.population.set(s,2);herdOf(H[2],s).cattle=8;herdOf(H[3],s).cattle=4;courtGrazing(s,{cap:12},12)');assert.equal(r.s.pleas,undefined,'at capacity creates no case');
+  r.eval('courtGrazing(s,{cap:10},12)');assert.equal(r.s.pleas.rows.length,2);near(r.s.pleas.rows.reduce((n,p)=>n+p.v,0),7);assert.ok(r.s.pleas.rows.every(p=>p.who===3||p.who===4));
+});
+
+test('a family merger keeps one real assize obligation and finds the surviving head',()=>{
+  const r=court();r.eval('H[2].w=100;courtAssize(s,H[2],40);marryHouseholds(H[3],H[2]);day=()=>180;courtSession(s,0)');
+  near(r.s.court.byKind.assize.fines,2);assert.equal(r.s.court.roll.rows[0].who,4);assert.equal(r.s.pleas.rows.length,0);
+});
+
+test('a resident family without an inventory row still holds its share of a fieldless common',()=>{
+  const r=court();r.eval('herdOf(H[2],s).cattle=8;s.px.hay=10;for(const h of [H[0],H[1],H[3],H[4]])s._owners.delete(householdAccount(h));courtGrazing(s,{cap:10},12)');
+  assert.equal(r.s.pleas.rows.length,1);near(r.s.pleas.rows[0].v,7*6/10,'six excess family units and four lord/drover units share the two-unit shortage');
+});
+
+test('an extinct account leaves no personal presentment for an heir, lord, crown or another institution',()=>{
+  for(const to of ['householdAccount(H[3])','W.houses[1]','"crown"','{kind:"abbey",head:9,gold:100}']){const r=court();r.eval(`H[2].w=100;courtAssize(s,H[2],40);globalThis.A=householdAccount(H[2]);globalThis.P=courtPlead(s,'trespass',3,20,A,W.houses[1]);P.against=A;H[2].dead=true;A.head=null;A.estate={person:3};W.houses[1].head=9;A.successors=[[${to},1]];day=()=>180`);
+    const before=total(r);r.eval('courtSession(s,0)');near(total(r),before);assert.equal(r.s.pleas.rows.length,0);assert.equal(r.s.court.sessions,0);near(r.s.court.fines,0);}
+});
+
+test('unprofitable presentments wait without a payment, and later real receipts fund the sitting',()=>{
+  const r=court();r.eval('H[2].w=100;courtAssize(s,H[2],0.0001);day=()=>180;courtSession(s,0)');near(r.H[2].w,100);assert.equal(r.s.court.sessions,0);assert.equal(r.H[0].office,undefined);
+  r.eval('courtAssize(s,H[2],40);day=()=>360;courtSession(s,0)');assert.equal(r.s.court.sessions,1);near(r.s.court.byKind.assize.fines,40.0001*0.05);assert.equal(r.s.pleas.rows.length,0);
+});
+
+test('new presentments use the same bounded pending and ruling rolls',()=>{
+  const r=court();r.eval('H[2].w=100;for(let i=0;i<100;i++)courtAssize(s,H[2],1)');assert.equal(r.s.pleas.rows.length,1);near(r.s.pleas.rows[0].v,100);
+  r.eval('for(let i=0;i<100;i++){const p=courtPlead(s,"trespass",3,1,{},W.houses[1]);p.against=householdAccount(H[2]);}day=()=>180;courtSession(s,0)');assert.equal(r.s.court.roll.rows.length,12);assert.equal(r.s.court.byKind.trespass.heard,64);assert.equal(r.s.pleas.rows.length,0);
+});
+
+test('presentment reports distinguish receipts and grazing harm from money owing, and do not write state',()=>{
+  const r=court();r.eval('H[2].w=100;courtAssize(s,H[2],40);day=()=>180;courtSession(s,0)');const before=r.eval('JSON.stringify([s.court,s.pleas])'),html=r.eval('courtCard(s,0)');
+  assert.ok(html.includes('Next great court'));assert.ok(html.includes('assize of bread and ale'));assert.ok(html.includes('40 in recorded receipts'));assert.ok(!html.includes('owing'));assert.ok(html.includes('2 amerced'));assert.equal(r.eval('JSON.stringify([s.court,s.pleas])'),before);
 });

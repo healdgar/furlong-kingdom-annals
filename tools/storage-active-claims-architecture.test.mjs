@@ -137,6 +137,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Wool supply (#51): sheepLand reads each freeholder's existing native animal row into phase-local land/food/feed budgets.
  // No commodity, claim, balance or journal writer changed; production-inputs.test.mjs covers real flocks, funding and land rights.
  // Annual accounts: the distraint transfer additionally names q.home; its payer, amount and animal decrement are unchanged.
- assert.equal(digest(outside),"06b219d7a4d8fb5490ab572a570156ed5ca7915ee7f86b4cd2aaad54552438ca");
+ // Courts (#37, batch 11c): courtGrazing reads native animal rows once in an overstocked month's reckoning, into scratch
+ // grazing shares and bounded presentments. The two fine-only case kinds never invoke the existing distraint writer.
+ // No quantity, claim, balance, title or journal writer changed; justice.test.mjs covers the shares, pardons and purses,
+ // and world-save.test.mjs saves the native household references of both presentments.
+ assert.equal(digest(outside),"2380f3c7d75302e2c2f6fc1d83db9c0386d9fc7bcf68dd10f574cf8fad67233e");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

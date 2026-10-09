@@ -89,7 +89,16 @@ may buy surplus beasts from coin beyond his chest's reserve. Families keep
 breeders and their working team. The roll links the creditor and records
 beasts sold; returned loan principal is not new income. A sitting needs
 receipts or acquired chattels worth its officers' fees, and real coin to
-pay them. Royal justice remains to come.
+pay them. Grazing trespass records the month's missing grass at the hay
+price, shared among beasts beyond their holders' share of the common;
+the lord's excess is not charged to a family. The worked holdings set the
+shares; a place without holdings uses its resident families' mouths.
+At the great court twice a year, the bread and ale assize takes the
+customary twentieth of bakers' and brewers' recorded payments for that
+work, within the same spare-purse cap. It is a licence, not a claim that
+loaves are short weight. Trespass and assize are amerced or pardoned once,
+without a debt or forced beast sale. The roll shows the harm or receipts,
+amercements by kind and the next great court. Royal justice remains to come.
 
 ## Cards
 

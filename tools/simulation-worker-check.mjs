@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Isolated full-source Chrome worker/main comparison; never attaches to a player tab.
 // --gpu-only true measures the annual kernel without installing its output in W.
+// --page-base-url serves the output directory over HTTP where file URLs are unavailable.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,7 +53,7 @@ try{
    `window.__result={mode:${quote(mode)},bootMs,advanceMs,heartbeat:measurements,views,state,journal,save,viewEvidence:window.__viewEvidence||null};}catch(e){clearInterval(timer);window.__error=String(e.stack||e);}})();`;
   const page=`<!doctype html><meta charset="utf-8"><title>Simulation worker check</title><p>Full-source ${mode} check</p><script>${prefix}</script><script>${source}</script><script>${driver}</script>`;
   const pagePath=path.join(out,mode+'.html');fs.writeFileSync(pagePath,page);
-  await c.send('Page.navigate',{url:pathToFileURL(pagePath).href});let result;const until=Date.now()+600000;
+  await c.send('Page.navigate',{url:args['page-base-url']?new URL(mode+'.html',args['page-base-url']).href:pathToFileURL(pagePath).href});let result;const until=Date.now()+600000;
   while(Date.now()<until){await sleep(1000);const state=await c.evaluate('({result:window.__result,error:window.__error})');if(state.error)throw Error(state.error);if(state.result){result=state.result;break;}}
   if(!result)throw Error(mode+' timed out');results[mode]=result;fs.writeFileSync(path.join(out,mode+'.json'),JSON.stringify(result,null,2));if(mode==='gpu'){console.log(JSON.stringify(result,null,2));continue;}console.log(mode+': '+Math.round(result.advanceMs)+' ms for '+days+' days; UI heartbeat max '+Math.round(Math.max(0,...result.heartbeat.advance))+' ms');
  }

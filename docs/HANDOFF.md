@@ -1,8 +1,11 @@
 # Handoff: state of work
 
-Updated 2026-10-09 on the user’s Mac after recovering the interrupted coordinator. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-09 in the cloud checkout after continuing #37. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
+
+- **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
+- **Local state:** batch 11c is the only work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: land/merchet/heriot roll entries, then the remaining #37 presentments and royal tiers. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
 
 - **2026-10-09, fort development and annual accounts (#56, #57):** roads, town-wall siting, building enlargement and parcel clipping respect the elongated bailey's contour instead of its maximum-radius circle. Mound, ditch and curtain clearances remain. Deliberate layout/history change; existing buildings are not relocated.
 - Town, domain and crown records show calendar-year income, expenses, surplus/deficit and causes; treasury statements reconcile opening and closing coin. Town public funds and each owner's local receipts/costs are separate; local costs already belong to the owner's total. Loans and asset sales are cash flows, not trading profit. Two bounded annual aggregate books per institutional chest, no household ledger or new transaction/journal rows; reports never scan history. Self-transfers and refunded relief holds are excluded. Older net books cannot reconstruct prior gross flows; resumed records label partial years.
@@ -10,7 +13,7 @@ Updated 2026-10-09 on the user’s Mac after recovering the interrupted coordina
 - Tested HTML SHA256 `77a5bf5b91fcd1c5a42e2e6b2746c1093d8f92c2ebf1fc5b59ee1d5543128537`; game-script SHA256 `9630161dc1a406c0df60488b80cedc0bfd533eacd53c7e9f8ec9880110459c4f`. Stamped release HTML SHA256 `22508646b7431ddec8687f9edb887843029e1f39a7c6586deb7e5e7c1de87da5`; game script unchanged, 22 post-stamp checks and final drawn play pass (Apple M4 Max / ANGLE Metal). The 2002-sea baseline also passes: disconnect not reproduced. Local evidence: `tools/soak-results/fort-finances-20261009/`. No speedup claim: native accounting on/off tick CPU was 144.1/148.9 ms/day, respectively, under differing load (4.57/5.56); one pair cannot resolve small overhead. Existing famine and #27 inspector defects remain.
 
 - **Resumed by the user (2026-10-08).** #37 is in progress: manor courts first (`docs/SYSTEMS.md` § 4), the next step of "Next, in order". The farm (`tools/soak-results/farm-42-b10`, batch 10b's frozen build) was left running; a container restart stops it, and it resumes with `--from` its latest save.
-- **`main`** carries the tested #37 manor-court phases (batches 11a and 11b), after batch 10b; the release push deploys Pages and the container image (see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
+- **`main`** carries the tested #37 manor-court phases (batches 11a, 11b and the local 11c), after batch 10b; the release push deploys Pages and the container image (see the latest release stamp). The claude.ai artifact is still v86 (08446b7); see Waiting on the user. `main` carries:
   - **batch 5, determinism (#45):** the game's own math (`DM`), sorts that throw no dice, and the population memo left out of the world graph. Node, the soak page and the worker build play one history.
   - **batch 6, the economy:** a seller's reserve is the average cost of his stock on sale; the crafts buy their stuff for what the place wants of the ware (#51).
   - **batch 8, prices answered by supply (#51, #52):**
@@ -42,8 +45,8 @@ Updated 2026-10-09 on the user’s Mac after recovering the interrupted coordina
     - **Third gate (bbc79b0): passed.** Suite 1288/1288; money accounted, no faults on all six worlds. Famine over six worlds × 5 years 1.33 → 1.03 (−23%) against batch 8; 287970763 sea and the 15 km world near none. Meat ran away nowhere after year 1 (a family's meat offered as its grain is; the famine slaughter). Runaway place-goods at year 5: 42 sea 13 (batch 8: 9), 2002 land 8 (8), cloth and sheep (#51). Population ended 6% lower in total, but by history, not by mechanism: 287970763 sea had a plague in its first year that batch 8's history did not (2,824 → 2,298 in half a year, prosperity higher than batch 8's throughout), and the 15 km world lost 430 in year 4 with no famine after growing past batch 8's; the second gate's run of the same worlds ended −1.4%. CPU +15% on one host (above).
     - Back with the meat agent: foods that rot are not laid in for the month; the table's meat gives way to its price as wine does; butchers buy up to the herds' yearly increase wherever the carcass pays; cattle and sheep valued by their real yields; butchers as many as the meat trade keeps; pannage at the year's price.
   - Agents' single-world runs (42 sea, 720 days): lords' and the crown's coin up, village hunger level or lower, no roads worn, two of nine mills let, meat level with bread at about 4× base by year 2. Open from it: #53 (dairy counted as grain; a cow's yield undervalued) and #54 (meat reaches the market slowly: families sell beasts only to the reeve, and the lords' halls buy no meat, a calibration of flesh and fast days left for later).
-- **Branches.** Work goes on `claude/friendly-bardeen-luem2o`, level with `main` after each release. The remote `determinism` branch is merged but could not be deleted from the cloud.
-- Nothing else is unpushed.
+- **Branch.** Work stays on `main`, as `CLAUDE.md` now requires. The remote `determinism` branch was already merged; its deletion remains an inherited task.
+- Batch 11c is local only; no other unpushed work is present in this checkout.
 
 ## Next, in order
 
@@ -71,7 +74,7 @@ V8 startup snapshots restore a world exactly but can't chain (each build starts 
 
 - **Phase A, done and released (batch 7):** `worldSave()`/`worldLoad()` save and load a world at a day's end, in Node (`docs/WORLD-SAVE.md`).
   - W and the module state are kept as data; closures are made again by their makers: `layoutSettlement(s,saved)` and the named binders the living code also calls, every closure's source text unchanged.
-  - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 55 more days equal, crossing a court quarter day. The fixture includes rent, entry-fine, retired-farm and loan pleas, with references to their live balances, household accounts and loan dates/rulings.
+  - `tools/world-save.test.mjs`: 42 sea and 1001 sea saved on day 37 load into fresh realms that capture equal, save again to the same bytes and play 55 more days equal, crossing a court quarter day. The fixture includes rent, entry-fine, retired-farm and loan pleas plus trespass and assize presentments, with references to their live balances, household accounts and loan dates/rulings.
   - The document for 42 sea on day 37: 15.6 MB, 7.7 MB gzipped.
 - **The farm keeps one build.** A save loads only into the build that made it, so pass `--src` with a frozen copy of the release.
   - The first run reached AD 870 on batch 7 (1,670 buildings, 426 ms CPU/day in the 860s at load 1).
@@ -111,7 +114,7 @@ The farm, as planned:
    - **Left to the systems:**
      - The crown keeps no labelled book: adding `W.houses[0].led` changes history, so it goes with #36 or #39, whichever owns the revenue labels.
      - #35 must make the abbey the title owner of its grange, because a string `ownerId` routes no goods.
-2. **#36** (lords' customary income: built, batch 9), then **#37** (courts, as `tickJustice`: in progress; it collects #36's arrears from the pleas roll and presents unmended roads), **#39** (estates), **#35** (Cistercian abbeys), **#38** (credit), then **#41, #40, #43, #42**. Also **#46** (the Church) and **#47** (crusades).
+2. **#36** (lords' customary income: built, batch 9), then **#37** (courts, as `tickJustice`: in progress; manor debts and presentments are built, with remaining roll entries and royal tiers still to come), **#39** (estates), **#35** (Cistercian abbeys), **#38** (credit), then **#41, #40, #43, #42**. Also **#46** (the Church) and **#47** (crusades).
 
 - The user's decisions are in `docs/SYSTEMS.md` § Decisions.
 - Each system lands as a behaviour change in its own batch.
@@ -132,9 +135,9 @@ Line numbers drift, so find code by name.
   - Money moves through `acct`, `flow` and `transfer`. Also touched: `ownerOf`, `ownerAcct`, `LORD_ARCH`, `simPart`/`simTick`, `runCmd`, `lordPanelHTML`, `crownPanelHTML`, `workerPresentation`, `visualSettlement`.
   - Test: `tools/customary-dues.test.mjs`, built on the `tools/ownership-fixture.mjs` pattern.
 - **#37 hooks:**
-  - `tickJustice` runs manor and hundred courts on `dueOn(si,90,salt)`;
-  - the sheriff and justices are notables (`mkNotable`);
-  - pleas, amercements, and a pardon order;
+  - `tickJustice` runs manor courts on `dueOn(si,90,37)`; the assize waits for `dueOn(si,180,37)`;
+  - bounded pleas and rulings, shared spare-purse budgets, and a journaled customary cap;
+  - future: hundred/shire courts, sheriff and justices (`mkNotable`), eyre and capital bench;
   - `tickCourts` is the existing neighbour;
   - test: `tools/justice.test.mjs`.
 - **#39 hooks:**
@@ -202,13 +205,13 @@ Line numbers drift, so find code by name.
   - The soak refuses a software rasterizer only when it measures drawing (`--render`).
   - These need Chrome: `soak.mjs`, `driver-parity.mjs`, `replay-check.mjs`, `performance-check.mjs`, `simulation-worker-play-check.mjs`, `session-resume-check.mjs`.
   - The suite and `tools/model-run.cjs` run in Node alone. Node and Chrome now play the same history.
-- **Branches.** Work on a short-lived branch and merge to `main` only after its batch passes the gate, because every push to `main` deploys Pages and the container. The proxy here refuses branch deletion.
+- **Branch and release.** Work stays on `main` under `CLAUDE.md`. Every push deploys Pages and the container; the local batch 11c has not been pushed.
 - **Release.** The claude.ai artifact (https://claude.ai/artifact/3bfimVpbRRQ2Y3Jwzxd9r7) needs the Artifact tool. If you can't publish it, say so in the hand-back, and the user's machine will publish it.
 - **Questions for the user.** Add them below and carry on with work that doesn't depend on the answer.
 
 ## Waiting on the user
 
-- **Publish the claude.ai artifact** from current `main` (batch 11a, manor courts): `index.html`, with `assets/` and `LICENSE` as files. No Artifact publishing tool is available in this session; it remains v86.
+- **Publish the claude.ai artifact** from the latest tested build: `index.html`, with `assets/` and `LICENSE` as files. No Artifact publishing tool is available in this session; it remains v86.
 - **Delete the merged `determinism` branch** on GitHub; the proxy here refuses branch deletion.
 
 ## Questions for the user
@@ -263,3 +266,15 @@ Line numbers drift, so find code by name.
 - Established markets allocate spare grazing by net cattle/sheep yield, preserving working teams and riding horses. Freeholders may put spare corn land to grass for unmet wool demand only when their real flock can supply lambs, their purse can winter them and the remaining grain covers the town's need. No encroachment on tenant land, meadow, vines or demesne. Monthly land assignment preserves profitable grazing; grass valuation shares each household's actual sheep across all family-owned pasture, with one breeding allowance and winter purse.
 - Quotes and budgets are phase-local. No saved index, new record type, journal event or invented coin/beast; no change to `reprice`. Intended history change. The 28 focused input, production, flock and land checks pass, including co-owners in one household. Recovered correctness gate: 1,362 suite checks passed; five projection checks timed out under external machine load, then passed individually on both the unchanged baseline and candidate. All 1,367 checks are now verified, including worker boundaries and save/load continuation. The projection test accepts the existing `FURLONG_TEST_SOURCE` convention for frozen-source diagnosis; assertions are unchanged. No profiling, identity comparison or long soak, per the user.
 - #37 remains unfinished; its next court phases are unchanged. The specific six-year player world has not been measured. Artifact publishing remains unavailable.
+
+
+## Continuation, 2026-10-09: #37 trespass and bread/ale assize (batch 11c, tested locally)
+
+- The next manor-court phase is implemented in the cloud checkout, based on clean `main` at `5c5b121`. Grazing presentments run only when the existing monthly livestock reckoning finds pressure above capacity. Grazing shares follow the real worked holdings (resident mouths where there are none); the month's shortage is apportioned among excess beasts and valued as winter-equivalent hay. The lord's and drovers' contribution is not charged to the families. No additional household census or per-family land search.
+- The bread/ale assize is the customary licence described in `docs/SYSTEMS.md`, not an invented short-weight offence. Actual named bakery/brewery payments in `payCrafts` accumulate one bounded pending plea per account and lord. Sundry craft payments and estimated earnings are excluded. Each place's great court hears it on `dueOn(si,180,37)`; ordinary quarter days leave it pending while hearing other business.
+- These are fine-only presentments: the existing custom and cap apply to cash beyond the next month's family bread and rent. They do not recover fictitious principal, sell beasts, or become unpaid household debt; a paid or pardoned ruling retires the presentment once. The existing sitting budgets share the purse with every other case. Merged accounts follow their surviving head; an extinct estate leaves no personal presentment for its heirs. The roll distinguishes receipts/grazing harm from money owing, shows the next great court, and keeps two aggregate per-kind counters outside household accounts.
+- Correctness: 1,396 checks verified, including 45 court cases and both new native plea references saved on day 37 into a fresh realm that continues 55 days equal. The standard eight-way suite passed 1,395 checks; one unchanged save/replay boundary check exceeded its 30-second save-packing limit under concurrent load, then passed unchanged in isolation on both the candidate and frozen baseline. No test or time limit was relaxed. Browser evidence (`worker-complete`) covers 180 days plus 180 after save/resume: complete world graph, every RNG stream, commands, annals, settings and storage sequence match the reference; all nine view outputs match and leave world/RNG stable. Journals settle and the worker keeps the UI heartbeat responsive. Chromium uses software WebGL here; no hardware or drawn-play claim.
+- Final serial soak (`soak`): seeds 42/1001, each its own fate, sea, three years; both worlds pass every check, all annual money residuals are zero, with no faults or inventory mismatch, 2,160 independent inventory checks per world and no pending journal bytes/chunks after the final flush. There were 88 sittings, 721 assize and 142 grazing rulings (218/32 pardoned), 143.928 in total amercements, 25.571 in real dues recovered and 19.918 paid to named officials. Year-3 sampled tickJustice total CPU: 0.041/0.051 ms per day; courtGrazing: 0.021/0.003. Soak-start load: 0.71 / 1.08 / 0.67.
+- Matched `5c5b121` baseline (`baseline-soak`) also passes. End populations: 2,360 → 2,418 (42) and 2,152 → 2,460 (1001). Population-weighted famine over three years: 4.21% → 4.83% and 8.18% → 5.21%; hunger: 0.0751 → 0.0882 and 0.1127 → 0.1057. Histories intentionally differ; these observations establish no calibration or speedup claim. Evidence: `tools/soak-results/courts-presentments-20261009/`. HTTP snapshot URLs are now optional in the worker/soak harnesses because this host’s Chromium policy blocks file URLs; served snapshots were hash-checked against the frozen files. No release has been pushed.
+- Tested HTML SHA256 `bae856463af8b7111fef06588a16f15100b0df779546a98fcacdc822a61ff487`; stamped local HTML SHA256 `072a1fddd39517be83a2d9c8c309bb4858aa08a4a8814096c8658fc1d454e68e`. Game-script SHA256 `846de6f87524c592faa510d62267daf936980c3eded6b0926d710395aa31669d` is unchanged by stamping; all seven post-stamp source/advisor checks pass. The build is prepared locally; Pages/container and the claude.ai artifact have not been updated from this checkout.
+- Next within #37: land/merchet/heriot roll entries; riot, robbery, felony and neglected-road presentments; then sheriff/hundred, eyre, capital bench and effects on credit/hardship. #37 remains in progress and #39 has not begun. The Mac's late-world farm has not been resumed here; its snapshots are not present.

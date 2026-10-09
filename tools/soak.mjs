@@ -16,6 +16,7 @@
             --fate N (override fate seed)  --km N  --y AD (start year: older history replayed first)  --profile year,year (0: none)  --profile-interval µs (1000)  --hotlist file (0: none)  --render years (draw at these years: 0 is the start)  --devices laptop,phone  --cpu 1,4 (CPU slowdown for drawing)
             --speeds 1,4,5  --boot-cpu N (boot under a slower CPU)  --audit N (pin unrecorded money to the part of the day
             that makes or loses it, for the first N days of each year in --audit-years)  --audit-years 1,19 | all (default 1)  --audit-fns a,b (also attribute these global functions, nested inside the ticks)  --inventory 1 (independent daily matching)  --out dir  --chrome path
+            --page-url URL (HTTP URL serving the output's index.snapshot.html, where file URLs are unavailable)
    Drives the main-thread reference simulation (foreground=1); --render frame costs are the reference driver's, not the worker's. */
 import {spawn,execFileSync} from 'node:child_process';
 import {moneyFlowGap} from './money-flow.mjs';
@@ -47,7 +48,7 @@ const SOURCE=fs.readFileSync(A.source?path.resolve(A.source):path.join(ROOT,'ind
 const HOTLIST=A.hotlist==='0'?null:path.resolve(A.hotlist||path.join(ROOT,'tools/soak-results/hotlist.json'));
 const COMMIT=(()=>{try{const sha=execFileSync('git',['-C',ROOT,'rev-parse','--short','HEAD'],{stdio:['ignore','pipe','ignore']}).toString().trim();
   const dirty=execFileSync('git',['-C',ROOT,'status','--porcelain','--','index.html'],{stdio:['ignore','pipe','ignore']}).toString().trim();return sha+(dirty?'+dirty':'');}catch{return null;}})();
-const PAGE=pathToFileURL(path.join(OUT,'index.snapshot.html')).href;
+const PAGE=A['page-url']||pathToFileURL(path.join(OUT,'index.snapshot.html')).href; // optional HTTP URL of this frozen snapshot
 const provenance={schema:2,startedUTC:new Date().toISOString(),harnessSHA256:createHash('sha256').update(fs.readFileSync(fileURLToPath(import.meta.url))).digest('hex'),sourceSHA256:createHash('sha256').update(SOURCE).digest('hex'),node:process.version,platform:process.platform,arch:process.arch,cpus:os.cpus().length,chrome:CHROME,args:process.argv.slice(2)};
 fs.writeFileSync(path.join(OUT,'run.json'),JSON.stringify(provenance,null,2));
 const log=(...a)=>console.log(new Date().toISOString().slice(11,19),...a);
@@ -125,7 +126,7 @@ const HARNESS=`(()=>{if(window.__soak)return 'ok';
   S.instYear=()=>{const r={abbeys:0,abbeyGold:0,religious:0,guilds:0,guildGold:0,offices:{},justice:{courts:0,pending:0,sessions:0,adjourned:0,recovered:0,fines:0,fees:0,pleaFees:0,loanRecovered:0,distraints:0}}; // the institutions (#35-#43), read from outside the simulation
     for(const c of W.abbeys||[])if(!c.gone){r.abbeys++;r.abbeyGold+=c.gold||0;r.religious+=c.religious||0;}for(const c of W.guilds||[])if(!c.gone){r.guilds++;r.guildGold+=c.gold||0;}
     if(W.households)for(const h of W.households.values()){const p=h.head,o=p&&!p.dead&&p.office;if(o)r.offices[o]=(r.offices[o]||0)+1;}
-    const J=r.justice,keys=['sessions','adjourned','recovered','fines','fees','pleaFees','loanRecovered','distraints'];for(const s of W.settlements){J.pending+=s.pleas?.rows.length||0;const c=s.court;if(!c)continue;J.courts++;for(const k of keys)J[k]+=c[k]||0;}const prev=S.justice0||{};S.justice0={...J};for(const k of keys)J[k]-=prev[k]||0;
+    const J=r.justice,keys=['sessions','adjourned','recovered','fines','fees','pleaFees','loanRecovered','distraints'];J.byKind={};for(const s of W.settlements){J.pending+=s.pleas?.rows.length||0;const c=s.court;if(!c)continue;J.courts++;for(const k of keys)J[k]+=c[k]||0;for(const[k,v]of Object.entries(c.byKind||{})){const x=J.byKind[k]||(J.byKind[k]={heard:0,fines:0,pardoned:0});for(const a of ['heard','fines','pardoned'])x[a]+=v[a]||0;}}const prev=S.justice0||{};S.justice0={...J,byKind:Object.fromEntries(Object.entries(J.byKind).map(([k,v])=>[k,{...v}]))};for(const k of keys)J[k]-=prev[k]||0;for(const[k,v]of Object.entries(J.byKind))for(const a of ['heard','fines','pardoned'])v[a]-=prev.byKind?.[k]?.[a]||0;
     r.abbeyGold=Math.round(r.abbeyGold);r.guildGold=Math.round(r.guildGold);return r;};
   const A0=()=>({hostDays:0,campDays:0,longestCamp:0,march:{},marchFailed:{},objectiveFailed:0,objectiveRepeat:0,noted:0,raftsLords:0,raftsPlayer:0,ships:0,cannotReach:0,loses:0,noShips:0,camps:[],wars:[],feudsBegun:0,feudsEnded:0});
   S.A=A0();const campRun=new Map(),lastFail=new Map();let cause=null,feuds0=[]; // the war, read from outside the simulation (#33): wrappers count and pass every call through unchanged

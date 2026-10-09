@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {inlineGameScript} from './simulation-boundary.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const source=inlineGameScript(fs.readFileSync(path.join(ROOT,'index.html'),'utf8'));
+const source=inlineGameScript(fs.readFileSync(process.env.FURLONG_TEST_SOURCE||path.join(ROOT,'index.html'),'utf8'));
 const WORLDS=[{seed:1001,fate:42,coast:'sea'},{seed:2002,fate:42,coast:'land'},{seed:287970763,fate:370450810,coast:'sea'}];
 const DAYS=120,TOL=0.25; // a street may come up to a wall; its surface may not lie more than a quarter metre over a footprint
 

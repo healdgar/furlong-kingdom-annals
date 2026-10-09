@@ -39,7 +39,8 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
         f._arr=10;courtPlead(s,'arrears',f.wk,10,f,lordAcct(s));
         courtPlead(s,'farm',h.id,10000,{who:h.id,arr:10000,paid:0},lordAcct(s)); // a retired farm survives through its unpaid plea alone
         courtPlead(s,'entry',h.id,10000,f,lordAcct(s));
-        const e=[lordAcct(s),10000,day()-360,true];h._owe.push(e);h._debt+=e[1];const p=courtPlead(s,'loan',h.id,e[1],e,e[0]);p.against=householdAccount(h);p.heard=true;return true;})()\`);
+        const e=[lordAcct(s),10000,day()-360,true];h._owe.push(e);h._debt+=e[1];const p=courtPlead(s,'loan',h.id,e[1],e,e[0]);p.against=householdAccount(h);p.heard=true;
+        courtAssize(s,h,40);const t=courtPlead(s,'trespass',h.id,20,householdAccount(h),lordAcct(s));t.against=householdAccount(h);return true;})()\`);
       await R('STORAGE_OUTCOMES.flush()');out.at=summary(); // the save commits the journal: capture after the commit, as the document holds it
       const s0=process.cpuUsage();out.doc=await R('worldSave({source:__source})');out.saveCPU=process.cpuUsage(s0);parentPort.postMessage({doc:out.doc});}
     else{const l0=process.cpuUsage();await R('worldLoad(__doc,{source:__source,outcomeJournal:'+journal+'})');out.loadCPU=process.cpuUsage(l0);
