@@ -107,7 +107,9 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // left below its crumb by a write is noted (sweep) and settled after the next day's ripening, so crumbs go the next day as they did. A
  // yard without bounds is not reckoned for room (adjust, transfer): what it holds cannot fail a capacity it does not have. No other writer
  // changed; ledger-growth.test.mjs covers the closed form.
- assert.equal(digest(source.slice(a,b)),"586414d45309e6c2de212452dd2cf103bdbc634364165ef05c509cc2b4866449");
+ // Batch 10b's gate: a moving family carries a month of its own food on its back before the carters' reckoning (carryHome), through the
+ // same commodityMove; no quantity, title, claim or journal writer changes. ledger-growth.test.mjs covers it.
+ assert.equal(digest(source.slice(a,b)),"1c94bb14e42a8df08d3be52f247b674cadd5ea0b3e866222e51b264328335046");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

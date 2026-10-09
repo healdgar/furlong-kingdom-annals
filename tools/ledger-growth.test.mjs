@@ -8,53 +8,53 @@ function fixture(options={}){const r=realm({commodity:true,...options});r.eval('
 const held=(r,i,g)=>r.eval(`pantry(s,H[${i}]).${g}||0`);
 const rows=(r,g)=>r.eval(`[...s.storage.entries({good:'${g}'})].length`);
 
-test('the crumb is a soul\'s day of food, or its worth at base prices',()=>{
+test('the crumb is a mouthful, a hundredth of a soul\'s day of food, or its worth at base prices',()=>{
   const r=fixture({households:1});
-  near(r.eval('CRUMB.grain'),r.eval('FOOD'));near(r.eval('CRUMB.fish'),.01);near(r.eval('CRUMB.meat'),.01);
-  near(r.eval('CRUMB.tools'),.01*2/9);near(r.eval('CRUMB.spice'),.01*2/40);near(r.eval('CRUMB.hay'),.01*2/1.2);
+  near(r.eval('CRUMB.grain'),r.eval('FOOD')/100);near(r.eval('CRUMB.fish'),.0001);near(r.eval('CRUMB.meat'),.0001);
+  near(r.eval('CRUMB.tools'),.0001*2/9);near(r.eval('CRUMB.spice'),.0001*2/40);near(r.eval('CRUMB.hay'),.0001*2/1.2);
   near(r.eval('CRUMB.char'),r.eval('CRUMB.timber'));assert.equal(r.eval("'cattle' in CRUMB"),false);
 });
 
 test('a store spoiled below the crumb is lost whole, journaled as spoilage, and counted where spoilage is counted',()=>{
   const r=fixture({households:2,grain:0,fish:0});
-  r.eval("s.stores.grain=4.0208;addHeld(s,H[0],'grain',.0104);offer(s,'grain',H[1],.0104,3);addHeld(s,H[1],'grain',4);s.storage.settle(0)");
+  r.eval("s.stores.grain=4.000208;addHeld(s,H[0],'grain',.000104);offer(s,'grain',H[1],.000104,3);addHeld(s,H[1],'grain',4);s.storage.settle(0)");
   near(r.eval("rsv(s,'grain').get(H[1])"),3);
   const before=r.eval("s.stores.grain");
-  r.eval("spoilOwned(s,'grain',.01)"); // in the open yard a day's loss is 4%: .0104 falls to .00998, below a day's bread
-  near(held(r,0,'grain'),0);near(r.eval("mkt(s,'grain').get(H[1])||0"),0);near(held(r,1,'grain'),4*.96);near(r.s.stores.grain,before-.0104*2-4*.04);
+  r.eval("spoilOwned(s,'grain',.01)"); // in the open yard a day's loss is 4%: .000104 falls to .0000998, below a mouthful
+  near(held(r,0,'grain'),0);near(r.eval("mkt(s,'grain').get(H[1])||0"),0);near(held(r,1,'grain'),4*.96);near(r.s.stores.grain,before-.000104*2-4*.04);
   r.eval("s.storage.settleStores()"); // the month's reckoning settles every store
   assert.equal(r.eval("rsv(s,'grain').get(H[1])"),undefined,'nothing on sale, no reserve');
-  near(r.eval('s._lostM.grain'),.0104*2+4*.04);
+  near(r.eval('s._lostM.grain'),.000104*2+4*.04);
   const e=r.eval("s.storage.settle(1)");
-  near(e.flows['exposure-loss'].grain,-(.0104*2+4*.04));
+  near(e.flows['exposure-loss'].grain,-(.000104*2+4*.04));
   assert.ok(e.deltas.some(d=>d.owner===r.eval('storageOwnerId(householdAccount(H[0]))')&&d.after===0));
 });
 
 test('a store above the crumb keeps its share, as before',()=>{
   const r=fixture({households:1,grain:0,fish:0});
-  r.eval("s.stores.grain=.0105;addHeld(s,H[0],'grain',.0105);spoilOwned(s,'grain',.01)");
-  near(held(r,0,'grain'),.0105*.96);
+  r.eval("s.stores.grain=.000105;addHeld(s,H[0],'grain',.000105);spoilOwned(s,'grain',.01)");
+  near(held(r,0,'grain'),.000105*.96);
 });
 
 test('the crumbs of goods that never rot are swept out, the rest untouched',()=>{
   const r=fixture({households:2,grain:0,fish:0});
-  r.eval("s.stores.ore=10;addHeld(s,H[0],'ore',.003);addHeld(s,H[1],'ore',2)");
+  r.eval("s.stores.ore=10;addHeld(s,H[0],'ore',.00003);addHeld(s,H[1],'ore',2)");
   assert.equal(rows(r,'ore'),3);
   r.eval("spoilOwned(s,'ore',SPOIL.ore);s.storage.settleStores()");
-  near(held(r,0,'ore'),0);near(held(r,1,'ore'),2);near(r.s.stores.ore,10-.003);near(r.eval('s._lostM.ore'),.003);
+  near(held(r,0,'ore'),0);near(held(r,1,'ore'),2);near(r.s.stores.ore,10-.00003);near(r.eval('s._lostM.ore'),.00003);
   assert.equal(rows(r,'ore'),2);
 });
 
 test('a crumb of the place\'s unsold output leaves its pending output too',()=>{
   const r=fixture({households:1,grain:0,fish:0});
-  r.eval("mkt(s,'grain').clear();s.stores.grain=.005;s._made.grain=.005;spoilOwned(s,'grain',.0003)");
+  r.eval("mkt(s,'grain').clear();s.stores.grain=.00005;s._made.grain=.00005;spoilOwned(s,'grain',.0003)");
   near(r.s.stores.grain,0);near(r.s._made.grain,0);assert.equal(rows(r,'grain'),0);
 });
 
 test('a lord\'s grain swept out as crumbs is tallied as his rot',()=>{
   const r=fixture({households:1,grain:0,fish:0});
-  r.eval("W.houses.push({name:'lord'});s.owner=0;lordAcct=()=>W.houses[0];s.stores.grain=.006;addHeld(s,W.houses[0],'grain',.006);spoilOwned(s,'grain',.0003);s.storage.settleStores()");
-  near(r.eval('s._lg.get(W.houses[0]).rot'),.006);
+  r.eval("W.houses.push({name:'lord'});s.owner=0;lordAcct=()=>W.houses[0];s.stores.grain=.00006;addHeld(s,W.houses[0],'grain',.00006);spoilOwned(s,'grain',.0003);s.storage.settleStores()");
+  near(r.eval('s._lg.get(W.houses[0]).rot'),.00006);
 });
 
 // A family's goods follow it home, or are sold where they lie (#55).
@@ -65,10 +65,11 @@ function homeAway(r,px={}){ // a second place 1,000 paces off, its prices given:
 const unit=(.12+1.2*.08)*.7;
 const at=(r,si,o,g,kind)=>r.eval(`W.settlements[${si}].storage?W.settlements[${si}].storage.quantity(accountOwner(${o}),'${g}','${kind}'):0`);
 
-test('a household that moves carries what is worth its carriage, pays the carters, and leaves the rest',()=>{
+test('a household that moves carries a month of its own food, what else is worth its carriage, pays the carters, and leaves the rest',()=>{
   const r=fixture({households:1,grain:0,fish:0,cash:20});homeAway(r,{grain:.1});
   r.eval("s.stores.grain=5;s.stores.cloth=2;addHeld(s,H[0],'grain',5);offer(s,'cloth',H[0],2,6);moveHouseholdGoods(householdAccount(H[0]),s,W.settlements[1])");
-  near(at(r,1,'H[0]','cloth','sale'),2);near(at(r,0,'H[0]','cloth','sale'),0);near(at(r,0,'H[0]','grain','held'),5);near(at(r,1,'H[0]','grain','held'),0);
+  const back=r.eval("(()=>{let n=0;for(const v of householdAccount(H[0]).population.values())n+=v;return Math.max(1,n)*FOOD*30;})()"); // a month of its own food the family carries on its back
+  near(at(r,1,'H[0]','cloth','sale'),2);near(at(r,0,'H[0]','cloth','sale'),0);near(at(r,0,'H[0]','grain','held'),Math.max(0,5-back));near(at(r,1,'H[0]','grain','held'),Math.min(5,back));
   near(r.eval("rsv(W.settlements[1],'cloth').get(householdAccount(H[0]))"),6+unit);assert.equal(r.eval("stockOf(s,householdAccount(H[0])).reserve.cloth"),undefined);
   assert.equal(r.eval('bills.map(b=>b[0]+":"+b[2]).join()'),'fixture:carriage');near(r.eval('bills[0][1]'),2*unit);near(r.H[0].w,20-2*unit);
   near(r.eval("s.stores.cloth+W.settlements[1].stores.cloth"),2);
@@ -111,7 +112,7 @@ test('an untouched store ripens in closed form, and nothing is written until it 
 
 test('the closed form gives what a store loses day by day, within rounding, and a crumb falls out when it is settled',()=>{
   const r=fixture({households:2,grain:0,fish:0});
-  r.eval("s.stores.grain=3.0102;addHeld(s,H[0],'grain',3);addHeld(s,H[1],'grain',.0102);for(let i=0;i<30;i++)spoilOwned(s,'grain',.0003)"); // .0102 keeps .00984 after a month
+  r.eval("s.stores.grain=3.000102;addHeld(s,H[0],'grain',3);addHeld(s,H[1],'grain',.000102);for(let i=0;i<30;i++)spoilOwned(s,'grain',.0003)"); // .000102 keeps .0000984 after a month
   let daily=3;for(let i=0;i<30;i++)daily-=daily*.0012;
   assert.ok(Math.abs(held(r,0,'grain')-daily)<1e-12);
   near(held(r,1,'grain'),0);assert.equal(rows(r,'grain'),1,'a crumb reads as gone');
@@ -148,9 +149,9 @@ test('the count a store was last settled at is kept on it, out of its balances, 
 
 test('a store left below a crumb by a sale or a meal is swept out with the next day\'s spoilage',()=>{
   const r=fixture({households:1,grain:0,fish:0});
-  r.eval("s.stores.grain=1;addHeld(s,H[0],'grain',1);spoilOwned(s,'grain',.0003);consumeOwned(s,H[0],'grain',pantry(s,H[0]).grain-.005)");
-  near(held(r,0,'grain'),.005);assert.equal(r.eval("s.storage.sweep.get('grain').size"),1);
+  r.eval("s.stores.grain=1;addHeld(s,H[0],'grain',1);spoilOwned(s,'grain',.0003);consumeOwned(s,H[0],'grain',pantry(s,H[0]).grain-.00005)");
+  near(held(r,0,'grain'),.00005);assert.equal(r.eval("s.storage.sweep.get('grain').size"),1);
   r.eval("spoilOwned(s,'grain',.0003)");
   near(held(r,0,'grain'),0);assert.equal(r.eval("s.storage.facilities.get('yard').balances.has('grain')"),false,'gone from the ledger, not only from sight');
-  assert.equal(r.eval("s.storage.sweep.has('grain')"),false);near(r.eval('s._lostM.grain'),1-1*(1-.0012)+.005);
+  assert.equal(r.eval("s.storage.sweep.has('grain')"),false);near(r.eval('s._lostM.grain'),1-1*(1-.0012)+.00005);
 });
