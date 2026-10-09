@@ -74,9 +74,16 @@ Under **Justice**, the ruler sets the amercement cap for all his places
 (**Lower cap** / **Raise cap**). A court keeps back the next month’s bread
 and rent; a coinless family is pardoned. The town card’s **Court** link and
 **Open the court roll** show pending pleas, the next quarter day, named
-steward and clerk, receipts, fees and recent rulings. These first manor
-courts recover unpaid rents, entry fines and mill or oven farms. Royal
-justice and ordinary household loans are still to come.
+steward and clerk, receipts, fees and recent rulings. Manor courts recover
+unpaid rents, entry fines, mill or oven farms and loans at least a year old.
+They read the actual debt, so voluntary payments clear the case. Creditors
+plead only when recovery covers the customary fee and their lost day; the
+fee comes from what they recover. When cash falls short, the local reeve
+may buy surplus beasts from coin beyond his chest's reserve. Families keep
+breeders and their working team. The roll links the creditor and records
+beasts sold; returned loan principal is not new income. A sitting needs
+receipts or acquired chattels worth its officers' fees, and real coin to
+pay them. Royal justice remains to come.
 
 ## Cards
 

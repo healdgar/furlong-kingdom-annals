@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 02:16 UTC · after 0315e8e</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 03:21 UTC · after db33bc2</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -3773,7 +3773,7 @@ function departHousehold(p,from,to,why){const h=householdAccount(p);if(!h||why==
   const fraction=1/(remaining.length+1),newH=householdPortion(p,fraction),s=W.settlements[from],x=s._owners&&s._owners.get(h);
   if(h.head===p)h.head=remaining.find(q=>q.sx==='f'&&q.sp===p)||remaining.sort((a,b)=>ageYrs(b)-ageYrs(a))[0];
   if(x)for(const g in x.held){const q=(x.held[g]||0)*fraction;if(commodityActive(s)&&!BEASTS.includes(g))commodityTransfer(s,h,newH,g,q,'held','held');else{x.held[g]-=q;addHeld(s,newH,g,q);}}
-  if(x)for(const g of BEASTS){const q=(x.animals[g]||0)*fraction;x.animals[g]=(x.animals[g]||0)-q;const y=stockOf(s,newH).animals;y[g]=(y[g]||0)+q;}const debt=(h.assets._debt||0)*fraction;newH.assets._debt=debt;h.assets._debt=(h.assets._debt||0)-debt;newH.assets._owe=(h.assets._owe||[]).map(([to,v])=>[to,v*fraction]);for(const e of h.assets._owe||[])e[1]*=1-fraction;}
+  if(x)for(const g of BEASTS){const q=(x.animals[g]||0)*fraction;x.animals[g]=(x.animals[g]||0)-q;const y=stockOf(s,newH).animals;y[g]=(y[g]||0)+q;}const debt=(h.assets._debt||0)*fraction;newH.assets._debt=debt;h.assets._debt=(h.assets._debt||0)-debt;newH.assets._owe=(h.assets._owe||[]).map(e=>{const n=e.slice();n[1]*=fraction;return n;});for(const e of h.assets._owe||[])e[1]*=1-fraction;}
 function arriveHousehold(p,from,to){const h=householdAccount(p);if(!h)return;const alive=[...h.members].filter(q=>!q.dead);if(alive.every(q=>q.si===to)){moveHouseholdGoods(h,W.settlements[from],W.settlements[to]);h.movingTo=null;}householdHeadsChanged(W.settlements[to]);}
 /* ---------------- finite physical custody (engine version 2) ----------------
    Quantities live only in lots. stores is an ordered sum view; held/sale are legal
@@ -12112,7 +12112,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   s._fill=sn>0?sf/sn:1;s._wealth=heads.length?sw/heads.length:0; // how well the place lives, as others hear of it
   s._homeDay=homeFood/30; // what the families' own beasts put on the table each day
   if(pay2.length){const poor=heads.filter(h=>(h.w||0)<foodYr()*0.5).sort((a,b)=>(a.w||0)-(b.w||0)).slice(0,5);for(const[h,v]of pay2){const L=poor.filter(q=>q!==h).slice(0,4);if(L.length)payAmong(L,v,h,'wages');}} // four recipients need only the first five candidates when the payer is excluded
-  for(const h of heads)if(h._debt>0)repay(h,Math.max(0,(h.w||0)-foodYr()/12*(size.get(h)||1))); // debts paid out of what is left once the month's bread is put by
+  const courtBuyer={who:lordAcct(s)};for(const h of heads)if(h._debt>0)repay(h,Math.max(0,(h.w||0)-foodYr()/12*(size.get(h)||1)),courtBuyer); // debts paid out of what is left once the month's bread is put by; one buyer's reserve reckoned for this month's pleas
   if(typeof familyMove==='function'&&(!W.prehistory||AD()>=W.startAD)){const si=W.settlements.indexOf(s);for(const h of heads)if(h.gn!==undefined&&!h.dead&&(h._fill??1)<1&&!((h.w||0)>0))familyMove(s,si,h,W.settlements);} // a family that could not buy its bread and has no coin weighs leaving every month, not once a year (#23)
   {let lu=0;const ph=price(s,'hay');for(const k of BEASTS){let fam=0;for(const h of heads)fam+=(h.herd&&h.herd[k])||0;if(beastYield(s,k)<LU[k]*WINTER_HAY*ph)continue;lu+=Math.max(0,(s.stores[k]||0)-fam)*LU[k];} // the lord's own beasts eat bought hay too: those whose year's yield pays for their winter's hay at its price (#23: he bought it at any price, and a dear year's hay emptied the crown's chest; beasts not worth it go short in the winter)
     const short=lu*WINTER_HAY-(pantry(s,lordAcct(s)).hay||0);if(short>0){purchase(s,'hay',lordAcct(s),short);commodityCreditPurchase(s,lordAcct(s),'hay',purchase.got);}} // the lord's beasts' winter fodder, topped up as the meadows offer it
@@ -14245,20 +14245,48 @@ const ROLL_N=12;
 function rollOf(o,key){return o[key]||(o[key]={rows:[],over:{}});}
 function rollAdd(R,rec,n=ROLL_N){R.rows.push(rec);while(R.rows.length>n){const k=R.rows.shift().kind??'';R.over[k]=(R.over[k]||0)+1;}return rec;}
 function rollTake(R){const out={rows:R.rows,over:R.over};R.rows=[];R.over={};return out;} // a session reads the roll and clears it
-/* THE HALLMOTE (#37, first phase): the quarter day's court hears existing dues, never a second copy of a rent.
-   A plea points to its holding or its farm; a later voluntary payment or surrender therefore clears the same debt.
+/* THE HALLMOTE (#37): the quarter day's court hears existing dues and year-old loans, never a second copy of a debt.
+   A plea points to its holding, farm or loan entry; voluntary payment or surrender clears that same obligation.
    Only a place's bounded roll is read. Officials are chosen at the lord's seat when business first pays their fees. */
-const JUSTICE_CUSTOM={cap:0.1,rate:0.05}; // the manor's customary amercement: a twentieth of harm, saving the household's next month's bread and rent; at most a tenth of its spare purse. The ruler may change the cap.
+const JUSTICE_CUSTOM={cap:0.1,rate:0.05,beastBid:0.8,pleaDays:2}; // manor custom: a twentieth of harm, at most a tenth of the spare purse; two days' bread for recording and hearing a loan plea. The reeve bids the usual four fifths of market for beasts. The ruler may change the cap.
 function courtPlead(s,kind,who,v,ref,lord){
-  if(!(v>1e-6))return;const R=rollOf(s,'pleas'),old=R.rows.find(p=>p.kind===kind&&p.who===who&&p.ref===ref&&p.lord===lord);
-  if(old){old.v=kind==='entry'?old.v+v:v;return old;}return rollAdd(R,{kind,d:day(),who,v,ref,lord},64);}
+  if(!(v>1e-6))return;const R=rollOf(s,'pleas'),old=R.rows.find(p=>p.kind===kind&&(kind==='loan'||p.who===who)&&p.ref===ref&&p.lord===lord);
+  if(old){old.who=who;old.v=kind==='entry'?old.v+v:v;return old;}return rollAdd(R,{kind,d:day(),who,v,ref,lord},64);}
 function courtOwed(p){
   if(p.kind==='arrears')return p.ref?.wk===p.who?p.ref._arr||0:0;
   if(p.kind==='farm')return p.ref?.who===p.who?p.ref.arr||0:0;
+  if(p.kind==='loan')return p.ref?.[0]===p.lord?p.ref[1]||0:0;
   return p.kind==='entry'?p.v||0:0;}
-function courtSpare(s,p){const A=householdAccount(p),h=A?.head||p,home=W.settlements[h.si]||s;let n=0;for(const q of A?.members||[p])if(!q.dead)n++;return Math.max(0,means(p)-Math.max(1,n)*foodYr()/12-rentDue(home,h)/12);} // the next month's subsistence is not an amercement or a rent recovery
+function courtKeep(s,p){const A=householdAccount(p),h=A?.head||p,home=W.settlements[h.si]||s;let n=0;for(const q of A?.members||[p])if(!q.dead)n++;return Math.max(1,n)*foodYr()/12+rentDue(home,h)/12;}
+function courtSpare(s,p){return Math.max(0,means(p)-courtKeep(s,p));} // the next month's subsistence is not an amercement or a debt recovery
 function courtQuote(s,p,h,spare=courtSpare(s,h)){const owed=courtOwed(p),paid=Math.min(owed,spare),cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap;
-  return{owed,paid,fine:p.heard?0:Math.min(owed*JUSTICE_CUSTOM.rate,Math.max(0,spare-paid)*cap)};}
+  return{owed,paid,fine:p.heard||p.kind==='loan'&&p.ref[3]?0:Math.min(owed*JUSTICE_CUSTOM.rate,Math.max(0,spare-paid)*cap)};}
+function courtDebtor(p,PM){if(p.kind!=='loan')return PM.get(p.who);let A=p.against;while(A?.successors?.length===1&&A.successors[0][1]===1)A=A.successors[0][0];return A?.head;}
+function courtPayees(x,f=1,out=[]){ // a dead lender's due belongs to the heirs, as acct() pays it; fees come from those same receipts
+  if(x?.household&&x.successors){for(const[to,share]of x.successors)courtPayees(to,f*share,out);}
+  else if(x?.gn!==undefined&&x.dead&&x._estateShares){for(const[to,share]of x._estateShares)courtPayees(to,f*share,out);}
+  else out.push([x,f]);return out;}
+function courtFunds(B,x){const A=accountOwner(x);let D=B.get(A);if(!D)B.set(A,D={cash:means(A)});return D;} // a sitting's scratch purses; neither a new index nor another ledger
+function hallmotePlan(s,p,h,B,reckoning){
+  const lord=lordAcct(s),A=householdAccount(h),D=courtFunds(B,A),home=W.settlements[h.si]||s,owed=courtOwed(p),sales=[],buyer=lordAcct(home),buy=courtFunds(B,buyer);
+  if(D.keep===undefined)D.keep=courtKeep(home,h);
+  let want=Math.max(0,owed-Math.max(0,D.cash-D.keep));
+  if(want>1e-6&&!D.herd)D.herd={...(home._owners?.get(A)?.animals||{})};
+  if(buyer!==A&&want>1e-6)for(const k of ['swine','sheep','cattle','horses']){ // breeders and the working team stay; only the surplus is distrained
+    const keep=k==='cattle'?Math.max(1,Math.min(4,(h._strips||0)*0.5)):k==='horses'?Math.max(['carter','merchant'].includes(h.tr)?2:1,Math.min(4,(h._strips||0)*0.5)):1,bid=price(home,k)*JUSTICE_CUSTOM.beastBid;
+    const spare=Math.floor(Math.max(0,(D.herd[k]||0)-keep));if(!(bid>0)||!spare)continue;
+    if(buy.reserve===undefined){const hi=buyer==='crown'?0:home.owner;buy.reserve=reckoning?.who===buyer?(reckoning.reserve??=chestReserve(hi)):chestReserve(hi);}
+    const q=Math.min(spare,Math.floor(Math.max(0,buy.cash-buy.reserve)/bid),Math.ceil((want+Math.max(0,D.keep-D.cash))/bid));
+    if(!(q>0))continue;const v=q*bid;sales.push({k,q,v});D.herd[k]-=q;buy.cash-=v;D.cash+=v;want=Math.max(0,owed-Math.max(0,D.cash-D.keep));if(!(want>1e-6))break;}
+  const quote=courtQuote(s,p,h,Math.max(0,D.cash-D.keep)),payees=courtPayees(p.lord),fee=p.kind==='loan'&&!p.heard&&!p.ref[3]?Math.min(quote.paid,JUSTICE_CUSTOM.pleaDays*foodYr()/360):0;
+  D.cash-=quote.paid+quote.fine;for(const[to,f]of payees){const charge=accountOwner(to)===lord?0:fee*f;courtFunds(B,to).cash+=quote.paid*f-charge;courtFunds(B,lord).cash+=charge;}courtFunds(B,lord).cash+=quote.fine;
+  return{...quote,h,home,buyer,sales,payees,fee};}
+function courtLoanPlead(h,e,reckoning){ // called in the existing repayment pass: one oldest recoverable loan, no extra census
+  const s=W.settlements[h.si];if(!s||h._dying||!(e[1]>0.01)||!Number.isFinite(e[2])||day()-e[2]<360)return;
+  const p={kind:'loan',who:h.id,ref:e,lord:e[0],against:householdAccount(h),heard:!!e[3]};
+  if(courtPayees(e[0]).every(([to])=>accountOwner(to)===p.against))return;
+  const q=hallmotePlan(s,p,h,new Map(),reckoning);if(!(q.paid>(JUSTICE_CUSTOM.pleaDays+1)*foodYr()/360))return; // the creditor's recovery pays for the plea and a lost day
+  const P=courtPlead(s,'loan',h.id,e[1],e,e[0]);P.against=p.against;P.heard=p.heard;}
 function courtOfficials(si){
   const s=W.settlements[si],hi=s.owner,H=W.houses[hi],seat=W.settlements[lordSeat(hi)];if(!H||!seat)return null;
   const PM=W._pm||folkIndex(),J=H.justice||{},roles=['steward','clerk'],valid=(p,k)=>p&&!p.dead&&!p.outlawCampId&&p.si===W.settlements.indexOf(seat)&&householdHead(p)===p&&p.office===k&&p.officeFor===hi;
@@ -14270,26 +14298,31 @@ function courtOfficials(si){
 function courtSession(s,si){
   const R=s.pleas;if(!R?.rows.length)return;const C=s.court||(s.court={sessions:0,adjourned:0,recovered:0,fines:0,fees:0,profit:0,roll:{rows:[],over:{}}}),Y=Math.floor(day()/360);
   if(C.year!==Y){C.year=Y;C.profit=0;}C.next=day()+90;
-  const PM=W._pm||folkIndex(),lord=lordAcct(s),pending=[],budgets=new Map();let expected=0; // one temporary purse budget per debtor: several claims cannot promise the same coin
-  for(const p of R.rows){const h=PM.get(p.who);if(!h||h.dead||!(courtOwed(p)>1e-6))continue;pending.push(p);const A=accountOwner(h),spare=budgets.has(A)?budgets.get(A):courtSpare(s,h),q=courtQuote(s,p,h,spare);budgets.set(A,spare-q.paid-q.fine);expected+=q.fine+(p.lord===lord?q.paid:0);}
-  R.rows=pending;if(!pending.length)return;if(!(expected>2*foodYr()/360)){C.adjourned++;return;}const O=courtOfficials(si);if(!O||!(expected>O.cost)||!(means(lord)+expected>=O.cost)){C.adjourned++;return;} // no invented payroll, and a quiet court waits
-  let income=0,recovered=0,fines=0;const heard=[];
-  for(const p of pending){const h=PM.get(p.who),q=courtQuote(s,p,h),paid=transfer(h,p.lord,q.paid,'judgement of '+(p.kind==='farm'?'farm':p.kind==='entry'?'entry fine':'rent'));
+  const PM=W._pm||folkIndex(),lord=lordAcct(s),pending=[],plans=[],budgets=new Map(),start=means(lord);let beastValue=0;
+  for(const p of R.rows){const h=courtDebtor(p,PM);if(!h||h.dead||!(courtOwed(p)>1e-6)||p.kind==='loan'&&courtPayees(p.lord).every(([to])=>accountOwner(to)===householdAccount(h)))continue;pending.push(p);const q=hallmotePlan(s,p,h,budgets);plans.push(q);if(q.buyer===lord)for(const sale of q.sales)beastValue+=sale.q*price(q.home,sale.k);}
+  const end=courtFunds(budgets,lord).cash,expected=end-start+beastValue;R.rows=pending;if(!pending.length)return;if(!(expected>2*foodYr()/360)){C.adjourned++;return;}const O=courtOfficials(si);if(!O||!(expected>O.cost)||!(end>=O.cost)){C.adjourned++;return;} // real chattels may make a sitting worth its cost, but only coin can pay its officers
+  let income=0,recovered=0,fines=0,pleaFees=0,distraints=0,loanRecovered=0;const heard=[],loans=new Set();
+  for(let i=0;i<pending.length;i++){const p=pending[i],q=plans[i],h=q.h;let sold=0;
+    for(const sale of q.sales){const v=transfer(q.buyer,h,sale.v,'beasts under judgement');if(v+1e-9<sale.v)throw Error('Court buyer cannot fund distraint');unearned(h,v);q.home._owners.get(householdAccount(h)).animals[sale.k]-=sale.q;sold+=sale.q;} // the place's total herd stays: the beasts pass to the reeve's pens; liquidating chattels is not the family's trade income
+    let paid=0,fee=0;for(const[to,f]of q.payees){const v=transfer(h,to,q.paid*f,p.kind==='loan'?'loans':'judgement of '+(p.kind==='farm'?'farm':p.kind==='entry'?'entry fine':'rent'));paid+=v;if(p.kind==='loan')unearned(to,v);if(accountOwner(to)!==lord)fee+=transfer(to,lord,Math.min(v,q.fee*f),'plea fees');}
     if(p.kind==='arrears'){p.ref._arr=Math.max(0,q.owed-paid);if(!(p.ref._arr>1e-6))p.ref._arrN=0;}else if(p.kind==='farm'){p.ref.arr=Math.max(0,q.owed-paid);p.ref.paid=(p.ref.paid||0)+paid;}p.v=Math.max(0,q.owed-paid);
-    const fine=p.heard?0:transfer(h,lord,Math.min(q.fine,courtSpare(s,h)),'amercements');p.heard=true;recovered+=paid;fines+=fine;if(p.lord===lord)income+=paid;income+=fine;
-    rollAdd(C.roll,{kind:p.kind,d:day(),who:p.who,name:folkName(h),owed:q.owed,paid,fine,left:p.v,ruling:p.v>1e-6?'unpaid':'paid',pardoned:!(fine>0)});
+    if(p.kind==='loan'){p.ref[1]=p.v;p.ref[3]=true;loans.add(householdAccount(h));loanRecovered+=paid;}
+    const fine=transfer(h,lord,q.fine,'amercements');p.heard=true;recovered+=paid;fines+=fine;pleaFees+=fee;distraints+=sold;if(p.kind!=='loan'&&p.lord===lord)income+=paid;income+=fine+fee;
+    const creditor=p.kind==='loan'?p.lord:null,code=creditor==='crown'?'h0':creditor?.gn!==undefined?'p'+creditor.id:W.houses.includes(creditor)?'h'+W.houses.indexOf(creditor):creditor?.ch?'building:'+W.settlements.indexOf(creditor.s||s)+':'+creditor.x+':'+creditor.z+':'+creditor.arch:null;
+    rollAdd(C.roll,{kind:p.kind,d:day(),who:h.id,name:folkName(h),owed:q.owed,paid,fine,left:p.v,ruling:p.v>1e-6?'unpaid':'paid',pardoned:!(fine>0),...(creditor?{creditor:code,creditorName:creditor==='crown'?'the Crown':creditor.gn!==undefined?folkName(creditor):creditor.name||'the parish',pleaFee:fee}:{}),...(sold?{beasts:q.sales.map(({k,q})=>[k,q])}:{})});
     if(p.v>1e-6)heard.push(p);}
+  for(const A of loans){const E=A.assets._owe||[];A.assets._owe=E.filter(e=>e[1]>1e-6);A.assets._debt=A.assets._owe.reduce((v,e)=>v+e[1],0);} // once per household, however many of its loans were heard
   R.rows=heard;const J=W.houses[s.owner].justice||(W.houses[s.owner].justice={});O.picked.forEach((p,i)=>{const k=i?'clerk':'steward';p.office=k;p.officeFor=s.owner;J[k]=p.id;});let fees=0;O.picked.forEach((p,i)=>{fees+=transfer(lord,p,O.fees[i],'court fees');});
-  C.sessions++;C.last=day();C.recovered+=recovered;C.fines+=fines;C.fees+=fees;C.profit+=income-fees;
+  C.sessions++;C.last=day();C.recovered+=recovered;C.fines+=fines;C.fees+=fees;C.profit+=means(lord)-start;C.pleaFees=(C.pleaFees||0)+pleaFees;C.distraints=(C.distraints||0)+distraints;C.loanRecovered=(C.loanRecovered||0)+loanRecovered;
   if(income>0&&lord===lordAcct(s))lordTake(s,income); // the lord's book names the receipts; his seat's reckoning includes them
-  if(!W.prehistory)emit('trade',1,s.pos,`The hallmote at ${s.name} hears ${pending.length} pleas, recovers ${Math.round(recovered)} in dues and takes ${Math.round(fines)} in amercements.`);}
+  if(!W.prehistory)emit('trade',1,s.pos,`The hallmote at ${s.name} hears ${pending.length} pleas, recovers ${Math.round(recovered)} in debts and dues and takes ${Math.round(fines)} in amercements.`);}
 function tickJustice(){W.settlements.forEach((s,si)=>{if(dueOn(si,90,37)&&s.pleas?.rows.length)courtSession(s,si);});}
 function justiceCmd(arg){const[a,k,v,...rest]=String(arg).split(':'),s=W.settlements[+a];if(rest.length||!s||!sovOn()||s.owner!==plyH()||k!=='cap'||!Number.isFinite(+v)||+v<0||+v>1)return;
   const h=W.houses[s.owner];if(h)(h.justice||(h.justice={})).cap=+v;}
 function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||folkIndex(),person=(id,name)=>{const p=PM.get(id);return p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`;
   let h=row('Place',`<a class="nm" data-nm="s${si}">${esc(s.name)}</a>`)+row('Pleas waiting',s.pleas?.rows.length||0)+row('Next quarter day',dateStr(day()+((90-(day()+si*37)%90)%90||90)))+row('Steward',person(J?.steward))+row('Clerk',person(J?.clerk));
-  if(C){h+=row('Sessions held / adjourned',C.sessions+' / '+C.adjourned)+row('Recovered / amercements / fees',Math.round(C.recovered)+' / '+Math.round(C.fines)+' / '+Math.round(C.fees))+row('This year’s net receipts',Math.round(C.year===Math.floor(day()/360)?C.profit:0));
-    for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind)} — ${Math.round(p.paid)} paid, ${Math.round(p.left)} owing; ${p.pardoned?'amercement pardoned':Math.round(p.fine)+' amerced'}.</p>`;
+  if(C){h+=row('Sessions held / adjourned',C.sessions+' / '+C.adjourned)+row('Recovered / amercements / officers’ fees',Math.round(C.recovered)+' / '+Math.round(C.fines)+' / '+Math.round(C.fees))+row('Loans recovered / plea fees',Math.round(C.loanRecovered||0)+' / '+Math.round(C.pleaFees||0))+row('Beasts sold under judgement',C.distraints||0)+row('This year’s net cash receipts',Math.round(C.year===Math.floor(day()/360)?C.profit:0));
+    for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind)}${p.creditor?` to <a class="nm" data-nm="${esc(p.creditor)}">${esc(p.creditorName)}</a>`:''} — ${Math.round(p.paid)} paid, ${Math.round(p.left)} owing; ${p.pardoned?'amercement pardoned':Math.round(p.fine)+' amerced'}${p.beasts?`; sold ${p.beasts.map(([k,q])=>q+' '+esc(k)).join(', ')}`:''}${p.pleaFee?`; ${+p.pleaFee.toFixed(2)} plea fee from the recovery`:''}.</p>`;
     for(const[k,n]of Object.entries(C.roll.over))h+=row('Earlier '+esc(k)+' rulings',n);}
   return h;}
 function justiceOrdersHTML(s,si){const cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap,lo=Math.max(0,+(cap-0.05).toFixed(2)),hi=Math.min(1,+(cap+0.05).toFixed(2));
@@ -14471,11 +14504,11 @@ function creditOf(s,h){ // what a lender will advance a household for its bread:
 function borrow(s,h,amt){ // a household short of its bread borrows from whoever there has the silver to lend: the best-off neighbour, else the parish, else the lord; the debt is theirs to collect
   if(!(amt>0.01)||!s)return 0;const fy=foodYr();let L=null,best=fy*HOUSEHOLD;for(const household of s.folk?householdsOf(s):[]){const q=household.head;if(q&&!q.dead&&!q.role&&q!==h&&(q.w||0)>amt+fy*HOUSEHOLD&&q.w>best){best=q.w;L=q;}}
   if(!L){const c=parishOf(s);if(c&&means(c)>amt*3)L=c;}if(!L){const l=lordAcct(s);if(means(l)>amt*3)L=l;}if(!L)return 0;
-  const v=transfer(L,h,amt,'loans');if(v>0){h._debt=(h._debt||0)+v;(h._owe||(h._owe=[])).push([L,v]);unearned(h,v);}return v;}
-function unearned(x,v){if(!(v>0)||!x)return;if(x==='crown'){W._crInc=(W._crInc||0)-v;return;}const A=x.household?x:x.gn!==undefined?householdAccount(x):null;if(A){A.assets._inc=(A.assets._inc||0)-v;return;}if(isHouse(x))x._inc=(x._inc||0)-v;} // a loan or its repayment is no earning: acct counted it into the year's income (the trades' reckoning, the hall's revenue, the court's), so it is taken out again (#23)
-function repay(h,v){ // a debtor pays back what he can, the oldest debt first
-  if(!(h._debt>0)||!(v>0))return 0;let paid=0;const O=h._owe||[];while(O.length&&v>0.01){const e=O[0],x=Math.min(e[1],v),y=transfer(h,e[0],x,'loans'); /* a dead lender's due goes to his heir */if(!(y>0))break;unearned(e[0],y);e[1]-=y;v-=y;paid+=y;if(e[1]<=0.01)O.shift();}
-  h._debt=Math.max(0,O.reduce((t,e)=>t+e[1],0));return paid;}
+  const v=transfer(L,h,amt,'loans');if(v>0){h._debt=(h._debt||0)+v;const O=h._owe||(h._owe=[]),e=O[O.length-1];if(e&&e[0]===L&&e[2]===day()&&!e[3])e[1]+=v;else O.push([L,v,day()]);unearned(h,v);}return v;}
+function unearned(x,v){if(!(v>0)||!x)return;if(x==='crown'){W._crInc=(W._crInc||0)-v;return;}if(x.household&&x.successors){for(const[to,f]of x.successors)unearned(to,v*f);return;}if(x.gn!==undefined&&x.dead&&x._estateShares){for(const[to,f]of x._estateShares)unearned(to,v*f);return;}const A=x.household?x:x.gn!==undefined?householdAccount(x):null;if(A){A.assets._inc=(A.assets._inc||0)-v;return;}if(isHouse(x))x._inc=(x._inc||0)-v;} // a loan or its repayment is no earning: acct counted it into the year's income, including an heir's late receipt
+function repay(h,v,reckoning){ // a debtor pays back what he can, the oldest debt first
+  if(!(h._debt>0))return 0;let paid=0,old=null,debt=0;const O=h._owe||[];while(O.length&&v>0.01){const e=O[0],x=Math.min(e[1],v),y=transfer(h,e[0],x,'loans'); /* a dead lender's due goes to his heir */if(!(y>0))break;unearned(e[0],y);e[1]-=y;v-=y;paid+=y;if(e[1]<=0.01){e[1]=0;O.shift();}}
+  for(const e of O){debt+=e[1];if(!old&&e[1]>0.01&&Number.isFinite(e[2])&&day()-e[2]>=360)old=e;}h._debt=Math.max(0,debt);if(old)courtLoanPlead(h,old,reckoning);return paid;}
 function inDebt(h){return (h._debt||0)>Math.max(0,h.w||0);} // owes more than his purse holds
 function parishOf(s){return s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed&&!b.castle&&!b.friary)||s.buildings.find(b=>b.arch==='temple'&&b.state==='sound'&&!b.removed)||null;}
 const LORD_ARCH=new Set(['keep','hall','mill','windmill','granary','warehouse','toll','quarry','barn']),CHURCH_ARCH=new Set(['temple','hospital','friary']),TOWN_ARCH=new Set(['guildhall','wharf','bath','market']);
@@ -14570,7 +14603,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   transferOwnership(h,distribution);
   const cash=Math.max(0,h.assets.w||0);h.assets.w=0;for(const[to,f]of shares)acct(to,cash*f);
   h.estate={person:p.id,day:day(),custom:inheritanceCustom(s),shares:shares.map(([to,f])=>[to.household?to.id:to==='crown'?'crown':to.id||'institution',f]),unpaidDebt:Math.max(0,debt-credit)};
-  h.assets._debt=0;h.assets._owe=[];householdMemberDelete(h,p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
+  for(const e of h.assets._owe||[])e[1]=0;h.assets._debt=0;h.assets._owe=[];householdMemberDelete(h,p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
   p._estateShares=shares;if(!h.head)h.successors=shares;p._heir=h.head||heirs[0]||null;
   if(h.head&&ageYrs(h.head)<18)h.guardian=widow||estateKin(p).find(q=>ageYrs(q)>=18)||null;
   for(const q of new Set([...heirs,...(widow?[widow]:[])]))life(q,`Inherited under the custom of ${s.name} from ${folkName(p)}`);}
@@ -21227,9 +21260,16 @@ Under **Justice**, the ruler sets the amercement cap for all his places
 (**Lower cap** / **Raise cap**). A court keeps back the next month’s bread
 and rent; a coinless family is pardoned. The town card’s **Court** link and
 **Open the court roll** show pending pleas, the next quarter day, named
-steward and clerk, receipts, fees and recent rulings. These first manor
-courts recover unpaid rents, entry fines and mill or oven farms. Royal
-justice and ordinary household loans are still to come.
+steward and clerk, receipts, fees and recent rulings. Manor courts recover
+unpaid rents, entry fines, mill or oven farms and loans at least a year old.
+They read the actual debt, so voluntary payments clear the case. Creditors
+plead only when recovery covers the customary fee and their lost day; the
+fee comes from what they recover. When cash falls short, the local reeve
+may buy surplus beasts from coin beyond his chest's reserve. Families keep
+breeders and their working team. The roll links the creditor and records
+beasts sold; returned loan principal is not new income. A sitting needs
+receipts or acquired chattels worth its officers' fees, and real coin to
+pay them. Royal justice remains to come.
 
 ## Cards
 

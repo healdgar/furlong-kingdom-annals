@@ -109,7 +109,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // changed; ledger-growth.test.mjs covers the closed form.
  // Batch 10b's gate: a moving family carries a month of its own food on its back before the carters' reckoning (carryHome), through the
  // same commodityMove; no quantity, title, claim or journal writer changes. ledger-growth.test.mjs covers it.
- assert.equal(digest(source.slice(a,b)),"1c94bb14e42a8df08d3be52f247b674cadd5ea0b3e866222e51b264328335046");
+ // Courts (#37, batch 11b): departHousehold slices each native loan tuple before dividing its principal, preserving its date and
+ // prior ruling across the split. Principal arithmetic, ownership, balances and journal writers are unchanged; justice.test.mjs
+ // covers both portions, merger, voluntary repayment and estate retirement; world-save.test.mjs saves the native loan reference.
+ assert.equal(digest(source.slice(a,b)),"8af59c3eede7024333fcf80dd69564740940cb2bc2326d6c97810bd3b113f656");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
@@ -125,6 +128,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Tick-cost: the smith/weaver owner scan is skipped when no owner holds ore and charcoal (or wool); one copy of _owners, no writer changed.
  // Meat (batch 9): the lords' halls eat through eatFood; herdOwners and martinmas read the families' beasts (x.animals) in owner
  // order. No held or sale writer outside the region changed.
- assert.equal(digest(outside),"606a83f27efa5266307540bc8cbc56a5ac32d9aa2d943cd41eeebd0a56a77d3f");
+ // Courts (#37, batch 11b): hallmotePlan reads only a cash-short defendant's native animal row into the sitting's scratch budget; a funded
+ // judgement decrements that row and leaves stores unchanged, passing the sold beasts to the reeve's existing unassigned herd.
+ // The family's breeders, team and subsistence and the buyer's reserve survive. No commodity/lot/title or journal writer changed;
+ // justice.test.mjs proves real funding, shared budgets, herd and money conservation, and an adjourned quote's lack of writes.
+ assert.equal(digest(outside),"426019d28e088f14c73a7518f0506b6c0ab67a48d0e4eacb80f4bfaa2dcb202a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });
