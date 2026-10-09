@@ -39,7 +39,7 @@ for(const commodity of [false,true]){
 
   test(`a pig's yield is the meat of its part of the litters, what the slaughter takes of a herd at its want (${how})`,()=>{
     const r=place({commodity});herd(r,'swine:19');r.eval("s.furl=[];martinmas(s,{pann:1e6,till:0},{swine:19,cattle:0,sheep:0,horses:0})");
-    near(r.s.stores.meat/19,r.eval('LITTER'));near(r.eval("beastYield(s,'swine')"),3*r.eval('LITTER'));near(r.eval('BEAST_YR.swine()'),r.eval('GOODBASE.meat*LITTER'));
+    near(r.s.stores.meat/19,r.eval('LITTER'));near(r.eval("beastYield(s,'swine')"),3*r.eval('LITTER'));
   });
 
   test(`cattle the owner's hay will not carry are killed at Martinmas, not starved; with the purse to buy hay they are wintered (${how})`,()=>{
@@ -138,7 +138,6 @@ for(const commodity of [false,true]){
   test(`a cow's and a ewe's yield is what the herd gives: milk at the price of bread, a fleece, and the year's increase at the beast's price (${how})`,()=>{
     const r=place({commodity});r.eval("Object.assign(s.px,{grain:2,cattle:12,sheep:3,wool:4})");
     near(r.eval("beastYield(s,'cattle')"),0.1*12*2+0.22*12);near(r.eval("beastYield(s,'sheep')"),0.008*12*2+0.012*12*4+0.4*3);
-    near(r.eval('BEAST_YR.cattle()'),0.1*12*2+0.22*12);
   });
 
   test(`pannage is the pigs fed on the mast × the custom × a pig's price the year round, paid to the wood's lord, and nothing for his own pigs (${how})`,()=>{

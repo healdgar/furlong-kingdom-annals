@@ -132,6 +132,8 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // judgement decrements that row and leaves stores unchanged, passing the sold beasts to the reeve's existing unassigned herd.
  // The family's breeders, team and subsistence and the buyer's reserve survive. No commodity/lot/title or journal writer changed;
  // justice.test.mjs proves real funding, shared budgets, herd and money conservation, and an adjourned quote's lack of writes.
- assert.equal(digest(outside),"426019d28e088f14c73a7518f0506b6c0ab67a48d0e4eacb80f4bfaa2dcb202a");
+ // Wool supply (#51): sheepLand reads each freeholder's existing native animal row into phase-local land/food/feed budgets.
+ // No commodity, claim, balance or journal writer changed; production-inputs.test.mjs covers real flocks, funding and land rights.
+ assert.equal(digest(outside),"c2b67667f9addf998303063111b7c9d4e54f3864900bdf6f385134ea93883a0a");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

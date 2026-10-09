@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {inlineGameScript} from './simulation-boundary.mjs';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const source=inlineGameScript(fs.readFileSync(path.join(ROOT,'index.html'),'utf8'));
+const source=inlineGameScript(fs.readFileSync(process.env.FURLONG_TEST_SOURCE||path.join(ROOT,'index.html'),'utf8'));
 // A small realm (six places, ~500 buildings), a month of daily packets and a month at the Reel cadence. A longer or larger soak:
 // DRIFT_KM=0 (the default map size) DRIFT_DAILY=150 DRIFT_REEL=90 DRIFT_BYTES=400000 node --test tools/simulation-projection-drift.test.mjs
 const env=(k,d)=>process.env[k]===undefined?d:+process.env[k];

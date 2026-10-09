@@ -143,7 +143,7 @@ test('in the month\'s reckoning of the land, the wood is taken only by a househo
     Object.assign(r.C,{refreshArea:()=>{},settleTracks:()=>{},prepareFences:()=>{},landWt:()=>1,
       soilYield:()=>1e-4,domReach:()=>5000,shapeFurlong:()=>{},claimFurlong:()=>assert.fail('no claim'),setFurlong:(f,st)=>{f.state=st;},emit:()=>{},pick:(k,L)=>L[0],vary:(k,L)=>L[0](),
       tills:h=>h.tr==='ploughman',rand:()=>0.5,chance:()=>false,foundDaughter:()=>{},carryingCap:()=>{},day:()=>15,householdSize:()=>1});
-    r.eval(LAND+'\n'+fn('wpick')+'\n'+fn('tickLand'));
+    r.eval(LAND+'\n'+['wpick','sheepLand','sheepHolder','pasturePays','tickLand'].map(fn).join('\n'));
     s.px.swine=4;s.stores.swine=12;s._graze={pann:12};s._haHH=1e6;s.clearUntil=clearing?100:0;
     const wood={k:0,kind:r.eval('LK.FIELD'),state:r.eval('LS.WOOD'),lord:1,area:20000,dom:0,x:100,z:0,n:10,fa:0,ar:10,fo:10};s.furl=[wood];W.land={F:[wood],perHead:1};
     r.snap();const g0=W.houses[1].gold;r.eval('tickLand()');r.audit();return {wood,paid:W.houses[1].gold-g0,r};};

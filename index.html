@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 03:21 UTC · after db33bc2</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 07:03 UTC · after 1bc16b9</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -5228,14 +5228,30 @@ function treeHTML(x){let h='';const seen=new Set();
     h+=`<ol class="tline">${L.line.map(m=>`<li>${tLink(m,m===x)}</li>`).join('')}</ol>`;
     if(L.claims.length)h+=`<div class="note">Then, by royal blood: ${L.claims.map(i=>esc(W.houses[i].name)).join(', ')}</div>`;}
   return h;}
-function chooseLandUse(s,si){ // once a year: strips go to corn or to hay as the market pays better for them, while the place grows less of that than it buys (a farmer looks at the price and at the stacks his neighbours have already made), the best-suited ground first
+function sheepLand(s,si,PM,expand=false){ // a freeholder's flock and grass, reckoned once for this land decision; no new holdings or saved index (#51)
+  if(!(s._pxN>=12)||!s._gYield)return null;const P=s._pxY||{},pg=P.grain,ph=P.hay,pw=P.wool;if(!(pg>0&&ph>0&&pw>0))return null;
+  const net=MILK.sheep*12*pg+FLEECE*12*pw-LU.sheep*WINTER_HAY*ph;if(!(net>0))return null;
+  const owners=new Map();PM=PM||folkIndex();for(const f of s.furl||[]){if(f.dom!==si||f.lord!==s.owner||f.ten!=='free'||f.own<0||f.wk!==f.own||!ARABLE.has(f.kind)||f.kind===LK.MEADOW||f.kind===LK.VINE||f.kind===LK.DEMESNE||!(f.area>0))continue;
+    const p=PM.get(f.own);if(!p||p.dead)continue;const A=householdAccount(p);if(!A)continue;let q=owners.get(A);if(!q){const sheep=s._owners?.get(A)?.animals.sheep||0;if(!(sheep>0))continue;const h=A.head||p;q={sheep,past:0};if(expand){q.grow=sheep*HERDR.sheep;q.cash=Math.max(0,means(A)-rentDue(s,h)-householdSize(s,h)*foodYr());}owners.set(A,q);}if(f.state===LS.PASTURE)q.past+=f.area;}
+  if(!expand)return {si,lord:s.owner,PM,owners,net,grain:s._gYield*0.87*360*pg};
+  const g=grazeOf(s),St=s.stores,free=Math.max(0,g.cap-(St.sheep||0)*LU.sheep-(St.cattle||0)*LU.cattle-(St.horses||0)*LU.horses),short=Math.max(0,(s._dYr?.wool??s._dAvg?.wool??0)/FLEECE-(St.sheep||0));
+  return {si,lord:s.owner,PM,owners,net,grain:s._gYield*0.87*360*pg,hay:LU.sheep*WINTER_HAY*ph,short,need:Math.max(0,short-free/LU.sheep),gain:(1-0.33*0.6)/LU.sheep/10000};}
+function sheepHolder(P,f){if(!P||f.dom!==P.si||f.lord!==P.lord||!ARABLE.has(f.kind)||f.kind===LK.MEADOW||f.kind===LK.VINE||f.kind===LK.DEMESNE||f.ten!=='free'||f.wk!==f.own)return null;const p=P.PM.get(f.own);return p&&!p.dead?P.owners.get(householdAccount(p)):null;}
+function pasturePays(P,f,q=sheepHolder(P,f)){return !!(q&&q.past>0&&(1-0.33*0.6)*Math.min(q.sheep,q.past/10000/LU.sheep)*P.net/q.past>P.grain);} // ploughing returns some stubble grazing; the fleece and milk lost must be worth more than the corn gained
+function chooseLandUse(s,si,PM){ // once a year: corn, hay or a freeholder's grazing, by what the land yields and the market wants; the freeholder keeps his flock, his bread and the means to winter the lambs
   if(!s._gYield||!W.land||!(s._pxN>=12))return;const pg=s._pxY.grain,ph=s._pxY.hay; /* a farmer goes by a year of the prices the market found, not a first guess (#21: the opening prices, set from stocks the world began with, made hay dear and corn cheap, and half the ploughland went to meadow in the first year) */if(!(pg>0)||!(ph>0))return;const gA0=s._gYield*0.87*360,E=s._dAvg||{},wetOf=f=>f.n?clamp(f.fl/f.n/0.35,0,1):0,hY=f=>12/1e4*(0.6+0.4*wetOf(f));
-  const T=(s.furl||[]).filter(f=>f.dom===si&&f.state===LS.TILLED&&f.area);let haySup=0,grSup=0;for(const f of T){if(f.kind===LK.MEADOW)haySup+=hY(f)*f.area;else if(ARABLE.has(f.kind))grSup+=gA0*f.area;}
+  const T=(s.furl||[]).filter(f=>f.dom===si&&f.lord===s.owner&&f.state===LS.TILLED&&f.area);let haySup=0,grSup=0;for(const f of T){if(f.kind===LK.MEADOW)haySup+=hY(f)*f.area;else if(ARABLE.has(f.kind))grSup+=gA0*f.area;}
   const Y=s._dYr||E,hayDem=(Y.hay||0)*12,grDem=Math.max((Y.grain||0)*12,(s.pop||0)*NEED.grain*360); // a farmer lays down meadow for the year's want, not the autumn's; and the place wants at least its own people's bread, bought or grown (#21: corn wanted was only what the market sold, so families eating their own corn never called a meadow back to the plough)
   if(ph*12/1e4>pg*gA0)for(const f of T.filter(f=>ARABLE.has(f.kind)&&f.kind!==LK.DEMESNE).sort((a,b)=>wetOf(b)-wetOf(a))){if(haySup>=hayDem)break;const hA=hY(f)*ph,gA=gA0*pg;if(hA-gA<=gA/4)continue; // hay pays, and the town is short of it: the year's gain must pay for the season the strip lies out while the sward takes (#23: a hand-set threshold before)
     f.kind0=f.kind;f.kind=LK.MEADOW;writeFurlong(f);G.fenceDirty=true;haySup+=hY(f)*f.area;grSup-=gA0*f.area;}
   else for(const f of T.filter(f=>f.kind===LK.MEADOW&&f.ar>=Math.max(1,f.n)*0.25).sort((a,b)=>wetOf(a)-wetOf(b))){if(grSup>=grDem)break;const hA=hY(f)*ph,gA=gA0*pg;if(gA-hA<=hA/4)continue; // corn pays, and the town is short of bread: the year's gain must pay for the season's hay lost to the plough
-    f.kind=f.kind0||LK.FIELD;writeFurlong(f);G.fenceDirty=true;grSup+=gA0*f.area;haySup-=hY(f)*f.area;}}
+    f.kind=f.kind0||LK.FIELD;writeFurlong(f);G.fenceDirty=true;grSup+=gA0*f.area;haySup-=hY(f)*f.area;}
+  const P=sheepLand(s,si,PM,true);if(!P)return;
+  for(const f of s.furl||[]){if(f.state!==LS.PASTURE||grSup>=grDem)continue;const q=sheepHolder(P,f);if(!q||pasturePays(P,f,q))continue;setFurlong(f,LS.TILLED);grSup+=gA0*f.area;q.past-=f.area;P.need=Math.min(P.short,P.need+f.area*P.gain);} // when bread pays better, the freeholder's grass returns to the plough
+  for(const f of T){if(!(P.need>0))break;if(f.state!==LS.TILLED)continue;const q=sheepHolder(P,f);if(!q)continue;
+    const lambs=Math.min(P.need,q.grow,f.area*P.gain,q.cash/P.hay),corn=gA0*f.area;if(!(lambs>0&&lambs*P.net>corn*pg)||grSup-corn<grDem)continue;
+    setFurlong(f,LS.PASTURE);grSup-=corn;q.grow-=lambs;q.cash-=lambs*P.hay;q.past+=f.area;P.need=Math.max(0,P.need-f.area*P.gain);} // only the grass a real flock can fill and winter, where wool is wanted and the remaining corn covers the town's bread
+  landYield(s);}
 function tickTitles(){ // the annals note who held what, and from when
   if(day()%30!==13)return;for(const n of livingNotables()){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
     const H=W.houses[n.house],seat=H&&W.settlements[H.seat];(n.titles||(n.titles=[])).push({d:day(),t:n.role==='monarch'?`${n.sex==='f'?'Queen':'King'} of the realm`:`Head of ${H?H.name:'the house'}${seat?', at '+seat.name:''}`});}}
@@ -11394,17 +11410,17 @@ function tickLand(){ // monthly: the countryside follows the people
   if(W.land.pathsDirty){W.land.pathsDirty=false;settleTracks();prepareFences();G.fenceDirty=true;}
   const now=day(),spring=Math.ceil((now+1)/360)*360+20,F=W.land.F,ph=W.land.perHead;
   {let nd=0;for(const f of F)if(f.dirt&&nd<14){f.dirt=0;refreshArea(f);writeFurlong(f);nd++;}} // the new area is published (the territory legend reads it)
-  W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]);
-    let tilled=0,bearing=0;
-    for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;}
+  W.settlements.forEach((s,si)=>{const own=s.furl||(s.furl=[]),grazing=sheepLand(s,si);
+    let tilled=0,bearing=0,pasture=0;
+    for(const f of own)if(ARABLE.has(f.kind)&&f.lord===s.owner){if(f.state===LS.TILLED||f.state===LS.BURNT)tilled+=f.area;if(f.state===LS.TILLED)bearing+=f.area;else if(f.state===LS.PASTURE&&pasturePays(grazing,f))pasture+=f.area;}
     const tillHH=s.folk&&s.folk.length?heads_(s,h=>tills(h,s)).length:0;if(s._haHH==null&&tillHH>0)s._haHH=s.pop*landWt(s)*ph/tillHH; // what one household can plough, as the place first showed it
-    const need=tillHH>0&&s._haHH?tillHH*s._haHH:s.pop*landWt(s)*ph; // the land is ploughed by the households that farm it: as many as farming pays enough to keep
+    const need=Math.max(0,(tillHH>0&&s._haHH?tillHH*s._haHH:s.pop*landWt(s)*ph)-pasture); // farming households already working profitable grazing do not demand the same land under corn as well (#51)
     s._bearA=bearing;s._gYield=soilYield(s); // the corn is the soil's yield on the land actually under the plough (#23: a clamped landF once scaled a fixed yield; the bearing area is the quantity)
     const d=f=>dist2d(f.x,f.z,s.pos.x,s.pos.z);
     s._needLand=tilled<need; // (a place that needs no more land does not stand in a neighbour's way)
     if(tilled<need&&!s.siegeBy){ // take in more land: old pasture, open waste, scrub, then the wood; beyond the bounds if need be
       const clearing=s.clearUntil>now,bonus={[LS.PASTURE]:0.8,[LS.WILD]:0.5,[LS.SCRUB]:clearing?0.4:-0.2,[LS.WOOD]:clearing?0.3:-0.9}; // paid assarters take the wood and scrub first
-      let c=own.filter(f=>ARABLE.has(f.kind)&&f.area>0&&bonus[f.state]!==undefined&&f.lord===s.owner);
+      let c=own.filter(f=>ARABLE.has(f.kind)&&f.area>0&&bonus[f.state]!==undefined&&f.lord===s.owner&&!(f.state===LS.PASTURE&&pasturePays(grazing,f))); // profitable freehold grazing is already worked, not idle land to plough again (#51)
       const reach=domReach(s)*1.5*(clearing?1.35:1);
       const nearest=f=>!W.settlements.some(o=>o!==s&&o._needLand&&o.owner===s.owner&&dist2d(f.x,f.z,o.pos.x,o.pos.z)<d(f)*0.85); // waste goes to whichever of the lord's places needs it and lies nearer; a neighbour with land enough does not bar the way
       c=c.concat(F.filter(f=>f.ar>=f.n*0.3&&d(f)<reach&&(f.lord<0||f.lord===s.owner)&&(f.dom<0||f.dom!==si&&(f.state===LS.WILD||f.state===LS.WOOD)&&ARABLE.has(f.kind))&&nearest(f)));
@@ -11517,9 +11533,11 @@ function herdWant(s,g){ // what the place would keep: teams for its ploughs, cow
   const ad=AD(),hShare=clamp((ad-1100)/400,0,0.4),draft=g.till/6;
   const h=W.houses[s.owner],seat=h&&h.seat===W.settlements.indexOf(s);
   const horses=draft*hShare+s.pop*0.004+(seat||s.kind==='capital'?20+s.pop*0.01:0);
-  const cattle=draft*(1-hShare)+s.pop*0.06;
+  let cattle=draft*(1-hShare)+s.pop*0.06;
   const swine=Math.min(g.pann/LU.swine,s.pop*0.3);
-  const sheep=Math.max(0,(g.cap-cattle*LU.cattle-horses*LU.horses)/LU.sheep)*0.9;
+  let sheep=Math.max(0,(g.cap-cattle*LU.cattle-horses*LU.horses)/LU.sheep)*0.9;
+  if(s._pxN>=12){const work=Math.max(draft*(1-hShare),(draft-horses*0.4)/0.6),room=Math.max(0,g.cap-work*LU.cattle-horses*LU.horses),hay=WINTER_HAY*price(s,'hay'),cow=Math.max(0,beastYield(s,'cattle')/LU.cattle-hay),ewe=Math.max(0,beastYield(s,'sheep')/LU.sheep-hay),sum=cow+ewe;
+    cattle=work+(sum>0?Math.min(s.pop*0.06,room*cow/sum/LU.cattle):0);sheep=ewe>0?Math.max(0,(g.cap-cattle*LU.cattle-horses*LU.horses)/LU.sheep):0;} // once the market has found its prices, profitable flocks compete with dairy cows for the spare grass; the plough teams and riding horses keep theirs (#51)
   return {sheep,cattle,horses,swine};}
 function looms(s){return (s.buildings||[]).filter(b=>(b.arch==='dyer'||b.arch==='burgher'||b.arch==='shop')&&b.state==='sound').length;}
 function waterMill(s){return !!(s.mill&&s.mill.state!=='ruin'&&(s.river||s.lake));} // a wheel on the river or the millpond
@@ -12068,6 +12086,16 @@ function foodDays(s){ // the share of the month each food is the cheapest on the
   for(let i=0;i<L.length;i++)for(let j=i+1;j<L.length;j++){const dk=L[j][2]-L[i][2],t=dk?(L[i][1]-L[j][1])/dk:0;if(t>0&&t<30)T.push(t);}T.sort((a,b)=>a-b);
   for(const g of FOODS)sh[g]=0;for(let i=1;i<T.length;i++){const t=(T[i-1]+T[i])/2;let b=L[0];for(const l of L)if(l[1]+l[2]*t<b[1]+b[2]*t)b=l;sh[b[0]]+=(T[i]-T[i-1])/30;}
   return sh;}
+function smithInputs(s,h,work,Q){ // buy only the missing stuff, as a pair the workshop can afford and the market can supply (#51)
+  const x=pantry(s,h),ore=x.ore||0,char=x.char||0;if(work*0.6<=Math.min(ore,char))return;
+  if(Q.ore==null){Q.ore=avail(s,'ore',Q.po);Q.timber=avail(s,'timber',Q.pt);} // one supply quote for the month's smiths, only when a workshop lacks stuff
+  const ownOre=mkt(s,'ore').get(h)||0,ownTimber=mkt(s,'timber').get(h)||0,oreDear=s.rsv?.ore?.get(h)>Q.po,timberDear=s.rsv?.timber?.get(h)>Q.pt,
+    freeOre=ore+ownOre,freeChar=char+ownTimber,cash=Math.max(0,means(h)),first=freeOre<freeChar?Q.po:Q.pt,
+    target=Math.max(0,Math.min(work*0.6,ore+Q.ore+(oreDear?ownOre:0),char+Q.timber+(timberDear?ownTimber:0),Math.min(freeOre,freeChar)+cash/first,(cash+freeOre*Q.po+freeChar*Q.pt)/(Q.po+Q.pt)));
+  let c=0,q=target;if(q>ore){c=purchase(s,'ore',h,q-ore,Q.po);const got=purchase.got;commodityCreditPurchase(s,h,'ore',got);Q.ore=Math.max(0,Q.ore-got+(oreDear?Math.min(ownOre,got):0));q=Math.min(q,ore+got);}
+  if(q>char){c+=purchase(s,'timber',h,q-char,Q.pt);const got=purchase.got;commodityCreditPurchase(s,h,'char',got);Q.timber=Math.max(0,Q.timber-got+(timberDear?Math.min(ownTimber,got):0));}
+  if(c>0&&h.gn!==undefined)h._inc=(h._inc||0)-c;
+}
 function provision(s,heads,size){ // the month's necessaries, bought as each household's purse (and its credit with its neighbours) allows: its bread first; then, its rent and the next month's bread kept back, fuel, tools and cloth, and last the rich man's table; of each the share of its need that the price, against what the good is worth here, makes worth buying (#51, the user's decision of 2026-10-08)
   initOwnership(s);let pool=0;s._goodsWorth=goodWorth(s); // what each good is worth here, from this market day to the next
   const fd=foodDays(s),B=heads.length?heads:[lordAcct(s)];let sf=0,sn=0,sw=0;const ws={},share=g=>ws[g]??(ws[g]=wantShare(s,g,price(s,g))); // each food for the days of the month it is the cheapest on the table
@@ -12126,7 +12154,7 @@ function provision(s,heads,size){ // the month's necessaries, bought as each hou
   // bought ore at forty times its price, a hundred loads of it, for tools no one would buy)
   const mult=waterMill(s)&&AD()>=1200?1.4:1,cap=(s._smiths||0)*0.45*mult*30,wanted=g=>Math.max(0,(s._dAvg?.[g]||0)-avail(s,g,price(s,g)))/0.8;
   if(cap>0&&price(s,'tools')*0.8>0.6*(price(s,'ore')+price(s,'timber'))){const sm=heads.filter(h=>h.tr==='smith'),by=sm.length?sm:[lordAcct(s)],work=Math.min(cap,wanted('tools'))/by.length;
-    if(work>0)for(const h of by){const x=pantry(s,h),need=Math.max(0,work-Math.min(x.ore||0,x.char||0)/0.6);if(!(need>0))continue;let c=purchase(s,'ore',h,need*0.6);commodityCreditPurchase(s,h,'ore',purchase.got);c+=purchase(s,'timber',h,need*0.6);commodityCreditPurchase(s,h,'char',purchase.got);if(h.gn!==undefined)h._inc=(h._inc||0)-c;}}
+    if(work>0){const Q={po:price(s,'ore'),pt:price(s,'timber')};for(const h of by)smithInputs(s,h,work,Q);}}
   const wcap=((s._dyers||0)*0.5+s.pop*0.0008)*30;
   if(wcap>0&&price(s,'cloth')*0.8>price(s,'wool')){const wv=heads.filter(h=>h.tr==='weaver'||h.tr==='dyer'),by=wv.length?wv:heads.length?heads:[lordAcct(s)],work=Math.min(wcap,wanted('cloth'))/by.length;
     if(work>0)for(const h of by){const need=Math.max(0,work-(pantry(s,h).wool||0));if(!(need>0))continue;const c=purchase(s,'wool',h,need);commodityCreditPurchase(s,h,'wool',purchase.got);if(h.gn!==undefined&&wv.length)h._inc=(h._inc||0)-c;}}
@@ -14431,7 +14459,7 @@ function tickTenure(){
   const PM=folkIndex(),kids=new Map(),spouse=new Map();
   for(const p of PM.values()){for(const par of[p.pa,p.ma])if(par){const L=kids.get(par.id)||[];L.push(p);kids.set(par.id,L);}if(p.sp)spouse.set(p.sp.id,p);}
   const hf=(W.drought?0.4:1)*(MOD.harvest||1);let sales=0,bigBuyer=null;
-  W.settlements.forEach((s,si)=>{if(!due[si])return;s._ltY=s._lt||0;s._lt=0;chooseLandUse(s,si); // what the lord drew from it these twelve months; and each strip to corn or hay
+  W.settlements.forEach((s,si)=>{if(!due[si])return;s._ltY=s._lt||0;s._lt=0;chooseLandUse(s,si,PM); // what the lord drew from it these twelve months; and each strip to corn, hay or profitable freehold grazing
     const heads=headsOf(s),size=new Map();for(const p of s.folk||[]){const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
     for(const h of heads){h._strips=0;h._crop=0;h._ha=0;h._owned=0;if(h.w===undefined)h.w=0;}
     const T=tilledOf(s,si),held=T.map(f=>f.ten+'|'+f.own+'|'+f.wk),gpx=yearPrice(s,'grain');manorYear(s,T);
@@ -14643,8 +14671,7 @@ function living(o){return foodYr()*(2*(o._fill??1)+0.1*Math.log1p(Math.max(0,o._
 function youngPull(o){return foodYr()*0.5*Math.log10(1+o.pop)/3;} // to the young, a bigger place is a better chance of a match
 /* beasts are the families' own: the village herd is their beasts grazing the common together, and the lord's;
    calves and lambs are the owners', losses fall on them, and each family buys, keeps or sells as its beasts are worth to it */
-function beastYield(s,k){return k==='horses'?price(s,k)*0.06:k==='swine'?price(s,'meat')*LITTER:(MILK[k]||0)*12*price(s,'grain')+(k==='sheep'?FLEECE*12*price(s,'wool'):0)+HERDR[k]*price(s,k);} // what a beast brings in a year at the place's prices, the same quantities the herd yields: a cow's or a ewe's milk and cheese (herdProduce, at the price of bread), a fleece, and the year's increase (HERDR) at the beast's price; a pig's part of the litters, in meat; a horse's work hired out (the shares of BEAST_YR)
-const BEAST_YR={cattle:k=>MILK.cattle*12*GOODBASE.grain+HERDR.cattle*GOODBASE.cattle,sheep:k=>MILK.sheep*12*GOODBASE.grain+FLEECE*12*GOODBASE.wool+HERDR.sheep*GOODBASE.sheep,swine:k=>GOODBASE.meat*LITTER,horses:k=>GOODBASE.horses*0.06}; // beastYield at the realm's base prices: milk and a calf; milk, a fleece and a lamb; a litter for the pot (LITTER); a horse's work hired out
+function beastYield(s,k){return k==='horses'?price(s,k)*0.06:k==='swine'?price(s,'meat')*LITTER:(MILK[k]||0)*12*price(s,'grain')+(k==='sheep'?FLEECE*12*price(s,'wool'):0)+HERDR[k]*price(s,k);} // what a beast brings in a year at the place's prices, the same quantities the herd yields: a cow's or a ewe's milk and cheese (herdProduce, at the price of bread), a fleece, and the year's increase (HERDR) at the beast's price; a pig's part of the litters, in meat; a horse's work hired out
 function herdOf(h,s){const account=householdAccount(h);s=s||W.settlements[h.si]||account&&account.home;return s?stockOf(s,account||h).animals:{};}
 function herdLoss(s,k,q){const was=s.stores[k]||0;if(!(was>0&&q>0))return;const lost=Math.min(q,was),f=(was-lost)/was;for(const x of (s._owners||new Map()).values())for(const kind of ['animals','sale','held'])if(x[kind][k]!==undefined)x[kind][k]*=f;s.stores[k]=was-lost;if(s._herdLast)s._herdLast[k]=s.stores[k];}
 function herdBirth(s,k,q){const was=s.stores[k]||0;s.stores[k]=was+q;if(was>0)for(const x of (s._owners||new Map()).values())if(x.animals[k])x.animals[k]*=(was+q)/was;if(s._herdLast)s._herdLast[k]=(s._herdLast[k]||0)+q;if(typeof herdVisualBirth==='function')herdVisualBirth(s,k,q);}
@@ -14736,13 +14763,12 @@ function tickHouseholds(){
         {let hy=-(pantry(s,h).hay||0);for(const k of BEASTS)hy+=(H[k]||0)*LU[k]*WINTER_HAY;if(hy>0){purchase(s,'hay',h,Math.min(hy,Math.max(0,(h.w||0)-roof-n*foodYr()/12)/Math.max(1e-6,hay)));commodityCreditPurchase(s,h,'hay',purchase.got);}} // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market) // the winter's hay, bought from the meadows (milk and bacon are eaten at home, fleeces sold in the market)
         const keep=k=>LU[k]*(WINTER_HAY*hay+GOODBASE.grain*Math.max(0,press-0.8)*3)+(k==='swine'?customOf(s,'pannage')*yearPrice(s,'swine'):0); // hay for the winter, and dear grazing on a crowded common; and a pig's pannage (pannage)
         const strips=(s.furl||[]).filter(f=>f.wk===h.id).length,tiller=TILLERS.has(h.tr)||tills(h,s);
-        const worth=k=>BEAST_YR[k]()+(k==='cattle'&&tiller&&(H.cattle||0)<Math.min(4,strips*0.5)?foodYr()*0.5:0)+(k==='horses'&&(h.tr==='carter'||h.tr==='merchant')&&(H.horses||0)<2?foodYr():0)-keep(k); // an ox for his share of the plough team; a horse for the carter
-        const owned=BEASTS.reduce((t2,k)=>t2+(H[k]||0),0);
-        const reeve=s.owner>0&&W.houses[s.owner]?s.owner:0,sellTo=(k,n2,pk)=>{const u=pk*0.8,m=Math.min(n2,Math.floor(Math.max(0,purse(reeve)-chestReserve(reeve))/Math.max(1e-6,u)));if(!(m>=1))return 0;H[k]-=m;h.w=(h.w||0)+m*u;spend(reeve,m*u);return m;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers, out of what his chest holds beyond its reserve (#52: as far as his purse went, so the crown's chest went on beasts in a month)
+        const worth=k=>beastYield(s,k)+(k==='cattle'&&tiller&&(H.cattle||0)<Math.min(4,strips*0.5)?foodYr()*0.5:0)+(k==='horses'&&(h.tr==='carter'||h.tr==='merchant')&&(H.horses||0)<2?foodYr():0)-keep(k); // the same current yield as the winter's reckoning; an ox for his share of the plough team; a horse for the carter (#51)
+        const reeve=s.owner>0&&W.houses[s.owner]?s.owner:0,sellTo=(k,n2,pk)=>{const u=pk*0.8,m=Math.min(n2,Math.floor(Math.max(0,purse(reeve)-chestReserve(reeve))/Math.max(1e-6,u)));if(!(m>=1))return 0;H[k]-=m;famHerd[k]-=m;h.w=(h.w||0)+m*u;spend(reeve,m*u);return m;}; // the lord's reeve (or the crown's) buys what families sell, for the drovers, out of what his chest holds beyond its reserve (#52: as far as his purse went, so the crown's chest went on beasts in a month)
         for(const k of BEASTS){const pk=price(s,k),pool2=Math.max(0,(s.stores[k]||0)-famHerd[k]); // what is not a family's is the lord's, and can be bought
           if(inDebt(h)&&(H[k]||0)>=1){const n2=sellTo(k,Math.min(H[k],Math.ceil((h._debt-Math.max(0,h.w||0))/Math.max(0.5,pk*0.8))),pk);if(n2){life(h,`Sold ${n2} ${k} to pay debts`);repay(h,h.w||0);}continue;} // a hard year: the beasts are sold to pay the debt
           if(worth(k)<0&&(H[k]||0)>=1){sellTo(k,Math.ceil(H[k]*0.5),pk);continue;} // they eat more than they bring in: half go to the drovers
-          if(worth(k)>0&&pool2>=1&&h.w-n*foodYr()-roof>pk*1.2&&owned<30){const n2=Math.min(pool2,Math.max(1,Math.floor((h.w-n*foodYr()-roof)/pk*0.5)),k==='sheep'?10:k==='swine'?4:2);purchase(s,k,h,n2,pk);H[k]=(H[k]||0)+purchase.got;if(purchase.got>=1)life(h,`Bought ${Math.round(purchase.got)} ${k}`);}} // bought from the drovers who brought them, else from the lord's herd
+          if(worth(k)>0&&pool2>=1){const n2=Math.min(pool2,Math.floor(Math.max(0,h.w-n*foodYr()-roof)/(pk+keep(k))));if(!(n2>=1))continue;purchase(s,k,h,n2,pk);H[k]=(H[k]||0)+purchase.got;famHerd[k]+=purchase.got;if(purchase.got>=1)life(h,`Bought ${Math.round(purchase.got)} ${k}`);}} // beasts and their keep bought only beyond the year's bread and rent, from the drovers who brought them, else from the lord's herd; no fixed household or purchase limit (#51)
       }
     }
     s._lux=lux; // what they wanted and could not get: the price rises, and the carters will hear of it
