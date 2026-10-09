@@ -150,6 +150,7 @@ Line numbers drift, so find code by name.
     - The first gate failed: famine over six worlds × 5 years 1.03 → 1.48. Bisected on three worlds: the crumb line at a soul's day of food threw away families' last crusts and the leavings of their own grain on sale. The line is now a mouthful (a hundredth of a soul's day, or its worth), and a moving family carries a month of its own food.
     - Second gate: suite 1308/1308; six worlds clean (money, inventory matched daily, no faults); famine 1.16 against 1.03, but level or lower wherever the two histories keep comparable people (1001 sea 0.19 against 0.22, 1001 land 0.24 against 0.30, 2002 land 0.41 against 0.45); the rest is batch 10's plague histories, and 1001 land's lower population is a private war with four battles in its second year, not hunger (food filled 0.98 against 0.88 at the end).
     - Cost (Node, one host): 1001 land, year 5, 162 → 137 ms/day; 42 sea at AD 870 (the agent's run), 863 → 289 ms/day, ledger rows 42.8k → 10.8k, rows touched a day 32.9k → 3.8k, cost per living household 0.16 → 0.21 ms over the decade (0.25 → 0.53 before).
+    - The farm runs again on the frozen release build (`tools/soak-results/farm-build-ae3931b.html`, out `tools/soak-results/farm-42-b10`, 42 sea to AD 1066); the batch-8 farm (AD 860–890 saves in `farm-42-b8`) stays as the record of the leak.
     - Left: living households' empty records in places they left (cheap, changes owner order), dealers' remnants decaying for years, the waif the same day as the offer.
   - Plan (before #37): retire spent cargo locations and ended households' empty records (exact, an agent is on it); then a family that leaves a place sells or carries its goods (behaviour); then measure cost per living person over a long run, and bring the user a sampling or inference design for whatever living part still explodes.
 - **Batch 6 soak at year 5 (1aa50a1, in the cloud).** Measured on Node 22 and headless Chromium with SwiftShader, two worlds at a time on 4 cores (load about 2–3), so not comparable with the Mac's batch-4 numbers:
@@ -201,7 +202,7 @@ Line numbers drift, so find code by name.
 
 ## Waiting on the user
 
-- **Publish the claude.ai artifact** from `main` (deab546, batch 9): `index.html`, with `assets/` and `LICENSE` as files. The cloud agent left it to your machine; it is still v86.
+- **Publish the claude.ai artifact** from `main` (ae3931b, batch 10b): `index.html`, with `assets/` and `LICENSE` as files. The cloud agent left it to your machine; it is still v86.
 - **Delete the merged `determinism` branch** on GitHub; the proxy here refuses branch deletion.
 
 ## Questions for the user
