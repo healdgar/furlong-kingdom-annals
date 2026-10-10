@@ -20,11 +20,11 @@ textures live in `assets/`.
 
 ## In the kingdom
 
-![A medieval town with textured houses, streets and public spaces](assets/screenshots/town.png)
+![Vadoreal’s bridge, riverside streets and church in AD 1068](assets/screenshots/town-1068.png)
 
-![A castle and its fortified grounds](assets/screenshots/castle.png)
+![Campoolmo’s timber motte-and-bailey castle beside the town in AD 1068](assets/screenshots/castle-1068.png)
 
-Screenshots from the running game.
+Two views from the running simulation in AD 1068 (land seed 42, fate 42).
 
 ## Run it
 

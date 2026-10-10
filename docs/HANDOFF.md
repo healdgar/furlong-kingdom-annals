@@ -4,6 +4,8 @@ Updated 2026-10-10 in the cloud checkout for direct deterministic era starts and
 
 ## Where things stand
 
+- **Screenshot refresh (2026-10-10):** the README now shows two native 1920×1080 Spring 4, AD 1068 views: Vadoreal’s bridge/riverside streets and Campoolmo’s timber motte-and-bailey beside the town (42:42 sea). The world starts directly at 1068 and advances three ordinary simulation days; no assets, weather, time or model state are inserted for the images. Only camera framing/pitch and labels change for capture. Source evidence and error-free rendered frames are in `tools/soak-results/screenshots-1068-20261010/`; exact source and focused documentation checks follow below.
+
 The user selected **Crown & Commons** as the game name on 2026-10-10. The current
 release updates visible titles and advisor descriptions; repository/deployment
 URLs, internal APIs and save formats retain their existing compatibility names.
@@ -1096,3 +1098,22 @@ camera views, with no inserted structures or copied book artwork.
 
 - `assets/screenshots/town.png`: 1405993 bytes, SHA256 `ad5b7d86bf26ef212096db674d031b9e41c1a6301fc5b1d5b4b84eaa091e8833`.
 - `assets/screenshots/castle.png`: 1268317 bytes, SHA256 `708330bccaf967ffdb795d51ad528fd50417bcb150edf7cbade48383965a747e`.
+
+
+### README screenshot refresh: AD 1068 (2026-10-10)
+
+Replaced the old wide 1066 town/850 castle images with native Spring 4, AD 1068
+views of Vadoreal’s bridge/riverside streets and Campoolmo’s timber motte-and-bailey
+beside its town. Both are 1920×1080, land 42/fate 42/sea, directly initialized at
+1068 and advanced three normal simulation days. Reviewed closer/lower camera
+candidates; selected `town-1068-b.png` and `castle-1068-b.png`. Texture atlas is
+ready and runtime, console and worker error lists are empty. New filenames avoid
+serving previously cached screenshots; README captions identify place and year.
+
+All seven focused source/advisor checks pass after embedding and stamping.
+Executable game code is byte-identical to published `896e471` (SHA256
+`13251d88fe82921a428a8f9d2746bfa1eb646128be05097cba0c5ef9d518ae35`); only screenshot
+assets, README/embedded documentation, the stamp and this handoff change. No
+simulation or renderer implementation changes require a new history run.
+Stamped HTML SHA256 `d4bfc082e32f51ca0f2f4ebc04c3b4b6e33b32c25b74bfd301228426c95840dd`.
+Evidence is in `tools/soak-results/screenshots-1068-20261010/`.
