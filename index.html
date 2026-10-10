@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 18:40 UTC · after 5b3f2f8</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 19:14 UTC · after 55f1eca</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -2291,12 +2291,12 @@ function maskFortTerrain(){ // transient render mask, rebuilt with geometry; nev
 
 /* places (greens, market places) are irregular blobs: a radius per angle about a centre */
 const PLN=20;
-function placeFitRadii(p,clear,stretch=1){ // star-shaped shared ground bounded by the first terrain/frontage obstruction
+function placeFitRadii(p,clear,stretch=1,minimum=null){ // star-shaped shared ground bounded by the first terrain/frontage obstruction
   if(!clear(p.x,p.z))return null;
   const n=p.r.length,caps=[],r=p.r.map(v=>v*stretch),step=0.75;
   for(let j=0;j<n*4;j++){const f=j/4,k=Math.floor(f),t=f-k,a=f/n*Math.PI*2,limit=r[k]*(1-t)+r[(k+1)%n]*t;let d=0;
     for(let q=step;q<=limit+step;q+=step){const R=Math.min(q,limit);if(!clear(p.x+Math.cos(a)*R,p.z+Math.sin(a)*R))break;d=R;if(R===limit)break;}
-    caps[j]=Math.max(0,d-1.5);}
+    caps[j]=Math.max(0,d-1.5);if(minimum!==null&&caps[j]<minimum)return null;} // a required clearance cannot survive this cap; other place surveys keep their original path
   for(let j=0;j<n*4;j++){const k=Math.floor(j/4);r[k]=Math.min(r[k],caps[j]);if(j%4)r[(k+1)%n]=Math.min(r[(k+1)%n],caps[j]);}
   return r.every(v=>Number.isFinite(v)&&v>=3)?r:null;
 }
@@ -2380,6 +2380,7 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
     return false;};
   const onStreet=f=>segH.near(f.x,f.z,Math.hypot(f.w,f.d)/2+2).some(g=>!g.st.gone&&streetFootprintOverlap(f,g))||onRoadway(f); // (hidden lanes are reserved too; no building stands on a highway, not even another town's)
   const fits=(f,gap,soft)=>{
+    if(castleFoundationReserved(s,f))return false;
     if(onStreet(f))return false;
     let inside=0,outside=0;
     for(const c of probe(f)){
@@ -3176,6 +3177,14 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
     siege(){live=true;curE=E;siege(0);live=false;},
     stoneWall(){if(s.walls!==1||!s.wallRad)return false;live=true;s.wallDmg=null;s.breachUntil=0;s.walls=2;wallWorks(s,true);hist(0,'The palisade was taken down and the town walled in stone on the same line.');live=false;return true;},
     stoneBailey(){if(!s.bailey||s.baileyStone)return false;live=true;s.baileyStone=true;hist(0,'The bailey palisade was rebuilt as a curtain wall of stone, with towers.');live=false;return true;},
+    keepFoundation(site){ // a paid first foundation: retain the surveyed ground, and the keep captured by this layout
+      if(casKeep(s)||casRing(s)||!castleFoundationSite(s,site.spec,site))return false;
+      live=true;curE=E;const a=site.spec;keep=place('keep',a.tier,site.f,'keep',a.hm,{inst:true,timberKeep:!!a.timber});
+      s.ward={...site.ward,wallRad:Float32Array.from(site.ward.wallRad)};s.keepPos={x:keep.x,z:keep.z,y:keep.y};
+      keep.st=addStreet(site.path.map(p=>({x:p.x,z:p.z})),1.3,'lane',{straight:true,castlePath:true});
+      hist(0,`A first ${a.timber?'timber':'stone'} keep and palisaded yard were built beside the road.`);live=false;return keep;},
+    stoneTimberKeep(){if(!keep||keep.removed||!keep.timberKeep||AD()<1070)return false;live=true;curE=E;keep.timberKeep=false;keep.tier=2;keep.h=ARCH.keep[2]*1.3*0.8;updateBuildingInstance(keep);
+      hist(0,'The timber tower was rebuilt in stone on its own ground.');live=false;return true;},
     rebuildKeep(){if(keep&&keep.motte&&!keep.removed){if(AD()<1070)return false;live=true;keep.motte=false;keep.shell=true;keep.tier=2;keep.w=keep.d=11;updateBuildingInstance(keep);
         hist(0,'The timber tower on the motte was replaced by a keep of stone.');live=false;return true;}
       if(!keep||keep.removed||s._keepRebuilt||AD()<1150||s.motte)return false; /* on a motte, the stone bailey is the castle's second stage */live=true;curE=E;s._keepRebuilt=true;
@@ -6964,7 +6973,7 @@ function casR(s,R){return R.r+(s.cas&&s.cas.outer&&R===casRing(s)?s.cas.outer:0)
 function casStone(s){const R=casRing(s);return !R?false:R===s.bailey?!!s.baileyStone:R===s.hillCastle?!(s.hillCastle.timber&&!s.motteStone):!!R.stone;}
 function casCfg(s,R){if(R!==casRing(s))return{needGate:true,towers:0,circuit:R};const c=s.cas||{towers:4,round:AD()>=1200,gate:0};return{towers:c.towers,square:!c.round,gate:c.gate,needGate:true,dmg:wallDamage(R),circuit:R};}
 function casDesc(s){const R=casRing(s),c=casOf(s),k=casKeep(s),p=[];
-  if(k)p.push(k.motte?'a timber tower on its motte':s.motte?'a shell keep of stone on its motte':k.hill?'a keep on the height':'a tower keep'+(k.tier>=2&&k.w>=18?', rebuilt great':''));
+  if(k)p.push(k.motte?'a timber tower on its motte':k.timberKeep?'a timber tower keep':s.motte?'a shell keep of stone on its motte':k.hill?'a keep on the height':'a tower keep'+(k.tier>=2&&k.w>=18?', rebuilt great':''));
   if(R){const st=casStone(s);p.push((R===s.bailey?'a bailey':R===s.hillCastle?'a ward on the hill':'a yard')+' within '+(st?`a curtain of stone with ${c.towers} ${c.round?'round':'square'} towers`:'a palisade and ditch'));
     p.push(c.gate>=2?'a gatehouse behind a barbican':c.gate?'a gatehouse of two towers':'a plain gate');if(c.outer)p.push(`an outer curtain ${c.outer} m beyond: a concentric castle`);
     if(c.chapel)p.push('a chapel in the yard');const hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);if(hall)p.push(hall.tier>=2?'a great hall of stone':'a timber hall');}
@@ -6973,6 +6982,126 @@ function casDesc(s){const R=casRing(s),c=casOf(s),k=casKeep(s),p=[];
 function casLvl(s){ // what the place is worth fortifying: a village's tower, a town's castle, a seat, the crown's own
   const seat=s.owner>0&&W.houses[s.owner]&&W.houses[s.owner].seat===W.settlements.indexOf(s);
   return s.kind==='capital'?3:seat||s.role==='seat'||s.kind!=='village'&&s.role==='border'?2:s.kind!=='village'||s.role==='border'||s.role==='fort'?1:0;}
+function castleFoundationAuthority(s,hi=s.owner){ // a real seat or defensive purpose, not every village held by a lord
+  if(hi!==s.owner||hi>0&&!W.houses[hi])return false;
+  return s===W.capital||hi>0&&W.settlements[W.houses[hi].seat]===s||['seat','fort','border'].includes(s.role);
+}
+function castleFoundationSpec(s){
+  const timber=AD()<1070,w=timber?8:13,tier=timber?0:2,hm=timber?0.85:0.8,h=ARCH.keep[2]*(0.8+tier*0.25)*hm;
+  return {w,d:w,tier,hm,h,timber,timberTower:timber?w*w*h*0.06:w*w*0.08,stone:timber?0:stoneFor(s,'keep')}; // construction quantities: CASTLE-FOUNDATIONS.md
+}
+function castleFoundationLandOK(f,s,si){ // a ruler may use his unheld demesne, never a household's holding or home lot
+  const held=x=>x!=null&&x!==-1;
+  return !f?!W.land:f.dom===si&&!(f.lord>=0&&f.lord!==s.owner)&&!held(f.title?.own?.owner??f.own)&&!held(f.title?.work?.owner??f.wk)&&!f.crofts;
+}
+function castleFoundationGround(site){const R=site.ward,P=site.path,poly=Array.from(R.wallRad,(r,k)=>{const a=k/R.wallRad.length*Math.PI*2;return{x:R.x+Math.cos(a)*r,z:R.z+Math.sin(a)*r};}),a=P[0],b=P[1],lane=obbCorners((a.x+b.x)/2,(a.z+b.z)/2,2.6,dist2d(a.x,a.z,b.x,b.z),Math.atan2(b.x-a.x,b.z-a.z)),polys=[poly,lane];
+  return {polys,cells:[...new Set(polys.flatMap(occupiedGroundCells))]};}
+function castleFoundationReserved(s,f){ // paid native proposals hold their yard and approach for later builders
+  for(const q of W.projects||[])if(q.type==='castle'&&!q.dead&&W.settlements[q.si]===s&&q.site){const R=q.site.ward;
+    if(dist2d(f.x,f.z,R.x,R.z)<R.r+Math.hypot(f.w,f.d)/2+2)return true;
+    for(let k=1;k<q.site.path.length;k++)if(streetFootprintOverlap(f,{a:q.site.path[k-1],b:q.site.path[k],hw:1.3},0.6))return true;
+  }return false;
+}
+function castleFoundationSite(s,spec,retained=null){ // fresh operation-local geometry; a retained project is rechecked, never treated as a validity cache
+  const si=W.settlements.indexOf(s),B=makeHash(24),H=makeHash(24),anchors=[],reach=(s.radius||90)+100,near=(x,z,r)=>dist2d(x,z,s.pos.x,s.pos.z)<reach+r+10,circuits=W.settlements.flatMap(t=>fortCircuits(t)).filter(R=>{const C=fortCenter(R);return near(C.x,C.z,R.wallRad?Math.max(...R.wallRad):R.r||0);}),protectedGround=[];
+  for(const t of W.settlements){for(const p of t.places||[])if(near(p.x,p.z,Math.max(...p.r)))protectedGround.push({place:p});
+    if(t.citadel&&near(t.citadel.x,t.citadel.z,t.citadel.S))protectedGround.push({circle:{x:t.citadel.x,z:t.citadel.z,r:t.citadel.S*0.85}});
+    for(const r of t.remnants||[])if(near(r.x,r.z,r.r))protectedGround.push({circle:r});
+    if(t.burgRing&&near(t.burgRing.x,t.burgRing.z,t.burgRing.r))protectedGround.push({ring:t.burgRing});
+    for(const P of t.relicWalls||[])for(let k=0;k<P.length;k++)if(segDist(s.pos.x,s.pos.z,P[k],P[(k+1)%P.length])<reach+10)protectedGround.push({a:P[k],b:P[(k+1)%P.length]});}
+  const projects=(W.projects||[]).filter(q=>!q.dead&&q.site!==retained);
+  const addBlock=b=>{const r=Math.max(Math.hypot(b.w||0,b.d||0)/2,...[b.poly,b.lot].flatMap(p=>p?.map(q=>dist2d(b.x,b.z,q.x,q.z))||[]));
+    if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>reach+r)return;B.add({...b},r+3);};
+  const addLine=(a,b,hw,st,pending=false)=>{if(segDist(s.pos.x,s.pos.z,a,b)>reach+hw)return;H.add({a,b,hw,st,pending,x:(a.x+b.x)/2,z:(a.z+b.z)/2},dist2d(a.x,a.z,b.x,b.z)/2+hw+3);};
+  for(const t of W.settlements){for(const b of t.buildings||[])if(!b.removed&&b.state!=='gone'){addBlock(b);if(b._graveyard&&!b._graveyard.removed)addBlock(b._graveyard);}
+    for(const st of t.streets||[])if(!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],b=st.pts[k];addLine(a,b,st.hw||2,st);
+      if(t===s&&!st.hidden&&!st.planQ&&!st.castlePath&&(st.kind!=='quay'||st.serviceLinked)&&dist2d(a.x,a.z,b.x,b.z)>1)anchors.push({a,b,st,hw:st.hw||2});}}
+  for(const r of W.roads||[]){const P=r.open||r.path||[];for(let k=1;k<P.length;k++)addLine(P[k-1],P[k],4,null);}
+  for(const key of W.trackSet||[]){const e=W.tg.E.get(key);if(e)addLine(W.tg.pts[e.a],W.tg.pts[e.b],1.8,null);}
+  for(const q of projects){if(q.type==='road'){const P=q.P?.path||[];for(let k=1;k<P.length;k++)addLine(P[k-1],P[k],4,null,true);}
+    if(q.type==='plan')for(const st of q.kind==='quarter'?q.sts||[]:q.kind==='street'?[q.st]:[])if(st)for(let k=1;k<st.pts.length;k++)addLine(st.pts[k-1],st.pts[k],st.hw||2,null,true);}
+  const publicAt=(x,z)=>anchors.some(g=>segDist(x,z,g.a,g.b)<g.hw+0.2);
+  const clear=(x,z,pad=0,access=false)=>{
+    if(!planCellOK(x,z)||riverAt(x,z,1)||lakeAt(s,x,z,2))return false;
+    const onPublic=access&&publicAt(x,z),f=W.land&&furlongAt(x,z);
+    if(!onPublic&&!castleFoundationLandOK(f,s,si))return false;
+    for(const b of B.near(x,z,pad+2)){for(const poly of[b.poly,b.lot])if(poly?.length&&(inPoly(poly,x,z)||poly.some((q,k)=>segDist(x,z,q,poly[(k+1)%poly.length])<pad)))return false;
+      const dx=x-b.x,dz=z-b.z,c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0);if(!b.poly&&Math.abs(dx*c-dz*sn)<(b.w||0)/2+pad&&Math.abs(dx*sn+dz*c)<(b.d||0)/2+pad)return false;}
+    if(H.near(x,z,pad+8).some(g=>(!access||g.pending)&&segDist(x,z,g.a,g.b)<g.hw+pad))return false;
+    for(const p of protectedGround){if(p.place&&placeHit(p.place,x,z,pad+1)||p.circle&&dist2d(x,z,p.circle.x,p.circle.z)<p.circle.r+pad+1||p.ring&&Math.abs(dist2d(x,z,p.ring.x,p.ring.z)-p.ring.r)<pad+3.5||p.a&&segDist(x,z,p.a,p.b)<pad+3.5)return false;}
+    for(const R of circuits){const C=fortCenter(R),d=dist2d(x,z,C.x,C.z),r=wallRadAt(R,Math.atan2(z-C.z,x-C.x));if(Math.abs(d-r)<pad+7)return false;}
+    for(const q of projects){if(q.type==='castle'&&q.site){if(dist2d(x,z,q.site.ward.x,q.site.ward.z)<q.site.ward.r+pad+2)return false;for(let k=1;k<q.site.path.length;k++)if(segDist(x,z,q.site.path[k-1],q.site.path[k])<pad+2)return false;}
+      if(q.type==='storage'&&dist2d(x,z,q.x,q.z)<Math.hypot(...ARCH[q.arch].slice(0,2))/2+pad+2)return false;
+      if(q.type==='clear'&&dist2d(x,z,q.x,q.z)<q.r+pad+2)return false;
+      if(q.type==='plan'){if(q.kind==='square'&&placeHit(q.place,x,z,pad+1))return false;
+        if(q.kind==='wall'){const t=W.settlements[q.si],R={pos:t.pos,wallRad:q.rad};if(Math.abs(dist2d(x,z,t.pos.x,t.pos.z)-wallRadAt(R,Math.atan2(z-t.pos.z,x-t.pos.x)))<pad+7)return false;}}
+    }
+    return true;
+  };
+  const check=site=>{const F=site.f,R=site.ward,P=site.path;
+    if(!F||!R||!P||P.length!==2||R.wallRad?.length!==32||Array.from(R.wallRad).some(r=>!Number.isFinite(r)||r<=0)||R.r!==Math.max(...R.wallRad)||F.x!==R.x||F.z!==R.z||F.w!==spec.w||F.d!==spec.d||!Number.isFinite(F.rot))return false;
+    const door=serviceDoor(F,2.2);if(dist2d(door.x,door.z,P[0].x,P[0].z)>1e-6)return false;
+    const poly=Array.from(R.wallRad,(r,k)=>{const a=k/R.wallRad.length*Math.PI*2;return{x:R.x+Math.cos(a)*r,z:R.z+Math.sin(a)*r};});
+    for(let k=0;k<poly.length;k++){const a=poly[k],b=poly[(k+1)%poly.length],c=poly[(k+2)%poly.length];if((b.x-a.x)*(c.z-b.z)-(b.z-a.z)*(c.x-b.x)<-1e-6)return false;} // parcel and curtain operations require a convex yard
+    if(W.land?.mask)for(const i of castleFoundationGround(site).cells)if(W.land.mask[i*4+2]!==255&&!castleFoundationLandOK(furlongAt(cellX(i%GRID),cellZ((i/GRID)|0)),s,si))return false; // the land raster reserves whole intersected cells
+    if(!P?.length||!publicAt(P.at(-1).x,P.at(-1).z))return false;
+    const gate=Math.atan2(P.at(-1).z-R.z,P.at(-1).x-R.x);if(Math.abs(Math.atan2(Math.sin(gate-R.gateA),Math.cos(gate-R.gateA)))>1e-6)return false;
+    for(let x=R.x-R.r;x<=R.x+R.r;x+=1.5)for(let z=R.z-R.r;z<=R.z+R.r;z+=1.5)if(fortContains(R,x,z)&&!clear(x,z,1.3))return false;
+    for(let k=0;k<R.wallRad.length;k++){const a=k/R.wallRad.length*Math.PI*2,r=R.wallRad[k];if(r<Math.hypot(F.w,F.d)/2+13||!clear(R.x+Math.cos(a)*r,R.z+Math.sin(a)*r,1.3))return false;}
+    for(const p of obbCorners(F.x,F.z,F.w,F.d,F.rot))if(!clear(p.x,p.z,1.3))return false;
+    for(const b of B.near(F.x,F.z,Math.hypot(F.w,F.d)/2+3))if(obbOverlap({...F,w:F.w+2.6,d:F.d+2.6},b))return false;
+    const samples=resample(P,1,true);for(let k=0;k<samples.length;k++){const p=samples[k];if(!clear(p.x,p.z,1.4,true)||k&&Math.abs(hAt(p.x,p.z)-hAt(samples[k-1].x,samples[k-1].z))>dist2d(p.x,p.z,samples[k-1].x,samples[k-1].z)*0.35)return false;}
+    for(let k=1;k<P.length;k++){const g={a:P[k-1],b:P[k],hw:1.3};for(const b of B.near((g.a.x+g.b.x)/2,(g.a.z+g.b.z)/2,dist2d(g.a.x,g.a.z,g.b.x,g.b.z)/2+3))if(streetFootprintOverlap(b,g,0.3))return false;}
+    return true;
+  };
+  if(retained)return check(retained)?retained:null;
+  let best=null,bv=-Infinity;const minR=Math.hypot(spec.w,spec.d)/2+13,candidates=[];
+  for(const g of anchors){const dx=g.b.x-g.a.x,dz=g.b.z-g.a.z,L=Math.hypot(dx,dz),tx=dx/L,tz=dz/L;
+    for(const t of[0.5,0.15,0.85])for(const side of[1,-1])for(const off of[minR+g.hw+7,minR+g.hw+17]){
+      const q={x:lerp(g.a.x,g.b.x,t),z:lerp(g.a.z,g.b.z,t)},x=q.x-tz*side*off,z=q.z+tx*side*off;
+      if(dist2d(x,z,s.pos.x,s.pos.z)>reach-40||!clear(x,z,Math.hypot(spec.w,spec.d)/2+2))continue;
+      candidates.push({q,x,z,tx,tz,side,rank:hAt(x,z)-dist2d(x,z,s.pos.x,s.pos.z)*0.03});
+    }}
+  candidates.sort((a,b)=>b.rank-a.rank); // at most 24 complete ground surveys; canonical stable ties, no elapsed-time decision gate
+  for(const {q,x,z,tx,tz,side} of candidates.slice(0,24)){
+      const f={x,z,w:spec.w,d:spec.d,rot:Math.atan2(tz*side,-tx*side)},r=Array.from({length:32},(_,k)=>minR*(1.25+0.12*Math.cos(2*(k/32*Math.PI*2-Math.atan2(tz,tx))))),rad=placeFitRadii({x,z,r},(X,Z)=>clear(X,Z,1.3),1,minR);
+      if(!rad||rad.some(v=>v<minR))continue;
+      const wallRad=Float32Array.from(rad),ward={x,z,r:Math.max(...wallRad),wallRad,gateA:Math.atan2(q.z-z,q.x-x),stone:false},p=serviceDoor(f,2.2),site={spec,f,ward,path:[p,q]};if(!check(site))continue;
+      const per=circuitLen(ward),score=hAt(x,z)-dist2d(x,z,s.pos.x,s.pos.z)*0.03-per*0.025;if(score>bv){bv=score;best=site;}
+    }return best;
+}
+function castleFoundationProposal(s,si){
+  if(!castleFoundationAuthority(s)||s.siegeBy||!s._lay?.live?.keepFoundation||s.owner>0&&W.houses[s.owner].exiled||casKeep(s)||casRing(s)||(W.projects||[]).some(q=>q.type==='castle'&&!q.dead&&q.si===si))return null;
+  const spec=castleFoundationSpec(s),base=500*spec.w*spec.d/169*PL(),minR=Math.hypot(spec.w,spec.d)/2+13,minPer=64*minR*Math.sin(Math.PI/32),minLen=Math.max(0,minR-spec.d/2-2.2),lower=base+wallCost(s,false,minPer)+minLen*0.8*PL()+(spec.timberTower+minPer*0.25)*price(s,'timber')+spec.stone*price(s,'stone');if(purse(s.owner)<lower*1.25)return null;
+  const seat=s===W.capital||s.owner>0&&W.settlements[W.houses[s.owner].seat]===s,V=townWorth(s)*(seat?1.6:1)+3000*casLvl(s),gain=(0.06*townThreat(s)+(seat?0.01:0))*V; // the existing ward's defence factor; a tower alone adds no circuit strength
+  if(gain<=lower)return null;const site=castleFoundationSite(s,spec);if(!site)return null;
+  const per=circuitLen(site.ward),len=polyLen(site.path),timber=spec.timberTower+per*0.25,stone=spec.stone,labour=base+wallCost(s,false,per)+len*0.8*PL(),materialEstimate=timber*price(s,'timber')+stone*price(s,'stone');
+  let landOpportunity=0;if(W.land?.mask){const used=new Map();for(const i of castleFoundationGround(site).cells)if(W.land.mask[i*4+2]!==255){const f=furlongAt(cellX(i%GRID),cellZ((i/GRID)|0));if(f)used.set(f,(used.get(f)||0)+225);}for(const[f,area]of used)landOpportunity+=landPrice(f)*Math.min(1,area/Math.max(1,f.area||20000));}
+  const cost=labour+materialEstimate,net=gain-cost-landOpportunity;
+  if(!(net>0)||purse(s.owner)<cost*1.25)return null;
+  return {si,payer:s.owner,site,spec,x:site.f.x,z:site.f.z,timber,stone,labour,materialEstimate,landOpportunity,cost,gain,net,days:Math.ceil(60+per/15+spec.timberTower/2+stone/0.5+len/4),title:'First keep and palisaded yard'};
+}
+function castleFoundationCommission(s,si){const Q=castleFoundationProposal(s,si);if(!Q)return null;
+  const q={...Q,type:'castle',start:day(),worked:0,done:0,paid:0,materialPaid:0,timberInstalled:0,stoneInstalled:0,dead:false,stalled:false};(W.projects||(W.projects=[])).push(q);G.ordersDirty=true;
+  emit(q.payer>0?'house':'trade',4,{x:q.x,z:q.z},`${q.payer>0?W.houses[q.payer].name:'The crown'} commissions a first keep and palisaded yard at ${s.name}, to be built in ${q.days} paid working days.`);return q;
+}
+function castleFoundationTick(q){
+  if(q.dead)return;
+  const s=W.settlements[q.si],hi=q.payer;if(!s||s.owner!==hi||!castleFoundationAuthority(s,hi)||casKeep(s)||casRing(s)){q.dead=true;if(s)emit(hi>0?'house':'trade',3,s.pos,`The first castle works at ${s.name} are abandoned: the patron no longer holds its seat, or a castle already stands there.`);return;}
+  const stall=reason=>{if(q.reason!==reason){const why={exile:'its patron is in exile',siege:'the place is besieged','site-obstructed':'the surveyed ground or approach is no longer clear',funds:'its patron cannot pay the next day',materials:'the timber or stone is not yet secured',workers:'there are no workers to hire'}[reason];emit(hi>0?'house':'trade',2,s.pos,`The first castle works at ${s.name} wait: ${why}.`);}q.stalled=true;q.reason=reason;},payer=purseAcct(hi);if(hi>0&&W.houses[hi].exiled){stall('exile');return;}if(s.siegeBy){stall('siege');return;}
+  if(!castleFoundationSite(s,q.spec,q.site)){stall('site-obstructed');return;}
+  const rate=q.labour/q.days,share=Math.min(1,Math.max(0,q.days-q.worked))*rate;if(means(payer)<share){stall('funds');return;}
+  if(!q.materials){for(const g of ['timber','stone']){const installed=q[g+'Installed']||0,need=Math.max(0,q[g]-installed);if(!(need>0))continue;
+      let used=consumeOwnStock(s,payer,g,need);const left=need-used,unit=price(s,g),want=Math.min(left,unit>0?Math.max(0,means(payer)-share)/unit:left);
+      if(want>0){const before=means(payer);used+=buyBuildingMaterial(s,g,payer,want);q.materialPaid+=Math.max(0,before-means(payer));}
+      q[g+'Installed']=Math.min(q[g],installed+used);
+    }if(q.timberInstalled<q.timber||q.stoneInstalled<q.stone){stall('materials');return;}q.materials=true;}
+  if(q.worked<q.days){const paid=buildWorks(s,share,payer,'castle works')||0;if(!(paid>0)){stall('workers');return;}q.paid+=paid;q.worked=Math.min(q.days,q.worked+(paid>=share-1e-9?share/rate:paid/rate));if(q.days-q.worked<1e-9)q.worked=q.days;q.done=q.worked/q.days;}
+  q.stalled=false;q.reason=null;if(q.worked<q.days)return;
+  const b=s._lay.live.keepFoundation(q.site);if(!b){stall('site-obstructed');return;}markOccupiedGround(s,castleFoundationGround(q.site).polys);q.dead=true;bindPropertyRights(s);syncLive(s);
+  emit(hi>0?'house':'trade',5,b,`${hi>0?W.houses[hi].name:'The crown'} completes the first ${q.spec.timber?'timber':'stone'} keep and palisaded yard at ${s.name}.`);
+}
+function castleFoundationDemand(s,g){const si=W.settlements.indexOf(s);let n=0;for(const q of W.projects||[])if(q.type==='castle'&&!q.dead&&q.si===si)n+=Math.max(0,(q[g]||0)-(q[g+'Installed']||0));return n;}
 function casNext(s,ad){ // the castle works worth doing next: each weighed by what it adds to the defence of what the castle protects, against the danger and the cost; the best that pays for itself
   const R=casRing(s),c=casOf(s),k=casKeep(s),st=casStone(s),yr=year(),ok=key=>!(c.tried[key]>yr-10),lv=casLvl(s);
   const hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed&&b.state==='sound');
@@ -6981,6 +7110,7 @@ function casNext(s,ad){ // the castle works worth doing next: each weighed by wh
   const add=(k2,cr,stn,t2,g,dign)=>{const cost=Math.round((cr+(stn-Math.min(have,stn))*3)*PL()),gain=g*th*V+(dign||0)*V;L.push({k:k2,cr,st:stn,t:t2,cost,gain,net:gain-cost});};
   const dm=castleDamage(s);if(dm>0.02||fortCircuits(s).some(q=>q!==s&&q.breachUntil>day()))add('repair',Math.round(200+dm*1500),Math.round(dm*200),'the battered castle repaired',Math.max(0.1,dm)*0.6);
   if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))add('keep',500,150,'the keep rebuilt in stone',0.06);
+  if(k&&k.timberKeep&&ad>=1070&&ok('timberStone'))add('timberStone',500*k.w*k.d/169,150*k.w*k.d/169,'the timber keep rebuilt in stone',0.06);
   if(s.bailey&&!s.baileyStone&&ad>=1150)add('bailey',600,120,'the bailey walled in stone',0.05);
   if(!R&&k&&!k.motte&&ad>=1000&&ok('ward'))add('ward',ad>=1150?900:400,ad>=1150?120:0,ad>=1150?'a curtain of stone about the keep':'a palisade about the keep',0.06);
   if(R){
@@ -7475,7 +7605,7 @@ function projectBuildingInstance(b){
   else{const tc=Math.min(2,b.tier);col=PAL.tierWall[tc];roofCol=ROOFS[tc][Math.floor(hue*3)%3]; // a fourth storey is built as the third (timber jettied on stone)
     if(b.arch==='temple'){col=0xd6ceba;roofCol=0x4f5866;}
     if(b.arch==='keep'||b.arch==='tower'){col=0x9a948a;roofCol=0x4f5866;}
-    if(b.motte){col=0x6e5334;roofCol=0x5a4630;}
+    if(b.motte||b.timberKeep){col=0x6e5334;roofCol=0x5a4630;}
     if(b.arch==='smithy')roofCol=0x5a5048;
     if(b.arch==='tannery'){col=0x7a6a52;roofCol=0x4e4436;} // low open-sided sheds, stained walls
     if(b.arch==='quarry'){col=0x9d978c;roofCol=col;}
@@ -7487,7 +7617,7 @@ function projectBuildingInstance(b){
   else setInst(G.bodies,i,b.x,y0,b.z,b.rot,b.w,(b.y-y0)+h,b.d); // foundations reach down to the lowest corner
   { // how its walls are built, and what its street front is for
     const A=G.bodies.geometry.attributes,a=b.arch;
-    const mat=a==='temple'&&tL&&!tL.ch.stone?2:a==='temple'||a==='keep'&&!b.motte||a==='tower'||a==='wall'?3:b.motte||a==='tannery'?2:b.tier===2?1:b.tier===0?2:0;
+    const mat=a==='temple'&&tL&&!tL.ch.stone?2:a==='temple'||a==='keep'&&!b.motte&&!b.timberKeep||a==='tower'||a==='wall'?3:b.motte||b.timberKeep||a==='tannery'?2:b.tier===2?1:b.tier===0?2:0;
     const kind=a==='shop'||a==='bakery'||a==='guildhall'||a==='burgher'&&b.district==='market'?1:a==='smithy'||a==='warehouse'||a==='granary'||a==='mill'||a==='tannery'||a==='dyer'?2:0;
     A.aKind.setX(i,mat+kind*4);A.aFront.setXY(i,b.fx||0,b.fz||0);A.aBase.setX(i,Math.max(0,b.y-y0));
     A.aKind.needsUpdate=A.aFront.needsUpdate=A.aBase.needsUpdate=true;
@@ -7495,7 +7625,7 @@ function projectBuildingInstance(b){
   C1.setHex(col);if(b.state==='sound')C1.offsetHSL((hue-0.5)*0.03,(hue-0.5)*0.12,(hash01(i+7)-0.5)*0.1);
   G.bodies.setColorAt(i,C1);
   const RA=G.roofs.geometry.attributes;RA.aGableColor.setXYZ(i,C1.r,C1.g,C1.b);RA.aKind.setX(i,G.bodies.geometry.attributes.aKind.getX(i)%4);
-  const covering=b.motte?1:roofCol===0x4f5866||roofCol===0x606876?2:b.tier===0&&b.arch!=='inn'||tL&&!tL.ch.stone?0:1;
+  const covering=b.motte||b.timberKeep?1:roofCol===0x4f5866||roofCol===0x606876?2:b.tier===0&&b.arch!=='inn'||tL&&!tL.ch.stone?0:1;
   RA.aRoofKind.setX(i,covering);for(const a of['aGableColor','aKind','aRoofKind'])RA[a].needsUpdate=true;
   const ruined=b.state==='ruin'||b.state==='rubble';
   if(b.arch==='court'&&!ruined){const fr=Math.min(6,b.d*0.36),[X,Z]=locW(b,0,b.d/2-fr/2);setInst(G.roofs,i,X,b.y+h,Z,b.rot,b.w*1.03,fr*0.6,fr*1.15);}
@@ -7544,7 +7674,7 @@ function rebuildDetails(){
         if(yard.adjunct&&N>2)for(let j=0;j<N;j++){const a=yard.poly[j],q=yard.poly[(j+1)%N],dx=q.x-a.x,dz=q.z-a.z,L=Math.hypot(dx,dz),n=Math.max(1,Math.ceil(L/2.4));for(let k=0;k<n;k++){const t=(k+0.5)/n,X=a.x+dx*t,Z=a.z+dz*t;put('box',X,hAt(X,Z)+0.28,Z,Math.atan2(dz,dx),L/n+0.08,0.56,0.42,0x777267,3);}}
         const graves=graveyardMarkers(yard,BACKGROUND?b._graveCount:graveyardBurials(b.s,b).length);for(const g of graves){const gy=hAt(g.x,g.z);if(g.kind==='tomb')put('box',g.x,gy+0.18,g.z,g.rot,1.05,0.28,0.68,0x89857b,3);else put('box',g.x,gy+0.52,g.z,g.rot,0.76,0.92,0.22,0xaaa69b,3);}
       }
-    }else if(b.arch==='keep'&&b.motte){ // a timber tower: a steep shingled roof and a fighting gallery
+    }else if(b.arch==='keep'&&(b.motte||b.timberKeep)){ // a timber tower: a steep shingled roof and a fighting gallery
       const[x,z]=at(b,0,0);put('box',x,b.y+h*0.78,z,b.rot,b.w*1.25,1.2,b.d*1.25,0x5f4630);put('pyr',x,b.y+h,z,b.rot,b.w*1.3,h*0.55,b.d*1.3,0x4a3a2a);
     }else if(b.arch==='keep'){ // corner turrets with conical caps
       for(const[sx,sz]of[[1,1],[-1,1],[-1,-1],[1,-1]]){
@@ -8664,19 +8794,22 @@ function graveyardMarkers(yard,count){
   const c=Math.cos(yard.rot||0),sn=Math.sin(yard.rot||0),step=2.65,u0=yard.uMin??-yard.w/2,u1=yard.uMax??yard.w/2,v0=yard.vMin??-yard.d/2,v1=yard.vMax??yard.d/2;for(let v=v0+1.4;v<v1-1&&out.length<count;v+=step)for(let u=u0+1.4+(Math.round((v-v0)/step)%2)*0.7;u<u1-1&&out.length<count;u+=step){const x=yard.x+u*c+v*sn,z=yard.z-u*sn+v*c,kind=out.length%4===0?'tomb':'stone',[sx,sz]=kind==='tomb'?[1.05,0.68]:[0.76,0.22];if(!graveyardFootprintInside(yard,x,z,sx,sz))continue;out.push({x,z,rot:yard.rot||0,kind});}
   return out;
 }
-function markChurchyardBuilt(s,yard){ // reserve intersected 15 m land cells and clear only trees inside the actual boundary
-  if(!W.land?.mask||!yard?.poly?.length)return;const P=yard.poly,mask=W.land.mask,affected=new Set();let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;
+function occupiedGroundCells(P){ // the exact intersected cells of the existing 15 m agricultural mask
+  if(!P?.length)return [];let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;const cells=[];
   for(const q of P){x0=Math.min(x0,q.x);x1=Math.max(x1,q.x);z0=Math.min(z0,q.z);z1=Math.max(z1,q.z);}
   const c0=toCell(x0-8),c1=toCell(x1+8),r0=toCell(z0-8),r1=toCell(z1+8),hit=(cx,cz)=>{const ax=cellX(cx)-7.5,bx=cellX(cx)+7.5,az=cellZ(cz)-7.5,bz=cellZ(cz)+7.5,C=[[ax,az],[bx,az],[bx,bz],[ax,bz]];
     if(C.some(([x,z])=>inPolyXZ(P,x,z))||P.some(q=>q.x>=ax&&q.x<=bx&&q.z>=az&&q.z<=bz))return true;
     for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length];for(let j=0;j<4;j++){const u={x:C[j][0],z:C[j][1]},v={x:C[(j+1)%4][0],z:C[(j+1)%4][1]};if(segSegDist(a,b,u,v)<0.01)return true;}}return false;};
-  for(let cz=Math.max(0,r0);cz<=Math.min(GRID-1,r1);cz++)for(let cx=Math.max(0,c0);cx<=Math.min(GRID-1,c1);cx++){
-    const x=cellX(cx),z=cellZ(cz);if(!hit(cx,cz))continue;
-    const i=cIdx(cx,cz);if(mask[i*4+2]!==255){mask[i*4+2]=255;const f=furlongAt(x,z);if(f)affected.add(f);}
-  }
-  for(const f of affected){refreshArea(f);writeFurlong(f);}if(affected.size&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;
-  const R=Math.max(x1-x0,z1-z0)/2+3;if(W.treeHash)for(const t of W.treeHash.near((x0+x1)/2,(z0+z1)/2,R))if(!t.cut&&inPolyXZ(P,t.x,t.z)){t.cut=true;queueTree(t);}
+  for(let cz=Math.max(0,r0);cz<=Math.min(GRID-1,r1);cz++)for(let cx=Math.max(0,c0);cx<=Math.min(GRID-1,c1);cx++)if(hit(cx,cz))cells.push(cIdx(cx,cz));return cells;
 }
+function markOccupiedGround(s,polys){ // reserve actual ground and clear only trees inside its surveyed boundaries
+  if(!W.land?.mask||!polys?.length)return;const mask=W.land.mask,affected=new Set();
+  for(const i of new Set(polys.flatMap(occupiedGroundCells)))if(mask[i*4+2]!==255){mask[i*4+2]=255;const f=furlongAt(cellX(i%GRID),cellZ((i/GRID)|0));if(f)affected.add(f);}
+  for(const f of affected){refreshArea(f);writeFurlong(f);}if(affected.size&&(MODEL_ONLY||G.landView?.maskTex))G.landMaskDirty=true;
+  if(W.treeHash)for(const P of polys){const xs=P.map(q=>q.x),zs=P.map(q=>q.z),x0=Math.min(...xs),x1=Math.max(...xs),z0=Math.min(...zs),z1=Math.max(...zs),R=Math.max(x1-x0,z1-z0)/2+3;
+    for(const t of W.treeHash.near((x0+x1)/2,(z0+z1)/2,R))if(!t.cut&&inPolyXZ(P,t.x,t.z)){t.cut=true;queueTree(t);}}
+}
+function markChurchyardBuilt(s,yard){markOccupiedGround(s,yard?.poly?.length?[yard.poly]:[]);}
 function finishChurchyard(s,b,addStreet){const yard=b?._graveyard;if(!yard||yard.removed||!W.land?._surveyed||!b.lot?.length)return;
   if(yard.adjunct&&!yard.footpath&&yard.access?.length>1&&addStreet){yard.footpath=addStreet(yard.access,0.85,'lane',{name:null,churchyardAccess:true,serviceAccess:'churchyard'});if(yard.footpath){G.roadsDirty=true;G.detDirty=true;for(const q of yard.access)clearLandAt(q.x,q.z,1.1);}}
   markChurchyardBuilt(s,yard);
@@ -10614,6 +10747,7 @@ function tickProjects(){ // daily: the works go forward as far as they are paid 
   const L=W.projects;if(!L||!L.length)return;
   const n0=L.length,st0=L.map(q=>!!q.stalled).join();
   for(let i=L.length-1;i>=0;i--){const q=L[i];
+    if(q.type==='castle'){castleFoundationTick(q);if(q.dead){L.splice(i,1);G.ordersDirty=true;}continue;}
     if(q.type==='storage'){storageProjectTick(q);if(q.dead){L.splice(i,1);G.ordersDirty=true;}continue;}
     if(q.type==='road'||q.type==='pave'){
       if(q.type==='pave'){const need=q.r.len*0.12/q.days,A=W.settlements[q.r.a],Bt=W.settlements[q.r.b],src=(A.stores.stone||0)>=need?A:(Bt.stores.stone||0)>=need?Bt:null; // the setts come from the yards of either end
@@ -10704,14 +10838,14 @@ function tickLordPlayer(){ // what comes to a lord's table
 
 function tickCastles(){
   const ad=AD();
-  W.settlements.forEach((s,si)=>{if(day()%360!==(si*47+170)%360||!s._lay||!s._lay.live||s.siegeBy)return;
-    if(!casKeep(s)&&!casRing(s))return;
+  W.settlements.forEach((s,si)=>{const annual=day()%360===(si*47+170)%360;if(!s._lay?.live||s.siegeBy||!annual&&!castleFoundationAuthority(s))return;
+    if(!casKeep(s)&&!casRing(s)){castleFoundationCommission(s,si);return;}if(!annual)return;
     const hi=s.owner,Lh=hi>0?W.houses[hi]:null;if(Lh&&Lh.exiled)return;
     const c=casOf(s),n=casNext(s,ad);c.next=n;if(!n)return;
     const have=s.stores.stone||0,useS=Math.min(have,n.st),cost=n.cost; // a lord pays dear for stone carted from afar
     if(n.net<=0||purse(hi)<cost*1.25)return; // worth it against the danger and what it protects, and within the purse (with a little held back)
     const k0motte=!!(casKeep(s)||{}).motte;let ok=true,sync=false;const L=s._lay.live,hall=s.buildings.find(b=>b.bailey&&b.arch==='hall'&&!b.removed);
-    if(n.k==='keep'){ok=L.rebuildKeep();if(ok)s.motteStone=true;sync=true;}else if(n.k==='bailey')ok=L.stoneBailey();
+    if(n.k==='keep'){ok=L.rebuildKeep();if(ok)s.motteStone=true;sync=true;}else if(n.k==='timberStone'){ok=L.stoneTimberKeep();sync=true;}else if(n.k==='bailey')ok=L.stoneBailey();
     else if(n.k==='ward'){ok=L.ward(ad>=1150);sync=true;}else if(n.k==='outer'){ok=L.outer();sync=true;}else if(n.k==='chapel'){ok=L.chapel();sync=true;if(ok)c.chapel=true;}
     else if(n.k==='wardStone')s.ward.stone=true;else if(n.k==='towers'){c.towers+=2;if(ad>=1200)c.round=true;}else if(n.k==='gate')c.gate=1;else if(n.k==='barb')c.gate=2;
     else if(n.k==='round')c.round=true;else if(n.k==='repair')repairCastle(s);else if(n.k==='hall'&&hall){hall.tier=2;hall.h=ARCH.hall[2]*1.3;updateBuildingInstance(hall);}
@@ -10719,12 +10853,12 @@ function tickCastles(){
     fortPrepare(s);if(['bailey','ward','wardStone','outer','keep'].includes(n.k)){const R=n.k==='keep'?s.motte:n.k==='outer'?c.outerWall:casRing(s);if(R)wallWorks(R,n.k==='bailey'||n.k==='wardStone'||n.k==='keep');}
     buildWorks(s,cost,purseAcct(hi),'castle works');buyBuildingMaterial(s,'stone',houseAcct(hi),useS);
     const who=Lh?Lh.name:'The crown',kn=casKeep(s),cn=kn&&buildingName(kn)||'the castle of '+s.name;
-    const t={repair:`Masons make good the battered curtain of ${cn}; the breaches are walled up.`,keep:k0motte?`${who} has the timber tower of ${cn} pulled down and a keep of stone raised on the motte.`:`${who} rebuilds the keep of ${s.name} as a great tower of stone.`,
+    const t={repair:`Masons make good the battered curtain of ${cn}; the breaches are walled up.`,timberStone:`${who} rebuilds the timber keep of ${s.name} in stone on its own ground.`,keep:k0motte?`${who} has the timber tower of ${cn} pulled down and a keep of stone raised on the motte.`:`${who} rebuilds the keep of ${s.name} as a great tower of stone.`,
       bailey:`The palisade of the bailey at ${cn} is taken down and the bailey walled in stone.`,ward:`${who} throws ${n.t} at ${s.name}; the houses within the yard are pulled down.`,wardStone:`The palisade about ${cn} is rebuilt in stone.`,towers:`Two towers are added to the curtain of ${cn}.`,
       gate:`A gatehouse of two towers is built at ${cn}, its passage closed by a portcullis.`,hall:`A great hall of stone is raised in the yard of ${cn}.`,chapel:`A chapel is built in the yard of ${cn}.`,
       round:`The old square towers of ${cn} are rebuilt round, the better to turn the stones of a siege engine.`,barb:`A barbican is built before the gate of ${cn}.`,
       outer:`An outer curtain is thrown about ${cn}: a concentric castle now, ward within ward${s._outerCleared>2?`; ${s._outerCleared} houses are pulled down for it`:''}.`}[n.k];
-    if(n.k!=='keep'&&n.k!=='bailey')s.history.push({yr:year(),t});c.next=casNext(s,ad); // those two write their own line
+    if(n.k!=='keep'&&n.k!=='bailey'&&n.k!=='timberStone')s.history.push({yr:year(),t});c.next=casNext(s,ad); // the keep and bailey operations write their own line
     if(sync)syncLive(s);else{rebuildWalls();G.detDirty=true;}
     emit(hi>0?'house':'trade',n.k==='outer'||n.k==='ward'||n.k==='gate'?3:1,kn||casRing(s),t);
   });}
@@ -11882,10 +12016,10 @@ function tickStone(){ // closing demand: what remains to be built, for departing
   const ad=AD();
   for(const s of W.settlements){
     let w=0;if(ad>=1150){if(s.walls===1||s.kind!=='village'&&!s.wallRad&&s.pop>750)w+=stoneFor(s,'wall');if(s.bailey&&!s.baileyStone)w+=stoneFor(s,'bailey');if(s.bastions&&!s.citadel)w+=stoneFor(s,'citadel');}
-    if(ad>=1070&&!s.motteStone&&(s.motte||ad>=1150))w+=stoneFor(s,'keep');for(const b of s.buildings)if(b.ch&&b.ch.next&&!b.removed)w+=b.ch.next.st||0; // what the parish masons will want
+    if(ad>=1070&&!s.motteStone&&(s.motte||ad>=1150)&&!(W.projects||[]).some(q=>q.type==='castle'&&!q.dead&&W.settlements[q.si]===s))w+=stoneFor(s,'keep');for(const b of s.buildings)if(b.ch&&b.ch.next&&!b.removed)w+=b.ch.next.st||0; // what the parish masons will want
     if(s.cas&&s.cas.next)w+=s.cas.next.st||0;
     if(ad>=1200&&s.prosperity>55&&s.kind!=='village')w+=stoneFor(s,'house')*12;if(ad>=1250&&s.harbor)w+=stoneFor(s,'wharf');
-    s._stoneWant=w+storageMaterialDemand(s,'stone');}
+    s._stoneWant=w+storageMaterialDemand(s,'stone')+castleFoundationDemand(s,'stone');s._timberWant=castleFoundationDemand(s,'timber');}
   for(const q of W.projects||[])if(q.type==='pave'){const A=W.settlements[q.r.a];A._stoneWant=(A._stoneWant||0)+q.r.len*0.12*(1-q.done);}} // a road to be paved wants its setts
 function tickShips(){
   W.ships=W.ships||[];const now=day(),ad=AD();
@@ -12044,6 +12178,7 @@ function spareOf(s,g){ // what a place can send away: a hungry town keeps its fo
   if(LU[g]!==undefined)return (s.stores[g]||0)-(s._want?s._want[g]:1e9); // a place sells only the beasts it does not need
   if(g==='wool')return (s.stores.wool||0)-woolWant(s)*4;
   if(g==='stone')return (s.stores.stone||0)-(s._stoneWant||0);
+  if(g==='timber'&&s._timberWant)return (s.stores.timber||0)-s._timberWant;
   if(g==='hay')return (s.stores.hay||0)-(s._hayWant||0); // a farmer sells only the hay his own beasts will not need this winter // a town keeps the stone its own works want
   return s.stores[g];}
 function closedToTrade(s,from){ // plague, sealed gates, or the besiegers' lines: a town part-encircled still trades on the roads they do not hold
@@ -12099,7 +12234,7 @@ const CRUMB=Object.fromEntries([...GOODS.filter(g=>!BEASTS.includes(g)),'char'].
 function foodIn(x){let n=0;for(const g of FOODS)n+=x[g]||0;return n;} // the food in a larder or a place's stores
 function price(s,g){if(s.px&&s.px[g]!=null)return s.px[g];const v=price0(s,g);(s.px||(s.px={}))[g]=v;return v;} // the price the market last found
 function price0(s,g){ // a first reckoning, before the market has traded: an opening value the market then moves (its 0.3-4x bounds are of that guess only, #23)
-  const need=(g==='hay'?(s._hayWant||0)*1.1:g==='stone'?(s._stoneWant||0)*1.2+s.pop*NEED.stone*25:g==='wool'?woolWant(s)*6:LU[g]!==undefined?(s._want?s._want[g]:0)*1.1:s.pop*NEED[g]*25+(s._lux&&s._lux[g]||0)*0.5)+5; // a stable short of horses, a village short of plough-oxen, a town of idle looms
+  const need=(g==='hay'?(s._hayWant||0)*1.1:g==='stone'?(s._stoneWant||0)*1.2+s.pop*NEED.stone*25:g==='wool'?woolWant(s)*6:LU[g]!==undefined?(s._want?s._want[g]:0)*1.1:s.pop*NEED[g]*25+(s._lux&&s._lux[g]||0)*0.5)+(g==='timber'?(s._timberWant||0)*1.2:0)+5; // a stable short of horses, a village short of plough-oxen, a town of idle looms
   return GOODBASE[g]*clamp(need*(g==='spice'||g==='silk'?(s.kind==='capital'?4:1)*(0.5+s.prosperity/80):1)/((s.stores[g]||0)+2),0.3,4); // the court and the rich towns pay most for the Levant's goods
 }
 /* a load goes on the road: a merchant of the place (or a stranger) buys it at the origin's price, and hires the carters */
@@ -14912,7 +15047,7 @@ function payWatch(s,young,v,payer){ // a garrison's month: its posts are taken b
 function payAmong(list,v,payer,why,town){ // wages shared among households
   if(!(v>0))return 0;if(!list.length){if(!payer)acct('crown',v,'Unclaimed wages',town);return 0;}/* no one to pay: the payer keeps it (or, already paid out, it falls to the crown) */const each=v/list.length;for(const h of list)transfer(payer,h,each,why,town);return v;}
 function buildWorks(s,cost,payer,why){ // building work: wages to the masons, carpenters, thatchers and carters of the place (or the nearest that has them); the payer has paid
-  if(!(cost>0)||!s)return;
+  if(!(cost>0)||!s)return 0;
   // Within one storage tick (its route batch) the place's builders and carters stand as they are: they are found once
   // and kept for its other carriage bills (#15); a bill still notes the masons a builderless place wants.
   const Q=typeof STORAGE_ROUTE_BATCHES!=='undefined'?STORAGE_ROUTE_BATCHES.get(s):null;let K=Q?.works;
@@ -14921,8 +15056,8 @@ function buildWorks(s,cost,payer,why){ // building work: wages to the masons, ca
     if(!own){want();const o=W.settlements.filter(x=>x!==s&&x.folk).sort((a,c)=>dist2d(a.pos.x,a.pos.z,s.pos.x,s.pos.z)-dist2d(c.pos.x,c.pos.z,s.pos.x,s.pos.z)).find(x=>workers_(x,h=>h.tr==='mason'||h.tr==='carpenter').length);if(o){B=workers_(o,h=>h.tr==='mason'||h.tr==='carpenter'||h.tr==='thatcher');if(!C.length)C=workers_(o,h=>h.tr==='carter');}}
     if(!B.length)B=workers_(s,()=>true);K={own,B,C};if(Q)Q.works=K;}
   else if(!K.own)want();
-  const {B,C}=K,H=hungryHands(s),lab=H.length?cost*0.25:0; /* the labourers who dig and carry for the masons: the hungry of the place, hired by the day (#23; paid in coin: works are paid from a purse, and the payer's corn may be the very load being carted) */
-  payAmong(B,(cost-lab)*(C.length?0.75:1),payer,why,s);if(C.length)payAmong(C,(cost-lab)*0.25,payer,why,s);if(lab>0)payAmong(H,lab,payer,why,s);}
+  const before=payer&&payer!=='out'?means(payer):null,{B,C}=K,H=hungryHands(s),lab=H.length?cost*0.25:0; /* the labourers who dig and carry for the masons: the hungry of the place, hired by the day (#23; paid in coin: works are paid from a purse, and the payer's corn may be the very load being carted) */
+  let paid=payAmong(B,(cost-lab)*(C.length?0.75:1),payer,why,s);if(C.length)paid+=payAmong(C,(cost-lab)*0.25,payer,why,s);if(lab>0)paid+=payAmong(H,lab,payer,why,s);return before===null?paid:Math.max(0,before-means(payer));} // only money actually paid advances a funded foundation
 function levy(s,v,to,why){ // a rate laid on the households by their means; returns what was gathered
   if(!(v>0))return 0;const H=heads_(s,h=>(h.w||0)>0);let tw=0;for(const h of H)tw+=h.w;if(tw<=0)return 0;let got=0;for(const h of H){const x=Math.min(h.w,v*h.w/tw);got+=transfer(h,to,x,why,s);}return got;}
 function compensate(payer,b,s,c){const hh=b.hh||[],own=ownerAcct(b,s);transfer(payer,own,hh.length?c*0.85:c,'works',s);for(const h of hh)transfer(payer,h,c*0.15/hh.length,'works',s);} // a house pulled down for a work: the owner has most of the price, the tenants something to go (the whole of it, with none)
@@ -15324,7 +15459,7 @@ function tickGrowthFabric(s){
     // rebuilding in better stuff: where the value it adds over the years repays the cost, and the owner can pay
     if(!s.siegeBy&&chance('sim',0.25)){
       const core=(s.extentR||s.radius||100)*0.4;
-      const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house')));
+      const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&!b.timberKeep&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house')));
       const shared=typeof lvReadNative==='function'&&lvReadNative('property');let F=null;
       let best=null,bv=0;for(let k=0;k<Math.min(12,ups.length);k++){const b=ups[randi('sim',ups.length)],gain=(shared&&b.s===s?propValueField(b,F||(F=lvField(s))):propValue(b))*25*0.25/(1+0.25*b.tier),cost=b.w*b.d*(b.tier<1?0.8:2.5),v=gain-cost;if(v>bv){bv=v;best=b;}}
       if(best){const b=best,own=ownerAcct(b,s);buildWorks(s,b.w*b.d*(b.tier<1?0.8:2.5),own,'building');
@@ -16145,6 +16280,7 @@ function refreshOrders(){ // a mark on everything an order is still working on: 
     if(q.type==='road'){const P=resample(q.P.path,24),k0=Math.floor(P.length*q.done);
       for(let k=k0;k<P.length;k++){const p=P[k],m=new THREE.Mesh(new THREE.BoxGeometry(0.8,5,0.8),mat(q.stalled?0x8a2f22:0xe0c070));m.position.set(p.x,hAt(p.x,p.z)+2.5,p.z);grp.add(m);} // surveyors' pegs where the road will run
     }else if(q.type==='pave'){const r=q.r,P=r.drawn||r.path;band(P,6.5,q.stalled?0x8a2f22:0xe0c070);}
+    else if(q.type==='castle'&&q.site){const R=q.site.ward,P=Array.from(R.wallRad,(r,k)=>{const a=k/R.wallRad.length*Math.PI*2;return{x:R.x+Math.cos(a)*r,z:R.z+Math.sin(a)*r};});P.push({...P[0]});const c=q.stalled?0x8a2f22:0xe0c070;band(P,1.3,c);band(q.site.path,1.3,c);}
     else if(q.type==='buy')ring(q.f.x,q.f.z,FG*0.55,0x3e5f8a);
     else if(q.type==='clear')ring(q.x,q.z,q.r+4,q.stalled?0x5a2020:0xc0392b);
     else if(q.type==='persuade')ring(q.x,q.z,(q.r||30)+4,0xc4a24a);
@@ -18574,7 +18710,7 @@ const VISUAL_ENTITY={
   banditCamp:(c,m)=>({...visualRecord(c,'',m),men:(c.men||[]).slice(0,12).map(visualPerson)}),
   dragon:(d,m)=>visualRecord(d,'path pos lair',m),
   road:(r,m)=>({...visualRecord(r,'path drawn bridges',m),renderKey:visualRoadKey(r)}),
-  project:q=>({...visualRecord(q,'cut st sts rad place'),P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null})};
+  project:q=>({...visualRecord(q,'cut st sts rad place site spec'),site:q.site?visualGeometry(q.site):null,P:q.P?{path:visualGeometry(q.P.path)}:null,r:typeof q.r==='number'?q.r:q.r?visualRecord(q.r,'path drawn'):null,f:q.f?{k:q.f.k,x:q.f.x,z:q.f.z}:null})};
 function workerTrackSegments(){return [...(W.trackSet||[])].map(k=>{const e=W.tg.E.get(k);return{a:{x:W.tg.pts[e.a].x,z:W.tg.pts[e.a].z},b:{x:W.tg.pts[e.b].x,z:W.tg.pts[e.b].z},L:e.L};});}
 function workerFenceSegments(){const out=[];for(const f of W.land.F){if(!fenceWorked(f))continue;const P=f.poly||computeFurlongPoly(f),stone=fenceStoneView(W.settlements[f.dom]);for(let k=0;k<P.length;k++){const a=P[k],b=P[(k+1)%P.length],g=a.nb>=0?W.land.F[a.nb]:null,ta=W.tg?.V.get(tgKey(a)),tb=W.tg?.V.get(tgKey(b)),lane=W.trackSet&&ta!==undefined&&tb!==undefined&&W.trackSet.has(ta<tb?ta+'_'+tb:tb+'_'+ta);if(!lane){if(g&&fenceWorked(g)&&g.dom===f.dom&&(g.state===LS.PASTURE)===(f.state===LS.PASTURE))continue;if(g&&fenceWorked(g)&&g.k<f.k)continue;}out.push({a:{x:a.x,z:a.z},b:{x:b.x,z:b.z},x:f.x,z:f.z,lane:!!lane,stone});}}return out;}
 function workerPresentation(bootstrap=false){

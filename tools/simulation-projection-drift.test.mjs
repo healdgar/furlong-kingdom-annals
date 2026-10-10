@@ -43,7 +43,7 @@ const WORKER_ONLY={
   army:{flag:'foreground flags are its own',target:'a settlement index when set'},
   caravan:{m:'merchant account',drv:'driver',crew:'crew',storageCargo:'cargo ledger (its id is the render key)'},
   dragon:{target:'the town it means to raid'},
-  project:{payer:'an account, for storage works',reason:'a sentence when set'},
+  project:{payer:'an account, for storage works',reason:'a sentence when set',spec:'the foundation construction bill; surveyed site geometry crosses'},
   road:{open:'the untrimmed open-country path; path and drawn cross'},
   banditCamp:{king:'a name when set'},
 };

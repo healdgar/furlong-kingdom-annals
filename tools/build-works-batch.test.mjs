@@ -14,7 +14,8 @@ function rng(seed){let x=seed>>>0;return()=>((x=Math.imul(x^x>>>15,0x2c1b3c6d)+0
 const harness=`${line('const dist2d=')}
 var W={settlements:[]},LOG=[];function householdsOf(s){return s.households||[];}
 function hungryHands(s){return s.hungry.map(i=>s.households[i]?.head).filter(Boolean);}
-function transfer(a,b,v,why){LOG.push([a.id,b.id,v,why]);return v;}function acct(x,v){LOG.push(['acct',x,v]);}
+function means(p){return p.gold;}
+function transfer(a,b,v,why){a.gold-=v;b.gold=(b.gold||0)+v;LOG.push([a.id,b.id,v,why]);return v;}function acct(x,v){LOG.push(['acct',x,v]);}
 ${line('function workers_(s,pred){')}
 ${block('function payAmong(','\nfunction buildWorks(')}
 ${block('const STORAGE_ROUTE_BATCHES=','\nlet STORAGE_NODE_DIST')}
@@ -24,7 +25,7 @@ function apply(op){const S=W.settlements;
   if(op.k==='world'){W.settlements=op.places.map(p=>({...p,households:p.households.map(h=>({head:h.head&&{...h.head}}))}));return;}
   const s=S[op.s];if(op.k==='tr'){const h=s.households[op.h];if(h&&h.head)h.head.tr=op.v;}else if(op.k==='dead'){const h=s.households[op.h];if(h&&h.head)h.head.dead=!h.head.dead;}
   else if(op.k==='add')s.households.push({head:{...op.head}});else if(op.k==='folk')s.folk=s.folk?undefined:[1];else if(op.k==='hungry')s.hungry=op.v;
-  else if(op.k==='bills'){const run=()=>{for(const x of op.bills)buildWorks(S[x.t],x.cost,{id:x.payer},x.why);};if(op.batch)storageRouteBatch(s,run);else run();}}
+  else if(op.k==='bills'){const run=()=>{for(const x of op.bills)buildWorks(S[x.t],x.cost,{id:x.payer,gold:1000},x.why);};if(op.batch)storageRouteBatch(s,run);else run();}}
 function wants(){return W.settlements.map(s=>s._unmet?[s._unmet.mason,s._unmet.carpenter]:null);}`;
 function realm(text){const c=vm.createContext({Math,Map,Set,WeakMap,Infinity,NaN});vm.runInContext(harness+'\n'+text,c);return c;}
 test('every bill pays as the original, in a storage tick or out of one',()=>{

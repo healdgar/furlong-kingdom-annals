@@ -58,10 +58,11 @@ test('daily quarry production keeps the former monthly physical rate and respect
   s.siegeBy=null;s.quarry.state='ruin';vm.runInContext('tickQuarries()',c);assert.equal(offers.length,30);
 });
 test('remaining stone demand is refreshed daily without producing another stone batch',()=>{
-  const s={stores:{stone:8},buildings:[],res:{},kind:'village',pop:100},q={type:'pave',r:{a:0,len:100},done:.25};
-  const c=vm.createContext({W:{settlements:[s],projects:[q]},AD:()=>850,storageMaterialDemand:()=>2});
-  vm.runInContext(fn('tickStone'),c);vm.runInContext('tickStone()',c);near(s._stoneWant,11);
-  q.done=.75;vm.runInContext('tickStone()',c);near(s._stoneWant,5);near(s.stores.stone,8);
+  const s={stores:{stone:8},buildings:[],res:{},kind:'village',pop:100},q={type:'pave',r:{a:0,len:100},done:.25},castle={type:'castle',si:0,stone:5,stoneInstalled:2,timber:8,timberInstalled:1};
+  const c=vm.createContext({W:{settlements:[s],projects:[q,castle]},AD:()=>850,storageMaterialDemand:()=>2});
+  vm.runInContext(fn('castleFoundationDemand')+'\n'+fn('tickStone'),c);vm.runInContext('tickStone()',c);near(s._stoneWant,14);near(s._timberWant,7);
+  q.done=.75;vm.runInContext('tickStone()',c);near(s._stoneWant,8);near(s.stores.stone,8);
+  castle.stoneInstalled=5;castle.timberInstalled=8;vm.runInContext('tickStone()',c);near(s._stoneWant,5);near(s._timberWant,0);
 });
 test('ward incorporation hands its fields over before later allocation',()=>{
   const a={name:'Ward',owner:1,furl:[{lord:1}],kind:'village'},b={name:'Town',owner:2},W={settlements:[a,b]},handovers=[];

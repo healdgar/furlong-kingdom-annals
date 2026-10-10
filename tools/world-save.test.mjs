@@ -9,12 +9,13 @@ import {Worker} from 'node:worker_threads';
 import {createHash} from 'node:crypto';
 import {gzipSync} from 'node:zlib';
 import {inlineGameScript,captureExpression} from './simulation-boundary.mjs';
+import {foundationFixtureExpression} from './castle-foundation-fixture.mjs';
 
 const SOURCE=inlineGameScript(fs.readFileSync(new URL('../index.html',import.meta.url),'utf8'));
 const N=37,K=55; // the save falls on no week, month or year: the journal's flushes, the month's reckoning and the year's turn come after it
 const KEYS=process.env.FURLONG_WORLD_SAVE_KEYS==='1'; // name the keys of W that differ (slower)
 
-const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,capture,keys,royal}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
+const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,capture,keys,royal,foundation,foundationInit}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
   for(const k of ['localStorage','sessionStorage','navigator'])Object.defineProperty(globalThis,k,{value:undefined,writable:true,configurable:true});
   Object.assign(globalThis,{FURLONG_HEADLESS:true,FURLONG_OPTIONS:{hash:'#s='+seed+'&f='+fate+'&c='+coast+'&y=850'},addEventListener(){},removeEventListener(){},requestAnimationFrame(){}});
   globalThis.__hashWorldGraph=graph=>{const digest=createHash('sha256'),feed=v=>{ // as tools/simulation-boundary.mjs hashes it
@@ -34,7 +35,9 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
   const play=async i=>{await R('STORAGE_OUTCOMES.wait()');if(R('simTick()')===false)throw Error('day '+i+' was blocked by the storage journal');if(i%8===0)await R('STORAGE_OUTCOMES.journal.flush()');};
   (async()=>{const out={},t0=process.cpuUsage();
     if(!doc){await R('startSimulation({seed:'+seed+',fate:'+fate+',coast:'+JSON.stringify(coast)+',startAD:850,outcomeJournal:'+journal+'})');
+      if(foundation)R(foundationInit);
       for(let i=1;i<=N;i++)await play(i);
+      if(foundation){const q=R('W.projects.find(q=>q.type==="castle"&&q.si===3)');if(!q||!(q.worked>0)||q.done>=1)throw Error('Foundation save must contain paid unfinished work');out.foundationAt={worked:q.worked,days:q.days};}
       R(\`(()=>{const s=W.capital,P=folkIndex(),h=headsOf(s)[0],f=(s.furl||[]).find(f=>P.has(f.wk));if(!h||!f)throw Error('court save fixture needs a head and holding');
         f._arr=10;courtPlead(s,'arrears',f.wk,10,f,lordAcct(s));
         courtPlead(s,'farm',h.id,10000,{who:h.id,arr:10000,paid:0},lordAcct(s)); // a retired farm survives through its unpaid plea alone
@@ -56,25 +59,26 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
     else{const l0=process.cpuUsage();await R('worldLoad(__doc,{source:__source,outcomeJournal:'+journal+'})');out.loadCPU=process.cpuUsage(l0);
       out.at=summary();out.doc=await R('worldSave({source:__source})');}
     out.days=[];for(let i=N+1;i<=N+K;i++){await play(i);out.days.push(day());}
-    out.end=summary();out.royal=R('W.houses[0]?.justice?.eyre?.sessions||0');out.cpu=process.cpuUsage(t0);parentPort.postMessage({done:out});})().catch(e=>parentPort.postMessage({error:String(e.stack||e)}));}`; // in a block: its names stay out of the game's global scope
+    out.end=summary();if(foundation)out.foundation=R('(()=>{const s=W.settlements[3],k=casKeep(s);return {keep:!!k,timber:!!k?.timberKeep,ward:!!s.ward,wallBuild:!!s.ward?.wallBuild,capturedKeep:s._lay.historyState().keep===k,pending:W.projects.some(q=>q.type==="castle"&&q.si===3)};})()');out.royal=R('W.houses[0]?.justice?.eyre?.sessions||0');out.cpu=process.cpuUsage(t0);parentPort.postMessage({done:out});})().catch(e=>parentPort.postMessage({error:String(e.stack||e)}));}`; // in a block: its names stay out of the game's global scope
 
 // One realm: the played one posts its document as soon as it has saved, then plays on; a loaded one is given a document.
 function realm(world,doc=null,onDoc=()=>{}){return new Promise((resolve,reject)=>{
-  const w=new Worker(REALM,{eval:true,workerData:{source:SOURCE,...world,N,K,doc,capture:captureExpression(),keys:KEYS}});
+  const w=new Worker(REALM,{eval:true,workerData:{source:SOURCE,...world,N,K:world.foundation?90:K,doc,capture:captureExpression(),keys:KEYS,foundationInit:foundationFixtureExpression}});
   w.on('message',m=>{if(m.error){reject(Error(m.error));w.terminate();}else if(m.doc)onDoc(m.doc);else if(m.done){resolve(m.done);w.terminate();}});
   w.once('error',reject);w.once('exit',code=>{if(code)reject(Error('realm exited '+code));});});}
 const differ=(a,b)=>Object.keys({...a,...b}).filter(k=>k!=='keys'&&JSON.stringify(a[k])!==JSON.stringify(b[k])).concat(a.keys&&b.keys?Object.keys({...a.keys,...b.keys}).filter(k=>a.keys[k]!==b.keys[k]).map(k=>'W.'+k):[]);
 const cpu=c=>((c.user+c.system)/1e6).toFixed(1)+' s';
 
-for(const world of [{seed:42,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea',royal:true}])
-  test(`world ${world.seed} ${world.coast}${world.royal?' (forced 1166 eyre)':''}: saved on day ${N} and loaded in a fresh realm, it goes on as the world that was saved`,async t=>{
+for(const world of [{seed:42,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea',royal:true},{seed:1001,fate:42,coast:'sea',foundation:true}])
+  test(`world ${world.seed} ${world.coast}${world.royal?' (forced 1166 eyre)':world.foundation?' (paid first castle)':''}: saved on day ${N} and loaded in a fresh realm, it goes on as the world that was saved`,async t=>{
     let loaded;const played=realm(world,null,doc=>{loaded=realm(world,doc);});
     const A=await played,B=await loaded;
     t.diagnostic(`document ${(A.doc.length/1e6).toFixed(2)} MB, gzipped ${(gzipSync(A.doc).length/1e6).toFixed(2)} MB; save ${cpu(A.saveCPU)} CPU, load ${cpu(B.loadCPU)} CPU; realms ${cpu(A.cpu)} and ${cpu(B.cpu)} CPU`);
     assert.equal(A.at.day,N);
     assert.deepEqual(differ(A.at,B.at),[],'the loaded world captures as the saved one');
     assert.equal(createHash('sha256').update(B.doc).digest('hex'),createHash('sha256').update(A.doc).digest('hex'),'saved again, the loaded world is the same document');
-    for(let i=0;i<K;i++)assert.deepEqual(B.days[i],A.days[i],`day ${N+1+i}`);
+    for(let i=0;i<(world.foundation?90:K);i++)assert.deepEqual(B.days[i],A.days[i],`day ${N+1+i}`);
     assert.deepEqual(differ(A.end,B.end),[],`the worlds after ${K} more days`);
+    if(world.foundation){assert.ok(A.foundationAt.worked>0);assert.deepEqual(A.foundation,{keep:true,timber:true,ward:true,wallBuild:false,capturedKeep:true,pending:false});assert.deepEqual(A.foundation,B.foundation);}
     if(world.royal){assert.ok(A.royal>0,'the continued native fixture actually hears royal cases');assert.equal(A.royal,B.royal);}
   });

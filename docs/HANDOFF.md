@@ -1,10 +1,12 @@
 # Handoff: state of work
 
-Updated 2026-10-10 in the cloud checkout for the validated daily growth/property and fitted settlement-layout release, after publishing daily storage, the daily-order refactor, general eyre and the river correction. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-10 in the cloud checkout for the daily funded first-castle foundation phase, following the published README/screenshots, daily growth/property and fitted settlement-layout work. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
-- **Current validated release batch (2026-10-10):** live property certificates, daily occupancy/due falls and independently reachable annual growth dates; operation-local valuation reuse removes repeated certification during unchanged selections. Greens and markets fit actual terrain/streets/fabric, greens use seasonal grass/snow, and fresh motte layouts retain a surveyed courtyard and feasible graded access. Recorded before implementation in `SIMULATION-GROWTH-INPUTS.md` and `OPEN-SPACES-AND-CASTLE-SITING.md`; final gates follow below. Housing/fabric still have the explicitly unfinished six-day rate throttle. The user's first-keep question exposed #60: existing castles develop and towns can build walls, but a seat/capital without a keep or castle ring cannot commission its first castle. The required funded daily project/site dependencies are recorded in the latter document. Next: paid construction progress and #60, then the remaining daily decision/rate splits; century-scale performance remains #15.
+- **README publication (2026-10-10, `55f1eca`):** the browser play link is directly below the title, with two native screenshots from the previously verified build in `assets/screenshots/`. Embedded advisor rules match the README; seven focused advisor/source checks pass and the executable scripts are byte-identical to `5b3f2f8`. GitHub Pages and container workflow 38076759405 succeeded; live HTML matches the commit (`8155d50486c1655f0fb64749791144a4e22b50c9b144445d28cec7f9ac514fae`). Castle foundation code remained outside this documentation-only release while its gates ran.
+
+- **Current castle phase (2026-10-10, #60):** an eligible, funded capital or lord's actual defensive seat can commission its first tower, fitted palisaded yard and connected approach. Native materials are bought from actual sellers; only paid labour advances the saved work, and the retained site is checked against current terrain, buildings, roads and title. Completion installs the canonical keep, ward, route and occupied ground in the simulation. The full 1,536-check suite, native 150-day mixed-speed/RNG/raw-outcome comparison, mid-project save continuation, worker/main completion parity and two one-year conservation worlds pass; final stamped drawing evidence follows below. Existing upgrades remain annual instant work, housing/fabric retain their six-day rate throttle, and general compound/abbey construction is not implemented. Next operable phase: direct deterministic AD 1066 starts retaining 850, tested through the 1066–1350 period, with explicit future technology hooks; then shared castle/abbey components and the remaining daily paid construction/rate splits. Century-scale throughput remains #15.
 
 - **2026-10-10, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. The user explicitly authorizes model/history changes for efficiency and accuracy; ordinary decisions should be daily, with other intervals justified by a simulation reason. Keep the sectioned file and simulation/render boundary. Four Luna surveys and root review are recorded in `docs/SIMULATION-ORDER.md` and `.json`: all 42 old phases, 52 current boundaries and 168 same-day prerequisites. The first refactor follows that order; mixed calendar decisions still need quantities, obligations and eligibility separated. The measured plan is in `docs/PERFORMANCE.md`; evidence follows below. Century-scale throughput is not yet achieved.
 - **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
@@ -828,3 +830,101 @@ stamped HTML and all three assets checked after deployment. #59's bounded
 fresh-layout/seasonal correction is complete; #60 remains open. Next: daily paid
 housing/fabric progress, first-castle proposals/projects, then remaining daily
 eligibility/rate splits and measured fast-forward work. #15 is still in progress.
+
+## Continuation, 2026-10-10: daily funded first-castle foundations
+
+Recorded before implementation in `CASTLE-FOUNDATIONS.md` and the daily-order
+contract. Eligible capitals, current lordly seats and defensive seats without
+a keep/ring now make daily, economically justified proposals. A retained
+terrain/title/building/road survey fits a tower, convex timber yard and graded
+connected approach. Materials come from actual sellers and native stock;
+`buildWorks` reports actual net payment, so unpaid or partly paid days cannot
+complete free work. Siege, exile, funds/material shortages and obstructed sites
+stall; loss of current authority abandons sunk work. Completion installs the
+native keep, ward, access, captured layout state and agricultural ground mask.
+The first tower is timber before the existing AD 1070 material boundary and
+stone thereafter. It adds no motte or unbought domestic/service buildings.
+
+The same 52 daily phases and 168 AST-checked prerequisites remain. Project
+progress precedes new proposals; remaining material demand is available before
+trade. Fresh operation-local hashes include standing footprints, lots and
+frontages, including same-count moves and cross-town obstacles. Two specific
+new search inventory sites are reviewed in the foundation note. The minimum
+yard radius stops inevitably failed radial surveys early; other callers retain
+their old fit path. Existing castle upgrades still use annual instant work,
+and ordinary housing/fabric still retain their six-day decision/rate debt.
+
+The batched eight-way suite passes all **1,536 checks**, including native
+mid-project world save/continuation through completion. Wall/children CPU:
+1,042.18/1,713.31 s, load 0.19/0.48/1.33→1.00/1.89/2.50. All 37 post-stamp
+advisor/source/order/geometry/search/projection checks pass. Every executable
+inline script is byte-identical before and after stamping.
+
+Native seed 1001:42 sea runs compare the full survey with the early-reject
+survey over 150 days, including steady versus all seven speed settings and
+host yields. Complete logical world/global/closure/layout/RNG graphs match at
+0/37/90/150, as do each daily RNG/command/annal/sequence and all **1,812 accepted
+raw storage events**, encoded individually with Float64/UTF16. Only playback
+preferences and asynchronous chunk packing are excluded. The construction
+fixture supplies a declared external stake and timber delivery offered by a
+native seller to an actual eligible border seat; it exercises native purchases,
+paid progress and canonical completion rather than demonstrating ordinary
+world calibration. Optimized native model CPU 116.77 s, initial load
+0.92/1.86/2.49, against 119.85 and 117.77 s under different loads: no resolved
+general speedup or paced-pump throughput claim.
+
+The Chrome worker/reference check advances 70 days, saves each driver's own
+world, then resumes each for another 70. Whole authoritative state and all
+eleven selected view projections match; opening those views leaves world/RNG
+unchanged. The work is paid but unfinished at day 70 and the canonical timber
+keep/ward is complete at day 140. A quoted working-day duration is not elapsed
+calendar time: this fixture waits for materials before paying installation.
+Worker advancement maintains the foreground heartbeat (maximum 24/29 ms in
+the two advancement windows); the main-thread reference blocks as expected.
+Serial wall 135.50 s, load 0.36/1.11/1.92→1.35/1.19/1.84; runner CPU 2.74 s
+excludes Chromium descendants.
+
+Both ordinary one-year Chrome worlds (42:42 and 1001:42 sea, AD 850) pass all
+eight conservation/sanity checks. Each has 720 independent inventory checks,
+zero yearly money residual, zero minted coin, zero payments to nobody and no
+simulation fault. Both end at 2,495 people; famine person-day shares are 0% and
+9.5%. These changed histories are not calibration clearance. Serial wall
+136.08 s, load 0.27/0.86/1.65→1.67/1.16/1.65; runner CPU 2.37 s excludes Chrome.
+Whole-year sampled CPU, including harness work, is 181 and 115 ms/day.
+Foundation siting remains a measured hot path: `tickCastles` takes 65.2 ms/day
+on seed 42 and 2.2 on 1001. A conservative operation-local bounding-box
+candidate awaits the next batch's native identity/performance gate; no stale
+cross-day site certificate or daily decision throttle is accepted. Century-scale
+throughput remains unfinished (#15).
+
+Tested pre-stamp HTML SHA256
+`8a73bb9f6de6126b35a1231c217207e8a779a81efd4d2b43f9fb9ba46e625326`;
+stamped HTML SHA256
+`3e6e4d615b45d1bb8c958d3cf2085dc7737daebeee4d4847be8b3b996356df70`;
+game-script SHA256
+`017f1aea2bacbe5b993920f497a24ebb665c4cbdd5f9904e2dcc4ad54d05693a`.
+Ignored evidence: `tools/soak-results/castle-foundations-20261010/`.
+
+The final stamped native drawn check passes 140 days with a money census and
+independent stock audit on every day, plus the declared fixture setup. Maximum
+daily money residual is 7.79e-11 coin; all 141 inventory checks match. Root
+inspected the paid site's survey band/approach, completed timber keep/ward and
+connected lane, winter yard and town. The atlas loads, the road mesh contains
+53,104 vertices and the final frame draws 1,772,182 triangles, with no shader,
+runtime, console or worker fault. Seasonal palettes are forced for the visual
+comparison; this does not claim natural winter advancement or Safari testing.
+The first capture harness omitted the frame loop's order/road/HUD refresh;
+the corrected harness passes without any game-code change. Final serial wall
+93.48 s, load 0.67/1.03/1.44→1.69/1.39/1.54; runner CPU 3.06 s excludes Chrome.
+The operable first-foundation phase closes #60. Release target is `origin/main`
+and [GitHub Pages](https://healdgar.github.io/furlong-kingdom-annals/); the live
+HTML and local texture bytes are checked after deployment.
+
+Next: #49's direct AD 1066 default and retained AD 850 option, with native
+1066/1250/1350 opening and continuation gates. The dependency record is
+`DIRECT-ERA-INITIALIZATION.md`; current production still starts from 850 and
+later choices run prehistory. A private candidate also supplies a pure shared
+construction-availability hook with the current calendar fallback; it does not
+implement technology knowledge/adoption (#44). `COMPOUND-BUILDINGS.md` records
+the general multi-purpose component framework and genuine abbey authority,
+rights, income, stock and funded construction; those remain future work.
