@@ -104,6 +104,17 @@ test('queued commands enter between whole ticks during bounded advance',async()=
   assert.deepEqual(JSON.parse(JSON.stringify(reply(f,2).value)),{day:3,complete:true});assert.equal(reply(f,3).value.day,1);
 });
 
+test('bounded advance stops at its target even when a petition restores paced or Reel speed',async()=>{
+  for(const index of [1,5]){
+    const f=hostFixture({tick(m){m.d++;f.c.setNow(f.c.now()+8);if(m.d===1)m.speed(index);return true;}},{budget:1});await initialize(f);
+    f.h.receive(msg(2,'advance',{days:3}));await settle(f);
+    assert.equal(f.model.d,3);assert.equal(f.model.idx,0);assert.equal(f.h.accum,0);assert.equal(f.c.jobs.size,0);
+    assert.deepEqual(JSON.parse(JSON.stringify(reply(f,2).value)),{day:3,complete:true});
+    f.c.setNow(f.c.now()+20000);f.h.wake(0);await settle(f);assert.equal(f.model.d,3,'no later wall time earns an extra day');
+    f.h.receive(msg(3,'advance',{days:2}));await settle(f);assert.equal(f.model.d,5);
+  }
+});
+
 test('control arriving during storage wait prevents the waiting tick',async()=>{
   let host,release,markWait;const waitStarted=new Promise(r=>markWait=r),gate=new Promise(r=>release=r),f=hostFixture({wait:async()=>{markWait();await gate;}});host=f.h;await initialize(f);
   f.h.receive(msg(2,'speed',{index:1}));await f.c.runNext();while(f.h.busy)await new Promise(r=>setImmediate(r));f.c.setNow(2000);f.h.wake(0);await f.c.runNext();await waitStarted;

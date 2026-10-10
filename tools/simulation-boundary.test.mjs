@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {runSimulation} from './simulation-boundary.mjs';
 
 test('full game source starts without DOM or THREE and advances eight canonical days',async()=>{
-  const r=await runSimulation({seed:1001,fate:42,coast:'sea',startAD:850,days:8,roundTrip:true});
+  const r=await runSimulation({sourcePath:process.env.FURLONG_TEST_SOURCE,seed:1001,fate:42,coast:'sea',startAD:850,days:8,roundTrip:true});
   assert.equal(r.readyDay,0);
   assert.equal(r.endDay,8);
   assert.ok(r.settlementCount>0);

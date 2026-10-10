@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // What simTick calls, in order: a sample belongs to the outermost of these on its stack.
-export const DAY_PARTS=['ownershipTick','tickWeather','tickEconomy','tickPopulation','tickPolitics','tickMilitary','tickDomains','tickThreats','tickGrowth','tickLand','tickHistory','tickProjects','tickFolk','tickLivestock','tickShips','tickStone','tickTravel','tickErrands','tickMetro','tickTenure','tickJustice','tickStreets','tickChurches','tickCastles','tickCourts','tickInfill','tickSettlers','tickRepairs','tickVictory','tickWallWorks','tickGarrisons','tickCallToArms','tickMigration','tickMarket','tickHouseholds','tickWays','tickTitles','tickSovereign','tickEnvoys','routingPrepare','commoditySettleAll'];
+export const DAY_PARTS=["ownershipTick","tickWeather","tickPolitics","tickMilitary","tickDomains","tickThreats","storagePrepare","tickCaravans","tickFolk","tickTravel","tickMigration","peoplePrepare","tickLand","tickTenure","tickLivestock","tickQuarries","tickEconomy","tickShips","tickMetro","tickStorage","tickSpoilage","tickMarket","tickPopulation","tickHouseholds","tickHistory","tickProjects","tickGrowth","tickStreets","tickChurches","tickCastles","tickCourts","tickInfill","tickSettlers","tickRepairs","tickWallWorks","tickWays","tickJustice","tickGarrisons","tickCallToArms","tickStone","routingPrepare","tickShipDepartures","tickTrade","tickErrands","tickSovereign","tickEnvoys","tickTitles","tickUpkeep","tickStorageInvestment","tickVictory","commoditySettleAll"];
 const VM=new Set(['(root)','(program)','(idle)','(garbage collector)']);
 
 /* Score a profile that covers `days` simulated days. Functions are named by their own name where only one function

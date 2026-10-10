@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 03:59 UTC · after 069787e</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 06:19 UTC · after 39d929e</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -5256,7 +5256,7 @@ function chooseLandUse(s,si,PM){ // once a year: corn, hay or a freeholder's gra
     setFurlong(f,LS.PASTURE);grSup-=corn;q.grow-=lambs;q.cash-=lambs*P.hay;q.past+=f.area;P.need=Math.max(0,P.need-f.area*P.gain);} // only the grass a real flock can fill and winter, where wool is wanted and the remaining corn covers the town's bread
   landYield(s);}
 function tickTitles(){ // the annals note who held what, and from when
-  if(day()%30!==13)return;for(const n of livingNotables()){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
+  for(const n of livingNotables()){if(!n.alive)continue;const k=n.role==='monarch'?'m0':n.role==='head'?'h'+n.house:'';if(!k||n._tk2===k)continue;n._tk2=k;
     const H=W.houses[n.house],seat=H&&W.settlements[H.seat];(n.titles||(n.titles=[])).push({d:day(),t:n.role==='monarch'?`${n.sex==='f'?'Queen':'King'} of the realm`:`Head of ${H?H.name:'the house'}${seat?', at '+seat.name:''}`});}}
 function houseOf(n){return W.houses[n.house];}
 function fullTitle(n){
@@ -11735,11 +11735,13 @@ function offRoute(si){ // from the edge of the world to this port, keeping to de
 /* stone: the quarry's, carried to where the masons want it; every work in stone waits on it */
 function stoneFor(s,what){const R=s.wallR||(s.radius||90)*1.3;return what==='wall'?Math.round(2*Math.PI*R*0.25):({keep:150,bailey:120,church:130,citadel:260,house:6,wharf:50}[what]||0);}
 const hasStone=(s,w)=>(s.stores.stone||0)>=stoneFor(s,w),useStone=(s,w)=>{s.stores.stone=Math.max(0,(s.stores.stone||0)-stoneFor(s,w));};
-function tickStone(){ // monthly: the quarries cut stone, and every place reckons what its planned works in stone will want
-  if(day()%30!==22)return;const ad=AD();
+function tickQuarries(){ // the old month's output, cut a day at a time
   for(const s of W.settlements){
     if(s.stores.stone==null)s.stores.stone=0;
-    if(s.quarry&&s.quarry.state!=='ruin'&&!s.siegeBy){const q=(s.res.stone||0)*2.2*clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1);s.stores.stone+=q;offer(s,'stone',ownerAcct(s.quarry,s),q);} // the quarry's owner sells what is cut
+    if(s.quarry&&s.quarry.state!=='ruin'&&!s.siegeBy){const q=(s.res.stone||0)*2.2/30*clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1);s.stores.stone+=q;offer(s,'stone',ownerAcct(s.quarry,s),q);}}}
+function tickStone(){ // closing demand: what remains to be built, for departing loads and tomorrow's market
+  const ad=AD();
+  for(const s of W.settlements){
     let w=0;if(ad>=1150){if(s.walls===1||s.kind!=='village'&&!s.wallRad&&s.pop>750)w+=stoneFor(s,'wall');if(s.bailey&&!s.baileyStone)w+=stoneFor(s,'bailey');if(s.bastions&&!s.citadel)w+=stoneFor(s,'citadel');}
     if(ad>=1070&&!s.motteStone&&(s.motte||ad>=1150))w+=stoneFor(s,'keep');for(const b of s.buildings)if(b.ch&&b.ch.next&&!b.removed)w+=b.ch.next.st||0; // what the parish masons will want
     if(s.cas&&s.cas.next)w+=s.cas.next.st||0;
@@ -11772,7 +11774,11 @@ function tickShips(){
       if(!W.prehistory&&(!s._shipNote||frand()<0.12)){s._shipNote=1;const gs=Object.keys(sh.cargo).map(g=>({spice:'pepper and cinnamon',silk:'silks',wine:'wine',fish:'stockfish',timber:'masts and planking',ore:'copper',cloth:'fine cloth'}[g]||g)).join(' and ');
         emit('trade',s._ships===1?5:3,sh.berth,vary('farship',[()=>`A ${sh.kind} out of ${sh.from} ties up at ${s.name} with ${gs}.`,()=>`${s.name}: the ${sh.kind} from ${sh.from} is warped in to the ${sh.berth.shore?'shore':'wharf'}, laden with ${gs}.`,
           ()=>`Sails from ${sh.from} off ${s.name}; by evening the ${sh.kind} is unloading ${gs} ${sh.berth.shore?'onto the shingle':'on the wharf'}.`,()=>`The customs men of ${s.name} weigh ${gs} off a ${sh.kind} of ${sh.from}, and the lord's dues are paid in silver.`]));}}
-    else if(sh.phase==='dock'){s._berthDays=(s._berthDays||0)+1;
+  }
+}
+function tickShipDepartures(){ // households and building works have first use of today's supplies
+  const now=day();for(let i=(W.ships||[]).length-1;i>=0;i--){const sh=W.ships[i],s=W.settlements[sh.port];
+    if(sh.phase==='dock'){s._berthDays=(s._berthDays||0)+1;
       if(now>=sh.until){ // loading for home: the wool and the cloth the far ports want
         let paid=0;for(const g of EXPORTS){const q=Math.min(Math.max(0,spareOf(s,g)),g==='horses'?6:g==='wool'?80:40);if(q>=1&&price(s,g)<GOODBASE[g]*1.2){const v=purchase(s,g,'out',q),got=purchase.got;if(got<1){if(got>0)commodityCreditPurchase(s,'out',g,got);continue;}if(s.storage&&!BEASTS.includes(g))storageConsumePurchased(s,'out',g,got,'foreign-export');else s.stores[g]-=got;sh.load[g]=got;paid+=v;}} // the foreigners buy where it is cheaper than at home // foreign silver to the sellers
         transfer('out',lordAcct(s),paid*0.05,'customs',s);
@@ -12329,12 +12335,11 @@ function tradeSpare(o,g){return LU[g]!==undefined?spareOf(o,g):Math.min(spareOf(
    beasts it lacks. So a gap draws loads enough to close it, and not a glut. */
 function tradeRoom(m,ratio,inb){const on=inb.get(m.k)||0;return Math.max(m.want*ratio-m.sale,m.short)-on;}
 function tickTrade(){
-  if(day()%2!==0)return;
   const S=W.settlements,NG=GOODS.length,inb=tradeOnTheWay(),markets=new Map(),destinationPrices=caravanPriceIndex(S),tollF=0.05+MOD.tax/100*0.14,harbors=[];
   for(let i=0;i<S.length;i++)if(S[i].harbor)harbors.push(i);
   const market=(di,g)=>{const k=di*NG+TRADE_GI[g];let m=markets.get(k);if(!m){const d=S[di];m={k,want:tradeWant(d,g),sale:avail(d,g,price(d,g)),short:LU[g]!==undefined&&d._want?(d._want[g]||0)-(d.stores[g]||0):0};markets.set(k,m);}return m;}; // read once a day, and the day's loads counted against it as they go
   const fear=t=>1-Math.min(1,t.infected/Math.max(1,t.pop)*5); // carters and masters shun a town with the pestilence in it, the more the worse
-  for(let oi=(day()>>1)&1;oi<S.length;oi+=2){ // every place, every fourth day (half of them each second day)
+  for(let oi=0;oi<S.length;oi++){ // every place can answer today's margin; goods, means and free drivers limit the loads
     const o=S[oi];if(closedToTrade(o))continue;
     const sell=[],po={},sp={};for(const g of GOODS){const v=tradeSpare(o,g);if(LU[g]!==undefined?v>(g==='horses'?2:6):v>5){sell.push(g);po[g]=price(o,g);sp[g]=Math.min(v,avail(o,g,po[g]));}} // what it has to sell, at what, and how much of it is on sale
     if(!sell.length)continue;
@@ -12373,7 +12378,7 @@ function tickTrade(){
 function tickEconomy(){
   const si=seasonIdx(),seasonF=[0.7,1.1,1.6,0.08][si];
   for(const s of W.settlements){
-    storageInit(s);storageTick(s);storageInvestment(s);const phaseK=commodityActive(s)?s.storage:undefined;
+    storageInit(s);const phaseK=commodityActive(s)?s.storage:undefined;
     const workF=clamp(s.pop/(s.pop+s.plagueDead+1),0.4,1)*(s.siegeBy?0.15:1),P0=['grain','fish','timber','ore'].map(g=>phaseK?phaseK.quantity(null,g,'unassigned'):s.stores[g]);
     if(W.land&&s._bearA==null)landYield(s);s.stores.grain+=(s._gYield&&s._bearA!=null?s._gYield*s._bearA:s.res.farm*0.92)*seasonF*MOD.harvest*(W.drought?0.35:1)*workF*(s.works&&s.works.mill?1.2:1)*(s.ploughF??1); // too little land under the plough, crops burned, or too few beasts to draw the plough
     s.stores.fish+=s.res.fish*0.8*workF;
@@ -12393,14 +12398,19 @@ function tickEconomy(){
     for(const g of GOODS){
       if(BOUGHT.includes(g)){for(const h of householdsOf(s))consumeOwned(s,h,g,(h.population.get(s)||0)*NEED[g]);for(const[o,x]of s._owners||[])if(!o||!o.household)consumeOwned(s,o,g,Math.min(x.held[g]||0,s.pop*NEED[g]));} // fuel burned, cloth and tools worn out, wine drunk: only what was bought (food is eaten in the population tick)
       if(LU[g]!==undefined){s.stores[g]=Math.max(0,s.stores[g]||0);continue;}
-      spoilOwned(s,g,g==='fish'&&tradeCounts(s).salter?SPOIL.fish*0.1:SPOIL[g]||0,phaseK); // spoilage reduces each owner's stock and today's unoffered output equally
-
     }
     // taxes on production (towns held by houses in arms against the crown pay nothing): the crown's own towns pay it in full;
     // a lord's towns owe the crown only its feudal aid, their rents being his
     // (the crown's tax is a hearth-penny paid by each household from its purse, once a year: tickTenure)
   }
-  tickTrade(); // carts, barges and cogs: what each place's dealers send where it pays
+}
+function storagePrepare(){for(const s of W.settlements)storageInit(s);} // every destination ledger is ready before cargo arrives
+function peoplePrepare(){W._pm=folkIndex();} // arrivals and new families have changed the opening roll
+function tickStorage(){for(const s of W.settlements)storageTick(s);}
+function tickSpoilage(){for(const s of W.settlements){const phaseK=commodityActive(s)?s.storage:undefined;
+  for(const g of GOODS)if(LU[g]===undefined)spoilOwned(s,g,g==='fish'&&tradeCounts(s).salter?SPOIL.fish*0.1:SPOIL[g]||0,phaseK);}} // carriage has put today's output under cover
+function tickStorageInvestment(){for(const s of W.settlements)storageInvestment(s);} // new commissions start work tomorrow
+function tickCaravans(){
   for(const c of W.caravans)if(!c._staffed){c._staffed=true;if(!c.crew&&!W.prehistory)crewFor(c);}
   // arrivals
   const besieged=W.settlements.filter(t=>t.siegeBy);
@@ -12429,6 +12439,8 @@ function tickEconomy(){
     }
   }
   for(const r of W.roads)r.vol=(r.vol||0)*0.995;
+}
+function tickUpkeep(){
   // treasury upkeep drains — the predator on hoarding
   for(const a of W.armies)if(a.house===0&&!a.gone)a._payOwed=(a._payOwed||0)+hostPay(a)/30; // the crown pays its own hosts by the head, at a lord's rate (#23: it paid six times a lord's, by the day)
   for(const s of W.settlements)if(s.owner===0)s._watchOwed=(s._watchOwed||0)+watchPay(s)/30; // the crown keeps its own garrisons at a lord's rate (#23: it paid nearly twice); a lord keeps his
@@ -14203,7 +14215,7 @@ function moveStock(a,b,g,x){if(commodityActive(a)&&!BEASTS.includes(g))return co
   if(!a.storage||BEASTS.includes(g)){a.stores[g]=T-x;b.stores[g]=(b.stores[g]||0)+x;}if(LU[g]!==undefined){a._herdLast=Object.fromEntries(BEASTS.map(k=>[k,a.stores[k]||0]));b._herdLast=Object.fromEntries(BEASTS.map(k=>[k,b.stores[k]||0]));}}
 function lordTake(s,v){if(v>0)s._lt=(s._lt||0)+v;} // what a place yields its lord this year
 function incorporate(ai,bi,how){
-  const S=W.settlements,a=S[ai],b=S[bi];a.wardOf=bi;a.owner=b.owner;a.wardSince=AD();
+  const S=W.settlements,a=S[ai],b=S[bi];syncOwner(a);a.wardOf=bi;a.owner=b.owner;syncOwner(a);a.wardSince=AD();
   for(const o of S)if(o.wardOf===ai)o.wardOf=bi; // its own wards come with it
   b.wards=S.map((o,i)=>o.wardOf===bi?i:-1).filter(i=>i>=0);
   if(G.labels)for(const sp of G.labels)if(sp.userData.s===a)sp.userData.ward=true;
@@ -14217,7 +14229,7 @@ function tickMetro(){
   if(d%30===12)for(const a of S){if(a.wardOf==null)continue;const b=S[a.wardOf];if(!b)continue; // one market: the ward's stalls and the town's sell at one price
     const wa=Math.max(1,a.pop),wb=Math.max(1,b.pop),fa=wa/(wa+wb);
     for(const g of POOLED){const tot=(a.stores[g]||0)+(b.stores[g]||0),d=tot*fa-(a.stores[g]||0);if(d>1e-6)moveStock(b,a,g,d);else if(d<-1e-6)moveStock(a,b,g,-d);}
-    a.prosperity+=(b.prosperity-a.prosperity)*0.1;a.owner=b.owner;}
+    a.prosperity+=(b.prosperity-a.prosperity)*0.1;syncOwner(a);a.owner=b.owner;syncOwner(a);}
   if(d%360!==200)return;
   if(W.seaLanes&&year()%5===0)linkLands(); // new ports open new crossings
   tickTongues();
@@ -14239,7 +14251,7 @@ function tickMetro(){
     if(a.owner===b.owner){incorporate(ai,bi,'');continue;}
     const buyer=b.owner,seller=a.owner,price=wardPrice(a),sh=W.houses[seller],bh=W.houses[buyer];
     const willing=!(houseAtWar(buyer)&&houseAtWar(seller))&&!(sh&&sh.grudges&&sh.grudges[buyer])&&!(bh&&bh.grudges&&bh.grudges[seller])&&!(buyer===plyH()||seller===plyH());
-    if(willing&&purse(buyer)-price>=chestReserve(buyer)){spend(buyer,price,'Ward rights bought',st);if(seller>0){sh.gold=(sh.gold||0)+price;book(sh,'sale of rights',price);}else W.treasury+=price;cashRecord(purseAcct(seller),price,'Ward rights sold',st);
+    if(willing&&purse(buyer)-price>=chestReserve(buyer)){spend(buyer,price,'Ward rights bought',a);if(seller>0){sh.gold=(sh.gold||0)+price;book(sh,'sale of rights',price);}else W.treasury+=price;cashRecord(purseAcct(seller),price,'Ward rights sold',a);
       if(buyer>0)book(bh,'wards bought',-price);
       incorporate(ai,bi,`${houseName(buyer)} paying ${houseName(seller)} ${price.toLocaleString()} crowns for the rights`);}
     else if(!a._wardDispute||year()-a._wardDispute>=12){a._wardDispute=year();
@@ -15295,21 +15307,68 @@ function simTick(){
   if(!MODEL_ONLY&&BACKGROUND)throw Error('The simulation is owned by the background worker');
   if(!storageOutcomeReady())return false; // let durable history catch up before another whole day
   W.clock.day++;
+  // Opening authority and hazards use yesterday's closed population and accounts.
   simPart('ownershipTick',()=>ownershipTick());
   simPart('tickWeather',()=>tickWeather());
-  simPart('tickEconomy',()=>tickEconomy());
-  simPart('tickPopulation',()=>tickPopulation());
   simPart('tickPolitics',()=>tickPolitics());
-  simPart('tickMilitary',()=>tickMilitary());simPart('tickDomains',()=>tickDomains());
-  simPart('tickThreats',()=>tickThreats());
-  simPart('tickGrowth',()=>tickGrowth());simPart('tickLand',()=>tickLand());simPart('tickHistory',()=>tickHistory());simPart('tickProjects',()=>tickProjects());simPart('tickFolk',()=>tickFolk());simPart('tickLivestock',()=>tickLivestock());simPart('tickShips',()=>tickShips());simPart('tickStone',()=>tickStone());simPart('tickTravel',()=>tickTravel());simPart('tickErrands',()=>tickErrands());simPart('tickMetro',()=>tickMetro());simPart('tickTenure',()=>tickTenure());simPart('tickJustice',()=>tickJustice());simPart('tickStreets',()=>tickStreets());simPart('tickChurches',()=>tickChurches());simPart('tickCastles',()=>tickCastles());simPart('tickCourts',()=>tickCourts());simPart('tickInfill',()=>tickInfill());simPart('tickSettlers',()=>tickSettlers());simPart('tickRepairs',()=>tickRepairs());simPart('tickVictory',()=>tickVictory());simPart('tickWallWorks',()=>tickWallWorks());simPart('tickGarrisons',()=>tickGarrisons());simPart('tickCallToArms',()=>tickCallToArms());simPart('tickMigration',()=>tickMigration());simPart('tickMarket',()=>tickMarket());simPart('tickHouseholds',()=>tickHouseholds());simPart('tickWays',()=>tickWays());simPart('tickTitles',()=>tickTitles());if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
+  simPart('tickMilitary',()=>tickMilitary());
+  simPart('tickDomains',()=>tickDomains());
   simPart('dragonWake',()=>{if(W.dragon&&W.dragon.forceWake&&W.dragon.state==='sleeping'){W.dragon.forceWake=false;
     W.dragon.peaceUntil=0;
     wakeDragon((d,tgt)=>`${d.name} has woken! The dragon rises from the peak and turns toward ${tgt.name}.`);
   }});
+  simPart('tickThreats',()=>tickThreats());
+  // Arrivals supply today's town. Domains may have founded a place: prepare every ledger now.
+  simPart('storagePrepare',()=>storagePrepare());
+  simPart('tickCaravans',()=>tickCaravans());
+  simPart('tickFolk',()=>tickFolk());
+  simPart('tickTravel',()=>tickTravel());
+  simPart('tickMigration',()=>tickMigration());
+  simPart('peoplePrepare',()=>peoplePrepare());
+  // Rights and physical supplies, then carriage under cover before loss is reckoned.
+  simPart('tickLand',()=>tickLand());
+  simPart('tickTenure',()=>tickTenure());
+  simPart('tickLivestock',()=>tickLivestock());
+  simPart('tickQuarries',()=>tickQuarries());
+  simPart('tickEconomy',()=>tickEconomy());
+  simPart('tickShips',()=>tickShips());
+  simPart('tickMetro',()=>tickMetro());
+  simPart('tickStorage',()=>tickStorage());
+  simPart('tickSpoilage',()=>tickSpoilage());
+  // Provisioning precedes meals; household choices see the resulting hunger and purses.
+  simPart('tickMarket',()=>tickMarket());
+  simPart('tickPopulation',()=>tickPopulation());
+  simPart('tickHouseholds',()=>tickHouseholds());
+  // Work uses today's remaining stock. New domestic departures wait for it to finish.
+  simPart('tickHistory',()=>tickHistory());
+  simPart('tickProjects',()=>tickProjects());
+  simPart('tickGrowth',()=>tickGrowth());
+  simPart('tickStreets',()=>tickStreets());
+  simPart('tickChurches',()=>tickChurches());
+  simPart('tickCastles',()=>tickCastles());
+  simPart('tickCourts',()=>tickCourts());
+  simPart('tickInfill',()=>tickInfill());
+  simPart('tickSettlers',()=>tickSettlers());
+  simPart('tickRepairs',()=>tickRepairs());
+  simPart('tickWallWorks',()=>tickWallWorks());
+  simPart('tickWays',()=>tickWays());
+  simPart('tickJustice',()=>tickJustice());
+  simPart('tickGarrisons',()=>tickGarrisons());
+  simPart('tickCallToArms',()=>tickCallToArms());
+  simPart('tickStone',()=>tickStone());
+  // Final roads and tolls guide new journeys. An earlier journey still uses lazy route validation.
+  simPart('routingPrepare',()=>routingPrepare());
+  simPart('tickShipDepartures',()=>tickShipDepartures());
+  simPart('tickTrade',()=>tickTrade());
+  simPart('tickErrands',()=>tickErrands());
+  // Close decisions and accounts; new storage commissions begin work tomorrow.
   simPart('tickSovereign',()=>tickSovereign());
   simPart('tickEnvoys',()=>tickEnvoys());
-  simPart('routingPrepare',()=>routingPrepare());
+  simPart('tickTitles',()=>tickTitles());
+  simPart('tickUpkeep',()=>tickUpkeep());
+  simPart('tickStorageInvestment',()=>tickStorageInvestment());
+  simPart('tickVictory',()=>tickVictory());
+  if(day()%360===0&&!REPLAYING&&!W.prehistory&&!MODEL_ONLY)setTimeout(autosave,0);
   simPart('commoditySettleAll',()=>commoditySettleAll(true));
 }
 /* =========================================================================
@@ -18762,7 +18821,7 @@ class SimulationWorkerHost{
           await this.model.wait();if(this.queue.length)continue;
           try{if(await this.model.tick()===false)break;}catch(error){this.fail(error);break;}
           if(this.publication&&this.publication.inflight===null&&(this.model.day()>=this.publication.next||this.urgent()))await this.publish(); // at most one unacknowledged, replaceable display batch
-          if(this.advance){if(this.model.day()>=this.advance.target){this.reply(this.advance,{day:this.model.day(),complete:true});this.advance=null;}}
+          if(this.advance){if(this.model.day()>=this.advance.target){this.model.speed(0);this.accum=0;this.reply(this.advance,{day:this.model.day(),complete:true});this.advance=null;}} // a petition may have restored speed; the requested days still end here
           else this.accum=Math.max(0,this.accum-1);
           if(!this.model.rate())this.accum=0;
           this.clock();

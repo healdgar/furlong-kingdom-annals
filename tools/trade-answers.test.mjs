@@ -91,7 +91,7 @@ test('loads already on the road to a market reduce what is sent after them',()=>
 test('the realm\'s trade is not capped by what the screen can draw; the screen draws the nearest loads',()=>{
   const N=120,places=[place({name:'Capital',px:{grain:9},dAvg:{grain:4000},pos:{x:0,z:0}})],roads={};
   for(let i=1;i<=N;i++){places.push(place({name:'V'+i,carters:2,stores:{grain:200},pos:{x:400+i*10,z:0}}));roads['0_'+i]=line2({x:0,z:0},{x:400+i*10,z:0});}
-  const r=realm(places,{roads});r.tick();r.C.D=6;const sent=r.tick(); // a day for the even places and the next for the odd
+  const r=realm(places,{roads,day:5}),sent=r.tick(); // all origins answer the margin even on an odd day
   const TRAFFIC_CAP=+source.match(/const TRAFFIC_CAP=(\d+)/)[1];
   assert.equal(sent.length,2*N,'every village sends its two carters');assert.ok(sent.length>TRAFFIC_CAP);
   for(const n of ['tickTrade','tickEconomy','ladeOut','tradeRoom'])assert.doesNotMatch(fn(n),/TRAFFIC_CAP/,n+' knows nothing of the drawing');

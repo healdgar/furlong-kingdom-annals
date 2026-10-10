@@ -30,7 +30,7 @@ const BUILD=v8.startupSnapshot.isBuildingSnapshot(),HERE=__dirname;
 function args(){const a=process.env.MODEL_RUN_ARGS!==undefined?process.env.MODEL_RUN_ARGS.split(/\s+/).filter(Boolean):process.argv.slice(2),o={};
   for(let i=0;i<a.length;i++)if(a[i].startsWith('--')){const k=a[i].slice(2);o[k]=a[i+1]!==undefined&&!a[i+1].startsWith('--')?a[++i]:'1';}return o;}
 const RUN=c=>vm.runInThisContext(c);
-const PARTS=['ownershipTick','tickWeather','tickEconomy','tickPopulation','tickPolitics','tickMilitary','tickDomains','tickThreats','tickGrowth','tickLand','tickHistory','tickProjects','tickFolk','tickLivestock','tickShips','tickStone','tickTravel','tickErrands','tickMetro','tickTenure','tickStreets','tickChurches','tickCastles','tickCourts','tickInfill','tickSettlers','tickRepairs','tickVictory','tickWallWorks','tickGarrisons','tickCallToArms','tickMigration','tickMarket','tickHouseholds','tickWays','tickTitles','tickSovereign','tickEnvoys','routingPrepare','commoditySettleAll'];
+const PARTS=require('./cpu-score.mjs').DAY_PARTS;
 function load(A){
   for(const k of HIDE)Object.defineProperty(globalThis,k,{value:undefined,writable:true,configurable:true});
   const src=path.resolve(A.src||path.join(HERE,'..','index.html'));

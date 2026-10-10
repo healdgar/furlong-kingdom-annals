@@ -4,7 +4,7 @@ Fresh maps, every daily tick, every named person and household, and existing own
 inheritance rules remain intact. No era presets, saved-world bank, actor culling or SQLite were added.
 The app remains a single HTML file with no build step.
 
-## Exact fast forward (current priority, 2026-10-09)
+## Exact fast forward (current priority, 2026-10-10)
 
 The user’s target is hundreds of simulated years per real minute, with exactly the
 same history at every speed for the same seed and commands on the same simulation
@@ -40,6 +40,7 @@ a 7.6% reduction, with identical year-end censuses. The shorter portable-journal
 windows varied more; these modes and windows are not pooled into one speed claim.
 The rejected missing-stock/combined candidates offer no demonstrated advantage
 over the smaller retained-slot change.
+These measurements precede the daily-order model changes described below.
 
 Slots are private derived caches; each write still clears all twelve scopes, and
 stock arithmetic, rank order, callbacks, writers and records remain unchanged.
@@ -63,14 +64,61 @@ node tools/model-run.cjs --seed 1001 --fate 42 --coast sea --journal raw --days 
 `--journal portable` remains the tool’s historical default. Both sinks acknowledge
 records in memory, so neither measures archive compression or IndexedDB writes.
 
+### Daily-order refactor, 10 October 2026
+
+The dependency record covers 42 original phases at `39d929e`, now separated into
+52 source boundaries with 168 checked prerequisites. This first batch follows
+the recorded serial order, makes trade/title choices and quarry output daily,
+and deliberately changes histories. It is a foundation for subsequent input
+reuse and daily eligibility work, not a speed optimization by itself.
+
+One serial unprofiled 1001:42 sea comparison, ticks 41–360, uses the same raw
+capture/binary journal and in-memory sink as above. Baseline/current CPU is
+**94.58→99.74 ms/day**, loads **1.1→1.1 / 1.1→1.1**: 5.5% more CPU in this pair.
+Phase wall time for trade is 3.983→10.573 ms/day after replacing the alternating
+every-fourth-day origin visits with daily visits. This identifies a cost to
+reduce; a single pair does not establish a precise regression or a speed gain.
+Final population is 2,497→2,499, buildings 705→701 and cached routes 0→41.
+The histories differ intentionally, so this is a cost comparison rather than
+an equivalent-work optimization proof. Compression and IndexedDB are excluded.
+At 99.74 ms/day the early-world CPU cost is about 60 times the 100-years/minute
+budget, before durable storage.
+
+The native 150-day fixed/changing-speed proof matches the full logical history,
+RNG, commands, annals and every completed outcome event. It omits only playback
+preferences and compares event contents independently of asynchronous chunk
+packing. Two serial one-year worlds pass money/goods/fault checks. A browser
+worker/reference comparison passes 180 days plus 180 after save/replay, with
+matching tested views that leave the world/RNG unchanged. It also exposed an
+existing bounded-advance bug when a petition restores speed: completion now
+pauses at its target, covered separately by host tests and the final browser
+gate. Exact source hashes, test results, the initial failed comparisons and
+their diagnoses are recorded in `HANDOFF.md`. Local evidence:
+`tools/soak-results/daily-order-20261010/`. Late-world, hardware drawing, Safari
+and centuries-per-minute throughput remain unverified.
+
 ### Work in order
 
-1. **Make each exact day cheaper.** Keep canonical writers and arithmetic order;
-   reduce repeated Map traversal, row creation and scratch allocation. The first
-   validated local change retains commodity quantity-cache slots across writes
-   instead of deleting and reinserting their Map entries. Next measure native
-   single-cell consumption and privately ranked live-cell handles. Reads must see each purchase and consumption at its
-   original point; a whole-day food snapshot would become stale.
+The user has since authorized changes to the model/history while retaining exact
+history across speeds. The recorded dependency survey and new daily source order
+are in [SIMULATION-ORDER.md](SIMULATION-ORDER.md), with a machine-checked contract
+in `SIMULATION-ORDER.json`. Calendar intervals need simulation reasons; arbitrary
+CPU decision throttles are to be replaced by daily eligibility and input-revision
+checks. The first refactor separates arrivals, production, protection/loss,
+construction, departures and financial close. It deliberately changes histories;
+its throughput is to be remeasured, not inferred from the ordering.
+
+1. **Refactor from the recorded daily dependencies, then make each day cheaper.**
+   Keep the canonical writers and new serial schedule identical across speeds.
+   Separate mixed decision/rate/contract functions before changing their cadence.
+   Make daily trade eligibility cheap using current driver/merchant means and
+   stock/price/inbound/route changes; preserve live balances at execution.
+   The first validated exact optimization retained commodity quantity-cache slots
+   across writes. Next measure native single-cell consumption and privately ranked
+   live-cell handles. Cache geography separately from current population/security
+   inputs before enabling daily building choices. Reads must see each intervening
+   purchase and consumption; a whole-day food snapshot becomes stale.
+
 2. **Bound cost by the living world.** Profile later eras and distinguish active
    actors/stock from expired routes, empty accounts and historical records. Use
    derived active/due indexes only where all invalidation paths and canonical visit

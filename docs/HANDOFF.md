@@ -1,16 +1,16 @@
 # Handoff: state of work
 
-Updated 2026-10-09 in the cloud checkout while prioritizing exact-history fast forward (#15), after the general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-10 in the cloud checkout while recording and refactoring the daily simulation order for fast forward (#15), after the general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
-- **2026-10-09, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. Keep the sectioned file and simulation/render boundary. Reel is already unpaced; native daily food/storage work and recording are the costs to reduce. The measured plan is in `docs/PERFORMANCE.md`; verification of the first private-cache change is in the continuation below. Century-scale throughput is not yet achieved.
+- **2026-10-10, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. The user explicitly authorizes model/history changes for efficiency and accuracy; ordinary decisions should be daily, with other intervals justified by a simulation reason. Keep the sectioned file and simulation/render boundary. Four Luna surveys and root review are recorded in `docs/SIMULATION-ORDER.md` and `.json`: all 42 old phases, 52 current boundaries and 168 same-day prerequisites. The first refactor follows that order; mixed calendar decisions still need quantities, obligations and eligibility separated. The measured plan is in `docs/PERFORMANCE.md`; evidence follows below. Century-scale throughput is not yet achieved.
 - **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
 - **2026-10-09, land and customary entries (#37, batch 11d):** the next phase adds a separate twelve-entry register of existing admissions, inheritance, marriage, assarts, surrenders, sales and letting; entry-fine payments and their original shortfalls; actual household merchet payments; and one real heriot beast in kind. It adds no charge, sitting, household debt or transaction scan. Verification and conservation evidence follow below.
 - **2026-10-09, criminal presentments (#37, batch 11e):** native riots present up to three resident adult household heads under the named three-days-of-family-bread custom. Robbed caravans and actual outlaw recruitment add bounded evidence to a separate royal roll; royal hearings, forfeiture and charges remain pending. No settlement camp raids are invented.
 - **2026-10-09, river surface (#58):** the drawing had sampled each terrain bump directly, allowing the water to rise downstream. Draw-only profiles now pool across bed bumps; junction backwater extends upstream. Canal levels and simulation geometry remain unchanged. The 150-day whole-world/RNG proof and final drawn check pass; evidence follows below.
 - **2026-10-09, general eyre (#37, batch 11f):** from AD 1166, monthly reviews send profitable, funded circuits. Two lettered capital heads chosen by law skill enter the annals as justices, keeping their actual households, lodging, education and mortality. Each scheduled sitting hears one town and its nearest villages and funds its whole return journey to the capital. Robbery levies and real road-upkeep shortfalls use shared spare-purse caps. Felony forfeits only the living outlaw’s witnessed/current share of remaining assets; subsistence, food, tools, winter fodder and working/breeding beasts survive. Goods change native ownership and become Crown sale stock without adding physical stock; their zero purchase cost blends into the Crown’s actual old cost reserve. Coin and officials’ pay use transfer. Detailed cases retire once; folded counts carry no guessed liability. Worker-side accounts, named justices, royal rulings and a journaled send order are implemented. Validation and remaining work follow below.
-- **Local state:** batches 11c, 11d, 11e and 11f, the river correction and the first exact-cache optimization are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: exact fast-forward performance (#15) as requested; the capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
+- **Local state:** batches 11c, 11d, 11e and 11f, the river correction, the first exact-cache optimization and the daily-order refactor are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: continue the recorded daily refactor and fast-forward performance (#15); the capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
 
 - **2026-10-09, fort development and annual accounts (#56, #57):** roads, town-wall siting, building enlargement and parcel clipping respect the elongated bailey's contour instead of its maximum-radius circle. Mound, ditch and curtain clearances remain. Deliberate layout/history change; existing buildings are not relocated.
 - Town, domain and crown records show calendar-year income, expenses, surplus/deficit and causes; treasury statements reconcile opening and closing coin. Town public funds and each owner's local receipts/costs are separate; local costs already belong to the owner's total. Loans and asset sales are cash flows, not trading profit. Two bounded annual aggregate books per institutional chest, no household ledger or new transaction/journal rows; reports never scan history. Self-transfers and refunded relief holds are excluded. Older net books cannot reconstruct prior gross flows; resumed records label partial years.
@@ -399,3 +399,123 @@ Game-script SHA256
 is unchanged by stamping; all seven post-stamp source/advisor checks pass.
 Prepared locally. #15 remains in progress; next measure native single-cell food
 consumption and active stock traversal before changing either. No release push.
+
+## Continuation, 2026-10-10: recorded daily order and first refactor (#15)
+
+The user clarified that improving the model may change previous histories;
+determinism across speeds is the requirement. Ordinary decisions should be daily,
+with other intervals justified by seasons, contractual dates, market days or real
+durations. The user requested a dependency survey, recorded before systematic
+refactoring. Four read-only Luna audits and root review cover all 42 old daily
+boundaries at `39d929e`. `docs/SIMULATION-ORDER.json` records reads/writes, aliases,
+helpers, RNG/record ordering, caches, calendar collisions, uncertainty and review
+corrections. `docs/SIMULATION-ORDER.md` explains the chosen order and feedback.
+The current 52 boundaries obey 168 directed same-day prerequisites; the AST tool
+and tests check the actual dispatcher. This is a reviewed dependency contract,
+not a formal interprocedural proof or a demonstrated global optimum.
+
+The first source refactor separates storage initialization, cargo arrivals,
+person lookup refresh, quarry output, production/crafts, local carriage,
+spoilage, foreign loading/departures, domestic trade and closing accounts.
+Arrivals precede provisioning/meals; construction precedes exports; current
+roads/tolls precede new domestic journeys; commodity settlement closes the day.
+Quarries produce daily at the former monthly rate divided by thirty, remaining
+stone demand refreshes daily, all trade origins consider opportunities daily,
+and title changes are recorded daily without duplicates. Ward owner transitions
+synchronize field rights immediately. A previously undefined `st` in funded
+ward purchases now uses the actual ward for both account postings. Histories
+deliberately change; the old build is a timing baseline, not an identity oracle.
+
+Nine focused order/custody/payment/rate/rights checks pass. Native 150-day
+1001:42 sea runs under fixed Reel and all seven changing speed preferences pass:
+full logical world/global/closure/layout captures at days 0, 37, 90 and 150;
+daily RNG, commands, annals and storage sequence; every one of 1,812 completed
+outcome events. Commands change sovereignty/tax at days 37 and 90. Only playback
+preferences are omitted from the history graph; no world or RNG value is
+normalized. Pending commits are drained at checkpoints. Native one-record
+Float64/UTF16 binary encoding compares events independently of asynchronous
+chunk boundaries (66 versus 75 chunks); byte-identical packed archives are not
+claimed. The first comparison included playback preferences and pending/chunk
+packing; its world/RNG/command/annal captures already matched. The corrected
+comparison and that initial diagnostic remain in the evidence directory.
+Proof CPU is 83.39/76.56 s at initial load averages
+0.05/1.01/1.27 and 0.73/1.00/1.25, including capture/hashing. This proves logical
+pace independence, not real paced-pump throughput.
+
+The serial one-year conservation soak passes all eight checks on 42:42 sea and
+1001:42 sea: no simulation faults, zero yearly money residual, zero payments to
+nobody, 720 independent inventory checks per world with no mismatch, and fully
+settled durable journals. Population 2,702→2,497 and 2,703→2,499. Famine person-day
+shares are 0% and 6.54%; calibration is still open (#23). These are early worlds,
+not late-era farm or throughput clearances. Tested HTML SHA256
+`589ea8e37ba23fc94c8fa8e9bdc77c86fbe1e585710dee37d8fd1f4665ed6341`,
+game-script SHA256
+`f8b39f63190e00d7c5827a7cf7cf2238db31a0c6b0c9723b457a8ad957060db6`.
+Local evidence: `tools/soak-results/daily-order-20261010/`.
+
+The first browser save/load comparison matched through day 180, but the resumed
+worker reached day 362 while the reference stopped at 360. During bounded
+advancement, an expired petition restored running speed; completion left that
+speed running while the harness saved/queried. `SimulationWorkerHost.pump` now
+pauses and clears pacing at the bounded target, before replying. A focused host
+test covers restoration to both Normal and Reel, later elapsed wall time and a
+subsequent bounded request. This one host-control line is the only source change
+after the native determinism/conservation gates; `host-source-diff.json` verifies
+that reverting it reproduces their source byte for byte. The native daily model
+is unchanged. The final browser gate checks the corrected host separately.
+
+That final browser gate passes on HTML SHA256
+`fb66b06d06c24f42dd72d01f21d1af3625a3d009c1b269d547ff36564d7bd582`:
+180 days plus another 180 after save/replay, full authoritative graph/RNG/
+commands/annals/settings/storage-sequence parity, matching selected view output,
+unchanged world/RNG across those queries, settled journals and a responsive
+foreground. Both resumed engines stop at day 360. The views cover bootstrap,
+landscape, settlement/court inspectors, governance, accounts, actors and four
+overlays; they do not clear all #27 inspectors. SwiftShader is used for these
+undrawn cloud checks; hardware drawing and Safari performance are not measured.
+
+One matched serial unprofiled raw-journal CPU pair at 1001:42 sea, ticks 41–360,
+costs 94.58→99.74 ms/day at load 1.1→1.1 / 1.1→1.1. Daily trade phase wall time
+is 3.983→10.573 ms/day. This first daily-order batch increases CPU by 5.5% in
+that pair; it is not a speed gain. Histories deliberately differ (population
+2,497→2,499; buildings 705→701; routes 0→41), so this is not an equivalent-work
+performance proof. The in-memory sink excludes compression and IndexedDB.
+The current sample is roughly 60 times the 100-years/minute daily budget.
+Next make daily trade eligibility cheap and reuse commodity query/kernel work,
+then measure again; do not restore an arbitrary calendar throttle to claim a
+gain. `docs/PERFORMANCE.md` records the budgets and measurement scope.
+
+The first eight-way run passed 1,448/1,449 checks; its only failure was the
+legacy-search inventory recording the existing monthly watch-pay scan under
+`tickEconomy` after extraction into `tickUpkeep`. The reviewed relocation is
+recorded without approving an additional scan; the focused guard passes. After
+the funded-ward fix, host regression and callback-contract review, the final
+eight-way run passes 1,450/1,451 checks. The headless boundary/save test times out
+at its existing 30-second VM capture limit under concurrent load. Final suite
+CPU is 817.44 s, wall 411.01 s, initial load 0.44/0.89/1.04 and final load
+4.32/4.10/2.63. The unchanged isolated candidate passes (70.66 s CPU, initial
+load 1.23/3.18/2.42); limits are not relaxed. The boundary test now accepts the
+same optional `FURLONG_TEST_SOURCE` override as other source fixtures so its
+frozen-baseline diagnosis actually runs that source. Eight-way success is not
+claimed for this gate. The frozen `39d929e` boundary test also passes in
+isolation (71.66 s CPU, initial load 1.16/2.80/2.34), with the same limits. All
+1,451 assertions are verified across the full run and isolated candidate retry.
+
+The local stamp yields HTML SHA256
+`648649f53112f1eb9f193af234e170d7df06402326081516374a184eb8a14e15`.
+Game-script SHA256
+`b1c0dbf8fbe5ba745c963405dc7d778c17a65b5c3de4663db7bed4b2c2dd61d3`
+is unchanged from the final browser/timing source; only build metadata changes.
+All seven post-stamp source/advisor checks and the 52-phase/168-edge source
+contract pass. Prepared locally; no push. #15 remains in progress with the
+daily-cadence and measured performance work above.
+
+Next continue the cadence table in `SIMULATION-ORDER.md`: separate ordinary
+eligibility from physical rates, hazards and dated obligations. Geometry kernels
+must be cached separately from live population/security inputs, with every
+simulation writer covered, before daily building decisions become cheap.
+Do not simply remove annual guards from mixed quantity/decision functions.
+Keep the worker authoritative and shared purses/ownership/RNG/record allocation
+serial. A synchronized town walker needs an actual economic task and payer;
+caravan delivery already posts real freight on completion. The renderer may
+interpolate a task, but reaching a drawn position cannot create a payment.
