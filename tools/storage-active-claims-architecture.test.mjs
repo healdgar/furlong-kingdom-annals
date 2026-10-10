@@ -114,7 +114,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // covers both portions, merger, voluntary repayment and estate retirement; world-save.test.mjs saves the native loan reference.
  // Annual accounts: the two commodityClearMarket acct calls now carry the good and place as report labels.
  // Their amounts, order, ownership, quantities and journal effects are unchanged; reviewed against 06eaf18.
- assert.equal(digest(source.slice(a,b)),"fd2bc7b03b93636c20b071091fcafe5cdcb248f8181e1b0c463a5f507b620b15");
+ // Courts (#37, batch 11d): marryHouseholds witnesses its existing native title and working-right changes in a scratch
+ // Map and the bounded scalar enrolment roll. Ownership transfers, beneficiary setters and their order are unchanged;
+ // justice.test.mjs checks the former working head and both rights, and the 150-day whole-graph proof strips only enrolments.
+ assert.equal(digest(source.slice(a,b)),"bbe093825a204e9bbe863e17fd99fe1d17159b4572be7c05f297a244416adbcb");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

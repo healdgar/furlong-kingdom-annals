@@ -93,6 +93,14 @@ pay them. Grazing trespass records the month's missing grass at the hay
 price, shared among beasts beyond their holders' share of the common;
 the lord's excess is not charged to a family. The worked holdings set the
 shares; a place without holdings uses its resident families' mouths.
+The roll also shows twelve recent land and customary entries: admissions,
+inheritance, marriage, clearing woodland, surrender, sale and letting.
+Each records the owner and occupier before and after. Entry fines show what
+was paid and what was unpaid at entry; the pending plea holds the current
+debt. Merchet names the bride and the household that paid her lord. A heriot
+records the single beast delivered in kind. These entries witness existing
+transactions, and earlier entries are counted by kind.
+
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that
 work, within the same spare-purse cap. It is a licence, not a claim that

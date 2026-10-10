@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-09 19:09 UTC · after 5c5b121</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 00:34 UTC · after 3ef59ef</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -3737,7 +3737,10 @@ function marryHouseholds(a,b){let A=householdAccount(a),B=householdAccount(b);if
   A.assets.w=(A.assets.w||0)+(B.assets.w||0);B.assets.w=0;A.assets._debt=(A.assets._debt||0)+(B.assets._debt||0);B.assets._debt=0;
   (A.assets._owe||(A.assets._owe=[])).push(...(B.assets._owe||[]));B.assets._owe=[];
   transferOwnership(B,[[A,1]]);for(const p of [...B.members])bindHousehold(p,A);B.successors=[[A,1]];B.head=null;
-  for(const s of W.settlements){for(const f of s.furl||[]){if(f.own===b.id)f.own=a.id;if(f.wk===b.id)f.wk=a.id;}for(const x of s.buildings||[])if(x.title&&x.title.owner===B)x.title.owner=A;else if(x.ownerId===b.id)x.ownerId=a.id;for(const f of s.furl||[])if(f.title){for(const k of ['own','work'])if(f.title[k].owner===B)f.title[k].owner=A;}householdHeadsChanged(s);}}
+  for(const s of W.settlements){const changed=new Map();for(const f of s.furl||[]){const affected=f.own===b.id||f.wk===b.id||f.title?.own.owner===B||f.title?.work.owner===B,was=affected?courtHolding(f):null;
+      if(was&&f.title?.work.owner===B){was.wk=b.id;was.workName=folkName(b);} // the former working head, before this merger emptied B
+      if(f.own===b.id)f.own=a.id;if(f.wk===b.id)f.wk=a.id;if(was){if(f.title)changed.set(f,was);else courtLand(s,f,was,'marriage');}}
+    for(const x of s.buildings||[])if(x.title&&x.title.owner===B)x.title.owner=A;else if(x.ownerId===b.id)x.ownerId=a.id;for(const f of s.furl||[])if(f.title){for(const k of ['own','work'])if(f.title[k].owner===B)f.title[k].owner=A;const was=changed.get(f);if(was)courtLand(s,f,was,'marriage');}householdHeadsChanged(s);}}
 // A household that has moved takes its goods along (#55): in the ledger, those worth their carriage (carryHome); the rest lie at the old
 // place to be sold at its next market (homeward). Its beasts are driven along.
 function moveHouseholdGoods(h,from,to){if(!h||!from||!to||from===to)return;initOwnership(from);initOwnership(to);herdSync(from);herdSync(to);const x=stockOf(from,h),y=stockOf(to,h),ledger=commodityActive(from);if(ledger)carryHome(h,from,to);
@@ -11426,8 +11429,8 @@ function assartSpare(s,h){return means(h)-Math.max(1,householdSize(s,h))*foodYr(
 function assarter(s){ // who would clear a wood: of the households that plough, the land-hungry first (no strip of their own), and of those the one with most to spare
   let best=null,bk=0,bs=0;for(const h of heads_(s,h=>tills(h,s))){const k=(h._strips||0)>0?1:0,v=assartSpare(s,h);if(!best||k<bk||k===bk&&v>bs){best=h;bk=k;bs=v;}}return best;}
 function assartPays(s,f,h){const v=assartFine(s,f);return v<=0||assartSpare(s,h)>=v&&stripYield(s,f)*12>=v;}
-function assart(s,f,h){const lord=f.lord>=0?houseAcct(f.lord):lordAcct(s),v=transfer(h,lord,assartFine(s,f),'assarts',s);if(lord===lordAcct(s))lordTake(s,v); // the wood's lord, the crown where the crown is lord
-  f.ten='free';f.own=h.id;f.wk=h.id;h._strips=(h._strips||0)+1;writeFurlong(f);life(h,`Cleared ${(f.area/1e4).toFixed(1)} ha of ${lord==='crown'?'the crown':'the lord'}'s wood for the plough${v>0?`, for a fine of ${v.toFixed(1)}`:''}, and holds it freely`);return v;}
+function assart(s,f,h){const was=courtHolding(f),lord=f.lord>=0?houseAcct(f.lord):lordAcct(s),v=transfer(h,lord,assartFine(s,f),'assarts',s);if(lord===lordAcct(s))lordTake(s,v); // the wood's lord, the crown where the crown is lord
+  f.ten='free';f.own=h.id;f.wk=h.id;h._strips=(h._strips||0)+1;writeFurlong(f);courtLand(s,f,was,'assart',v);life(h,`Cleared ${(f.area/1e4).toFixed(1)} ha of ${lord==='crown'?'the crown':'the lord'}'s wood for the plough${v>0?`, for a fine of ${v.toFixed(1)}`:''}, and holds it freely`);return v;}
 function tickLand(){ // monthly: the countryside follows the people
   if(!W.land||day()%30!==15)return;
 
@@ -14286,7 +14289,7 @@ function settleTenure(s,si,heads){ // strips without a holder are given out: the
   F.sort((a,b)=>dist2d(a.x,a.z,s.pos.x,s.pos.z)-dist2d(b.x,b.z,s.pos.x,s.pos.z));
   for(const f of F){if(dem<all.length*share||!tillers.length){f.ten='demesne';f.own=-1;f.wk=-1;dem++;continue;}
     let best=tillers[0];for(const h of tillers)if((h._strips||0)<(best._strips||0))best=h;best._strips=(best._strips||0)+1;
-    const tn=tenureNew();f.ten=tn;f.own=tn==='lease'?-1:best.id;f.wk=best.id;}}
+    const was=courtHolding(f),tn=tenureNew();f.ten=tn;f.own=tn==='lease'?-1:best.id;f.wk=best.id;courtLand(s,f,was,'admission');}}
 const dueOn=(si,period,salt)=>(day()+si*salt)%period===0; // each place keeps its own day in each round, so the realm's reckonings are spread across the year
 /* A place's rolls (#37's pleas, a guild's searches, an abbey's alms): short lists of what happened there, which its next session reads,
    kept on whatever holds them (rollOf(s,'pleas'), rollOf(s.court,'pleas')) as {rows,over} and made with the first record. A roll keeps
@@ -14297,6 +14300,14 @@ const ROLL_N=12;
 function rollOf(o,key){return o[key]||(o[key]={rows:[],over:{}});}
 function rollAdd(R,rec,n=ROLL_N){R.rows.push(rec);while(R.rows.length>n){const k=R.rows.shift().kind??'';R.over[k]=(R.over[k]||0)+1;}return rec;}
 function rollTake(R){const out={rows:R.rows,over:R.over};R.rows=[];R.over={};return out;} // a session reads the roll and clears it
+/* Enrolments (#37) witness the manor's existing transactions, apart from its judgements. Twelve recent entries and four
+   fixed kinds of earlier count; only names, numbers and rights at the time, never a retained estate or another charge. */
+function courtEnrol(s,kind,p,rec){return rollAdd(rollOf(s,'enrolments'),{kind,d:day(),who:p?.id??-1,name:p?folkName(p):'',...rec});}
+function courtHolding(f){const name=k=>{const r=f.title?.[k],p=(k==='work'?r?.owner?.head:r?.beneficiary)||(W._pm||W._folkIndex)?.get(f[k==='own'?'own':'wk']);return p?.gn!==undefined?folkName(p):'';};
+  const widow=(W._pm||W._folkIndex)?.get(f.dower);return {ten:f.ten||'',own:f.own??-1,wk:f.wk??-1,ownName:name('own'),workName:name('work'),dower:f.dower??-1,dowerFraction:f.dowerFraction||0,dowerName:widow?folkName(widow):''};}
+function courtLand(s,f,before,action,paid){const after=courtHolding(f);if(before.ten===after.ten&&before.own===after.own&&before.wk===after.wk)return;
+  return courtEnrol(s,'land',null,{field:f.k??-1,ha:(f.area||0)/1e4,action,before,after,...courtLord(s,f,stripLord(f,s)),...(paid!==undefined?{paid}:{})});}
+function courtLord(s,f,lord){return {lord:lord==='crown'?'crown':'h'+(f?.lord>=0?f.lord:s.owner),lordName:lord==='crown'?'the Crown':lord.name};}
 /* THE HALLMOTE (#37): the quarter day's court hears existing dues, year-old loans and grazing trespass; the great court hears the assize.
    A plea points to its holding, farm or loan entry; voluntary payment or surrender clears that same obligation.
    Only a place's bounded roll is read. Officials are chosen at the lord's seat when business first pays their fees. */
@@ -14385,12 +14396,21 @@ function courtSession(s,si){
 function tickJustice(){W.settlements.forEach((s,si)=>{if(dueOn(si,90,37)&&s.pleas?.rows.length)courtSession(s,si);});}
 function justiceCmd(arg){const[a,k,v,...rest]=String(arg).split(':'),s=W.settlements[+a];if(rest.length||!s||!sovOn()||s.owner!==plyH()||k!=='cap'||!Number.isFinite(+v)||+v<0||+v>1)return;
   const h=W.houses[s.owner];if(h)(h.justice||(h.justice={})).cap=+v;}
-function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||folkIndex(),person=(id,name)=>{const p=PM.get(id);return p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`;
+function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||W._folkIndex||new Map(),person=(id,name)=>{const p=PM.get(id);return id>=0||p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name||'Person '+id)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`; // a court read does not populate the world's person index
   let h=row('Place',`<a class="nm" data-nm="s${si}">${esc(s.name)}</a>`)+row('Pleas waiting',s.pleas?.rows.length||0)+row('Next quarter day',dateStr(day()+((90-(day()+si*37)%90)%90||90)))+row('Next great court',dateStr(day()+((180-(day()+si*37)%180)%180||180)))+row('Steward',person(J?.steward))+row('Clerk',person(J?.clerk));
   if(C){h+=row('Sessions held / adjourned',C.sessions+' / '+C.adjourned)+row('Recovered / amercements / officers’ fees',Math.round(C.recovered)+' / '+Math.round(C.fines)+' / '+Math.round(C.fees))+row('Loans recovered / plea fees',Math.round(C.loanRecovered||0)+' / '+Math.round(C.pleaFees||0))+row('Beasts sold under judgement',C.distraints||0)+row('This year’s net cash receipts',Math.round(C.year===Math.floor(day()/360)?C.profit:0));
     for(const[k,v]of Object.entries(C.byKind||{}))h+=row(k==='assize'?'Bread and ale assize':'Grazing trespass',v.heard+' heard, '+v.pardoned+' pardoned, '+(+v.fines.toFixed(2))+' amerced');
     for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind==='assize'?'assize of bread and ale':p.kind==='trespass'?'grazing trespass':p.kind)}${p.creditor?` to <a class="nm" data-nm="${esc(p.creditor)}">${esc(p.creditorName)}</a>`:''} — ${courtOffence(p)?(+p.owed.toFixed(2))+(p.kind==='assize'?' in recorded receipts':' in lost grazing'):Math.round(p.paid)+' paid, '+Math.round(p.left)+' owing'}; ${p.pardoned?'amercement pardoned':(+p.fine.toFixed(2))+' amerced'}${p.beasts?`; sold ${p.beasts.map(([k,q])=>q+' '+esc(k)).join(', ')}`:''}${p.pleaFee?`; ${+p.pleaFee.toFixed(2)} plea fee from the recovery`:''}.</p>`;
     for(const[k,n]of Object.entries(C.roll.over))h+=row('Earlier '+esc(k)+' rulings',n);}
+  const E=s.enrolments;if(E){const witness=(id,name)=>id>=0?`<a class="nm" data-nm="p${id}">${esc(name||PM.get(id)&&folkName(PM.get(id))||'Person '+id)}</a>`:esc(name||'Not named'),lord=p=>`<a class="nm" data-nm="${p.lord==='crown'?'h0':esc(p.lord)}">${esc(p.lordName)}</a>`,field=p=>p.field>=0?`<a class="nm" data-nm="field:${p.field}">holding ${p.field+1}</a>`:'the holding',coin=v=>+v.toFixed(2),labels={land:'land',entry:'entry fine',merchet:'merchet',heriot:'heriot'};
+    h+='<div class="dhead">Land and customary entries</div><p>Recorded at the transaction. These entries are separate from the court’s rulings.</p>';
+    for(const p of E.rows){let text;if(p.kind==='land'){const rights=r=>`${esc(r.ten||'unassigned')}; owner ${r.own>=0?witness(r.own,r.ownName):lord(p)}; occupier ${r.wk>=0?witness(r.wk,r.workName):r.ten==='demesne'?'the lord’s home farm':'vacant'}${r.dower>=0?`; dower ${witness(r.dower,r.dowerName)} (${+(r.dowerFraction*100).toFixed(2)}%)`:''}`;
+        text=`${esc(p.action)}, ${field(p)} (${+p.ha.toFixed(2)} ha): ${rights(p.before)} → ${rights(p.after)}${p.paid!==undefined?`; ${coin(p.paid)} paid`:''}`;}
+      else if(p.kind==='heriot')text=`heriot of ${witness(p.who,p.name)}: ${p.qty} ${esc(p.beast)} delivered in kind to ${lord(p)}`;
+      else if(p.kind==='merchet')text=`merchet for ${witness(p.who,p.name)}${p.partner>=0?` marrying ${witness(p.partner,p.partnerName)}`:''}: household of ${witness(p.payer,p.payerName)} paid ${coin(p.paid)} to ${lord(p)} (custom ${coin(p.assessed)})`;
+      else text=`entry fine for ${witness(p.who,p.name)}, ${field(p)}: ${coin(p.paid)} paid to ${lord(p)}${p.left>1e-6?`; ${coin(p.left)} unpaid at entry`:''} (assessed ${coin(p.assessed)})`;
+      h+=`<p>${esc(dateStr(p.d))}: ${text}.</p>`;}
+    for(const[k,n]of Object.entries(E.over))h+=row('Earlier '+esc(labels[k]||k)+' entries',n);}
   return h;}
 function justiceOrdersHTML(s,si){const cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap,lo=Math.max(0,+(cap-0.05).toFixed(2)),hi=Math.min(1,+(cap+0.05).toFixed(2));
   return `<div class="dhead">Justice</div><div class="cstat"><span>Amercement cap</span><b>${+(cap*100).toFixed(2)}% of the spare purse</b></div><p>The lord's custom throughout his places. The next month's bread and rent are kept back; a coinless family is pardoned.</p><div class="hb"><button data-cmd="s-justice" data-arg="${si}:cap:${lo}"${cap===0?' disabled':''}>Lower cap</button><button data-cmd="s-justice" data-arg="${si}:cap:${hi}"${cap===1?' disabled':''}>Raise cap</button></div><a class="nm" data-nm="court:${si}">Open the court roll</a>`;}
@@ -14426,7 +14446,8 @@ function stripLord(f,s){return f.lord>=0?houseAcct(f.lord):lordAcct(s);}
 function stripRent(s,f,p){return f.ten==='villein'&&f.svc==='money'?f.qrent:(f._lqL||0)*p;} // a holding's yearly rent: its money rent, or the lord's share of last year's crop at the price
 function manorYear(s,T){const full=s._lg0!=null&&day()-s._lg0>=360;s._lgL=full?s._lg||new Map():null;s._lg=new Map();s._lg0=day(); // the year's crop of each strip and the lord's part of it, and what his grain brought him, closed: a whole year's, else none (the first reckoning finds only part of one, and a rent fixed on it would be fixed for good)
   for(const f of T){f._cyL=full?f._cy||0:0;f._lqL=full?f._lq||0:0;f._cy=0;f._lq=0;}}
-function entryFine(s,f,h,v,lord=stripLord(f,s)){const paid=transfer(h,lord,v,'entry fines',s);if(lord===lordAcct(s))lordTake(s,paid);if(v-paid>1e-6)courtPlead(s,'entry',h.id,v-paid,f,lord);return paid;} // what he cannot pay is owed, and pleaded at the manor court (#37)
+function entryFine(s,f,h,v,lord=stripLord(f,s)){const paid=transfer(h,lord,v,'entry fines',s);if(lord===lordAcct(s))lordTake(s,paid);if(v-paid>1e-6)courtPlead(s,'entry',h.id,v-paid,f,lord);
+  courtEnrol(s,'entry',h,{field:f.k??-1,paid,assessed:v,left:Math.max(0,v-paid),...courtLord(s,f,lord)});return paid;} // what he cannot pay is owed, and pleaded at the manor court (#37)
 function stripBidder(s,f,ll,r,p){ // a vacant holding goes to the tiller (of those not yet given one at this reckoning) who offers the lord most for it: what he can spare beyond a year's bread, and no more than the holding would leave him over its rent for the years the custom reckons a fine in. Land hunger raises the fine, empty land lowers it (#36: a frand() pick before)
   if(!ll.length)return null;const fy=foodYr(),worth=Math.max(0,(f._cyL||0)*tenShare(f)*p-(f.ten==='villein'&&f.svc==='money'?f.qrent:0))*customOf(s,'entryHeir');let top=-1,best=[];
   for(const h of ll){const v=Math.max(0,Math.min(means(h)-Math.max(1,householdSize(s,h))*fy,worth));if(v>top+1e-9){top=v;best=[h];}else if(v>top-1e-9)best.push(h);}
@@ -14438,7 +14459,7 @@ function manorRents(s,si,T,PM,p){ // the year's money rents of commuted holdings
     if(f.svc==='money'){const h=PM.get(f.wk);if(!h||h.dead)continue; // empty: its crop was the lord's this year
       const owed=(f.qrent||0)+(f._arr||0),paid=transfer(h,lord,owed,'rents',s),left=owed-paid;if(lord===lordAcct(s))lordTake(s,paid);
       if(!(left>1e-6)){f._arr=0;f._arrN=0;continue;}f._arr=left;f._arrN=(f._arrN||0)+1;courtPlead(s,'arrears',h.id,left,f,lord); // owed, and pleaded at the manor court (#37)
-      if(f._arrN>=2){f._arr=0;f._arrN=0;f.wk=-1;f.own=-1;writeFurlong(f);life(h,`Gave up his holding at ${s.name} to the lord, two years behind with its rent`);} // two years behind: the lord takes it back, and lets it again
+      if(f._arrN>=2){const was=courtHolding(f);f._arr=0;f._arrN=0;f.wk=-1;f.own=-1;writeFurlong(f);courtLand(s,f,was,'surrender');life(h,`Gave up his holding at ${s.name} to the lord, two years behind with its rent`);} // two years behind: the lord takes it back, and lets it again
       continue;}
     if(s.svc==='works'||!(f._cyL>0))continue; // services kept in hand by order; or no crop last year to reckon a rent from
     const q=diff*f._cyL*p;if(s.svc!=='money'){const y=lordYield(s,lord),h=PM.get(f.wk);if(y===null||!(p>y)||!h||h.dead||means(h)<q)continue;} // the lord's own reckoning: coin at the year's price is worth more than his share in kind brought him, and the villein has the coin to pay it
@@ -14464,7 +14485,8 @@ function farmMills(s,si){ // the year's letting of the lord's mill and bakehouse
     if(mill&&!s._millLet){s._millLet=true;if(!W.prehistory)emit('trade',2,s.pos,`The lord's mill at ${s.name} is let to ${folkName(best)} for ${Math.round(bid)} a year.`);}}}
 function merchet(s,w){ // a villein's daughter weds by her lord's leave, and the leave is bought (#36): her household pays it where it holds villein land, as heriot is found (inherit)
   const B=householdAccount(w);if(!B||!s.furl)return 0;const ids=new Set();for(const p of B.members)ids.add(p.id);const f=s.furl.find(f=>f.ten==='villein'&&(ids.has(f.wk)||ids.has(f.own)));if(!f)return 0;
-  const lord=stripLord(f,s),paid=transfer(B,lord,customOf(s,'merchet')*foodYr(),'merchet',s);if(lord===lordAcct(s))lordTake(s,paid);return paid;}
+  const lord=stripLord(f,s),assessed=customOf(s,'merchet')*foodYr(),paid=transfer(B,lord,assessed,'merchet',s);if(lord===lordAcct(s))lordTake(s,paid);
+  courtEnrol(s,'merchet',w,{payer:B.head?.id??-1,payerName:B.head?folkName(B.head):'',partner:w.sp?.id??-1,partnerName:w.sp?folkName(w.sp):'',paid,assessed,...courtLord(s,f,lord)});return paid;}
 function liveries(T,sv,v,h){ // the hall pays its servants part of their wage in food from the lord's own stock at his seat, valued at the market, where that food would bring him less sold, for what spoils before it sells, than the coin it saves; the rest in coin (#36)
   if(!(v>0)||!sv.length)return payAmong(sv,v,h,'household',T);const owed=sv.map(()=>v/sv.length);let kind=0;
   for(const g of ['grain','meat','fish']){if(!GOODS.includes(g)||!(NEED[g]>0))continue;const L=mkt(T,g),p=price(T,g);if(!((L.get(h)||0)>0)||!(p>0))continue;
@@ -14487,7 +14509,7 @@ function manorLines(s){ // the settlement card's lines on the manor: the mill's 
     else if(mill&&(o==='lord'||o===undefined))out.push(['Mill',`The lord keeps the mill in hand${b._tk&&b._tk.mult>0?`; ${Math.round(b._tk.mult)} grain of multure this year`:''}`]);}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein');if(V.length)out.push(['Villein holdings',`${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent${s.svc==='money'?', by order':s.svc==='works'?'; services kept in hand by order':''}`]);
   const C=s.custom?Object.keys(CUSTOMS).filter(k=>s.custom[k]!=null&&s.custom[k]!==CUSTOMS[k]):[];if(C.length)out.push(['Customs',C.map(k=>`${esc((CUSTOM_NAMES[k]||[k])[0])} ${CUSTOM_NAMES[k]?.[2]?+(s.custom[k]*100).toFixed(2)+'%':+s.custom[k].toFixed(3)}`).join('; ')]);
-  if(s.court||s.pleas?.rows.length)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year</a>`]);
+  if(s.court||s.pleas?.rows.length||s.enrolments)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year${s.enrolments?' · '+(s.enrolments.rows.length+Object.values(s.enrolments.over).reduce((n,v)=>n+v,0))+' land and customary entries':''}</a>`]);
   return out;}
 function manorCmd(cmd,arg){const[a,k,v]=String(arg).split(':'),s=W.settlements[+a];if(!s||!sovOn()||s.owner!==plyH())return; // a lord orders his own places, the crown its own
   if(cmd==='s-custom'){if(!Object.hasOwn(CUSTOMS,k)||!(+v>=0)||+v>CUSTOMS[k]*4)return;(s.custom||(s.custom={}))[k]=+v;}
@@ -14502,13 +14524,13 @@ function tickTenure(){
     const heads=headsOf(s),size=new Map();for(const p of s.folk||[]){const h=householdHead(p);size.set(h,(size.get(h)||0)+1);}
     for(const h of heads){h._strips=0;h._crop=0;h._ha=0;h._owned=0;if(h.w===undefined)h.w=0;}
     const T=tilledOf(s,si),held=T.map(f=>f.ten+'|'+f.own+'|'+f.wk),gpx=yearPrice(s,'grain');manorYear(s,T);
-    for(const f of T){if(!f.ten)continue; // the dead and the gone: an heir takes their place, or the strip falls back to the lord
+    for(const f of T){if(!f.ten)continue;const was=courtHolding(f); // the dead and the gone: an heir takes their place, or the strip falls back to the lord
       if(f.own>=0){const p=PM.get(f.own);if(!p||p.dead){const h=heirOf(f.own,f,kids,spouse,si);f.own=h?h.id:-1;if(h)f._ent=h.id;}}
       if(f.wk>=0){const p=PM.get(f.wk);if(!p||p.dead||p.si!==si){const h=heirOf(f.wk,f,kids,spouse,si);f.wk=h&&h.si===si?h.id:-1;}}
       if(f._ent>=0){const h=PM.get(f._ent);if(h&&!h.dead&&f.own===f._ent)entryFine(s,f,h,customOf(s,'entryHeir')*stripRent(s,f,gpx));f._ent=-1;} // the heir who has taken up a holding pays the lord his entry, by the custom of the manor (#36)
       if(f.wk<0&&f.ten!=='demesne'){const ll=heads.filter(h=>tills(h,s)&&!(h._strips>0)),B=stripBidder(s,f,ll,frand(),gpx),h=B&&B.h;
         if(h){const grant=f.own<0;f.wk=h.id;h._strips=1;f.ten=f.own>=0&&f.own!==h.id?'crop':tenureNew();if(f.ten!=='crop'&&f.ten!=='lease')f.own=h.id;else if(f.ten==='lease')f.own=-1;if(grant&&B.bid>0)entryFine(s,f,h,B.bid);} // the lord's grant: his offer is the fine
-        else{f.ten='demesne';f.own=-1;}}}
+        else{f.ten='demesne';f.own=-1;}}courtLand(s,f,was,'admission');}
     settleTenure(s,si,heads);manorRents(s,si,T,PM,gpx);farmMills(s,si); // the money rents and the commuting of services; the mill's farm
     for(const f of T){const w=PM.get(f.wk);if(w){w._strips++;w._ha+=f.area/1e4;if(f.ten==='crop')w._crop++;}const o=PM.get(f.own);if(o)o._owned++;}
     // the year's account of every household
@@ -14525,13 +14547,13 @@ function tickTenure(){
     const L=W.houses[s.owner]; // (the town's rents have gone to the owners of its houses above)
     // the market in land
     for(const h of heads){if(!((h._debt||0)>Math.max(0,h.w||0)+4))continue;const mine=T.filter(f=>f.wk===h.id&&f.own===h.id&&f.ten==='free');if(!mine.length)continue; // only a freehold can be sold: a villein's strip is the lord's to grant, a lease is not his
-      const f=mine[Math.floor(frand()*mine.length)],price=Math.max(f.area/1e4*4,landValue(f)*10);const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
+      const f=mine[Math.floor(frand()*mine.length)],was=courtHolding(f),price=Math.max(f.area/1e4*4,landValue(f)*10);const buyer=heads.filter(o=>o!==h&&o.w>price+4).sort((a,b)=>b.w-a.w)[0];
       if(buyer){buyer.w=(buyer.w||0)-price;f.own=buyer.id;life(buyer,`Bought a strip from ${folkName(h)}, in debt`);life(h,`Sold a strip to ${folkName(buyer)} to pay debts, and stayed on to work it for half the crop`);if(!bigBuyer||buyer._owned>bigBuyer.n)bigBuyer={h:buyer,n:(buyer._owned||0)+1,s};}else if(means(lordAcct(s))>=price){f.own=-1;acct(lordAcct(s),-price,'Land bought',s);life(h,'Sold a strip back to the lord to pay debts');}else continue; // no neighbour can pay: the lord takes it back for the price
-      h.w=(h.w||0)+price;repay(h,h.w);f.ten='crop';sales++;} // he sells, and stays on as a sharecropper
+      h.w=(h.w||0)+price;repay(h,h.w);f.ten='crop';courtLand(s,f,was,'sale',price);sales++;} // he sells, and stays on as a sharecropper
     const tillHa=T.reduce((t2,f)=>t2+f.area,0)/1e4,hands=Math.max(1,heads.length),dear=tillHa/hands; // land per household: where hands are few, labour is dear and a home farm worked by hired men no longer pays
-    if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){h.w=(h.w||0)-price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;cashRecord(lordAcct(s),price,'Land sold',s);}} // the lords sell off their home farms
+    if(dear>(s._dear0||(s._dear0=dear))*1.3)for(const h of heads){const f=T.find(f=>f.ten==='demesne');if(!f)break;const price=Math.max(f.area/1e4*5,landValue(f)*12);if(h.w>price*1.5){const was=courtHolding(f);h.w=(h.w||0)-price;f.own=h.id;f.wk=h.id;f.ten='free';if(L&&s.owner>0){L.gold=(L.gold||0)+price;book(L,'land sold',price);}else W.treasury+=price;cashRecord(lordAcct(s),price,'Land sold',s);courtLand(s,f,was,'sale',price);}} // the lords sell off their home farms
     for(const h of heads){const mine=T.filter(f=>f.wk===h.id&&f.own===h.id),can=Math.max(2,Math.ceil((size.get(h)||1)*0.8));if(mine.length<=can)continue; // more strips than the household can work: let to sharecroppers
-      const ll=heads.filter(o=>tills(o,s)&&!(o._strips>0));for(const f of mine.slice(can)){const t=ll.shift();if(!t)break;f.wk=t.id;f.ten='crop';t._strips=1;}}
+      const ll=heads.filter(o=>tills(o,s)&&!(o._strips>0));for(const f of mine.slice(can)){const t=ll.shift();if(!t)break;const was=courtHolding(f);f.wk=t.id;f.ten='crop';t._strips=1;courtLand(s,f,was,'letting');}}
     T.forEach((f,k)=>{if(held[k]!==f.ten+'|'+f.own+'|'+f.wk)writeFurlong(f);}); // a strip that changed hands is drawn so (the land-use map hatches the home farms)
   });
   if(!W.prehistory&&bigBuyer&&bigBuyer.n>=4&&frand()<0.3)emit('trade',2,bigBuyer.s.pos,vary('yeoman',[()=>`${folkName(bigBuyer.h)} of ${bigBuyer.s.name} buys another strip from a neighbour in debt; he holds ${bigBuyer.n} now, and lets them to sharecroppers.`,
@@ -14660,13 +14682,14 @@ function soldiersPay(a,v,payer){ // a host's pay: to the households its men come
   for(const p of M){const to=p.merc?'out':(p.sp&&!p.sp.dead?p.sp:(p.ma&&!p.ma.dead?householdHead(p.ma):p));transfer(payer,to,each,'hosts',W.settlements[a.home]||W.settlements[a.at]);}}
 function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount(p);if(!h)return;const s=W.settlements[p.si]||W.settlements.find(x=>h.population.has(x))||W.capital;
   const isHead=h.head===p,servile=(s.furl||[]).some(f=>f.ten==='villein'&&(f.wk===p.id||f.own===p.id)),survivors=[...h.members].filter(q=>q!==p&&!q.dead),widow=p.sp&&!p.sp.dead?p.sp:null;let heirs,shares;ESTATE_CHILDREN=new Map();try{heirs=landHeirs(p,s);shares=isHead?estateShares(p,s):[];}finally{ESTATE_CHILDREN=null;}
+  const changed=[];let heriot=null;const enrol=()=>{for(const[t,f,was]of changed)courtLand(t,f,was,'inheritance');if(heriot)courtEnrol(s,'heriot',p,heriot);}; // occupation projects the settled household head, after the estate is divided
   // Land, occupation and movables are different rights. A minor's holding is not forfeited for want of an adult.
-  for(const t of W.settlements){for(const f of t.furl||[]){if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;if(heir)f._ent=heir.id; /* his entry fine falls due at the place's next reckoning (tickTenure, #36) */
-      if(widow&&heir&&heir!==widow){f.dower=widow.id;f.dowerFraction=inheritanceCustom(t).dower;}writeFurlong(f);}if(f.wk===p.id){const to=survivors.find(q=>q.si===W.settlements.indexOf(t)&&ageYrs(q)>=14)||heirs.find(q=>q.si===W.settlements.indexOf(t));f.wk=to?to.id:-1;writeFurlong(f);}} // the strip's new holder is drawn so
+  for(const t of W.settlements){for(const f of t.furl||[]){if(f.own!==p.id&&f.wk!==p.id)continue;const was=courtHolding(f);if(f.own===p.id){const heir=heirs.length?heirs[(f.k||0)%heirs.length]:null;f.own=heir?heir.id:-1;if(heir)f._ent=heir.id; /* his entry fine falls due at the place's next reckoning (tickTenure, #36) */
+      if(widow&&heir&&heir!==widow){f.dower=widow.id;f.dowerFraction=inheritanceCustom(t).dower;}writeFurlong(f);}if(f.wk===p.id){const to=survivors.find(q=>q.si===W.settlements.indexOf(t)&&ageYrs(q)>=14)||heirs.find(q=>q.si===W.settlements.indexOf(t));f.wk=to?to.id:-1;writeFurlong(f);}changed.push([t,f,was]);} // the strip's new holder is drawn so
     for(const b of t.buildings||[])if(b.ownerId===p.id)b.ownerId=heirs.length?heirs[(b.k||0)%heirs.length].id:widow?widow.id:'lord';householdHeadsChanged(t);}
-  if(!isHead){householdMemberDelete(h,p);return;}
+  if(!isHead){householdMemberDelete(h,p);enrol();return;}
   // Customary heriot is a single best beast from a servile tenant, not seizure of the whole family's goods.
-  if(inheritanceCustom(s).heriot&&servile){const H=h.assets.herd||{},best=BEASTS.filter(g=>(H[g]||0)>=1).sort((a,b)=>price(s,b)-price(s,a))[0];if(best){H[best]-=1;offer(s,best,lordAcct(s),1);}}
+  if(inheritanceCustom(s).heriot&&servile){const H=h.assets.herd||{},best=BEASTS.filter(g=>(H[g]||0)>=1).sort((a,b)=>price(s,b)-price(s,a))[0];if(best){H[best]-=1;offer(s,best,lordAcct(s),1);heriot={beast:best,qty:1,...courtLord(s,null,lordAcct(s))};}}
   repay(p,Math.max(0,h.assets.w||0));
   // Insolvent estates satisfy creditors with chattels in kind, at local prices; heirs incur no personal debt.
   let value=0;
@@ -14679,7 +14702,7 @@ function inherit(p){invalidateFolkIndex();p._dying=true;const h=householdAccount
   for(const e of h.assets._owe||[])e[1]=0;h.assets._debt=0;h.assets._owe=[];householdMemberDelete(h,p);h.head=widow&&survivors.includes(widow)?widow:survivors.sort((a,b)=>ageYrs(b)-ageYrs(a)||a.id-b.id)[0]||null;
   p._estateShares=shares;if(!h.head)h.successors=shares;p._heir=h.head||heirs[0]||null;
   if(h.head&&ageYrs(h.head)<18)h.guardian=widow||estateKin(p).find(q=>ageYrs(q)>=18)||null;
-  for(const q of new Set([...heirs,...(widow?[widow]:[])]))life(q,`Inherited under the custom of ${s.name} from ${folkName(p)}`);}
+  for(const q of new Set([...heirs,...(widow?[widow]:[])]))life(q,`Inherited under the custom of ${s.name} from ${folkName(p)}`);enrol();}
 /* =========================================================================
    HOUSEHOLDS: every family keeps its own purse and makes its own choices, once a year:
    - grown children set up house when they can earn their keep, with a portion from their parents;
@@ -21350,6 +21373,14 @@ pay them. Grazing trespass records the month's missing grass at the hay
 price, shared among beasts beyond their holders' share of the common;
 the lord's excess is not charged to a family. The worked holdings set the
 shares; a place without holdings uses its resident families' mouths.
+The roll also shows twelve recent land and customary entries: admissions,
+inheritance, marriage, clearing woodland, surrender, sale and letting.
+Each records the owner and occupier before and after. Entry fines show what
+was paid and what was unpaid at entry; the pending plea holds the current
+debt. Merchet names the bride and the household that paid her lord. A heriot
+records the single beast delivered in kind. These entries witness existing
+transactions, and earlier entries are counted by kind.
+
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that
 work, within the same spare-purse cap. It is a licence, not a claim that

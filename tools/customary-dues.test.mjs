@@ -101,6 +101,7 @@ test('arrears two years running return the holding to the lord, and the live arr
   const r=manor({strips:[strip(2,{svc:'money',qrent:20})]});const f=r.s.furl[0];r.eval('H[1].w=5');
   r.eval('manorRents(s,0,s.furl,folkIndex(),1)');near(house(r).gold,5);near(f._arr,15);assert.equal(f._arrN,1);assert.equal(f.wk,2);
   r.eval('manorRents(s,0,s.furl,folkIndex(),1)');assert.equal(f.wk,-1);assert.equal(f.own,-1);near(house(r).gold,5);
+  const E=r.s.enrolments.rows;assert.equal(E.length,1);assert.equal(E[0].action,'surrender');assert.equal(E[0].before.own,2);assert.equal(E[0].after.own,-1);assert.equal(E[0].after.wk,-1);
   assert.deepEqual(JSON.parse(r.eval("JSON.stringify(s.pleas.rows.map(x=>[x.kind,x.who,Math.round(x.v)]))")),[['arrears',2,35]]);
 });
 
@@ -114,6 +115,7 @@ test('an heir pays his entry fine once, when the holding has passed to him; no f
   r.s.furl[1]._ent=3; // a stale mark: the holder is still H[1]
   r.eval('s._lg0=0;tickTenure()');near(house(r).led['entry fines'],38);assert.equal(r.s.furl[0]._ent,-1);assert.equal(r.s.furl[1]._ent,-1);
   r.eval('for(const f of s.furl)f._lq=38;s._lg0=0;tickTenure()');near(house(r).led['entry fines'],38); // a year on, no one new: no fine
+  const E=r.s.enrolments.rows.filter(p=>p.kind==='entry');assert.equal(E.length,1);near(E[0].paid,38);near(E[0].left,0);
 });
 
 test('a strip with no crop behind it (cleared this year: its assart fine was its entry) owes no entry fine, to an heir or a new holder',()=>{
@@ -137,9 +139,31 @@ test('a vacant holding goes to the tiller who offers the lord most for it, and h
 test('merchet is paid by a bride\'s household that holds villein land, to that land\'s lord, and by no other',()=>{
   const r=manor({strips:[strip(2),strip(3,{k:1,ten:'free'})]});r.eval('for(const h of H)h.w=20');const v=r.eval("customOf(s,'merchet')*foodYr()");
   near(r.eval('merchet(s,H[1])'),v);near(house(r).led.merchet,v);near(r.H[1].w,20-v);
+  assert.equal(r.s.enrolments.rows[0].kind,'merchet');assert.equal(r.s.enrolments.rows[0].who,2);assert.equal(r.s.enrolments.rows[0].payer,2);near(r.s.enrolments.rows[0].paid,v);near(r.s.enrolments.rows[0].assessed,v);
   near(r.eval('merchet(s,H[2])'),0);near(r.eval('merchet(s,H[0])'),0);near(r.H[2].w,20);
   r.eval("s.custom={merchet:1}");near(r.eval('merchet(s,H[1])'),Math.min(20-v,r.eval('foodYr()')));
+  assert.equal(r.s.enrolments.rows.length,2);assert.equal(r.s.pleas,undefined);near(r.H[1]._debt||0,0);near(r.s.enrolments.rows[1].paid,Math.min(20-v,r.eval('foodYr()')));
   assert.match(fn('yearOfFolk'),/merchet\(s,w\);marryHouseholds\(best,w\)/,'paid at the wedding, before the households are joined');
+});
+
+test('the annual sale enrols its real price and the seller’s retained occupation once',()=>{
+  const r=manor({strips:[strip(1,{ten:'free'})]});tenure(r);r.eval('H[0].w=0;H[0]._debt=40;H[0]._owe=[["crown",40]];H[1].w=100');const before=gold(r);r.eval('tickTenure()');
+  const E=r.s.enrolments.rows.filter(p=>p.kind==='land');assert.equal(E.length,1);const p=E[0];assert.equal(p.action,'sale');near(p.paid,10);assert.equal(p.before.own,1);assert.equal(p.after.own,2);assert.equal(p.after.wk,1);assert.equal(p.after.ten,'crop');near(r.H[0]._debt,30);near(gold(r),before);
+});
+
+test('a short merchet payment names the holding’s actual lord and creates no unpaid marriage debt',()=>{
+  const r=manor({cash:1,strips:[strip(2,{lord:2})]});r.eval('W.houses.push({name:"House Elm",gold:0});s.custom={merchet:1};H[1].sp=H[2]');const before=gold(r);near(r.eval('merchet(s,H[1])'),1);
+  const p=r.s.enrolments.rows[0];assert.equal(p.lord,'h2');assert.equal(p.lordName,'House Elm');assert.equal(p.partner,3);near(p.paid,1);near(p.assessed,r.eval('foodYr()'));near(r.W.houses[2].gold,1);near(gold(r)+r.W.houses[2].gold,before);near(r.H[1]._debt||0,0);assert.equal(r.s.pleas,undefined);
+});
+
+test('letting excess strips enrols occupation separately from the family’s freehold title',()=>{
+  const r=manor({strips:Array.from({length:4},(_,k)=>strip(1,{k,ten:'free'}))});tenure(r);r.eval('tickTenure()');const E=r.s.enrolments.rows;
+  assert.equal(E.length,2);assert.ok(E.every(p=>p.action==='letting'&&p.before.own===1&&p.after.own===1&&p.after.wk!==1&&p.after.ten==='crop'));assert.equal(r.s.pleas,undefined);near(gold(r),0);
+});
+
+test('newly worked land enrols its admission at the existing harvest allocation',()=>{
+  const r=manor({strips:Array.from({length:3},(_,k)=>strip(-1,{k,ten:undefined,x:k,z:k}))});tenure(r);r.eval('settleTenure(s,0,headsOf(s))');
+  assert.equal(r.s.enrolments.rows.length,2);assert.ok(r.s.enrolments.rows.every(p=>p.action==='admission'&&p.before.ten===''&&p.after.wk>=0));near(gold(r),0);assert.equal(r.s.pleas,undefined);
 });
 
 for(const commodity of [false,true])test(`liveries pay servants in food the lord would lose to rot, and in coin where it would sell sound (${commodity?'commodity ledger':'claims'})`,()=>{

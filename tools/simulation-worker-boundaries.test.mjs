@@ -585,7 +585,7 @@ test('the worker\'s speed reply is authoritative: a stale pull cannot put back t
 
 test('a worker clock moves the HUD\'s date, treasury and people between landscape packets, never backwards',()=>{
   const els=new Map(),document={getElementById:id=>els.get(id)||els.set(id,{textContent:'',setAttribute(){}}).get(id)};
-  const c=context({document});new vm.Script(foregroundAdapters+'\n'+hud).runInContext(c);
+  let now=1000;const c=context({document,performance:{now:()=>now,timeOrigin:0}});new vm.Script(foregroundAdapters+'\n'+hud).runInContext(c);
   vm.runInContext(`const SEASONGLYPH=['❀','☀','❦','❄'];
     W.clock={day:30};W.treasury=100;W.legitimacy=50;W.weather={state:'clear'};W.monarch=null;W.player=null;W.settlements=[{pop:40},{pop:60}];`,c);
   vm.runInContext(`installClock({day:34,frac:.25,speed:5,at:1e12,treasury:180.4,legitimacy:52,pop:123,weather:'rain',drought:0,plagueActive:false})`,c);
@@ -595,9 +595,10 @@ test('a worker clock moves the HUD\'s date, treasury and people between landscap
   vm.runInContext(`installClock({day:35,treasury:190,legitimacy:52,pop:124,weather:'rain'})`,c);
   assert.equal(vm.runInContext('W.clock.day',c),35);assert.equal(els.get('treasury').textContent,'180','repaints at most ten times a second; the frame loop paints the rest');
   vm.runInContext('updateHUD()',c);assert.equal(els.get('treasury').textContent,'190');assert.equal(els.get('realmpop').textContent,'124');
+  now+=101;vm.runInContext(`installClock({day:36,treasury:200,legitimacy:52,pop:125,weather:'rain'})`,c);assert.equal(els.get('treasury').textContent,'200','a later clock repaints after the interval');assert.equal(els.get('realmpop').textContent,'125');
   vm.runInContext(`installClock({day:33,treasury:1,legitimacy:1,pop:1,weather:'snow'})`,c);vm.runInContext('updateHUD()',c);
-  assert.equal(els.get('treasury').textContent,'190','an older clock is ignored');assert.equal(vm.runInContext('W.clock.day',c),35);
-  vm.runInContext('W.clock={day:36};updateHUD()',c);assert.equal(els.get('realmpop').textContent,'100','a newer packet\'s own towns count again');
+  assert.equal(els.get('treasury').textContent,'200','an older clock is ignored');assert.equal(vm.runInContext('W.clock.day',c),36);
+  vm.runInContext('W.clock={day:37};updateHUD()',c);assert.equal(els.get('realmpop').textContent,'100','a newer packet\'s own towns count again');
 });
 
 test('a packet\'s events are laid out once, and only fresh ones fly the camera or light the map',()=>{

@@ -41,6 +41,11 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
         courtPlead(s,'entry',h.id,10000,f,lordAcct(s));
         const e=[lordAcct(s),10000,day()-360,true];h._owe.push(e);h._debt+=e[1];const p=courtPlead(s,'loan',h.id,e[1],e,e[0]);p.against=householdAccount(h);p.heard=true;
         courtAssize(s,h,40);const t=courtPlead(s,'trespass',h.id,20,householdAccount(h),lordAcct(s));t.against=householdAccount(h);return true;})()\`);
+      R(\`(()=>{const s=W.capital,h=headsOf(s)[0],f=s.furl.find(f=>f.wk===h.id)||s.furl[0],right=courtHolding(f),lord=courtLord(s,f,stripLord(f,s));
+        courtEnrol(s,'land',h,{field:f.k,ha:f.area/1e4,action:'admission',before:right,after:{...right},...lord});
+        courtEnrol(s,'entry',h,{field:f.k,paid:0,assessed:10,left:10,...lord});
+        courtEnrol(s,'merchet',h,{payer:h.id,payerName:folkName(h),partner:-1,partnerName:'',paid:0,assessed:10,...lord});
+        courtEnrol(s,'heriot',h,{beast:'horses',qty:1,...lord});})()\`); // exercise every scalar witness shape across a native save, separately from its live pleas
       await R('STORAGE_OUTCOMES.flush()');out.at=summary(); // the save commits the journal: capture after the commit, as the document holds it
       const s0=process.cpuUsage();out.doc=await R('worldSave({source:__source})');out.saveCPU=process.cpuUsage(s0);parentPort.postMessage({doc:out.doc});}
     else{const l0=process.cpuUsage();await R('worldLoad(__doc,{source:__source,outcomeJournal:'+journal+'})');out.loadCPU=process.cpuUsage(l0);

@@ -267,3 +267,40 @@ test('presentment reports distinguish receipts and grazing harm from money owing
   const r=court();r.eval('H[2].w=100;courtAssize(s,H[2],40);day=()=>180;courtSession(s,0)');const before=r.eval('JSON.stringify([s.court,s.pleas])'),html=r.eval('courtCard(s,0)');
   assert.ok(html.includes('Next great court'));assert.ok(html.includes('assize of bread and ale'));assert.ok(html.includes('40 in recorded receipts'));assert.ok(!html.includes('owing'));assert.ok(html.includes('2 amerced'));assert.equal(r.eval('JSON.stringify([s.court,s.pleas])'),before);
 });
+
+test('entry enrolment records the real payment and its original shortfall without another charge',()=>{
+  const r=court();r.eval('s.furl=[{k:7,area:10000,own:3,wk:3,ten:"villein"}];H[2].w=5;entryFine(s,s.furl[0],H[2],20)');
+  const p=r.s.enrolments.rows[0];assert.equal(p.kind,'entry');assert.equal(p.who,3);assert.equal(p.field,7);near(p.paid,5);near(p.assessed,20);near(p.left,15);assert.equal(p.lord,'h1');
+  near(total(r),5);near(r.H[2]._debt||0,0);assert.equal(r.s.pleas.rows.length,1);near(r.s.pleas.rows[0].v,15);assert.equal(r.s.court,undefined);
+  r.eval('H[2].w=100;courtSession(s,0)');near(p.left,15,'the enrolment is a snapshot; the plea owns the live debt');
+  assert.ok(r.eval('courtCard(s,0)').includes('15 unpaid at entry'));
+});
+
+test('a marriage enrols one changed holding with both rights and keeps the former holder’s name',()=>{
+  const r=court();r.eval('H[2].gn="Bride";H[3].gn="Groom";s.furl=[{k:0,area:20000,own:3,wk:3,ten:"free"},{k:1,own:5,wk:5,ten:"free"}];bindPropertyRights(s);marryHouseholds(H[3],H[2]);H[2].gn="Changed"');
+  const p=r.s.enrolments.rows[0];assert.equal(r.s.enrolments.rows.length,1);assert.equal(p.action,'marriage');assert.equal(p.before.own,3);assert.equal(p.before.wk,3);assert.equal(p.before.ownName,'Bride');assert.equal(p.after.own,4);assert.equal(p.after.wk,4);assert.equal(p.ha,2);
+  assert.ok(r.eval('courtCard(s,0)').includes('Bride'));assert.equal(r.s.court,undefined);assert.equal(r.s.pleas,undefined);
+});
+
+test('land witnesses use existing rights and names without refreshing the world’s person census',()=>{
+  const r=court();r.eval('s.furl=[{k:0,area:10000,own:3,wk:3,ten:"free"}];folkIndex=()=>{throw Error("no new census")};globalThis.was=courtHolding(s.furl[0]);s.furl[0].wk=4;courtLand(s,s.furl[0],was,"letting");courtLand(s,s.furl[0],courtHolding(s.furl[0]),"letting")');
+  assert.equal(r.s.enrolments.rows.length,1);assert.equal(r.s.enrolments.rows[0].before.own,3);assert.equal(r.s.enrolments.rows[0].after.own,3);assert.equal(r.s.enrolments.rows[0].after.wk,4);
+});
+
+test('enrolments keep twelve scalar snapshots and four bounded earlier counts, retaining no former actors',()=>{
+  const r=court();r.eval('for(let i=0;i<100;i++)for(const kind of ["land","entry","merchet","heriot"])courtEnrol(s,kind,H[2],{paid:i})');
+  assert.equal(r.s.enrolments.rows.length,12);assert.equal(Object.keys(r.s.enrolments.over).length,4);assert.equal(Object.values(r.s.enrolments.over).reduce((a,b)=>a+b,0),388);
+  assert.ok(r.s.enrolments.rows.every(p=>Object.values(p).every(v=>v===null||typeof v!=='object')));assert.equal(r.s.court,undefined);near(total(r),0);
+});
+
+test('a register without a sitting is discoverable, distinguishes kind from coin, and both reports only read',()=>{
+  const r=court();r.eval('courtEnrol(s,"heriot",H[2],{beast:"horses",qty:1,...courtLord(s,null,W.houses[1])});courtEnrol(s,"merchet",H[3],{payer:4,payerName:"Bride",partner:3,partnerName:"Groom",paid:0,assessed:20,...courtLord(s,null,W.houses[1])})');
+  const before=r.eval('JSON.stringify([s.enrolments,s.court,s.pleas])'),html=r.eval('courtCard(s,0)'),lines=r.eval('manorLines(s)');
+  assert.ok(html.includes('1 horses delivered in kind'));assert.ok(html.includes('paid 0'));assert.ok(html.includes('custom 20'));assert.ok(!html.includes('owing'));assert.ok(lines.some(([k,v])=>k==='Court'&&v.includes('2 land and customary entries')));
+  assert.equal(r.eval('JSON.stringify([s.enrolments,s.court,s.pleas])'),before);
+});
+
+test('an initial court inspection leaves an absent person index absent and can show saved names',()=>{
+  const r=court();r.eval('courtEnrol(s,"heriot",H[2],{beast:"horses",qty:1,...courtLord(s,null,W.houses[1])});delete W._pm;delete W._folkIndex;folkIndex=()=>{throw Error("a report cannot populate the index")};W.houses[1].justice={steward:1,clerk:2}');
+  const html=r.eval('courtCard(s,0)');assert.ok(html.includes('household'));assert.ok(html.includes('p1'));assert.ok(html.includes('p2'));assert.equal(r.W._pm,undefined);assert.equal(r.W._folkIndex,undefined);
+});
