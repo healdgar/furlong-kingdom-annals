@@ -111,3 +111,30 @@ test('mouths, zero-length endpoints, and short paths remain unchanged',()=>{
     const o=make(),before=outletState(o);vm.runInContext('extendRiverSeaOutlet(outlet)',Object.assign(t.ctx,{outlet:o}));assert.deepEqual(outletState(o),before);
   }
 });
+
+const profileWorld=bed=>{
+  const ctx=vm.createContext({hAt:x=>bed[x]});
+  vm.runInContext(source.slice(source.indexOf('function riverDrawLevel('),source.indexOf('const ROADCOL=')),ctx);
+  return st=>Array.from(ctx.riverDrawProfile(st));
+};
+const channel=(bed,ys=bed.map(y=>y+2))=>({pts:bed.map((_,x)=>({x,z:0})),ys,hw:bed.map(()=>4)});
+test('river water pools over repeated bed bumps rather than rising uphill in each terrain cell',()=>{
+  const bed=[9,4,8,4,8,2],st=channel(bed),before=JSON.stringify(st),ys=profileWorld(bed)(st);
+  assert.deepEqual(ys,[9.35,6.35,6.35,6.35,6.35,2.35]);
+  assert.ok(ys.every((y,k)=>!k||y<=ys[k-1]));assert.equal(JSON.stringify(st),before);
+});
+test('a descending river retains its drops, and a level canal retains its surveyed height without reading its bed',()=>{
+  const bed=[12,9,7,3],st=channel(bed);
+  assert.deepEqual(profileWorld(bed)(st),bed.map(y=>y+.35));
+  assert.deepEqual(profileWorld([])({...st,ys:[5,5,5,5],canal:true}),[5,5,5,5]);
+  assert.deepEqual(profileWorld([])({pts:[],ys:[],hw:[]}),[]);
+});
+
+test('junction backwater extends upstream without making a hump, and leaves canal levels and bank coordinates alone',()=>{
+  const level=vm.runInNewContext(source.slice(source.indexOf('function levelRiverRuns('),source.indexOf('function appendRiverJoin('))+'\nlevelRiverRuns');
+  const riv={p:[]};for(const y of [8,6,7,4,2,3])for(let j=0;j<5;j++)riv.p.push(j,y,riv.p.length/15);
+  const before=riv.p.slice(),runs=[{renderBase:0,pts:[0,1,2,3]},{renderBase:20,pts:[0,1],canal:true}];level(riv,runs);
+  assert.deepEqual([0,1,2,3,4,5].map(k=>riv.p[k*15+1]),[8,7,7,4,2,3]);
+  for(let i=0;i<riv.p.length;i++)if(i%3!==1)assert.equal(riv.p[i],before[i]);
+  for(let k=0;k<4;k++)for(let j=1;j<5;j++)assert.equal(riv.p[(k*5+j)*3+1],riv.p[k*15+1]);
+});

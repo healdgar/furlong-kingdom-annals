@@ -101,6 +101,19 @@ debt. Merchet names the bride and the household that paid her lord. A heriot
 records the single beast delivered in kind. These entries witness existing
 transactions, and earlier entries are counted by kind.
 
+A riot presents up to three resident adult household heads, ranked by
+hunger and boldness. The breach-of-peace custom is three days' family bread
+per incident, within the same spare-purse cap. Repeated incidents accumulate
+until a sitting; an amercement or pardon retires the case.
+
+The roll also shows pleas held for royal justice. A caravan robbery is
+recorded against the place nearest the ambush, with its carrier and load
+value. Joining an outlaw camp presents the recruit and records his share
+of the household's coin, goods and beasts at joining. This is evidence for
+the later eyre: the household retains its goods and no royal fine or
+forfeiture is collected yet. There are at most 64 recent held cases per
+place; earlier presentments are counted by kind.
+
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that
 work, within the same spare-purse cap. It is a licence, not a claim that

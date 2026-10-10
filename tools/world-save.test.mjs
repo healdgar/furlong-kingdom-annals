@@ -40,6 +40,7 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
         courtPlead(s,'farm',h.id,10000,{who:h.id,arr:10000,paid:0},lordAcct(s)); // a retired farm survives through its unpaid plea alone
         courtPlead(s,'entry',h.id,10000,f,lordAcct(s));
         const e=[lordAcct(s),10000,day()-360,true];h._owe.push(e);h._debt+=e[1];const p=courtPlead(s,'loan',h.id,e[1],e,e[0]);p.against=householdAccount(h);p.heard=true;
+        courtRiot(s);courtFelony(s,h,{id:7});courtRobbery(s,{value:40,qty:8,good:'cloth',origin:0,dest:1,drv:h},{id:7},{x:s.pos.x,z:s.pos.z});
         courtAssize(s,h,40);const t=courtPlead(s,'trespass',h.id,20,householdAccount(h),lordAcct(s));t.against=householdAccount(h);return true;})()\`);
       R(\`(()=>{const s=W.capital,h=headsOf(s)[0],f=s.furl.find(f=>f.wk===h.id)||s.furl[0],right=courtHolding(f),lord=courtLord(s,f,stripLord(f,s));
         courtEnrol(s,'land',h,{field:f.k,ha:f.area/1e4,action:'admission',before:right,after:{...right},...lord});

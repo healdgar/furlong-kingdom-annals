@@ -144,6 +144,9 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // grazing shares and bounded presentments. The two fine-only case kinds never invoke the existing distraint writer.
  // No quantity, claim, balance, title or journal writer changed; justice.test.mjs covers the shares, pardons and purses,
  // and world-save.test.mjs saves the native household references of both presentments.
- assert.equal(digest(outside),"2380f3c7d75302e2c2f6fc1d83db9c0386d9fc7bcf68dd10f574cf8fad67233e");
+ // Courts (#37, batch 11e): the only added outside claim line is courtFelony's direct native owner-row
+ // lookup for evidence at joining. Coin, goods and beasts remain with the household; no claim, balance,
+ // ownership or journal writer changed. Justice and fresh-save fixtures cover the snapshot and live reference.
+ assert.equal(digest(outside),"9cc514a8f1e13e92c7dc5e23d025c3ba2c70196cfb90e06920df037695b6f725");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

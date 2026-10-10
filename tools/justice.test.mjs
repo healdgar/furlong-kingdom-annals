@@ -8,7 +8,7 @@ const fn=n=>{const m=source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^fu
 const cst=n=>source.match(new RegExp('^const '+n+'=.*$','m'))[0];
 function court(){const r=realm({households:5,cash:0,grain:0,fish:0});
   r.eval(['courtGrazing','courtDebtor','courtOfficials','courtSession','tickJustice','courtCard','book','lordSeat','sovOn','plyH','workerCommandTarget','workerCommandIndexText','workerCommandString','runCmd','replayEntry','manorLines'].map(fn).join('\n')+'\n'+['dueOn','LK','LS'].map(cst).join('\n'));
-  Object.assign(r.C,{KL:0,KLaw:3,MODEL_ONLY:true,backgroundUserRequest:()=>false,workerCommandIsLocal:()=>false,esc:x=>String(x),dateStr:d=>'day '+d});
+  Object.assign(r.C,{KL:0,KLaw:3,MODEL_ONLY:true,trait:()=>0,backgroundUserRequest:()=>false,workerCommandIsLocal:()=>false,esc:x=>String(x),dateStr:d=>'day '+d});
   r.eval('W.houses=[{name:"the Crown"},{name:"House Ash",seat:0,gold:0}];W.capital=s;s.owner=1;W.player={on:true,house:1};s.furl=[];tilledOf=s=>s.furl;for(const h of H)h.sk=[1,0,0,1];ownershipTick();for(const h of H)householdAccount(h).population.set(s,1);W._pm=folkIndex();');
   return r;}
 const total=r=>r.coins()+(r.W.houses[1].gold||0);
@@ -303,4 +303,48 @@ test('a register without a sitting is discoverable, distinguishes kind from coin
 test('an initial court inspection leaves an absent person index absent and can show saved names',()=>{
   const r=court();r.eval('courtEnrol(s,"heriot",H[2],{beast:"horses",qty:1,...courtLord(s,null,W.houses[1])});delete W._pm;delete W._folkIndex;folkIndex=()=>{throw Error("a report cannot populate the index")};W.houses[1].justice={steward:1,clerk:2}');
   const html=r.eval('courtCard(s,0)');assert.ok(html.includes('household'));assert.ok(html.includes('p1'));assert.ok(html.includes('p2'));assert.equal(r.W._pm,undefined);assert.equal(r.W._folkIndex,undefined);
+});
+
+
+test('a riot presents only three resident adult heads, ranked by hunger and boldness with stable ties',()=>{
+  const r=court();r.eval('for(const h of H)householdAccount(h).hunger=0;householdAccount(H[3]).hunger=0.8;householdAccount(H[4]).hunger=0.8;trait=(p,k)=>k===GB&&p.id===3?1:0;courtRiot(s)');
+  assert.deepEqual(Array.from(r.s.pleas.rows,p=>p.who),[4,5,3]);assert.ok(r.s.pleas.rows.every(p=>p.kind==='riot'&&p.against===r.eval('householdAccount(H['+(p.who-1)+'])')));
+  assert.equal(r.s.court,undefined);near(total(r),0);
+  const b=court();b.eval('H[0].away={until:99};H[1].age=17;H[2].role="noble";H[3].outlawCampId=7;courtRiot(s)');assert.equal(b.s.pleas.rows.length,1);assert.equal(b.s.pleas.rows[0].who,5);
+});
+
+test('riot amercements are customary fines only, preserve subsistence, conserve coin and retire once',()=>{
+  const r=court();r.eval('for(const h of H)h.w=100;courtRiot(s);courtRiot(s)');assert.equal(r.s.pleas.rows.length,3);assert.ok(r.s.pleas.rows.every(p=>p.incidents===2));
+  const before=total(r);r.eval('courtSession(s,0)');near(total(r),before);assert.equal(r.s.court.sessions,1);assert.equal(r.s.court.byKind.riot.heard,3);assert.equal(r.s.court.recovered,0);assert.equal(r.s.court.distraints,0);assert.equal(r.s.pleas.rows.length,0);
+  for(const p of r.s.court.roll.rows){near(p.fine,r.eval('foodYr()/360*3*2'));assert.equal(p.paid,0);assert.equal(p.incidents,2);}
+  const fine=r.s.court.fines;r.eval('courtSession(s,0)');near(r.s.court.fines,fine);const html=r.eval('courtCard(s,0)');assert.ok(html.includes('Breach of the peace'));assert.ok(html.includes('2 riot presentments'));assert.ok(!html.includes('owing'));
+});
+
+test('poor riot defendants are pardoned within a funded session and their beasts are never sold',()=>{
+  const r=court();r.eval('H[0].w=100;H[1].w=100;H[2].w=0;herdOf(H[2],s).cattle=8;courtRiot(s);courtSession(s,0)');
+  assert.equal(r.s.court.sessions,1);assert.equal(r.s.court.byKind.riot.pardoned,1);near(r.H[2].w,0);near(r.eval('herdOf(H[2],s).cattle'),8);assert.equal(r.s.pleas.rows.length,0);
+});
+
+test('riot leadership is searched once at the event and no new daily census hears the case',()=>{
+  const r=court();r.eval('globalThis.calls=0;globalThis.originalHeads=headsOf;headsOf=s=>{calls++;return originalHeads(s)};courtRiot(s)');assert.equal(r.eval('calls'),1);
+  r.eval('headsOf=()=>{throw Error("no daily leadership search")};day=()=>91;tickJustice()');assert.equal(r.s.pleas.rows.length,3);
+  assert.ok(source.includes("s.prosperity=clamp(s.prosperity-3,1,100);courtRiot(s)"),'the native riot branch presents the event');
+});
+
+test('a felony witnesses only the recruit’s living household share and leaves real chattels in place',()=>{
+  const r=court();r.eval('H[2].w=90;globalThis.A=householdAccount(H[2]);A.members.add({id:90,gn:"spouse"});A.members.add({id:91,gn:"dead child",dead:true});herdOf(H[2],s).sheep=8;globalThis.x=stockOf(s,A);x.held.cloth=4;x.sale.grain=12;courtFelony(s,H[2],{id:7})');
+  const p=r.s.royalPleas.rows[0];near(p.share,0.5);near(p.coin,45);near(p.beasts.sheep,4);near(p.goods.cloth,2);near(p.goods.grain,6);assert.equal(p.against,r.eval('A'));near(r.H[2].w,90);near(r.eval('x.held.cloth'),4);near(r.eval('x.sale.grain'),12);near(r.eval('herdOf(H[2],s).sheep'),8);
+  r.eval('A.assets.w=30;x.held.cloth=0;H[2].gn="Changed"');near(p.coin,45);near(p.goods.cloth,2);assert.equal(p.name,'household','the evidence keeps the name at joining');
+});
+
+test('royal presentments await a distinct jurisdiction, without manor fines, officers or invented debts',()=>{
+  const r=court();r.eval('H[2].w=100;courtFelony(s,H[2],{id:7});courtRobbery(s,{value:40,qty:8,good:"cloth",origin:0,dest:0,drv:H[3]},{id:7},{x:30,z:0});day=()=>90;tickJustice()');
+  near(total(r),100);assert.equal(r.s.court,undefined);assert.equal(r.s.pleas,undefined);assert.equal(r.H[0].office,undefined);assert.equal(r.s.royalPleas.rows.length,2);near(r.H[2]._debt||0,0);
+  const before=r.eval('JSON.stringify(s.royalPleas,(k,v)=>k==="against"?v.id:v)'),html=r.eval('courtCard(s,0)'),lines=r.eval('manorLines(s)');assert.ok(html.includes('Pleas held for royal justice'));assert.ok(html.includes('recorded load value 40'));assert.ok(html.includes('goods remain with the household'));assert.ok(html.includes('data-nm="p3"'));assert.ok(lines.some(([k,v])=>k==='Court'&&v.includes('2 held for royal justice')));assert.equal(r.eval('JSON.stringify(s.royalPleas,(k,v)=>k==="against"?v.id:v)'),before);
+});
+
+test('royal evidence stays bounded and folds earlier presentments into two scalar counts',()=>{
+  const r=court();r.eval('for(let i=0;i<100;i++){courtFelony(s,H[2],{id:i});courtRobbery(s,{value:i},{id:i},{x:0,z:0});}');
+  assert.equal(r.s.royalPleas.rows.length,64);assert.equal(r.s.royalPleas.over.felony,68);assert.equal(r.s.royalPleas.over.robbery,68);assert.equal(Object.keys(r.s.royalPleas.over).length,2);near(total(r),0);
+  r.eval('delete W._pm;delete W._folkIndex;folkIndex=()=>{throw Error("no report census")};courtCard(s,0)');assert.equal(r.W._folkIndex,undefined);
 });

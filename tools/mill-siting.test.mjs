@@ -73,7 +73,7 @@ function wheelWorld({bed=2,simY=3,bank=4,found=null,mesh=null,inset=1.25}={}){
     lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),dist2d:(ax,az,bx,bz)=>Math.hypot(ax-bx,az-bz),
     segDist:(px,pz,a,b)=>{const dx=b.x-a.x,dz=b.z-a.z,L2=dx*dx+dz*dz||1,t=Math.max(0,Math.min(1,((px-a.x)*dx+(pz-a.z)*dz)/L2));return Math.hypot(px-(a.x+dx*t),pz-(a.z+dz*t));},
     inPoly:()=>false,riverAt:(x,z)=>Math.abs(z)<5?{a:{x:-1,z:0},b:{x:1,z:0},y:simY,hw:5}:null,hAt:(x,z)=>Math.abs(z)<5?bed:bank});
-  vm.runInContext(source.match(/^const MILL_DIP=.*$/m)[0]+'\n'+['riverDrawLevel','riverSurfaceAt','millDrive','millWheelFit','millWheelPose','millPaddleToWater'].map(extract).join('\n'),C);
+  vm.runInContext(source.match(/^const MILL_DIP=.*$/m)[0]+'\n'+['riverDrawLevel','riverDrawProfile','riverSurfaceAt','millDrive','millWheelFit','millWheelPose','millPaddleToWater'].map(extract).join('\n'),C);
   // a 9 m mill on the north bank, its wheel 1.25 m inside the water's edge and 6.8 m from its centre, as millBankSites lays it
   const b={x:-6,z:5-inset+6.8,w:9,d:9,rot:Math.PI/2,y:bank,y0:found??bank-0.8,h:7.35,millWater:{x:-6,z:5-inset,y:simY,side:0,offset:6.8,kind:'river'}};
   return{C,b,s:{}};

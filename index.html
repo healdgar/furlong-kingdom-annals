@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 00:34 UTC · after 3ef59ef</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 01:40 UTC · after 93968ab</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -5828,6 +5828,10 @@ function levelRiverJoins(riv,joins){ // a junction is one level pool above every
   for(const {i,x,z,hw,near}of rows){let y=riv.p[i*3+1];for(const {F}of near){const t=clamp((riverFootprintDepth(F,x,z)+hw*2)/(hw||1),0,1);y=Math.max(y,lerp(riv.p[i*3+1],F.level,t*t*(3-2*t)));}for(let j=0;j<5;j++)riv.p[(i+j)*3+1]=y;}
   for(const F of joins)for(const q of F)q.y=F.level;
 }
+function levelRiverRuns(riv,runs){ // a junction's backwater extends upstream, rather than standing as a hump in the channel
+  for(const st of runs){if(st.canal)continue;let y=-Infinity;
+    for(let k=st.pts.length-1;k>=0;k--){const i=st.renderBase+k*5;y=Math.max(y,riv.p[i*3+1]);for(let j=0;j<5;j++)riv.p[(i+j)*3+1]=y;}}
+}
 function appendRiverJoin(acc,F,offset=0,water=false){ // a planar overlay; its material blends the two arm textures in world space
   const center={x:F.reduce((n,q)=>n+q.x,0)/F.length,y:F.level??Math.max(...F.map(q=>q.y)),z:F.reduce((n,q)=>n+q.z,0)/F.length},base=acc.p.length/3;
   for(const q of[center,...F]){acc.p.push(q.x,center.y+offset,q.z);acc.n.push(0,1,0);acc.c.push(...(water?[36/255,91/255,114/255]:[.3,.27,.2]));acc.uv.push(q.x,q.z);acc.tangent.push(...(F.flow||[0,1]));acc.bank.push(3);}
@@ -5899,6 +5903,16 @@ function cutRiverTerrain(g,footprints,water,banks=footprints){ // cut the render
   G.riverBed=accMesh(bed,G.terrain.material);G.riverBed.geometry.userData.bankColors=embankColors;G.riverBed.geometry.userData.blends=bed.blends;G.riverEmbankments=embankments;G.riverBed.receiveShadow=true;G.riverBed.renderOrder=1;scene.add(G.riverBed);G.riverFootprints=footprints;
 }
 function riverDrawLevel(x,z,ceiling=Infinity){return Math.min(ceiling,hAt(x,z)+0.35);} // the channel bed, not an upstream maximum across neighbouring banks
+function riverDrawProfile(st){ // pools span bumps in the bed; the surface may descend, never climb downstream
+  const ys=st.ys.map((y,k)=>st.canal?y:riverDrawLevel(st.pts[k].x,st.pts[k].z,y));if(st.canal)return ys;
+  const pools=[];
+  for(let k=0;k<ys.length;k++){
+    pools.push({a:k,b:k,sum:ys[k],n:1});
+    while(pools.length>1){const q=pools[pools.length-1],p=pools[pools.length-2];if(p.sum/p.n>=q.sum/q.n)break;
+      p.b=q.b;p.sum+=q.sum;p.n+=q.n;pools.pop();}
+  }
+  for(const p of pools)ys.fill(p.sum/p.n,p.a,p.b+1);return ys;
+}
 function riverDrawAt(x,z){const r=riverAt(x,z,3);if(!r)return null;const dx=r.b.x-r.a.x,dz=r.b.z-r.a.z,t=clamp(((x-r.a.x)*dx+(z-r.a.z)*dz)/(dx*dx+dz*dz||1),0,1);return riverDrawLevel(r.a.x+dx*t,r.a.z+dz*t,r.y);}
 const ROADCOL={verge:0x6d6a44,dirt:0x8f7a52,rut:0x7a6546,crown:0x9c8660};
 const PAVECOL={verge:0x6f685a,dirt:0x8d8576,rut:0x80796b,crown:0x9a9384};
@@ -6197,7 +6211,7 @@ function buildTerrain(){
     G.sea.position.y=SEA_SURFACE;scene.add(G.sea);
   }
   // rivers: smoothed, level-across water surfaces with pale shallows at the banks
-  const riv=newAcc(),footprints=[],banks=[];G.drawRivRuns=[];
+  const riv=newAcc(),footprints=[],banks=[],profiles=new Map(riverStrips().map(st=>[st,riverDrawProfile(st)]));G.drawRivRuns=[];
   const drawnPart=st=>{ // for drawing only (layouts still see the whole channel): no overlapping tongues
     const me=W.rivStrips.indexOf(st),inOther=(q,w)=>W.rivStrips.some((o,oi)=>o!==st&&!o.canal&&o.pts.some((p2,k)=>k<o.pts.length-1&&segDist(q.x,q.z,p2,o.pts[k+1])<o.hw[k]*0.6&&(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me)));
     const sea=q=>riverSeaAt(q.x,q.z);
@@ -6205,18 +6219,18 @@ function buildTerrain(){
     if(st.canal){while(a<b&&sea(st.pts[a]))a++;while(b>a&&sea(st.pts[b-1]))b--;a=Math.max(0,a-1);b=Math.min(st.pts.length,b+1);}
     else{let k=b-1;while(k>1&&(sea(st.pts[k-1])||inOther(st.pts[k-1],st.hw[k-1])))k--;b=Math.min(b,k+1);} // keep one point in, to meet the water
     if(b-a<2)return null;
-    const out={pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:st.ys.slice(a,b).map((y,k)=>st.canal?y:riverDrawLevel(st.pts[a+k].x,st.pts[a+k].z,y)),mouth:0};
+    const out={pts:st.pts.slice(a,b),hw:st.hw.slice(a,b),ys:profiles.get(st).slice(a,b),canal:!!st.canal,mouth:0};
     if(!st.canal){ // a confluence (a stream now ends on the river it joins): the mouth flares and runs onto the other's midline at its level, so the waters meet, not overlap
       const q=out.pts[out.pts.length-1];let best=null,bd=1e9;
       for(const o of W.rivStrips){if(o===st||o.canal)continue;const oi=W.rivStrips.indexOf(o),w=out.hw[out.hw.length-1];for(let k=0;k<o.pts.length-1;k++){if(!(o.hw[k]>w+0.5||Math.abs(o.hw[k]-w)<=0.5&&oi<me))continue;const p0=o.pts[k],p1=o.pts[k+1],d=segDist(q.x,q.z,p0,p1);if(d<bd){bd=d;best={o,k};}}}
       if(best&&bd<best.o.hw[best.k]*1.2){const{o,k}=best,p0=o.pts[k],p1=o.pts[k+1],dx=p1.x-p0.x,dz=p1.z-p0.z,t=clamp(((q.x-p0.x)*dx+(q.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1),n=out.pts.length;
-        out.pts[n-1]={x:p0.x+dx*t,z:p0.z+dz*t};out.ys[n-1]=lerp(riverDrawLevel(p0.x,p0.z,o.ys[k]),riverDrawLevel(p1.x,p1.z,o.ys[k+1]),t)+0.015; // joins at the actual channel level
+        out.pts[n-1]={x:p0.x+dx*t,z:p0.z+dz*t};out.ys[n-1]=lerp(profiles.get(o)[k],profiles.get(o)[k+1],t)+0.015; // joins at the actual channel level
         out.hw[n-1]=Math.min(o.hw[k]*0.9,out.hw[n-1]*1.7);
         if(n>2)out.hw[n-2]*=1.25;out.mouth=1;
         const ux=dx/(Math.hypot(dx,dz)||1),uz=dz/(Math.hypot(dx,dz)||1),hw=o.hw[k],end=out.pts[n-1],prev=out.pts[n-2],L=dist2d(prev.x,prev.z,end.x,end.z)||1,nx=-(end.z-prev.z)/L,nz=(end.x-prev.x)/L,points=[];
         for(const [p,w]of[[p0,o.hw[k]],[p1,o.hw[k+1]]])for(const side of[-1,1])points.push({x:p.x-uz*w*side,z:p.z+ux*w*side});
         for(const [p,w]of[[prev,out.hw[n-2]],[end,out.hw[n-1]]])for(const side of[-1,1])points.push({x:p.x+nx*w*side,z:p.z+nz*w*side});
-        const y0=riverDrawLevel(p0.x,p0.z,o.ys[k]),y1=riverDrawLevel(p1.x,p1.z,o.ys[k+1]);out.join=riverJoinPolygon(points).map(p=>({...p,y:lerp(y0,y1,clamp(((p.x-p0.x)*dx+(p.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1))+0.02}));out.joinFlow={x:ux,z:uz,hw};out.join.flow=[ux,uz];out.join.inFlow=[(end.x-prev.x)/L,(end.z-prev.z)/L];out.join.origins=[p0.x,p0.z,prev.x,prev.z];out.join.widths=[hw,out.hw[n-2]];}
+        const y0=profiles.get(o)[k],y1=profiles.get(o)[k+1];out.join=riverJoinPolygon(points).map(p=>({...p,y:lerp(y0,y1,clamp(((p.x-p0.x)*dx+(p.z-p0.z)*dz)/(dx*dx+dz*dz||1),0,1))+0.02}));out.joinFlow={x:ux,z:uz,hw};out.join.flow=[ux,uz];out.join.inFlow=[(end.x-prev.x)/L,(end.z-prev.z)/L];out.join.origins=[p0.x,p0.z,prev.x,prev.z];out.join.widths=[hw,out.hw[n-2]];}
     }
     if(!out.mouth){ // the channel dives beneath the sea rather than ending as a square blue tongue
       extendRiverSeaOutlet(out);
@@ -6232,7 +6246,7 @@ function buildTerrain(){
       const turns=F.map((p,j)=>{const q=F[(j+1)%4],r=F[(j+2)%4];return(q.x-p.x)*(r.z-q.z)-(q.z-p.z)*(r.x-q.x);});
       if(turns.every(v=>v>0)||turns.every(v=>v<0))footprints.push(F);
       else for(let j=0;j<4;j++){footprints.push([point(i+j),point(i+j+1),point(i+j+5)],[point(i+j+1),point(i+j+6),point(i+j+5)]);}}}
-  G.riverCrossVertices=riv.p.length/3;levelRiverJoins(riv,G.drawRivRuns.filter(r=>r.join).map(r=>r.join));
+  G.riverCrossVertices=riv.p.length/3;levelRiverJoins(riv,G.drawRivRuns.filter(r=>r.join).map(r=>r.join));levelRiverRuns(riv,G.drawRivRuns);
   for(const F of [...footprints,...banks])for(const q of F)q.y=riv.p[q.id*3+1];
   for(const st of G.drawRivRuns)if(st.join){const F=st.join;appendRiverJoin(riv,F,0,true);F.allEdges=true;footprints.push(F);banks.push(F);}
   const lk=newAcc(); // mill-ponds: a flat, opaque sheet at the dam's level (the shore is where the ground rises through it; the drowned channel stays hidden)
@@ -6678,13 +6692,13 @@ function millRaceRibbon(points,width,vertices,indices,uvs){
     if(i){const a=base-2,b=base-1,c=base,d=base+1;indices.push(a,c,b,b,c,d);}
   }
 }
-// The river is drawn at its bed + 0.35 (riverDrawLevel), below the simulation's level, and a junction as one pool: read the built mesh's
+// The drawn river pools over bumps in its bed (riverDrawProfile), and a junction is one pool: read the built mesh's
 // centre line where there is one; before it is built, or with no screen, the same rule from the strips. `bank` is how far inside the drawn edge.
 function riverSurfaceAt(x,z){
   const P=G.rivers?.geometry?.attributes?.position,runs=P?G.drawRivRuns||[]:W.rivStrips||[];let best=null,bd=0.5;
   for(const st of runs)for(let k=0;k<st.pts.length-1;k++){const d=segDist(x,z,st.pts[k],st.pts[k+1])-Math.max(st.hw[k],st.hw[k+1]);if(d<bd){bd=d;best=[st,k];}}
   if(!best)return null;const[st,k]=best,a=st.pts[k],c=st.pts[k+1],dx=c.x-a.x,dz=c.z-a.z,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz||1),0,1);
-  const y=P?i=>P.getY(st.renderBase+i*5+2):i=>{const q=st.pts[i];let v=st.canal?st.ys[i]:riverDrawLevel(q.x,q.z,st.ys[i]);for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))v=Math.min(v,s.lake.y-0.8);return v;};
+  const profile=P?null:riverDrawProfile(st),y=P?i=>P.getY(st.renderBase+i*5+2):i=>{const q=st.pts[i];let v=profile[i];for(const s of W.settlements)if(s.lake&&inPoly(s.lake.poly,q.x,q.z))v=Math.min(v,s.lake.y-0.8);return v;};
   return{y:lerp(y(k),y(k+1),t),bank:lerp(st.hw[k],st.hw[k+1],t)-segDist(x,z,a,c)};
 }
 const MILL_DIP=0.3,MILL_CLEAR=1.9; // the lowest buckets run this deep in the stream as drawn; the water shader draws the river's first 1.85 m from its edge as wet gravel
@@ -12585,7 +12599,7 @@ function tickPolitics(){
   for(const s of W.settlements){
     const hold=publicOrderMen(s)/Math.max(20,s.pop)*8,isSeat=W.houses.some(h=>h&&W.settlements[h.seat]===s);
     if(s.unrest>72&&chance('sim',0.02*(1-clamp(hold,0,0.9)))){
-      s.unrest-=14;s.prosperity=clamp(s.prosperity-3,1,100);
+      s.unrest-=14;s.prosperity=clamp(s.prosperity-3,1,100);courtRiot(s);
       emit('fates',5,s.pos,vary('riot',[()=>`Riot in ${s.name}! The mob overturns the market stalls and cries against the crown.`,()=>`The mob of ${s.name} overturns the market stalls, crying against the crown: there is riot in the streets!`,()=>`${s.name} is in riot; the mob overturns the market stalls and cries against the crown.`,()=>`Riot! In ${s.name} the mob cries against the crown and overturns the market stalls.`,()=>`Market stalls are overturned in ${s.name} by a mob crying against the crown.`,()=>`The mob in ${s.name} cries against the crown, and the market stalls go over; there is riot in the streets.`,()=>`${({rain:'In the rain',storm:'Through wind and rain',snow:'Across the snow',overcast:'Under a leaden sky',clear:'Under a clear sky'})[(W.weather||{}).state]||'Under the sky'}, riot breaks out in ${s.name}: the mob overturns the market stalls and cries against the crown.`]));
       if(chance('sim',0.3))igniteFire(s,1,'riot');
     }
@@ -13767,7 +13781,7 @@ function recruitBandit(camp,force=false){
   if(!chance('sim',joinP))return false;
   camp.men.push(p);p.outlawCampId=camp.id;p._outlawState={tr:p.tr,hadAway:!!p.away,away:p.away||null};
   p.tr=null;p.away={until:Number.MAX_SAFE_INTEGER,why:'outlaw',to:camp.id,what:'bandit camp'};
-  const home=W.settlements[si];if(home){home._tcY=-1;}if(typeof marketTradeIndexInvalidate==='function')marketTradeIndexInvalidate();
+  const home=W.settlements[si];if(home){home._tcY=-1;courtFelony(home,p,camp);}if(typeof marketTradeIndexInvalidate==='function')marketTradeIndexInvalidate();
   const cause=hunger>=0.35?'hunger':burden>=0.2?'household debts':'want';
   const bent=justice<0?' and a hardening distrust of the law':'';
   life(p,`Driven by ${cause}${bent}, ${folkName(p)} joined the outlaws near ${W.settlements[si].name}`);
@@ -13806,7 +13820,7 @@ function tickBandits(dis){
       const p=polyPos(c.poly,f);
       if(!p)continue;
       if(dist2d(camp.x,camp.z,p.x,p.z)<320&&chance('sim',0.12*MOD.bandit)){
-        c.robbed=true;camp.raids++;camp.loot=(camp.loot||0)+c.value;{const fence=W.settlements[nearestSettlementIdx(camp.x,camp.z)],men=(camp.men||[]).filter(p=>p&&!p.dead),thief=men.length?householdHead(men[(camp.raids-1)%men.length]):'out';if(c.storageCargo){const q=storageCargoRaid(c,fence,thief);if(fence&&q>0&&!commodityActive(fence))offer(fence,c.good,thief,q);}else if(fence&&c.qty>0){fence.stores[c.good]=(fence.stores[c.good]||0)+c.qty*0.6;offer(fence,c.good,thief,c.qty*0.6);}if(c.drv)life(c.drv,`Robbed by outlaws on the road, and the load lost`);} /* the stolen goods turn up for sale in the nearest market, cheap, and the silver goes with the outlaws */
+        c.robbed=true;camp.raids++;camp.loot=(camp.loot||0)+c.value;courtRobbery(W.settlements[nearestSettlementIdx(p.x,p.z)],c,camp,p);{const fence=W.settlements[nearestSettlementIdx(camp.x,camp.z)],men=(camp.men||[]).filter(p=>p&&!p.dead),thief=men.length?householdHead(men[(camp.raids-1)%men.length]):'out';if(c.storageCargo){const q=storageCargoRaid(c,fence,thief);if(fence&&q>0&&!commodityActive(fence))offer(fence,c.good,thief,q);}else if(fence&&c.qty>0){fence.stores[c.good]=(fence.stores[c.good]||0)+c.qty*0.6;offer(fence,c.good,thief,c.qty*0.6);}if(c.drv)life(c.drv,`Robbed by outlaws on the road, and the load lost`);} /* the stolen goods turn up for sale in the nearest market, cheap, and the silver goes with the outlaws */
         emit('fates',5,{x:p.x,z:p.z},((o)=>vary('caravan',[()=>`Bandits fall upon a caravan on the ${o} road! The mules are driven off and the goods lost.`,()=>`A caravan on the ${o} road is set upon by bandits! The mules are driven off and the goods lost.`,()=>`Bandits take a caravan on the ${o} road; the mules are driven off and the goods are lost.`,()=>`The goods are lost and the mules driven off when bandits fall upon a caravan on the ${o} road!`,()=>`On the ${o} road a caravan is stripped by bandits; the mules are driven off and the goods lost.`,()=>`Bandits waylay a caravan on the ${o} road. The mules are driven off, and the goods are lost.`]))(W.settlements[c.origin].name));
         W.settlements[c.dest].prosperity=clamp(W.settlements[c.dest].prosperity-1,1,100);
       }
@@ -14311,11 +14325,22 @@ function courtLord(s,f,lord){return {lord:lord==='crown'?'crown':'h'+(f?.lord>=0
 /* THE HALLMOTE (#37): the quarter day's court hears existing dues, year-old loans and grazing trespass; the great court hears the assize.
    A plea points to its holding, farm or loan entry; voluntary payment or surrender clears that same obligation.
    Only a place's bounded roll is read. Officials are chosen at the lord's seat when business first pays their fees. */
-const JUSTICE_CUSTOM={cap:0.1,rate:0.05,beastBid:0.8,pleaDays:2}; // manor custom: a twentieth of harm, at most a tenth of the spare purse; two days' bread for recording and hearing a loan plea. The reeve bids the usual four fifths of market for beasts. The ruler may change the cap.
+const JUSTICE_CUSTOM={cap:0.1,rate:0.05,beastBid:0.8,pleaDays:2,riotHeads:3,riotDays:3}; // manor custom: a twentieth of harm, at most a tenth of the spare purse; two days' bread for a loan plea. A riot presents three ringleaders, each at three days' family bread for breach of the peace. The reeve bids four fifths of market for beasts. The ruler may change the cap.
 function courtPlead(s,kind,who,v,ref,lord){
   if(!(v>1e-6))return;const R=rollOf(s,'pleas'),old=R.rows.find(p=>p.kind===kind&&(kind==='loan'||p.who===who)&&p.ref===ref&&p.lord===lord);
-  if(old){old.who=who;old.v=kind==='entry'||kind==='trespass'||kind==='assize'?old.v+v:v;return old;}return rollAdd(R,{kind,d:day(),who,v,ref,lord},64);}
-function courtOffence(p){return p.kind==='trespass'||p.kind==='assize';}
+  if(old){old.who=who;old.v=kind==='entry'||kind==='trespass'||kind==='assize'||kind==='riot'?old.v+v:v;return old;}return rollAdd(R,{kind,d:day(),who,v,ref,lord},64);}
+function courtOffence(p){return p.kind==='trespass'||p.kind==='assize'||p.kind==='riot';}
+function courtRiot(s){ // only at a riot: one pass over this place's heads, keeping the three hungriest and boldest; no dice and no daily census
+  const leaders=[],lord=lordAcct(s);for(const h of headsOf(s)){if(h.dead||h.role||h.outlawCampId||W.settlements[h.si]!==s||ageYrs(h)<18||h.away&&day()<h.away.until)continue;
+    const A=householdAccount(h),score=clamp(A?.hunger||0,0,1)*0.72+0.12*trait(h,GB)-0.11*(0.5*trait(h,GWa)+0.5*trait(h,GD)+(h.sk?.[KLaw]||0));
+    leaders.push({h,A,score});leaders.sort((a,b)=>b.score-a.score||a.h.id-b.h.id);if(leaders.length>JUSTICE_CUSTOM.riotHeads)leaders.pop();}
+  for(const {h,A} of leaders){let n=0;for(const p of A.members)if(!p.dead)n++;const v=Math.max(1,n)*foodYr()/360*JUSTICE_CUSTOM.riotDays,p=courtPlead(s,'riot',h.id,v,A,lord);p.against=A;p.incidents=(p.incidents||0)+1;}}
+function courtRobbery(s,c,camp,at){ // the vill on whose ground the ambush happened, not the consignee; the caravan's robbed flag admits this hook once
+  if(!s)return;return rollAdd(rollOf(s,'royalPleas'),{kind:'robbery',d:day(),camp:camp.id,x:at.x,z:at.z,v:Math.max(0,c.value||0),good:c.good||'',qty:Math.max(0,c.qty||0),origin:c.origin,dest:c.dest,who:c.drv?.id??-1,name:c.drv?folkName(c.drv):''},64);}
+function courtFelony(s,p,camp){ // a plea held for royal hearing, not a conviction: the recruit's share is witnessed without impounding the family's goods
+  const A=householdAccount(p);if(!s||!A)return;let n=0;for(const q of A.members)if(!q.dead)n++;const share=1/Math.max(1,n),x=s._owners?.get(A),goods={},beasts={};
+  if(x){for(const g of GOODS){const q=(x.held[g]||0)+(x.sale[g]||0);if(q>0)goods[g]=q*share;}for(const g of BEASTS)if(x.animals[g]>0)beasts[g]=x.animals[g]*share;}
+  return rollAdd(rollOf(s,'royalPleas'),{kind:'felony',d:day(),who:p.id,name:folkName(p),camp:camp.id,against:A,share,coin:Math.max(0,A.assets.w||0)*share,goods,beasts},64);}
 function courtAssize(s,h,v){ // the customary licence of bread and ale: only payments for this work, never an estimated income or an accusation of short weight
   if(!(v>1e-6)||h.dead||h.outlawCampId)return;const A=householdAccount(h);if(!A)return;const p=courtPlead(s,'assize',h.id,v,A,lordAcct(s));p.against=A;}
 function courtGrazing(s,g,used){ // the stinted common follows the worked holdings; in a place without holdings, its resident families share it by mouths
@@ -14336,7 +14361,7 @@ function courtOwed(p){
 function courtKeep(s,p){const A=householdAccount(p),h=A?.head||p,home=W.settlements[h.si]||s;let n=0;for(const q of A?.members||[p])if(!q.dead)n++;return Math.max(1,n)*foodYr()/12+rentDue(home,h)/12;}
 function courtSpare(s,p){return Math.max(0,means(p)-courtKeep(s,p));} // the next month's subsistence is not an amercement or a debt recovery
 function courtQuote(s,p,h,spare=courtSpare(s,h)){const owed=courtOwed(p),paid=courtOffence(p)?0:Math.min(owed,spare),cap=W.houses[s.owner]?.justice?.cap??JUSTICE_CUSTOM.cap;
-  return{owed,paid,fine:p.heard||p.kind==='loan'&&p.ref[3]?0:Math.min(owed*JUSTICE_CUSTOM.rate,Math.max(0,spare-paid)*cap)};}
+  return{owed,paid,fine:p.heard||p.kind==='loan'&&p.ref[3]?0:Math.min(p.kind==='riot'?owed:owed*JUSTICE_CUSTOM.rate,Math.max(0,spare-paid)*cap)};}
 function courtDebtor(p,PM){if(p.kind!=='loan'&&!courtOffence(p))return PM.get(p.who);let A=p.against;while(A?.household&&!A.estate&&A.successors?.length===1&&A.successors[0][1]===1)A=A.successors[0][0];return A?.household&&A.head?.gn!==undefined?A.head:null;} // a merger follows a family; an extinct estate leaves no personal plea for its heirs
 function courtPayees(x,f=1,out=[]){ // a dead lender's due belongs to the heirs, as acct() pays it; fees come from those same receipts
   if(x?.household&&x.successors){for(const[to,share]of x.successors)courtPayees(to,f*share,out);}
@@ -14386,7 +14411,7 @@ function courtSession(s,si){
     const fine=transfer(h,lord,q.fine,'amercements',s);p.heard=true;recovered+=paid;fines+=fine;pleaFees+=fee;distraints+=sold;if(p.kind!=='loan'&&p.lord===lord)income+=paid;income+=fine+fee;
     if(courtOffence(p)){const K=C.byKind||(C.byKind={}),k=K[p.kind]||(K[p.kind]={heard:0,fines:0,pardoned:0});k.heard++;k.fines+=fine;if(!(fine>0))k.pardoned++;}
     const creditor=p.kind==='loan'?p.lord:null,code=creditor==='crown'?'h0':creditor?.gn!==undefined?'p'+creditor.id:W.houses.includes(creditor)?'h'+W.houses.indexOf(creditor):creditor?.ch?'building:'+W.settlements.indexOf(creditor.s||s)+':'+creditor.x+':'+creditor.z+':'+creditor.arch:null;
-    rollAdd(C.roll,{kind:p.kind,d:day(),who:h.id,name:folkName(h),owed:q.owed,paid,fine,left:p.v,ruling:courtOffence(p)?fine>0?'amerced':'pardoned':p.v>1e-6?'unpaid':'paid',pardoned:!(fine>0),...(creditor?{creditor:code,creditorName:creditor==='crown'?'the Crown':creditor.gn!==undefined?folkName(creditor):creditor.name||'the parish',pleaFee:fee}:{}),...(sold?{beasts:q.sales.map(({k,q})=>[k,q])}:{})});
+    rollAdd(C.roll,{kind:p.kind,d:day(),who:h.id,name:folkName(h),owed:q.owed,paid,fine,left:p.v,ruling:courtOffence(p)?fine>0?'amerced':'pardoned':p.v>1e-6?'unpaid':'paid',pardoned:!(fine>0),...(p.kind==='riot'?{incidents:p.incidents||1}:{}),...(creditor?{creditor:code,creditorName:creditor==='crown'?'the Crown':creditor.gn!==undefined?folkName(creditor):creditor.name||'the parish',pleaFee:fee}:{}),...(sold?{beasts:q.sales.map(({k,q})=>[k,q])}:{})});
     if(p.v>1e-6)heard.push(p);}
   for(const A of loans){const E=A.assets._owe||[];A.assets._owe=E.filter(e=>e[1]>1e-6);A.assets._debt=A.assets._owe.reduce((v,e)=>v+e[1],0);} // once per household, however many of its loans were heard
   R.rows=heard;const J=W.houses[s.owner].justice||(W.houses[s.owner].justice={});O.picked.forEach((p,i)=>{const k=i?'clerk':'steward';p.office=k;p.officeFor=s.owner;J[k]=p.id;});let fees=0;O.picked.forEach((p,i)=>{fees+=transfer(lord,p,O.fees[i],'court fees',s);});
@@ -14399,9 +14424,15 @@ function justiceCmd(arg){const[a,k,v,...rest]=String(arg).split(':'),s=W.settlem
 function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||W._folkIndex||new Map(),person=(id,name)=>{const p=PM.get(id);return id>=0||p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name||'Person '+id)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`; // a court read does not populate the world's person index
   let h=row('Place',`<a class="nm" data-nm="s${si}">${esc(s.name)}</a>`)+row('Pleas waiting',s.pleas?.rows.length||0)+row('Next quarter day',dateStr(day()+((90-(day()+si*37)%90)%90||90)))+row('Next great court',dateStr(day()+((180-(day()+si*37)%180)%180||180)))+row('Steward',person(J?.steward))+row('Clerk',person(J?.clerk));
   if(C){h+=row('Sessions held / adjourned',C.sessions+' / '+C.adjourned)+row('Recovered / amercements / officers’ fees',Math.round(C.recovered)+' / '+Math.round(C.fines)+' / '+Math.round(C.fees))+row('Loans recovered / plea fees',Math.round(C.loanRecovered||0)+' / '+Math.round(C.pleaFees||0))+row('Beasts sold under judgement',C.distraints||0)+row('This year’s net cash receipts',Math.round(C.year===Math.floor(day()/360)?C.profit:0));
-    for(const[k,v]of Object.entries(C.byKind||{}))h+=row(k==='assize'?'Bread and ale assize':'Grazing trespass',v.heard+' heard, '+v.pardoned+' pardoned, '+(+v.fines.toFixed(2))+' amerced');
-    for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind==='assize'?'assize of bread and ale':p.kind==='trespass'?'grazing trespass':p.kind)}${p.creditor?` to <a class="nm" data-nm="${esc(p.creditor)}">${esc(p.creditorName)}</a>`:''} — ${courtOffence(p)?(+p.owed.toFixed(2))+(p.kind==='assize'?' in recorded receipts':' in lost grazing'):Math.round(p.paid)+' paid, '+Math.round(p.left)+' owing'}; ${p.pardoned?'amercement pardoned':(+p.fine.toFixed(2))+' amerced'}${p.beasts?`; sold ${p.beasts.map(([k,q])=>q+' '+esc(k)).join(', ')}`:''}${p.pleaFee?`; ${+p.pleaFee.toFixed(2)} plea fee from the recovery`:''}.</p>`;
+    for(const[k,v]of Object.entries(C.byKind||{}))h+=row(k==='assize'?'Bread and ale assize':k==='riot'?'Breach of the peace':'Grazing trespass',v.heard+' heard, '+v.pardoned+' pardoned, '+(+v.fines.toFixed(2))+' amerced');
+    for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind==='assize'?'assize of bread and ale':p.kind==='trespass'?'grazing trespass':p.kind)}${p.creditor?` to <a class="nm" data-nm="${esc(p.creditor)}">${esc(p.creditorName)}</a>`:''} — ${courtOffence(p)?p.kind==='riot'?(p.incidents||1)+' riot presentments, '+(+p.owed.toFixed(2))+' customary amercement':(+p.owed.toFixed(2))+(p.kind==='assize'?' in recorded receipts':' in lost grazing'):Math.round(p.paid)+' paid, '+Math.round(p.left)+' owing'}; ${p.pardoned?'amercement pardoned':(+p.fine.toFixed(2))+' amerced'}${p.beasts?`; sold ${p.beasts.map(([k,q])=>q+' '+esc(k)).join(', ')}`:''}${p.pleaFee?`; ${+p.pleaFee.toFixed(2)} plea fee from the recovery`:''}.</p>`;
     for(const[k,n]of Object.entries(C.roll.over))h+=row('Earlier '+esc(k)+' rulings',n);}
+  const R=s.royalPleas;if(R){const witness=p=>`<a class="nm" data-nm="p${p.who}">${esc(p.name||'Person '+p.who)}</a>`,coin=v=>+v.toFixed(2);h+='<div class="dhead">Pleas held for royal justice</div><p>Robbery is presented against this place; felony names the recruit and his share at joining. These cases await the eyre. No royal fine or forfeiture has been collected.</p>';
+    h+=row('Held presentments',R.rows.length+Object.values(R.over).reduce((n,v)=>n+v,0));
+    for(const p of R.rows){let text;if(p.kind==='robbery'){const route=[p.origin,p.dest].map(i=>W.settlements[i]).filter(Boolean).map(t=>esc(t.name)).join(' → ');text=`robbery on this place’s ground${route?' ('+route+')':''}: ${+p.qty.toFixed(2)} ${esc(p.good)}, recorded load value ${coin(p.v)}${p.who>=0?'; carrier '+witness(p):''}`;}
+      else{text=`felony presentment of ${witness(p)}: ${+(p.share*100).toFixed(2)}% household share at joining, ${coin(p.coin)} coin`;for(const [k,q] of Object.entries(p.goods))text+=`; ${+q.toFixed(2)} ${esc(k)}`;for(const [k,q] of Object.entries(p.beasts))text+=`; ${+q.toFixed(2)} ${esc(k)}`;text+=' (evidence at joining; goods remain with the household)';}
+      h+=`<p>${esc(dateStr(p.d))}: ${text}; camp ${p.camp}.</p>`;}
+    for(const [k,n] of Object.entries(R.over))h+=row('Earlier '+esc(k)+' presentments (details folded)',n);}
   const E=s.enrolments;if(E){const witness=(id,name)=>id>=0?`<a class="nm" data-nm="p${id}">${esc(name||PM.get(id)&&folkName(PM.get(id))||'Person '+id)}</a>`:esc(name||'Not named'),lord=p=>`<a class="nm" data-nm="${p.lord==='crown'?'h0':esc(p.lord)}">${esc(p.lordName)}</a>`,field=p=>p.field>=0?`<a class="nm" data-nm="field:${p.field}">holding ${p.field+1}</a>`:'the holding',coin=v=>+v.toFixed(2),labels={land:'land',entry:'entry fine',merchet:'merchet',heriot:'heriot'};
     h+='<div class="dhead">Land and customary entries</div><p>Recorded at the transaction. These entries are separate from the court’s rulings.</p>';
     for(const p of E.rows){let text;if(p.kind==='land'){const rights=r=>`${esc(r.ten||'unassigned')}; owner ${r.own>=0?witness(r.own,r.ownName):lord(p)}; occupier ${r.wk>=0?witness(r.wk,r.workName):r.ten==='demesne'?'the lord’s home farm':'vacant'}${r.dower>=0?`; dower ${witness(r.dower,r.dowerName)} (${+(r.dowerFraction*100).toFixed(2)}%)`:''}`;
@@ -14509,7 +14540,7 @@ function manorLines(s){ // the settlement card's lines on the manor: the mill's 
     else if(mill&&(o==='lord'||o===undefined))out.push(['Mill',`The lord keeps the mill in hand${b._tk&&b._tk.mult>0?`; ${Math.round(b._tk.mult)} grain of multure this year`:''}`]);}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein');if(V.length)out.push(['Villein holdings',`${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent${s.svc==='money'?', by order':s.svc==='works'?'; services kept in hand by order':''}`]);
   const C=s.custom?Object.keys(CUSTOMS).filter(k=>s.custom[k]!=null&&s.custom[k]!==CUSTOMS[k]):[];if(C.length)out.push(['Customs',C.map(k=>`${esc((CUSTOM_NAMES[k]||[k])[0])} ${CUSTOM_NAMES[k]?.[2]?+(s.custom[k]*100).toFixed(2)+'%':+s.custom[k].toFixed(3)}`).join('; ')]);
-  if(s.court||s.pleas?.rows.length||s.enrolments)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year${s.enrolments?' · '+(s.enrolments.rows.length+Object.values(s.enrolments.over).reduce((n,v)=>n+v,0))+' land and customary entries':''}</a>`]);
+  if(s.court||s.pleas?.rows.length||s.enrolments||s.royalPleas)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year${s.royalPleas?' · '+(s.royalPleas.rows.length+Object.values(s.royalPleas.over).reduce((n,v)=>n+v,0))+' held for royal justice':''}${s.enrolments?' · '+(s.enrolments.rows.length+Object.values(s.enrolments.over).reduce((n,v)=>n+v,0))+' land and customary entries':''}</a>`]);
   return out;}
 function manorCmd(cmd,arg){const[a,k,v]=String(arg).split(':'),s=W.settlements[+a];if(!s||!sovOn()||s.owner!==plyH())return; // a lord orders his own places, the crown its own
   if(cmd==='s-custom'){if(!Object.hasOwn(CUSTOMS,k)||!(+v>=0)||+v>CUSTOMS[k]*4)return;(s.custom||(s.custom={}))[k]=+v;}
@@ -21380,6 +21411,19 @@ was paid and what was unpaid at entry; the pending plea holds the current
 debt. Merchet names the bride and the household that paid her lord. A heriot
 records the single beast delivered in kind. These entries witness existing
 transactions, and earlier entries are counted by kind.
+
+A riot presents up to three resident adult household heads, ranked by
+hunger and boldness. The breach-of-peace custom is three days' family bread
+per incident, within the same spare-purse cap. Repeated incidents accumulate
+until a sitting; an amercement or pardon retires the case.
+
+The roll also shows pleas held for royal justice. A caravan robbery is
+recorded against the place nearest the ambush, with its carrier and load
+value. Joining an outlaw camp presents the recruit and records his share
+of the household's coin, goods and beasts at joining. This is evidence for
+the later eyre: the household retains its goods and no royal fine or
+forfeiture is collected yet. There are at most 64 recent held cases per
+place; earlier presentments are counted by kind.
 
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that

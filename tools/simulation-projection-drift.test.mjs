@@ -35,7 +35,7 @@ const WORKER_ONLY={
     mkt:'markets',rsv:'reserved stock',px:'prices',res:'resources',frt:'freight rates',hm:'herd management (herds come from actor plans)',
     history:'inspector text',cashY:'annual cash totals: reports ask the worker',cashPrev:'previous annual cash totals: reports ask the worker',oldWalls:'inspector count',dead:'the dead, for inspector links',growSlots:'building planner',roadSpoke:'layout planner',
     joinOut:'layout planner',landing:'shore landing for boats',burns:'generation burn scars',mill:'crosses as millId',
-    custom:'the customs of the manor: the lord\'s and crown\'s panels and the settlement card ask the worker',pleas:'the manor court\'s roll (#37)',court:'court accounts and rulings: inspectors ask the worker',enrolments:'land and customary transaction witnesses: court inspectors ask the worker'},
+    custom:'the customs of the manor: the lord\'s and crown\'s panels and the settlement card ask the worker',pleas:'the manor court\'s roll (#37)',court:'court accounts and rulings: inspectors ask the worker',enrolments:'land and customary transaction witnesses: court inspectors ask the worker',royalPleas:'held criminal presentments: court inspectors ask the worker'},
   building:{s:'crosses as si',title:'title accounts',hh:'households',st:'street link, for gate placement in the worker',why:'planner notes',
     ownerId:'accessor; crosses when it names an owner',farm:'the mill\'s or bakehouse\'s farm: the settlement card asks the worker'},
   field:{title:'title accounts',trees:'cross as treeRefs',own:'accessor; crosses when it names a holder',wk:'accessor; crosses when it names a worker',
