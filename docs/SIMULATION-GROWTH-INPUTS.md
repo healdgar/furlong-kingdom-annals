@@ -2,9 +2,9 @@
 
 Recorded 2026-10-10 after two read-only Luna audits of `tickGrowth`, `lvField`
 and `townWorth`, based on `8d92a4f` plus the daily storage conversion. Growth is
-not converted yet. This records the next bounded refactor before implementation.
+partially converted in the bounded implementation recorded below; funded housing/fabric progress remains next. The original audit is retained as the pre-implementation record.
 
-## Cadence defect and separate operations
+## Cadence defect in the audited source and separate operations
 
 `tickGrowth` returns unless `day()%6===0`. Its two annual blocks require
 `day()%360===(settlementIndex*29)%360`. Because 360 is divisible by six and 29
@@ -79,6 +79,30 @@ populate the request-local query Map, never install new canonical caches.
 `townWorth` needs its own current-value policy. This is a design to implement
 and verify, not an implemented cache or a demonstrated speed improvement.
 
+## First bounded implementation selected after the audit
+
+The next batch removes annual cache authority from `lvField` and `townWorth`.
+A private WeakMap retains base Float32 arrays under an exact, length-delimited
+ordered scalar certificate, compared with `Object.is`. It covers grid bounds,
+raw ordered work/home/market/nuisance points and active street geometry/weights.
+The native base algorithm retains its original bin/sum/write order. A separate
+fear/radial-wall certificate controls final recomposition; population scale stays
+live. Native helper identities and residential membership guard reuse. Queries
+may read a certified existing base, but misses write only their request-local Map.
+Field-taking valuation helpers avoid repeated certificates in pure town-worth
+and property reads. `townWorth` sums the current sound noninstitutional buildings
+without retaining an annual total; mutable use, tier and footprint remain live.
+
+In the existing serial growth slot, each settlement first reconciles occupancy
+and processes due falls daily, then retains six-day housing work, independently
+runs widening and vacancy assessment on its exact annual stagger, and retains
+six-day fabric work. This fixes previously unreachable annual dates without
+multiplying instant construction. A household moving in on the due day saves the
+roof. The remaining housing/fabric throttle is explicitly unfinished: its paid
+physical-rate/progress design follows in a later batch. This step deliberately
+changes old values/history and newly reachable annual assessments; determinism
+across speeds, real payments and the render boundary remain required.
+
 ## Order, writers and verification
 
 Keep growth after meals/households/projects in the recorded daily order:
@@ -99,3 +123,50 @@ input edits, live fear/population, cold world-load continuation, money/goods and
 same history across speeds. Old RNG streams and histories may change deliberately;
 speed/frame/yield-dependent decisions remain forbidden. No performance gain or
 complete invalidation proof is claimed by this preparatory audit.
+
+## Operation-local valuation consolidation (recorded before implementation)
+
+The first combined candidate measures 132.17 CPU ms/day against 96.89 on the
+published state over ticks 41–360, at loads 1.4→1.3 and 0.7→1.1. This includes
+deliberate model/layout changes, but exposes avoidable certificate repetition.
+`tickTenure` grows from 0.234 to 10.737 wall ms/day and growth from 2.863 to
+9.538. A further read-only dependency survey identifies these bounded scopes:
+
+- `ownerOf` tests the same building against many possible landlords. Reuse its
+  value while native helpers are intact; ownership and wealth do not enter the
+  field certificate. Preserve lazy first use and overridden-helper calls.
+- `houseFolk` and `moveIn` rank roofs while changing only occupancy. Share one
+  lazy field for that operation, retaining live means, work, safety and ties.
+- Each `addBuildingLive` attempt ranks its lots and then scores them for one
+  household without a geometry write. Share a lazy field within that attempt
+  only; a failed build or lane check starts a new attempt, and extension precedes
+  the next field lookup. Do not reuse through construction or road changes.
+- `houseBuyer`'s rent reduce, the housing fallback ranking and fabric candidate
+  ranking each share one lazy field before any construction/tier mutation.
+  Preserve the existing daily buyer rent snapshot and every random draw.
+- Widening, refitting and street-cut compensation retain fresh ordinary calls:
+  their earlier writes can change geometry, uses or nuisances.
+
+Bypasses require captured native public/field/helper identities and otherwise
+use the original per-call path. Scope-local fields remain disposable and the
+ordinary `lvField` owns all certified-cache updates. No daily snapshot survives
+these scopes. Storage commissioning uses scalar `landValue`, not this property
+grid; the measured `tickStorage` increase is not attributed to quote kernels.
+
+
+## Validation of the bounded implementation
+
+The frozen final HTML is `7257f3fa0a45f309bbf7657f0ecedbf88cc1eea8d7254358c53d5bb5f9dc0396`.
+Live-field tests compare actual Float32 kernels with a frozen uncached oracle,
+including same-count edits, ordered streets/points, fear/walls/population,
+query purity and helper overrides. Daily-boundary tests exercise all stagger
+indexes and arrival-before-fall rescue. Functional consolidation tests compare
+roof/rent and landlord results against frozen per-call algorithms, including
+public/work/RNG override fallbacks. Native 150-day pre/post-consolidation and
+all-speed comparisons match complete logical graphs, daily RNG/commands/annals
+and every accepted storage outcome. Both one-year browser worlds conserve money
+and inventory and have no simulation faults. The broad gate verifies 1,517
+checks; its only parallel VM capture timeout passes unchanged in isolation.
+Final browser/save/release evidence and source hashes are recorded in HANDOFF.md.
+These checks cover the bounded implementation; daily paid housing/fabric
+progress and first-castle foundations remain further work.

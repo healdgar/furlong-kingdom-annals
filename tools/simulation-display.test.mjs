@@ -310,13 +310,20 @@ test('settleParcels reuses existing settlement layout indexes and tickGrowth bat
   c.settleParcels([b]);
   assert.equal(makeHashCalls,0,'settleParcels must reuse s._lay.placed and s._lay.segH without calling makeHash');
 
-  // Verify tickGrowth batches structural updates without calling settleParcels per building inside loops
-  const growthSrc=region('function tickGrowth(){','/* ============================ ACTS (triggers) ============================ */');
-  assert.ok(growthSrc.includes('const newBlds=[];'));
-  assert.ok(growthSrc.includes('if(newBlds.length)settleParcels(newBlds);'));
-  assert.ok(growthSrc.includes('const widened=[];'));
-  assert.ok(growthSrc.includes('if(widened.length)settleParcels(widened);'));
-  assert.ok(!growthSrc.includes('settleParcels([b]);'),'tickGrowth must not settle individual parcels in loops');
+  // Daily occupancy is a wrapper; the paid housing and widening helpers keep batched parcel settlement.
+  const growthSrc=region('function tickGrowth(){','function tickGrowthHousing(s){');
+  const housingSrc=region('function tickGrowthHousing(s){','function tickGrowthWiden(s){');
+  const widenSrc=region('function tickGrowthWiden(s){','function tickGrowthVacancy(s){');
+  assert.ok(growthSrc.includes('moveIn(s);tickFalling(s);'));
+  assert.ok(growthSrc.includes('if(sixDay)tickGrowthHousing(s);'));
+  assert.ok(growthSrc.includes('tickGrowthWiden(s);tickGrowthVacancy(s);'));
+  assert.ok(growthSrc.includes('if(sixDay)tickGrowthFabric(s);'));
+  assert.ok(housingSrc.includes('const newBlds=[];'));
+  assert.ok(housingSrc.includes('if(newBlds.length)settleParcels(newBlds);'));
+  assert.ok(widenSrc.includes('const widened=[];'));
+  assert.ok(widenSrc.includes('if(widened.length)settleParcels(widened);'));
+  assert.ok(!housingSrc.includes('settleParcels([b]);'),'housing must not settle individual parcels in loops');
+  assert.ok(!widenSrc.includes('settleParcels([b]);'),'widening must not settle individual parcels in loops');
 });
 
 test('new village creation and demolition settle affected parcels without renderer fallback',()=>{

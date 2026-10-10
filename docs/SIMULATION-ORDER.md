@@ -172,3 +172,5 @@ documents the contract and changes the phase timing; it does not yet add that
 town-activity model or a new actor projection.
 
 See [PERFORMANCE.md](PERFORMANCE.md) for the throughput budgets and validation.
+
+The bounded growth/property implementation (2026-10-10) keeps the same 52 dispatcher phases and 168 prerequisites. Within each settlement’s growth visit: daily occupancy → due falls → six-day funded housing → independently scheduled annual widening/vacancy → six-day fabric. Live property certificates replace annual value authority. The remaining housing/fabric rate conversion is recorded in [SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md); founding-only geometry dependencies for #59 are in [OPEN-SPACES-AND-CASTLE-SITING.md](OPEN-SPACES-AND-CASTLE-SITING.md).

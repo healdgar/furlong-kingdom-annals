@@ -1,6 +1,6 @@
 # Motte and bailey within the fortification system
 
-Status: implemented locally; publication follows integrated verification.
+Status: shared fortification implementation published; the 2026-10-10 terrain/courtyard/access refinement is validated with #59. See [OPEN-SPACES-AND-CASTLE-SITING.md](OPEN-SPACES-AND-CASTLE-SITING.md) for historical evidence and the recorded dependency order.
 
 The implementation now uses a continuous outer enclosure around court and mound,
 a separate summit strongpoint, shared circuit commands, excavated terrain, and
@@ -20,6 +20,12 @@ conquest/political consequences; it is not a separate assassination mechanism.
 Bandit food remains in existing household hunger, pantry and debt accounting.
 No new pantry, wallet, person, or maintained spatial index is created per camp.
 
+Fresh layouts now survey usable courtyard contours and retain the shortest
+feasible graded mound access plus building-avoiding approaches. More enclosure
+types and service buildings remain further work. First-castle foundations at a
+new seat or capital are missing (#60); the site, authority, funding and daily
+construction dependencies are recorded in the linked siting document.
+
 The original design rationale follows.
 
 ## Intended result
@@ -30,7 +36,7 @@ small walls with the same gates, construction, damage, breach, repair, selection
 and defender rules as later castle curtains and town walls. Courtyard buildings
 remain ordinary functional buildings, with their existing owners and inventories.
 
-## Confirmed problems in the current source
+## Problems found before the shared fortification implementation
 
 - `layoutSettlement` chooses the highest fitting keep site within 60–150 m, but
   assigns fixed circular motte/bailey footprints. It does not evaluate the hill,

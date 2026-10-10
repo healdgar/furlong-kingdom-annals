@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 13:30 UTC · after 8d92a4f</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 15:47 UTC · after c479429</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -1352,6 +1352,17 @@ function motteSurface(m,x,z){ // absolute earthwork surface; callers pass the ca
   if(r<m.r){const edge=hAt(m.x+dx/r*m.r,m.z+dz/r*m.r),t=clamp((r-summitR)/(m.r-summitR),0,1),ease=t*t*(3-2*t);return lerp(topY,edge,ease);}
   if(r<=m.r+7){const t=clamp((r-m.r-1)/6,0,1),depth=2.2*Math.sin(Math.PI*t)**2*sstep(0.18,0.26,Math.abs(gate));return base-depth;}
   return base;
+}
+function motteAccess(m){ // founding survey: shortest graded approach on the actual earthwork, without dice
+  let best=null;
+  for(const turns of[0,0.25,0.5,0.75,1])for(const direction of[1,-1]){
+    if(!turns&&direction<0)continue;
+    const path=[{x:m.x+Math.cos(m.gateA)*(m.r+7),z:m.z+Math.sin(m.gateA)*(m.r+7)}];let length=0,maxGrade=0;
+    for(let k=0;k<=48;k++){const t=k/48,r=lerp(m.r,m.summitR,t),a=m.gateA+direction*turns*t*Math.PI*2,q={x:m.x+Math.cos(a)*r,z:m.z+Math.sin(a)*r},p=path.at(-1),run=Math.hypot(q.x-p.x,q.z-p.z);
+      if(run>0){length+=run;maxGrade=Math.max(maxGrade,Math.abs(motteSurface(m,q.x,q.z)-motteSurface(m,p.x,p.z))/run);}path.push(q);}
+    if(maxGrade<=0.30&&(!best||length<best.length))best={path,turns,direction,length,maxGrade};
+  }
+  return best;
 }
 /* ---------------- polyline helpers ---------------------------------------- */
 function polyLen(p){let L=0;for(let k=1;k<p.length;k++)L+=dist2d(p[k-1].x,p[k-1].z,p[k].x,p[k].z);return L;}
@@ -2221,8 +2232,8 @@ function fortStreetRuns(s,st){ // clipped centre lines: a grid lane ends before 
   if(run.length>1)runs.push(run);return runs;
 }
 function fortBaileyShape(m,b){ // one continuous enceinte around courtyard, neck and mound; temporary survey points only
-  const P=[],a=Math.atan2(m.z-b.z,m.x-b.x),u={x:Math.cos(a),z:Math.sin(a)},v={x:-u.z,z:u.x},r=b.courtR||30;
-  for(let k=0;k<32;k++){const t=k/32*Math.PI*2;P.push({x:b.x+u.x*Math.cos(t)*r+v.x*Math.sin(t)*r,z:b.z+u.z*Math.cos(t)*r+v.z*Math.sin(t)*r});P.push({x:m.x+Math.cos(t)*(m.r+10),z:m.z+Math.sin(t)*(m.r+10)});}
+  const P=[],r=b.courtR||30;
+  for(let k=0;k<32;k++){const t=k/32*Math.PI*2,R=b.courtRad?.[k]??r;P.push({x:b.x+Math.cos(t)*R,z:b.z+Math.sin(t)*R});P.push({x:m.x+Math.cos(t)*(m.r+10),z:m.z+Math.sin(t)*(m.r+10)});}
   P.sort((p,q)=>p.x-q.x||p.z-q.z);const cross=(o,p,q)=>(p.x-o.x)*(q.z-o.z)-(p.z-o.z)*(q.x-o.x),lo=[],hi=[];
   for(const p of P){while(lo.length>1&&cross(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p);}
   for(let k=P.length-1;k>=0;k--){const p=P[k];while(hi.length>1&&cross(hi[hi.length-2],hi[hi.length-1],p)<=0)hi.pop();hi.push(p);}
@@ -2280,6 +2291,19 @@ function maskFortTerrain(){ // transient render mask, rebuilt with geometry; nev
 
 /* places (greens, market places) are irregular blobs: a radius per angle about a centre */
 const PLN=20;
+function placeFitRadii(p,clear,stretch=1){ // star-shaped shared ground bounded by the first terrain/frontage obstruction
+  if(!clear(p.x,p.z))return null;
+  const n=p.r.length,caps=[],r=p.r.map(v=>v*stretch),step=0.75;
+  for(let j=0;j<n*4;j++){const f=j/4,k=Math.floor(f),t=f-k,a=f/n*Math.PI*2,limit=r[k]*(1-t)+r[(k+1)%n]*t;let d=0;
+    for(let q=step;q<=limit+step;q+=step){const R=Math.min(q,limit);if(!clear(p.x+Math.cos(a)*R,p.z+Math.sin(a)*R))break;d=R;if(R===limit)break;}
+    caps[j]=Math.max(0,d-1.5);}
+  for(let j=0;j<n*4;j++){const k=Math.floor(j/4);r[k]=Math.min(r[k],caps[j]);if(j%4)r[(k+1)%n]=Math.min(r[(k+1)%n],caps[j]);}
+  return r.every(v=>Number.isFinite(v)&&v>=3)?r:null;
+}
+function layoutRoadNear(hash,x,z,r){ // same centre-line clearance as the full scan, using the existing layout index
+  for(const g of hash.near(x,z,r+8))if(!g.st.hidden&&!g.st.gone&&g.st.kind!=='edge'&&!g.st.castlePath&&segDist(x,z,g.a,g.b)<r)return true;
+  return false;
+}
 function placeR(p,a){const f=((a/(Math.PI*2))%1+1)%1*PLN,i=Math.floor(f)%PLN,t=f-Math.floor(f);return lerp(p.r[i],p.r[(i+1)%PLN],t);}
 function placeHit(p,x,z,pad){return dist2d(x,z,p.x,p.z)<placeR(p,Math.atan2(z-p.z,x-p.x))+pad;}
 function placeReach(p,C,a){let r=0;for(let k=0;k<PLN;k++){const b=k/PLN*Math.PI*2,x=p.x+Math.cos(b)*p.r[k],z=p.z+Math.sin(b)*p.r[k];
@@ -2442,10 +2466,22 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
       const e=1/Math.sqrt((Math.cos(a)/rx)**2+(Math.sin(a)/rz)**2);r.push(e*(1-noise/2+rr()*noise));}
     for(let pass=0;pass<2;pass++){const o=r.slice();for(let k=0;k<PLN;k++)r[k]=(o[(k+PLN-1)%PLN]+2*o[k]+o[(k+1)%PLN])/4;}
     return{x,z,r};};
-  const placeOK=p=>{for(let k=0;k<PLN;k++){const a=k/PLN*Math.PI*2,x=p.x+Math.cos(a)*p.r[k],z=p.z+Math.sin(a)*p.r[k];if(!buildable(x,z))return false;}return true;};
+  const groundClear=(x,z,green,skip)=>{
+    if(!buildable(x,z)||green&&nearStreet(x,z,0.5))return false;
+    for(const b of placed.near(x,z,3))if(!b.removed&&b.state!=='gone'){
+      if(b.poly?.length){if(inPoly(b.poly,x,z))return false;}
+      else {const dx=x-b.x,dz=z-b.z,c=Math.cos(b.rot),sn=Math.sin(b.rot);if(Math.abs(dx*c-dz*sn)<b.w/2+0.6&&Math.abs(dx*sn+dz*c)<b.d/2+0.6)return false;}
+      if(b.lot?.length&&inPoly(b.lot,x,z))return false;
+    }
+    if(s.places.some(p=>p!==skip&&placeHit(p,x,z,1)))return false;
+    if(s.wallRad&&Math.abs(wallSide(x,z))<7)return false;
+    if(castleKeepOut(s).some(c=>castleContains(c,x,z,2)))return false;
+    return true;
+  };
+  const placeOK=(p,green=false)=>{const r=placeFitRadii(p,(x,z)=>groundClear(x,z,green,p));if(!r)return false;p.r=r;return true;};
+  const placeEdge=p=>Array.from({length:PLN+1},(_,k)=>{const a=k/PLN*Math.PI*2;return{x:p.x+Math.cos(a)*p.r[k%PLN],z:p.z+Math.sin(a)*p.r[k%PLN]};});
   const addPlace=(p,kind)=>{p.kind=kind;s.places.push(p);
-    const edge=[];for(let k=0;k<=PLN;k++){const a=k/PLN*Math.PI*2;edge.push({x:p.x+Math.cos(a)*(p.r[k%PLN]+0.5),z:p.z+Math.sin(a)*(p.r[k%PLN]+0.5)});}
-    addStreet(edge,0.5,'edge',{market:kind==='market'});};
+    addStreet(placeEdge(p),0.5,'edge',{market:kind==='market',placeId:s.places.length-1});};
   const[t0x,t0z]=saved?[saved.t0x,saved.t0z]:roads.length?roadTan(roads[0],2):[1,0];
   const rAng=saved?saved.rAng:Math.atan2(t0z,t0x);
   let foundLine=saved?saved.foundLine:'';
@@ -2462,15 +2498,15 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
       const q=rd.pts[i],d=dist2d(q.x,q.z,C.x,C.z);if(d<150)continue;if(d>240)break;
       const[tx,tz]=roadTan(rd,i),side=rr()<0.5?1:-1,gr=12+rr()*5;
       const p=blob(q.x-tz*side*(RHW+gr+2),q.z+tx*side*(RHW+gr+2),gr*1.2,gr*0.85,Math.atan2(tz,tx),0.35);
-      if(placeOK(p)&&!nearStreet(p.x,p.z,gr*0.7)){addPlace(p,'green');oldVil=p;}
+      if(placeOK(p,true)&&!nearStreet(p.x,p.z,gr*0.7)){addPlace(p,'green');oldVil=p;}
     }
   }
   if(isVil){ // a green beside the road, where the first farms gathered
     const gr=11+rr()*6,px=-t0z,pz=t0x,side=rr()<0.5?1:-1;
     for(const off of[RHW+gr+2,RHW+gr+10,0]){
       const p=blob(C.x+px*side*off,C.z+pz*side*off,gr*1.2,gr*0.85,rAng,0.35);
-      if(placeOK(p)&&!nearStreet(p.x,p.z,gr*0.7)){addPlace(p,'green');break;}
-      if(off===0){const p2=blob(C.x,C.z,gr,gr*0.8,rAng,0.3);if(placeOK(p2)){addPlace(p2,'green');}}
+      if(placeOK(p,true)&&!nearStreet(p.x,p.z,gr*0.7)){addPlace(p,'green');break;}
+      if(off===0){const p2=blob(C.x,C.z,gr,gr*0.8,rAng,0.3);if(placeOK(p2,true)){addPlace(p2,'green');}}
     }
   }else if(mode==='grown'||mode==='roman'){ // the market place (or the old forum) where the roads meet
     const L=mode==='roman'?(isCap?26:20):isCap?30:22,Wd=mode==='roman'?L:isCap?15:11;
@@ -2572,29 +2608,45 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
   if(!saved){if(!keep&&(role==='seat'||role==='fort')){ // a tower keep on the highest ground near the crossing of the roads
     let best=null,bh=-1e9;
     if(motteAge){ // score the complete earthwork and courtyard on fixed samples, without consuming simulation RNG
+      const castlePath=(P,future)=>{let out=P.map(p=>({...p}));
+        for(let tries=0;tries<8;tries++){let hit=null;
+          for(let k=1;k<out.length&&!hit;k++){const a=out[k-1],b=out[k],B=[...future,...laneBlockers(a,b,2.2)].find(o=>streetFootprintOverlap(o,{a,b,hw:2.2},0.3));if(B)hit={k,a,b,B};}
+          if(!hit)return resample(out,3,true).every(q=>buildable(q.x,q.z))?out:null;
+          const bend=skirtBldg(hit.a,hit.b,hit.B,2.2);if(!bend)return null;out.splice(hit.k,0,...bend);
+        }return null;
+      };
       for(let rf=65;rf<=155;rf+=15)for(let ai=0;ai<32;ai++){
-        const ang=ai/32*Math.PI*2,x=C.x+Math.cos(ang)*rf,z=C.z+Math.sin(ang)*rf,toTown=Math.atan2(C.z-z,C.x-x),bx=x+Math.cos(toTown)*58,bz=z+Math.sin(toTown)*58;
-        const summitR=8.4,baileyR=30,rot=toTown+Math.PI/2,f={x,z,w:8,d:8,rot};
-        let moundR=21;if(!buildable(x,z)||!fits(f,3))continue;
-        const roadNear=(px,pz,r)=>s.streets.some(rd=>!rd.hidden&&!rd.gone&&rd.kind!=='edge'&&!rd.castlePath&&rd.pts.some((q,k)=>k&&segDist(px,pz,rd.pts[k-1],q)<r));
-        if(roadNear(x,z,moundR+8)||roadNear(bx,bz,baileyR+3))continue;
+        const ang=ai/32*Math.PI*2,x=C.x+Math.cos(ang)*rf,z=C.z+Math.sin(ang)*rf,toTown=Math.atan2(C.z-z,C.x-x);
+        if(!buildable(x,z)||!fits({x,z,w:8,d:8,rot:toTown+Math.PI/2},3))continue;
+        let court=null;
+        for(const offset of[0,Math.PI/4,-Math.PI/4,Math.PI/2,-Math.PI/2])for(const gap of[48,58,68]){const a=toTown+offset,X=x+Math.cos(a)*gap,Z=z+Math.sin(a)*gap,H=hAt(X,Z);
+          if(!buildable(X,Z)||H<4||inPlace(X,Z,18))continue;
+          const samples=[0,Math.PI/2,Math.PI,Math.PI*1.5].map(t=>({x:X+Math.cos(t)*22,z:Z+Math.sin(t)*22}));if(samples.some(q=>!buildable(q.x,q.z)))continue;
+          const relief=Math.max(...samples.map(q=>Math.abs(hAt(q.x,q.z)-H))),score=-relief*4-Math.abs(gap-58)*0.03-Math.abs(offset)*0.4;
+          if(!court||score>court.score)court={x:X,z:Z,a,score};}
+        if(!court)continue;
+        const bx=court.x,bz=court.z,toCourt=court.a,summitR=8.4,baileyR=30,rot=toCourt+Math.PI/2;let moundR=21;
+        const roadNear=(px,pz,r)=>layoutRoadNear(segH,px,pz,r);
+        if(roadNear(x,z,moundR+8))continue;
+        const courtH=hAt(bx,bz),courtRad=placeFitRadii({x:bx,z:bz,r:new Array(32).fill(baileyR)},(X,Z)=>buildable(X,Z)&&hAt(X,Z)>=4&&Math.abs(hAt(X,Z)-courtH)<=2.5&&!roadNear(X,Z,4)&&!inPlace(X,Z,2)&&groundClear(X,Z,false),1.35);
+        if(!courtRad)continue;
         let dry=true,baileyH=0,n=0;
-        for(let q=0;q<16&&dry;q++){const a=q*Math.PI/8;for(let r=0;r<=baileyR+7;r+=3){const X=bx+Math.cos(a)*r,Z=bz+Math.sin(a)*r;if(!buildable(X,Z)||hAt(X,Z)<4){dry=false;break;}baileyH+=hAt(X,Z);n++;}}
+        for(let q=0;q<32&&dry;q++){const a=q/32*Math.PI*2;for(let r=0;r<=courtRad[q];r+=3){const X=bx+Math.cos(a)*r,Z=bz+Math.sin(a)*r;baileyH+=hAt(X,Z);n++;}}
         if(dry)for(let q=0;q<16&&dry;q++)for(let r=0;r<=moundR+8;r+=4){const a=q*Math.PI/8;if(!buildable(x+Math.cos(a)*r,z+Math.sin(a)*r)){dry=false;break;}}
         if(!dry)continue;
         const ux=Math.cos(rot),uz=Math.sin(rot),hallF={x:bx+ux*12,z:bz+uz*12,w:16,d:8,rot:-Math.atan2(uz,ux)},longF={x:bx-ux*11,z:bz-uz*11,w:12,d:6,rot:-Math.atan2(uz,ux)};
-        if(!fits(hallF,1)||!fits(longF,1)||obbOverlap({...hallF,w:hallF.w+2,d:hallF.d+2},{...longF,w:longF.w+2,d:longF.d+2}))continue;
+        if(![...probe(hallF),...probe(longF)].every(q=>dist2d(q.x,q.z,bx,bz)<wallRadAt({wallRad:courtRad},Math.atan2(q.z-bz,q.x-bx))-3)||!fits(hallF,1)||!fits(longF,1)||obbOverlap({...hallF,w:hallF.w+2,d:hallF.d+2},{...longF,w:longF.w+2,d:longF.d+2}))continue;
         let edgeH=0;for(let q=0;q<16;q++){const a=q*Math.PI/8;edgeH+=hAt(x+Math.cos(a)*(moundR+7),z+Math.sin(a)*(moundR+7));}edgeH/=16;baileyH/=Math.max(1,n);
         const naturalRise=hAt(x,z)-baileyH,height=clamp(11.5-naturalRise,2.5,9);moundR=clamp(18+height*1.15,21,29);
         if(roadNear(x,z,moundR+8))continue;let moundDry=true;for(let q=0;q<16&&moundDry;q++)for(let r=0;r<=moundR+8;r+=3){const a=q*Math.PI/8,X=x+Math.cos(a)*r,Z=z+Math.sin(a)*r;if(!buildable(X,Z)||hAt(X,Z)<4){moundDry=false;break;}}if(!moundDry)continue;
-        const grade=slopeAt(toCell(x),toCell(z)),profile={x,z,r:moundR,summitR,height,topY:hAt(x,z)+height,gateA:toTown};
-        let maxRampGrade=0,px=x+Math.cos(toTown)*(moundR+7),pz=z+Math.sin(toTown)*(moundR+7),py=motteSurface(profile,px,pz);
-        for(let k=0;k<=48;k++){const t=k/48,r=lerp(moundR,summitR,t),a=toTown+t*Math.PI*2,X=x+Math.cos(a)*r,Z=z+Math.sin(a)*r,Y=motteSurface(profile,X,Z),run=Math.hypot(X-px,Z-pz);if(run>0)maxRampGrade=Math.max(maxRampGrade,Math.abs(Y-py)/run);px=X;pz=Z;py=Y;}
-        if(maxRampGrade>0.30)continue;
-        const enclosure=fortBaileyShape(profile,{x:bx,z:bz,courtR:baileyR});if(liveB().some(b=>b.inst&&!b.removed&&dist2d(b.x,b.z,bx,bz)<wallRadAt({wallRad:enclosure},Math.atan2(b.z-bz,b.x-bx))+Math.hypot(b.w,b.d)/2+7))continue;let enclosureOK=true;
-        for(let k=0;k<enclosure.length&&enclosureOK;k+=2){const a=k/enclosure.length*Math.PI*2;for(let r=3;r<=enclosure[k]+7;r+=6){const X=bx+Math.cos(a)*r,Z=bz+Math.sin(a)*r;if(!buildable(X,Z)||hAt(X,Z)<4||roadNear(X,Z,3)){enclosureOK=false;break;}}}if(!enclosureOK)continue;
+        const grade=slopeAt(toCell(x),toCell(z)),profile={x,z,r:moundR,summitR,height,topY:hAt(x,z)+height,gateA:toCourt},access=motteAccess(profile);
+        if(!access)continue;
+        const enclosure=fortBaileyShape(profile,{x:bx,z:bz,courtR:baileyR,courtRad});if(liveB().some(b=>b.inst&&!b.removed&&dist2d(b.x,b.z,bx,bz)<wallRadAt({wallRad:enclosure},Math.atan2(b.z-bz,b.x-bx))+Math.hypot(b.w,b.d)/2+7))continue;let enclosureOK=true;
+        for(let k=0;k<enclosure.length&&enclosureOK;k+=2){const a=k/enclosure.length*Math.PI*2;for(let r=3;r<=enclosure[k]+7;r+=6){const X=bx+Math.cos(a)*r,Z=bz+Math.sin(a)*r;if(!buildable(X,Z)||hAt(X,Z)<4||roadNear(X,Z,3)||inPlace(X,Z,2)){enclosureOK=false;break;}}}if(!enclosureOK)continue;
+        const gateA=Math.atan2(C.z-bz,C.x-bx),gateR=wallRadAt({wallRad:enclosure},gateA),gate={x:bx+Math.cos(gateA)*gateR,z:bz+Math.sin(gateA)*gateR},foot=access.path[0],courtPath=castlePath([gate,{x:bx,z:bz},foot],[hallF,longF]),trackPath=castlePath([gate,{x:C.x,z:C.z}],[hallF,longF]);
+        if(!courtPath||!trackPath)continue;
         const score=naturalRise*1.7-height*0.55-Math.max(0,baileyH-edgeH)*0.25-grade*12+Math.min(0,naturalRise)*1.5;
-        if(score>bh){bh=score;best={x,z,w:8,d:8,rot, bx,bz, summitR, moundR, baileyR, enclosure, height, topY:hAt(x,z)+height,gateA:toTown};}
+        if(score>bh){bh=score;best={x,z,w:8,d:8,rot, bx,bz, summitR, moundR, baileyR, courtRad, enclosure, access, courtPath, trackPath, height, topY:hAt(x,z)+height,gateA:toCourt};}
       }
     }else for(const rf of[60,90,120,150])for(let a=0;a<24;a++){
       const ang=a/24*Math.PI*2,x=C.x+Math.cos(ang)*rf,z=C.z+Math.sin(ang)*rf,f={x,z,w:13,d:13,rot:rr()*Math.PI};
@@ -2602,19 +2654,15 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
     }
     if(best&&motteAge){ // a motte: a heaped mound with a timber tower, and a palisaded bailey below it for the lord's hall
       const bx=best.bx,bz=best.bz;
-      s.motte={x:best.x,z:best.z,r:best.moundR,summitR:best.summitR,height:best.height,topY:best.topY,gateA:best.gateA};s.bailey={x:bx,z:bz,r:best.baileyR,courtR:best.baileyR,gateA:best.gateA};s.bailey.wallRad=best.enclosure;s.bailey.r=Math.max(...best.enclosure);
+      s.motte={x:best.x,z:best.z,r:best.moundR,summitR:best.summitR,height:best.height,topY:best.topY,gateA:best.gateA};s.bailey={x:bx,z:bz,r:best.baileyR,courtR:best.baileyR,courtRad:best.courtRad,gateA:Math.atan2(C.z-bz,C.x-bx)};s.bailey.wallRad=best.enclosure;s.bailey.r=Math.max(...best.enclosure);
       keep=place('keep',0,{x:best.x,z:best.z,w:8,d:8,rot:best.rot},'keep',0.85,{inst:true,motte:true});
       const ux=Math.cos(best.rot),uz=Math.sin(best.rot);
       place('hall',0,{x:bx+ux*12,z:bz+uz*12,w:16,d:8,rot:-Math.atan2(uz,ux)},'keep',0.9,{inst:true,bailey:true});
       place('longhouse',0,{x:bx-ux*11,z:bz-uz*11,w:12,d:6,rot:-Math.atan2(uz,ux)},'keep',1,{inst:true,bailey:true});
-      const gate={x:bx+Math.cos(best.gateA)*31,z:bz+Math.sin(best.gateA)*31};
-      const track=resample([gate,{x:C.x,z:C.z}],8).filter(q=>dist2d(q.x,q.z,C.x,C.z)>12);
+      const track=resample(best.trackPath,8,true).filter(q=>dist2d(q.x,q.z,C.x,C.z)>12);
       if(track.length>2&&!roads.some(rd=>track.filter(q=>rd.pts.some((u,k)=>k&&segDist(q.x,q.z,rd.pts[k-1],u)<18)).length>track.length*0.4))addStreet(track,2.2,'lane',{straight:true,castlePath:true,earthwork:'bailey'}); // a track of its own, unless the road already runs that way
-      const court=[gate,{x:bx,z:bz},{x:best.x+Math.cos(best.gateA)*(best.moundR+7),z:best.z+Math.sin(best.gateA)*(best.moundR+7)}];
-      addStreet(resample(court,3),2.2,'lane',{straight:true,castlePath:true,earthwork:'bailey'});
-      const ramp=[{x:best.x+Math.cos(best.gateA)*(best.moundR+7),z:best.z+Math.sin(best.gateA)*(best.moundR+7)}];
-      for(let k=0;k<=48;k++){const t=k/48,r=lerp(best.moundR,best.summitR,t),a=best.gateA+t*Math.PI*2;ramp.push({x:best.x+Math.cos(a)*r,z:best.z+Math.sin(a)*r});}
-      addStreet(resample(ramp,3),2.2,'lane',{straight:true,castlePath:true,earthwork:'motte'});
+      addStreet(resample(best.courtPath,3,true),2.2,'lane',{straight:true,castlePath:true,earthwork:'bailey'});
+      addStreet(resample(best.access.path,3,true),2.2,'lane',{straight:true,castlePath:true,earthwork:'motte'});
       if(!foundLine)foundLine=`Raised as a motte and bailey on the rise above ${roads.length>1?'the meeting of the roads':'the road'}: an earthen mound crowned by a timber tower, and a palisaded yard for the lord's hall. A hamlet gathered beneath it.`;
     }else if(best)keep=place('keep',2,best,'keep',0.85,{inst:true});
     if(!foundLine)foundLine=keep?`Raised as a tower keep on the rise above ${roads.length>1?'the meeting of the roads':'the road'}; a hamlet gathered beneath its walls.`:'Founded as a crown hall where the roads meet.';
@@ -3349,6 +3397,8 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
     s.lake=null;
   }
   if(!saved&&!pondAccepted){s.lake=null;if(s.river)siteMill();}
+  if(!saved)for(let i=0;i<s.places.length;i++){const p=s.places[i],r=placeFitRadii(p,(x,z)=>groundClear(x,z,p.kind==='green',p),1.45);
+    if(!r)continue;p.r=r;const edge=s.streets.find(st=>st.kind==='edge'&&st.placeId===i);if(edge){edge.pts=placeEdge(p);edge.cands=null;}}
 }
 function stitchRoads(){ // a road now runs centre → its spoke street → the open road → the far spoke → centre
   for(const s of W.settlements)if(s._lay&&s._lay.rejoin)s._lay.rejoin();
@@ -4878,10 +4928,11 @@ function houseFolk(s){
   const homes=(s.buildings||[]).filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),cap=new Map();for(const b of homes){cap.set(b,capOf(b));b.hh=[];}
   const heads=new Set();for(const p of s.folk||[])heads.add(householdHead(p));
   const later=[];for(const h of heads){const b=h.bh;if(b&&cap.get(b)>0){cap.set(b,cap.get(b)-1);b.hh.push(h);}else later.push(h);}
+  const shared=typeof lvReadNative==='function'&&lvReadNative('home');let F=null;
   let rr=0;for(const h of later){const want=TRADE_ARCH[h.tr];let b=null;
     if(want)b=homes.find(x=>x.arch===want&&cap.get(x)>0);
     if(!b){const wk=workOf(h,s);let bs=-1e9;const st=Math.max(1,Math.floor(homes.length/40)),o0=(h.id>>>0)%st; // a household looks over some forty houses with room, not every one in a great town
-      for(let ii=o0;ii<homes.length;ii+=st){const x=homes[ii];if(!(cap.get(x)>0))continue;const v=homeScore(h,s,x.x,x.z,x.st,wk)+(TILLERS.has(h.tr)&&(x.arch==='house'||x.arch==='longhouse'||x.arch==='cot')?0.4:0);if(v>bs){bs=v;b=x;}}} // the nearest to its work it can afford
+      for(let ii=o0;ii<homes.length;ii+=st){const x=homes[ii];if(!(cap.get(x)>0))continue;const v=(shared?homeScore(h,s,x.x,x.z,x.st,wk,F||(F=lvField(s))):homeScore(h,s,x.x,x.z,x.st,wk))+(TILLERS.has(h.tr)&&(x.arch==='house'||x.arch==='longhouse'||x.arch==='cot')?0.4:0);if(v>bs){bs=v;b=x;}}} // the nearest to its work it can afford
     if(!b)b=homes.find(x=>cap.get(x)>0)||null; // none with room among those it looked at: the first that has any
     if(!b&&homes.length)b=homes[(rr++)%homes.length]; // no room left: they lodge with another household
     if(b){cap.set(b,(cap.get(b)||0)-1);b.hh.push(h);}h.bh=b;}
@@ -5583,14 +5634,16 @@ function roadMaterial(joins){
     polygonOffset:true,polygonOffsetFactor:joins?-2:-1,polygonOffsetUnits:joins?-8:-4}));
   mat.onBeforeCompile=sh=>{
     miniatureShader(sh);
-    sh.vertexShader='attribute float aEdge;attribute vec2 aSurfaceUV;varying vec2 vRoadUV;varying float vEdge;varying vec3 vRoadWP;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
-      vRoadUV=aSurfaceUV;vEdge=aEdge;vRoadWP=(modelMatrix*vec4(transformed,1.)).xyz;`);
-    sh.fragmentShader='varying vec2 vRoadUV;varying float vEdge;varying vec3 vRoadWP;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
+    sh.vertexShader='attribute float aEdge;attribute float aGrass;attribute vec2 aSurfaceUV;varying vec2 vRoadUV;varying float vEdge;varying float vGrass;varying vec3 vRoadWP;\n'+sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+      vRoadUV=aSurfaceUV;vEdge=aEdge;vGrass=aGrass;vRoadWP=(modelMatrix*vec4(transformed,1.)).xyz;`);
+    sh.fragmentShader='varying vec2 vRoadUV;varying float vEdge;varying float vGrass;varying vec3 vRoadWP;\n'+SURFACE_GLSL+sh.fragmentShader.replace('#include <color_fragment>',`#include <color_fragment>
       vec2 wp=vRoadWP.xz;float px=surfaceFootprint(wp);
-      float pave=(1.-smoothstep(0.12,0.18,diffuseColor.r-diffuseColor.b))*(1.-smoothstep(-0.01,0.01,diffuseColor.g-diffuseColor.r)); // greens have no paving
-      diffuseColor.rgb*=mix(miniatureDetail(7.,vRoadUV/3.),miniatureDetail(2.,vRoadUV/3.),pave);
+      float grass=step(0.5,vGrass),pave=(1.-smoothstep(0.12,0.18,diffuseColor.r-diffuseColor.b))*(1.-smoothstep(-0.01,0.01,diffuseColor.g-diffuseColor.r));
+      vec3 green=uSeasonGrass*(0.88+0.12*surfaceFilteredNoise(wp*0.16))*seasonalVegetation(miniatureDetail(7.,vRoadUV/3.));
+      diffuseColor.rgb=mix(diffuseColor.rgb*mix(miniatureDetail(7.,vRoadUV/3.),miniatureDetail(2.,vRoadUV/3.),pave),green,grass);
       // Broken gravel/mud at the road edge joins the ground's matching verge band.
       diffuseColor.rgb=mix(vec3(0.49,0.43,0.32)*miniatureDetail(3.,wp/3.),diffuseColor.rgb,smoothstep(0.05,0.8,vEdge));
+      diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.83,0.85,0.87)*(0.95+0.05*surfaceFilteredNoise(wp*0.3)),(0.25+0.75*grass)*uGroundSnow*(vRoadWP.y>380.?1.:vRoadWP.y>120.?0.75:0.55));
       diffuseColor.a*=smoothstep(0.03,0.82,vEdge+(surfaceNoise(wp*0.6)-0.5)*0.12*(1.-smoothstep(0.5,2.,px)));`);
   };
   return mat;
@@ -5723,7 +5776,7 @@ function bridgeMaterial(){ // the deck joins the paved road; piers share the exi
   return mat;
 }
 function terrNormal(x,z){const e=5,dx=hAt(x+e,z)-hAt(x-e,z),dz=hAt(x,z+e)-hAt(x,z-e),l=Math.hypot(dx,2*e,dz);return[-dx/l,2*e/l,-dz/l];}
-function newAcc(edges=false){return{p:[],n:[],c:[],i:[],uv:[],tangent:[],bank:[],e:edges?[]:null};}
+function newAcc(edges=false){return{p:[],n:[],c:[],i:[],uv:[],tangent:[],bank:[],grass:[],e:edges?[]:null};}
 function accMesh(acc,mat){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(acc.p,3));
@@ -5731,6 +5784,8 @@ function accMesh(acc,mat){
   g.setAttribute('color',new THREE.Float32BufferAttribute(acc.c,3));
   if(acc.e&&acc.e.length===acc.p.length/3)g.setAttribute('aEdge',new THREE.Float32BufferAttribute(acc.e,1));
   for(let i=0;i<acc.p.length/3;i++)if(acc.uv[i*2]===undefined){acc.uv[i*2]=acc.p[i*3];acc.uv[i*2+1]=acc.p[i*3+2];acc.tangent[i*2]=0;acc.tangent[i*2+1]=1;}
+  for(let i=0;i<acc.p.length/3;i++)if(acc.grass[i]===undefined)acc.grass[i]=0;
+  g.setAttribute('aGrass',new THREE.Float32BufferAttribute(acc.grass,1));
   g.setAttribute('aSurfaceUV',new THREE.Float32BufferAttribute(acc.uv,2));
   g.setAttribute('aSurfaceTangent',new THREE.Float32BufferAttribute(acc.tangent,2));
   if(acc.bank.length===acc.p.length/3)g.setAttribute('aBankDistance',new THREE.Float32BufferAttribute(acc.bank,1));
@@ -5783,10 +5838,10 @@ function disc(acc,cx,cz,R,lift,colFn){ // draped polar grid (market squares)
 function placeMesh(acc,p,lift,colFn){ // an irregular place, draped like the streets
   const rings=6,base=acc.p.length/3;
   acc.p.push(p.x,hAt(p.x,p.z)+lift,p.z);let nn=terrNormal(p.x,p.z);acc.n.push(nn[0],nn[1],nn[2]);C1.setHex(colFn(0,0));acc.c.push(C1.r,C1.g,C1.b);
-  if(acc.e)acc.e.push(1);
+  acc.grass[base]=p.kind==='green'?1:0;if(acc.e)acc.e.push(1);
   for(let r=1;r<=rings;r++)for(let k=0;k<PLN;k++){
-    const a=k/PLN*Math.PI*2,rr=(p.r[k]+1)*r/rings,x=p.x+Math.cos(a)*rr,z=p.z+Math.sin(a)*rr;
-    acc.p.push(x,hAt(x,z)+lift,z);nn=terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);C1.setHex(colFn(r,k));acc.c.push(C1.r,C1.g,C1.b);if(acc.e)acc.e.push(Math.min(1,(rings-r)*0.6));
+    const a=k/PLN*Math.PI*2,rr=r===5?p.r[k]-Math.min(1.2,p.r[k]*0.2):p.r[k]*r/rings,x=p.x+Math.cos(a)*rr,z=p.z+Math.sin(a)*rr;
+    acc.grass[acc.p.length/3]=p.kind==='green'?1:0;acc.p.push(x,hAt(x,z)+lift,z);nn=terrNormal(x,z);acc.n.push(nn[0],nn[1],nn[2]);C1.setHex(colFn(r,k));acc.c.push(C1.r,C1.g,C1.b);if(acc.e)acc.e.push(r===rings?0:1);
   }
   for(let r=0;r<rings;r++)for(let k=0;k<PLN;k++){
     const k2=(k+1)%PLN,c=base+1+r*PLN+k,d=base+1+r*PLN+k2;
@@ -6015,7 +6070,7 @@ function rebuildRoadMesh(){ // king's roads, streets and market squares: one dra
       for(const run of fortStreetRuns(s,st))lay(resample(run,5,st.kind==='quay'||!!st.serviceAccess),st.hw,0.28,(k,j,x,z)=>roadCol(pv||dist2d(x,z,s.pos.x,s.pos.z)<pr?PAVECOL:ROADCOL)(k,j),earth,st.kind==='road'&&Number.isInteger(st.ri)&&!!W.roads[st.ri]);
     }
     for(const p of s.places||[])placeMesh(acc,p,0.32,p.kind==='green'
-      ?(r,k)=>r===6?0x5f7d3f:((r*3+k)%5?0x6f944a:0x78a052)
+      ?(r,k)=>r===6?0x647058:((r*3+k)%5?0x748064:0x7d886d)
       :(r,k)=>r===6?0x7d7668:((r+k)%2?0x9d9585:0x948c7c));
   }
   { /* junctions: where ways meet or cross, the overlapping verges and ruts give way to one trodden patch,
@@ -7214,8 +7269,9 @@ function siegeEngines(){const ad=AD();return ad<1100?0.0012:ad<1300?0.0035:0.008
 function townThreat(s){ // how much danger the burghers feel: raids, sieges and wars remembered, a border, robbers about; never quite none
   let th=0.12;if(s.raidedUntil>day()-720)th+=0.6;if(s.lastSiegeDay>day()-3600)th+=0.5;if(houseAtWar(s.owner))th+=0.4;if(s.role==='border')th+=0.3;
   for(const c of W.banditCamps||[])if(dist2d(c.x,c.z,s.pos.x,s.pos.z)<2000*MAPK)th+=0.15;return Math.min(th,2);}
-function townWorth(s){ // what the town's houses and shops are worth (25 years' rents): what a wall protects
-  if(s._worthY===year())return s._worth;let v=0;for(const b of s.buildings)if(b.state==='sound'&&!b.inst)v+=propValue(b);s._worthY=year();s._worth=v*25;return s._worth;}
+function townWorth(s){ // current houses and shops at 25 years' rents: what a wall protects
+  const shared=typeof LV_NATIVE!=='undefined'&&propValue===LV_NATIVE.property&&propValueField===LV_NATIVE.propertyField&&lvAtField===LV_NATIVE.atField&&useOf===LV_NATIVE.use,F=shared?lvField(s):null;let v=0;
+  for(const b of s.buildings)if(b.state==='sound'&&!b.inst)v+=shared?propValueField(b,F):propValue(b);return v*25;}
 function circuitLen(s,fresh){ // metres of curtain a circuit needs: none where a cliff is the wall; fresh: only the stretches not already standing
   if(!s.wallRad)return 2*Math.PI*Math.max(80,(s.extentR||s.radius||90));let L=0;
   const n=s.wallRad.length;for(let k=0;k<n;k++){if(s.wallKind&&s.wallKind[k]===1||fresh&&s.wallKept&&s.wallKept[k])continue;const k1=(k+1)%n,a0=k/n*Math.PI*2,a1=(k+1)/n*Math.PI*2;
@@ -11445,8 +11501,9 @@ function addBuildingLive(s,settle=true){ // growth: empty houses fill first, the
     if(bid&&tills(bid,s)){ // a field hand who cannot afford the village puts up a hovel by his strips; a yeoman far from his land builds out on it
       const poor=(bid.w||0)<3,ownsLand=(s.furl||[]).some(f=>f.own===bid.id),wk=workOf(bid,s),near=s.growSlots.slice(0,40).reduce((m,q)=>Math.min(m,dist2d(q.mx,q.mz,wk.x,wk.z)),1e9);
       if(poor&&frand()<0.5||ownsLand&&near>300&&frand()<0.5||!s.growSlots.length&&ownsLand){const b=fieldHome(bid,poor?'cot':'house');if(b)return b;}}
-    const lvPool=()=>{const P=s.growSlots.slice(0,240).map(q=>[q,lvAt(s,q.mx,q.mz)]).sort((a,b)=>b[1]-a[1]);return P.slice(0,40);}; // the open lots worth most go first
-    if(bid){const wk=workOf(bid,s),pool=lvPool().map(x=>x[0]);let c=null,bs=-1e9;for(const q of pool){const v=homeScore(bid,s,q.mx,q.mz,q.st,wk)+frand()*0.25;if(v>bs){bs=v;c=q;}}
+    const shared=typeof lvReadNative==='function'&&lvReadNative('at')&&lvReadNative('home');let F=null; // one unchanged field per attempt, after any extension
+    const lvPool=()=>{const P=s.growSlots.slice(0,240).map(q=>[q,shared?lvAtField(F||(F=lvField(s)),q.mx,q.mz):lvAt(s,q.mx,q.mz)]).sort((a,b)=>b[1]-a[1]);return P.slice(0,40);}; // the open lots worth most go first
+    if(bid){const wk=workOf(bid,s),pool=lvPool().map(x=>x[0]);let c=null,bs=-1e9;for(const q of pool){const v=(shared?homeScore(bid,s,q.mx,q.mz,q.st,wk,F||(F=lvField(s))):homeScore(bid,s,q.mx,q.mz,q.st,wk))+frand()*0.25;if(v>bs){bs=v;c=q;}}
       if(c){s.growSlots.splice(s.growSlots.indexOf(c),1);if(c.st.hidden&&!L.laneClear(c.st))continue; // a reserved lane that would now run through a house is not opened
         const b=L.buildLot(c,Math.min(1,tierCap(),L.tierFor(c,99)));
         if(b){b.grown=day();b.hh=[bid];bid.bh=b;if(c.st.hidden){c.st.hidden=false;G.roadsDirty=true;if(G.feat)featStroke(2,c.st.pts,c.st.hw);}
@@ -11537,6 +11594,7 @@ function tickLand(){ // monthly: the countryside follows the people
 }
 let QUERY_LAND_VALUES=null; // disposable memo for one read request; model valuation remains simulation-owned
 const LVC=16;
+const LV_BASES=new WeakMap(); // input-certified geometry, rebuilt after load; never part of W
 function lvBin(P,sz){const M=new Map();for(const q of P){const k=Math.floor(q[0]/sz)+','+Math.floor(q[1]/sz),o=M.get(k);if(o){o[0]+=q[0]*q[2];o[1]+=q[1]*q[2];o[2]+=q[2];}else M.set(k,[q[0]*q[2],q[1]*q[2],q[2]]);}return [...M.values()].map(o=>[o[0]/o[2],o[1]/o[2],o[2]]);} // nearby places of work, or homes, taken together
 function lvJobs(s){ // where the town's work is, and how many hands each place employs
   const J=[];
@@ -11546,9 +11604,51 @@ function lvJobs(s){ // where the town's work is, and how many hands each place e
     if(w)J.push([b.x,b.z,w]);}
   for(const p of s.places||[])if(p.kind==='market')J.push([p.x,p.z,10]);
   return J;}
+function lvInputs(s){
+  const R=Math.max(s.wallR||0,(s.extentR||s.radius||100))+90,x0=s.pos.x-R,z0=s.pos.z-R,n=Math.ceil(2*R/LVC),N=n*n,J=lvJobs(s),H=[];
+  for(const b of s.buildings)if(!b.removed&&b.state==='sound'&&RESID.has(b.arch))H.push([b.x,b.z,1]);
+  const M=(s.places||[]).filter(p=>p.kind==='market').map(p=>({x:p.x,z:p.z})),NU=s.buildings.filter(b=>!b.removed&&(b.arch==='tannery'||b.arch==='dyer')).map(b=>({x:b.x,z:b.z})),streets=[];
+  const key=[R,x0,z0,n,N,J.length];for(const q of J)key.push(q[0],q[1],q[2]);key.push(H.length);for(const q of H)key.push(q[0],q[1],q[2]);key.push(M.length);for(const q of M)key.push(q.x,q.z);key.push(NU.length);for(const q of NU)key.push(q.x,q.z);
+  for(const st of s.streets||[]){if(st.hidden||st.gone||st.kind==='edge')continue;const pts=st.pts.map(p=>({x:p.x,z:p.z}));streets.push({kind:st.kind,market:st.market,hw:st.hw,pts});}
+  key.push(streets.length);for(const st of streets){key.push(st.kind,!!st.market,st.hw,st.pts.length);for(const q of st.pts)key.push(q.x,q.z);}
+  return{R,x0,z0,n,N,J,H,M,NU,streets,key};}
+function lvSame(a,b){if(!a||a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(!Object.is(a[i],b[i]))return false;return true;}
+function lvFear(s){return(s.raidedUntil>day()?1:0)+(s.siegeBy?1:0)+(W.war?0.4:0);}
+function lvWalls(s){return[!!s.wallRad,s.pos.x,s.pos.z,s.wallRad?.length||0,...(s.wallRad||[])];}
+function lvNative(){const N=LV_NATIVE;return lvInputs===N.inputs&&lvKernel===N.kernel&&lvCompose===N.compose&&lvSame===N.same&&lvFear===N.fear&&lvWalls===N.wallKey&&lvJobs===N.jobs&&lvBin===N.bin&&resample===N.resample&&lerpPt===N.point&&lerp===N.lerp&&dist2d===N.dist&&inWalls===N.walls&&wallRadAt===N.rad&&RESID===N.resid&&RESID.has===N.has&&RESID.size===N.roles.length&&N.roles.every(a=>RESID.has(a));}
+function lvReadNative(kind){ // reuse only inside a reviewed operation with no field-input writes
+  if(typeof LV_READ_NATIVE==='undefined'||!lvNative())return false;const N=LV_READ_NATIVE;
+  if(lvField!==N.field||lvAtField!==N.atField||frand!==N.random||randi!==N.randomInt||headsOf!==N.headsOf)return false;
+  return kind==='at'?lvAt===N.at:kind==='home'?homeScore===N.home&&lotRentAt===N.lot&&workOf===N.work&&heads_===N.heads&&capOf===N.cap:propValue===N.property&&propValueField===N.propertyField&&useOf===N.use;
+}
+function lvKernel(I){const{x0,z0,n,N}=I;
+  const job=new Float32Array(N),hh=new Float32Array(N),mk=new Float32Array(N),ft=new Float32Array(N),nu=new Float32Array(N);
+  const J=lvBin(I.J,32),H=lvBin(I.H,32),M=I.M,NU=I.NU;
+  const cx=i=>x0+(i+0.5)*LVC,cz=j=>z0+(j+0.5)*LVC;
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const x=cx(i),z=cz(j),k=j*n+i;let a=0,b=0,c=0,d=0;
+    for(const q of J){const dd=Math.abs(q[0]-x)+Math.abs(q[1]-z);if(dd<700)a+=q[2]*Math.exp(-Math.hypot(q[0]-x,q[1]-z)/100);} // a walk to work: a quarter mile is far
+    for(const q of H){if(Math.abs(q[0]-x)>200||Math.abs(q[1]-z)>200)continue;b+=q[2]*Math.exp(-Math.hypot(q[0]-x,q[1]-z)/70);}
+    for(const p of M)c+=Math.exp(-dist2d(p.x,p.z,x,z)/90);
+    for(const o of NU)d+=Math.exp(-dist2d(o.x,o.z,x,z)/35);
+    job[k]=a;hh[k]=b;mk[k]=c;nu[k]=d;}
+  for(const st of I.streets){if(st.hidden||st.gone||st.kind==='edge')continue;const w=st.kind==='road'||st.kind==='mstreet'||st.market?1:st.kind==='quay'?0.9:0.55; // the street at the door: its passing trade
+    for(const p of resample(st.pts,5)){const i0=Math.floor((p.x-x0)/LVC),j0=Math.floor((p.z-z0)/LVC);
+      for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const i=i0+di,j=j0+dj;if(i<0||j<0||i>=n||j>=n)continue;const dd=Math.hypot(cx(i)-p.x,cz(j)-p.z)-st.hw;const v=w*Math.exp(-Math.max(0,dd)/10);const k=j*n+i;if(v>ft[k])ft[k]=v;}}}
+  const mx=A=>{let m=1e-6;for(const v of A)if(v>m)m=v;return m;},mj=mx(job),mh=mx(hh),mm=mx(mk);
+  return{job,hh,mk,ft,nu,mj,mh,mm};}
+function lvCompose(s,I,B){const{x0,z0,n,N}=I,{job,hh,mk,ft,nu,mj,mh,mm}=B,cx=i=>x0+(i+0.5)*LVC,cz=j=>z0+(j+0.5)*LVC;
+  const fear=lvFear(s),res=new Float32Array(N),biz=new Float32Array(N);
+  for(let j=0;j<n;j++)for(let i=0;i<n;i++){const k=j*n+i,x=cx(i),z=cz(j),safe=inWalls(s,x,z)?0.3+0.25*fear:0,stink=Math.min(1,nu[k]);
+    res[k]=Math.max(0.03,0.06+0.85*job[k]/mj+0.3*mk[k]/mm+safe-0.35*stink);
+    biz[k]=Math.max(0.02,0.05+0.9*ft[k]*(0.4+0.6*hh[k]/mh)+0.45*mk[k]/mm+0.25*hh[k]/mh+safe*0.5-0.15*stink);}
+  return{res,biz};}
 function lvField(s){
-  const query=typeof QUERY_LAND_VALUES==='undefined'?null:QUERY_LAND_VALUES,cached=query?.get(s)||s._lvf;
-  if(cached&&cached.y===year())return cached; // valued once a year
+  const query=QUERY_LAND_VALUES;if(query?.has(s))return query.get(s);if(!lvNative())return lvCold(s);
+  const I=lvInputs(s),prior=LV_BASES.get(s),same=lvSame(prior?.key,I.key),base=same?prior.base:lvKernel(I),walls=lvWalls(s),fear=lvFear(s),field=same&&prior.fear===fear&&lvSame(prior.walls,walls)?prior.value:lvCompose(s,I,base),scale=Math.pow(Math.max(20,s.pop),0.3);
+  const value=!query&&field.y===year()&&field.n===s.buildings.length&&field.scale===scale?field:{y:year(),n:s.buildings.length,x0:I.x0,z0:I.z0,cells:I.n,res:field.res,biz:field.biz,scale};
+  if(query)query.set(s,value);else{LV_BASES.set(s,{key:I.key,base,walls,fear,value});s._lvf=value;}return value;}
+function lvCold(s){
+  const query=QUERY_LAND_VALUES;
   const R=Math.max(s.wallR||0,(s.extentR||s.radius||100))+90,x0=s.pos.x-R,z0=s.pos.z-R,n=Math.ceil(2*R/LVC),N=n*n;
   const job=new Float32Array(N),hh=new Float32Array(N),mk=new Float32Array(N),ft=new Float32Array(N),nu=new Float32Array(N);
   const J=lvBin(lvJobs(s),32),H0=[];for(const b of s.buildings)if(!b.removed&&b.state==='sound'&&RESID.has(b.arch))H0.push([b.x,b.z,1]);const H=lvBin(H0,32);
@@ -11569,14 +11669,16 @@ function lvField(s){
     res[k]=Math.max(0.03,0.06+0.85*job[k]/mj+0.3*mk[k]/mm+safe-0.35*stink);
     biz[k]=Math.max(0.02,0.05+0.9*ft[k]*(0.4+0.6*hh[k]/mh)+0.45*mk[k]/mm+0.25*hh[k]/mh+safe*0.5-0.15*stink);}
   const value={y:year(),n:s.buildings.length,x0,z0,cells:n,res,biz,scale:Math.pow(Math.max(20,s.pop),0.3)};if(query)query.set(s,value);else s._lvf=value;return value;}
-function lvAt(s,x,z,use){const F=lvField(s),i=clamp(Math.floor((x-F.x0)/LVC),0,F.cells-1),j=clamp(Math.floor((z-F.z0)/LVC),0,F.cells-1),k=j*F.cells+i;
+function lvAtField(F,x,z,use){const i=clamp(Math.floor((x-F.x0)/LVC),0,F.cells-1),j=clamp(Math.floor((z-F.z0)/LVC),0,F.cells-1),k=j*F.cells+i;
   const v=use==='res'?F.res[k]:use==='biz'?F.biz[k]:Math.max(F.res[k],F.biz[k]),out=Math.max(Math.abs(x-F.x0-F.cells*LVC/2),Math.abs(z-F.z0-F.cells*LVC/2))>F.cells*LVC/2?0.3:1;
   return v*out;}
+function lvAt(s,x,z,use){return lvAtField(lvField(s),x,z,use);}
 const BIZ=new Set(['shop','smithy','bakery','tavern','inn','tannery','dyer','bath','guildhall','warehouse','granary','mill']);
 function useOf(b){return BIZ.has(b.arch)||b.arch==='burgher'&&b.district==='market'?'biz':'res';}
-function propValue(b){ // what a building lets for: its ground's value for its use, by its floor and how well it is built
-  const s=b.s,F=lvField(s);return lvAt(s,b.x,b.z,useOf(b))*F.scale*1.2*(1+0.25*b.tier)*Math.sqrt(Math.max(20,b.w*b.d)/56)*(RESID.has(b.arch)||TRADEISH.has(b.arch)?1:0.6);
+function propValueField(b,F){ // what a building lets for: its ground's value for its use, by its floor and how well it is built
+  return lvAtField(F,b.x,b.z,useOf(b))*F.scale*1.2*(1+0.25*b.tier)*Math.sqrt(Math.max(20,b.w*b.d)/56)*(RESID.has(b.arch)||TRADEISH.has(b.arch)?1:0.6);
 }
+function propValue(b){return propValueField(b,lvField(b.s));}
 const TRADEISH=new Set(['warehouse','granary','mill','tannery']);
 const LANDV={};
 function landValue(f){ // a furlong's worth: what it yields as it lies, and how near it is to people who will buy
@@ -14171,6 +14273,8 @@ function settleParcels(targets=null){
    (hovel-built → timber-framed → stone-built). */
 const HOUSEHOLD=5; // souls to a roof; a storeyed town house holds lodgers and journeymen too
 const RESID=new Set(['court','cot','house','longhouse','burgher','shop','tavern','smithy','bakery','inn','tannery','dyer','hospital','toll']);
+const LV_NATIVE={inputs:lvInputs,kernel:lvKernel,compose:lvCompose,same:lvSame,fear:lvFear,wallKey:lvWalls,jobs:lvJobs,bin:lvBin,resample,point:lerpPt,lerp,dist:dist2d,walls:inWalls,rad:wallRadAt,resid:RESID,has:RESID.has,roles:[...RESID],property:propValue,propertyField:propValueField,at:lvAt,atField:lvAtField,use:useOf};
+const LV_READ_NATIVE={field:lvField,at:lvAt,atField:lvAtField,property:propValue,propertyField:propValueField,use:useOf,lot:lotRentAt,home:homeScore,work:workOf,heads:heads_,headsOf,cap:capOf,random:frand,randomInt:randi};
 const VACANT_RESIDENTIALS=new WeakMap();
 function vacantResidentials(s){
   const buildings=s.buildings||[],cached=VACANT_RESIDENTIALS.get(s);
@@ -14756,8 +14860,9 @@ function ownerOf(b,s){ // who owns this building: decided once (lazily), then ke
   if(b.ownerId!==undefined)return b.ownerId;s=s||b.s;
   if(CHURCH_ARCH.has(b.arch)||b.ch)return b.ownerId='church';if(LORD_ARCH.has(b.arch)||b.motte||b.bailey)return b.ownerId='lord';if(TOWN_ARCH.has(b.arch))return b.ownerId='town';
   const occ=(b.hh||[])[0];const P=W._pm||(W._pm=folkIndex());
-  if(occ&&(s.kind==='village'||(occ.w||0)>propValue(b)*6||b.rural))return b.ownerId=occ.id; // a cottager, a farmer, a householder of means: his own roof
-  const rich=s.folk?headsOf(s).filter(h=>!h.role&&(h.w||0)>propValue(b)*10).sort((a,c)=>(c.w||0)-(a.w||0))[0]:null; // else a landlord of the town, or the lord
+  const shared=typeof lvReadNative==='function'&&lvReadNative('property');let pv,valued=false;const value=()=>{if(!shared)return propValue(b);if(!valued){pv=propValue(b);valued=true;}return pv;};
+  if(occ&&(s.kind==='village'||(occ.w||0)>value()*6||b.rural))return b.ownerId=occ.id; // a cottager, a farmer, a householder of means: his own roof
+  const rich=s.folk?headsOf(s).filter(h=>!h.role&&(h.w||0)>value()*10).sort((a,c)=>(c.w||0)-(a.w||0))[0]:null; // else a landlord of the town, or the lord
   return b.ownerId=rich?rich.id:'lord';}
 function ownerAcct(b,s){const o=ownerOf(b,s);if(b.title&&b.title.owner&&b.title.owner.household)return b.title.owner.head||b.title.owner;if(o==='lord')return lordAcct(s||b.s);if(o==='church'){const c=parishOf(s||b.s);return c?(c.ch||chOf(c),c):lordAcct(s||b.s);}if(o==='town')return s||b.s;const c=corpOf(o);if(c&&!c.gone)return c;const P=W._pm||(W._pm=folkIndex()),p=P.get(o);return p&&!p.dead?p:lordAcct(s||b.s);}
 /* the market: what each seller has offered and not yet sold, by good; a buyer pays the sellers in proportion to what they offered */
@@ -15027,16 +15132,17 @@ function workOf(h,s){const si=W.settlements.indexOf(s);let x=0,z=0,n=0;
   if(h.tr==='boatman'||h.tr==='fisher'||h.tr==='merchant'){const q=(s.streets||[]).find(t=>t.kind==='quay'&&!t.hidden&&!t.gone);if(q&&q.pts.length)return q.pts[Math.floor(q.pts.length/2)];}
   const mk=(s.places||[]).find(p=>p.kind==='market');return mk?{x:mk.x,z:mk.z}:{x:s.pos.x,z:s.pos.z};}
 function inWalls(s,x,z){return !!s.wallRad&&dist2d(x,z,s.pos.x,s.pos.z)<wallRadAt(s,Math.atan2(z-s.pos.z,x-s.pos.x));}
-function lotRentAt(s,x,z,st){return lvAt(s,x,z,'res')*lvField(s).scale*0.144*(st&&st.planned?0.7:1);} // a house-lot's rent; a lord's new street is let at a charter rent, below the market
-function homeScore(h,s,x,z,st,wk){ // what a lot is worth to this household: the walk to its work, the rent against its purse, the safety of the walls
+function lotRentAt(s,x,z,st){const F=lvField(s);return lvAtField(F,x,z,'res')*F.scale*0.144*(st&&st.planned?0.7:1);} // a house-lot's rent; a lord's new street is let below the market
+function homeScore(h,s,x,z,st,wk,F){ // an optional field belongs to one unchanged, native selection pass
   const means=Math.max(0,h.w||0),fear=(s.raidedUntil>day()?1:0)+(s.siegeBy?1:0)+(W.war?0.4:0)+(s.walls>0?0.2:0);
-  return -dist2d(x,z,wk.x,wk.z)/80-lotRentAt(s,x,z,st)*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
+  const rent=F?lvAtField(F,x,z,'res')*F.scale*0.144*(st&&st.planned?0.7:1):lotRentAt(s,x,z,st);
+  return -dist2d(x,z,wk.x,wk.z)/80-rent*4/(1+means/6)+(inWalls(s,x,z)?0.3+fear:0)+((TRADE_ARCH[h.tr]||h.tr==='merchant')&&st&&(st.market||st.kind==='road')?0.5:0);}
 function crowding(s){ // households without a roof of their own: none at all, or lodging over another's
   let n=0;for(const h of heads_(s,()=>true)){const b=h.bh;if(!b||b.removed||b.s!==s||b.state!=='sound'){n++;continue;}if((b.hh||[]).indexOf(h)>=capOf(b))n++;}return n;}
 function means(x){if(x&&x.household)return x.successors?x.successors.reduce((n,[to,f])=>n+means(to)*f,0):Math.max(0,x.assets.w||0);if(x&&x.gn!==undefined&&!x.merc)return means(householdAccount(x));return x==='crown'?W.treasury:x&&x.gn!==undefined?(x.w||0):x&&x.ch?x.ch.fund:x&&x.buildings?(x.murage||0):x?(x.gold||0):0;} // what an account has to spend
 function houseBuyer(s,cost){ // who pays for a new house: a household that wants one and can pay, else a landlord who expects the rent to repay him within a dozen years, else the lord on the same reckoning
   const C=s._hbC&&s._hbC.d===day()?s._hbC:(s._hbC={d:day(),want:heads_(s,h=>!h.bh||h.bh.removed||h.bh.s!==s||(h.bh.hh||[]).indexOf(h)>=capOf(h.bh)).sort((a,b)=>(b.w||0)-(a.w||0)),
-    rent:(()=>{const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40);return R.length?R.reduce((t,b)=>t+propValue(b),0)/R.length*0.12:0;})()}); // reckoned once a day
+    rent:(()=>{const R=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed).slice(0,40),shared=typeof lvReadNative==='function'&&lvReadNative('property');let F=null;return R.length?R.reduce((t,b)=>t+(shared&&b.s===s?propValueField(b,F||(F=lvField(s))):propValue(b)),0)/R.length*0.12:0;})()}); // reckoned once a day
   const want=C.want.filter(h=>!h.bh||h.bh.removed||h.bh.s!==s||h.bh.hh&&h.bh.hh.indexOf(h)>=capOf(h.bh)); // (those housed since this morning drop out)
   if(!want.length)return null;if((want[0].w||0)>=cost)return {acct:want[0],id:want[0].id};
   const rent=C.rent*(W._pl||1);if(rent*12<cost)return null; // a house that would not pay for itself is not built
@@ -15118,10 +15224,10 @@ function rehouse(s,b){ // a house rebuilt or brought back into use: its own hous
   const h=unhousedOf(s)[0]||heads_(s,x=>x.bh&&!x.bh.removed&&x.bh.s===s&&x.bh.state==='sound'&&(x.bh.hh||[]).indexOf(x)>=capOf(x.bh))[0];
   const old=h&&h.bh;if(!h){vacantResidentialChanged(s,b);return;}if(old&&old.hh)old.hh=old.hh.filter(x=>x!==h);b.hh=[h];h.bh=b;vacantResidentialChanged(s,b);if(old&&old!==b)vacantResidentialChanged(old.s||s,old);}
 function moveIn(s){ // households with no roof, or lodging over another's, take the empty houses the place has before anyone builds; each the one that suits it best
-  let empty=null;const vacated=new Set();
+  let empty=null,F=null;const vacated=new Set(),shared=typeof lvReadNative==='function'&&lvReadNative('home');
   for(const h of heads_(s,x=>!x.bh||x.bh.removed||x.bh.s!==s||x.bh.state!=='sound'||(x.bh.hh||[]).indexOf(x)>=capOf(x.bh)).sort((a,b)=>(b.w||0)-(a.w||0))){
     if(!empty)empty=[...vacantResidentials(s)];if(!empty.length)break;
-    const wk=workOf(h,s);let bi=0,bs=-1e9;empty.forEach((x,i)=>{const v=homeScore(h,s,x.x,x.z,x.st,wk);if(v>bs){bs=v;bi=i;}});
+    const wk=workOf(h,s);let bi=0,bs=-1e9;empty.forEach((x,i)=>{const v=shared?homeScore(h,s,x.x,x.z,x.st,wk,F||(F=lvField(s))):homeScore(h,s,x.x,x.z,x.st,wk);if(v>bs){bs=v;bi=i;}});
     const b=empty.splice(bi,1)[0],old=h.bh;vacantResidentials(s).delete(b);if(old&&old.hh){old.hh=old.hh.filter(x=>x!==h);vacated.add(old);}b.hh=[h];h.bh=b;b._vac=0;}
   for(const b of vacated)vacantResidentialChanged(b.s||s,b);}
 function tickFalling(s){ // the houses let go at the yearly reckoning fall in one by one through the year, unless a household has taken one meanwhile
@@ -15157,10 +15263,15 @@ function tickStreets(){
     (s.history||(s.history=[])).push({yr:year(),t:`${nm} was cut through${sound.length?`; ${sound.length} house${sound.length>1?'s were':' was'} pulled down and their owners paid`:''}${burnt?' over ground the fire had cleared':''}.`});
     emit('trade',4,{x:(A.x+B.x)/2,z:(A.z+B.z)/2},vary('cut_street',[()=>`${s.name}: a new street, ${nm}, is cut straight through ${sound.length?`; ${sound.length} house${sound.length>1?'s are':' is'} pulled down, their owners paid ${Math.round(cost)} crowns`:' over the burnt ground'}. The carters bless it.`,
       ()=>`The long way round is no more: ${nm} is driven through ${s.name}${sound.length?`, and ${sound.length} house${sound.length>1?'s come':' comes'} down for it`:''}.`]));}}
-function tickGrowth(){ // houses are built for households that have none, as fast as the place's means and its timber allow; empty houses fall vacant as the households thin; owners rebuild in better stuff where the value it adds repays the cost
-  if(day()%6!==0)return;
-  for(const s of W.settlements){
+function tickGrowth(){ // occupancy and due falls are daily; paid construction rates await their own split
+  const now=day(),sixDay=now%6===0;for(let si=0;si<W.settlements.length;si++){const s=W.settlements[si];
     if(s.folk&&s.folk.length)moveIn(s);tickFalling(s);
+    if(sixDay)tickGrowthHousing(s);
+    if(now%360===(si*29)%360){tickGrowthWiden(s);tickGrowthVacancy(s);}
+    if(sixDay)tickGrowthFabric(s);
+  }
+}
+function tickGrowthHousing(s){
     const short=s.folk&&s.folk.length?crowding(s):Math.max(0,(s.pop-housing(s))/HOUSEHOLD),hands=heads_(s,h=>h.tr==='carpenter'||h.tr==='mason'||h.tr==='thatcher').length; // households lodging or with no roof; the builders the place has
     if(short>0&&!s.siegeBy){
       let n=Math.min(short,(1+hands)*0.25*(s.stores.timber>5?1:0.6)),got=0;n=Math.floor(n)+(frand()<n%1?1:0); // as fast as its builders can (wattle and daub, slower, when there is no sawn timber)
@@ -15175,19 +15286,24 @@ function tickGrowth(){ // houses are built for households that have none, as fas
       if(newBlds.length)settleParcels(newBlds);
       if(!got&&n>0&&(s.growSlots||[]).length===0){ // nowhere left to build: the town builds upward where the rent is dearest
         const capT=Math.max(1,tierCap())+(AD()>=1250&&s.kind!=='village'?1:0);
-        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.arch!=='court'&&o.tier<capT).map(o=>[o,propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
+        const shared=typeof lvReadNative==='function'&&lvReadNative('property');let F=null;
+        const low=s.buildings.filter(o=>o.state==='sound'&&RESID.has(o.arch)&&o.arch!=='cot'&&o.arch!=='court'&&o.tier<capT).map(o=>[o,shared&&o.s===s?propValueField(o,F||(F=lvField(s))):propValue(o)]).sort((x,y)=>y[1]-x[1]).slice(0,30);
         const pk=wpick(low,x=>x[1]/Math.max(0.01,low[0][1])*3,1),b=pk&&pk[0];
         if(b&&means(ownerAcct(b,s))>=b.w*b.d*0.6*(W._pl||1)){b.tier++;b.h=ARCH[b.arch][2]*(0.8+b.tier*0.25);updateBuildingInstance(b);buildWorks(s,b.w*b.d*0.6*(W._pl||1),ownerAcct(b,s),'building');
           if(!s._upNote){s._upNote=1;emit('trade',3,s.pos,`${s.name} can spread no further; its houses rise a storey and let rooms to lodgers.`);}}}
     }
-    if(day()%360===(W.settlements.indexOf(s)*29)%360&&s._lay&&s._lay.live&&s.kind!=='village'){ // once a year: in the dear heart of a town an owner carries his house along the frontage to the next, where the rent of the new bay repays the building
+}
+function tickGrowthWiden(s){
+    if(s._lay&&s._lay.live&&s.kind!=='village'){ // once a year: in the dear heart of a town an owner carries his house along the frontage to the next, where the rent of the new bay repays the building
       const core=(s.extentR||s.radius||100)*0.5,C=s.buildings.filter(b=>(b.arch==='house'||b.arch==='burgher')&&b.state==='sound'&&!b.removed&&!b.rural&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core);
       const widened=[];
       for(let k=0;k<Math.min(20,C.length);k++){const b=C[(k*7919+day())%C.length],own=ownerAcct(b,s),dw=s._lay.live.widen(b,true);if(!dw)continue;
         const pv=propValue(b),gain=pv*(Math.sqrt((b.w*b.d+dw*Math.min(b.w,b.d))/(b.w*b.d))-1)*0.12*(W._pl||1),cost=dw*Math.min(b.w,b.d)*0.8*(W._pl||1);
         if(gain*12>=cost&&means(own)>=cost&&s._lay.live.widen(b)){buildWorks(s,cost,own,'building');updateBuildingInstance(b);widened.push(b);G.detDirty=true;}}
       if(widened.length)settleParcels(widened);}
-    if(day()%360===(W.settlements.indexOf(s)*29)%360&&s.folk&&s.folk.length){ // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
+}
+function tickGrowthVacancy(s){
+    if(s.folk&&s.folk.length){ // once a year: an empty house still wants its roof mended; an owner who cannot or will not pay lets it fall in
       houseFolk(s); // who lives where as it stands today, not as at the last reckoning
       const homes=s.buildings.filter(b=>RESID.has(b.arch)&&b.state==='sound'&&!b.removed),fall=[];
       for(const b of homes){if(b.hh&&b.hh.length||(b._fallAt||0)>day())continue;const own=ownerAcct(b,s),up=b.w*b.d*0.03*(W._pl||1);
@@ -15203,11 +15319,14 @@ function tickGrowth(){ // houses are built for households that have none, as fas
       lose.forEach(([b],i)=>{b._fallAt=day()+Math.round((i+1)/(lose.length+1)*330);});(s._falling=s._falling||[]).push(...lose.map(x=>x[0]));
       if(lose.length>=3){const n=lose.length,t=vary('deserted',[()=>`${n} empty houses in ${s.name} are let go: no tenant has come for them, and their owners will not mend the roofs. They will fall in through the year.`,()=>`In ${s.name} ${n} houses have stood empty too long; their owners leave them unmended, and one by one their roofs will fall in.`,()=>`${s.name} has more roofs than households: ${n} empty houses are left to fall in.`]);
         s.history.push({yr:year(),t});emit('trade',n>=10?5:3,s.pos,t);}}
+}
+function tickGrowthFabric(s){
     // rebuilding in better stuff: where the value it adds over the years repays the cost, and the owner can pay
     if(!s.siegeBy&&chance('sim',0.25)){
       const core=(s.extentR||s.radius||100)*0.4;
       const ups=s.buildings.filter(b=>b.state==='sound'&&b.arch!=='wall'&&b.arch!=='wharf'&&b.arch!=='quarry'&&!b.motte&&b.tier<Math.min(tierCap(),b.inst||s.kind!=='village'&&dist2d(b.x,b.z,s.pos.x,s.pos.z)<core?2:1)&&(b.tier<1||hasStone(s,'house')));
-      let best=null,bv=0;for(let k=0;k<Math.min(12,ups.length);k++){const b=ups[randi('sim',ups.length)],gain=propValue(b)*25*0.25/(1+0.25*b.tier),cost=b.w*b.d*(b.tier<1?0.8:2.5),v=gain-cost;if(v>bv){bv=v;best=b;}}
+      const shared=typeof lvReadNative==='function'&&lvReadNative('property');let F=null;
+      let best=null,bv=0;for(let k=0;k<Math.min(12,ups.length);k++){const b=ups[randi('sim',ups.length)],gain=(shared&&b.s===s?propValueField(b,F||(F=lvField(s))):propValue(b))*25*0.25/(1+0.25*b.tier),cost=b.w*b.d*(b.tier<1?0.8:2.5),v=gain-cost;if(v>bv){bv=v;best=b;}}
       if(best){const b=best,own=ownerAcct(b,s);buildWorks(s,b.w*b.d*(b.tier<1?0.8:2.5),own,'building');
         b.tier++;if(b.tier===2){buyBuildingMaterial(s,'stone',own,Math.min(s.stores.stone||0,stoneFor(s,'house')));}
         const a=ARCH[b.arch];
@@ -15217,7 +15336,6 @@ function tickGrowth(){ // houses are built for households that have none, as fas
           emit('trade',3,s.pos,`A ${a[4]} in ${s.name} is rebuilt in ${b.tier===2?'good stone':'timber and plaster'}; the street is the finer for it.`);
       }
     }
-  }
 }
 
 /* ============================ ACTS (triggers) ============================ */

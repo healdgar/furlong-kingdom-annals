@@ -6,6 +6,32 @@ The app remains a single HTML file with no build step.
 
 ## Exact fast forward (current priority, 2026-10-10)
 
+The current growth/property batch keeps daily occupancy and live valuation
+inputs while retaining the unfinished six-day housing/fabric rate throttle.
+Operation-local native fields consolidate roof selection, lot ranking, buyer
+rent averages and landlord tests; widening, refits and construction boundaries
+still obtain fresh fields. The dependencies and original regression are
+recorded in [SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md).
+
+One serial unprofiled raw-journal diagnostic on 1001:42 sea (AD 850, ticks
+41–360, same host) measures:
+
+| Source | CPU ms/day | Window load | Whole runner CPU / wall seconds |
+|---|---:|---|---|
+| Published `c479429` | 96.89 | 0.7→1.1 | 40.82 / 32.74 |
+| Live property/layout candidate before consolidation | 132.17 | 1.4→1.3 | 56.77 / 45.49 |
+| Operation-local consolidation | 103.56 | 0.2→0.8 | 43.67 / 34.62 |
+
+The last two sources have the same year-end census: 2,497 people, 1,060
+households, 667 buildings and twelve settlements. Consolidation reduces tenure
+wall cost 10.737→0.299 ms/day and growth 9.538→5.062 in this diagnostic.
+This single sequence is not a calibrated speedup claim against the published
+model: live values, reachable annual growth assessments and generated layouts
+deliberately change history. Compression/IndexedDB and late-world scaling are
+excluded. The remaining early-world gap to 100 years/minute is about 62× before
+durable writes. Final identity/conservation gates and source hashes are recorded
+in the handoff; evidence is in `tools/soak-results/live-growth-20261010/`.
+
 The user’s target is hundreds of simulated years per real minute, with exactly the
 same history at every speed for the same seed and commands on the same simulation
 days. Source-file splitting offers no demonstrated speed
@@ -159,13 +185,13 @@ fallbacks, graph edits, paid-day construction and the necessary street filter.
 Local evidence: `tools/soak-results/daily-storage-20261010/`; full validation and
 source hashes follow in HANDOFF.md.
 
-The next growth/input audit is recorded in
-[SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md). A six-day outer guard
-currently makes annual widening and vacancy/refit/maintenance visits unreachable
-except at settlement indexes divisible by six. Split occupancy, due falls,
-economic decisions, paid physical work and genuine maintenance obligations;
-certify reusable property-value geometry while keeping population/security live.
-That next conversion is recorded but not implemented.
+The subsequent growth/input batch, summarized above, follows
+[SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md). It removes the six-day
+outer guard that made annual widening and vacancy/refit/maintenance visits
+unreachable except at settlement indexes divisible by six. Occupancy and due
+falls now run daily; reusable property geometry is certified while current
+population/security stay live. Housing/fabric still retain their six-day rate
+throttle until economic eligibility and paid physical progress are separated.
 
 ### Work in order
 
@@ -187,8 +213,8 @@ its throughput is to be remeasured, not inferred from the ordering.
    writes, singleton withdrawal planning and trade-pass actor candidates;
    privately ranked live-cell handles remain a candidate. Daily storage uses
    bounded within-pass reuse as recorded in
-   [SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md). The next growth/rate
-   split and geography certificate are recorded in
+   [SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md). The implemented occupancy/geography certificate and remaining paid growth/rate
+   split are recorded in
    [SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md). Keep current
    population/security inputs live. Reads must see each intervening
    purchase and consumption; a whole-day food snapshot becomes stale.

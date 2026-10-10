@@ -1,8 +1,10 @@
 # Handoff: state of work
 
-Updated 2026-10-10 in the cloud checkout after implementing daily storage decisions and recording the next growth/property-input refactor for fast forward (#15), after the daily-order refactor, general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-10 in the cloud checkout for the validated daily growth/property and fitted settlement-layout release, after publishing daily storage, the daily-order refactor, general eyre and the river correction. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
+
+- **Current validated release batch (2026-10-10):** live property certificates, daily occupancy/due falls and independently reachable annual growth dates; operation-local valuation reuse removes repeated certification during unchanged selections. Greens and markets fit actual terrain/streets/fabric, greens use seasonal grass/snow, and fresh motte layouts retain a surveyed courtyard and feasible graded access. Recorded before implementation in `SIMULATION-GROWTH-INPUTS.md` and `OPEN-SPACES-AND-CASTLE-SITING.md`; final gates follow below. Housing/fabric still have the explicitly unfinished six-day rate throttle. The user's first-keep question exposed #60: existing castles develop and towns can build walls, but a seat/capital without a keep or castle ring cannot commission its first castle. The required funded daily project/site dependencies are recorded in the latter document. Next: paid construction progress and #60, then the remaining daily decision/rate splits; century-scale performance remains #15.
 
 - **2026-10-10, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. The user explicitly authorizes model/history changes for efficiency and accuracy; ordinary decisions should be daily, with other intervals justified by a simulation reason. Keep the sectioned file and simulation/render boundary. Four Luna surveys and root review are recorded in `docs/SIMULATION-ORDER.md` and `.json`: all 42 old phases, 52 current boundaries and 168 same-day prerequisites. The first refactor follows that order; mixed calendar decisions still need quantities, obligations and eligibility separated. The measured plan is in `docs/PERFORMANCE.md`; evidence follows below. Century-scale throughput is not yet achieved.
 - **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
@@ -10,7 +12,7 @@ Updated 2026-10-10 in the cloud checkout after implementing daily storage decisi
 - **2026-10-09, criminal presentments (#37, batch 11e):** native riots present up to three resident adult household heads under the named three-days-of-family-bread custom. Robbed caravans and actual outlaw recruitment add bounded evidence to a separate royal roll; royal hearings, forfeiture and charges remain pending. No settlement camp raids are invented.
 - **2026-10-09, river surface (#58):** the drawing had sampled each terrain bump directly, allowing the water to rise downstream. Draw-only profiles now pool across bed bumps; junction backwater extends upstream. Canal levels and simulation geometry remain unchanged. The 150-day whole-world/RNG proof and final drawn check pass; evidence follows below.
 - **2026-10-09, general eyre (#37, batch 11f):** from AD 1166, monthly reviews send profitable, funded circuits. Two lettered capital heads chosen by law skill enter the annals as justices, keeping their actual households, lodging, education and mortality. Each scheduled sitting hears one town and its nearest villages and funds its whole return journey to the capital. Robbery levies and real road-upkeep shortfalls use shared spare-purse caps. Felony forfeits only the living outlaw’s witnessed/current share of remaining assets; subsistence, food, tools, winter fodder and working/breeding beasts survive. Goods change native ownership and become Crown sale stock without adding physical stock; their zero purchase cost blends into the Crown’s actual old cost reserve. Coin and officials’ pay use transfer. Detailed cases retire once; folded counts carry no guessed liability. Worker-side accounts, named justices, royal rulings and a journaled send order are implemented. Validation and remaining work follow below.
-- **Local state:** batches 11c, 11d, 11e and 11f, the river correction, the first exact-cache optimization, daily-order refactor, subsequent exact daily kernels and daily storage decisions are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: daily growth and current property-value inputs as recorded in `docs/SIMULATION-GROWTH-INPUTS.md`, then continue the daily refactor and fast-forward performance (#15). The capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
+- **Previous published state (2026-10-10):** all validated work through daily storage decisions was pushed to `origin/main` at `c479429`. Release workflow 38058032409 succeeded; [GitHub Pages](https://healdgar.github.io/furlong-kingdom-annals/) serves the exact committed HTML and all three local assets. The subsequent batch combines live property inputs/daily occupancy boundaries with the user’s organic open-space, seasonal green and terrain-responsive castle request (#59). Verification and economy comparisons follow below. Next: funded housing/fabric progress and first-castle foundations (#60), then continue the daily decision/rate splits and fast-forward performance (#15). The capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
 
 - **2026-10-09, fort development and annual accounts (#56, #57):** roads, town-wall siting, building enlargement and parcel clipping respect the elongated bailey's contour instead of its maximum-radius circle. Mound, ditch and curtain clearances remain. Deliberate layout/history change; existing buildings are not relocated.
 - Town, domain and crown records show calendar-year income, expenses, surplus/deficit and causes; treasury statements reconcile opening and closing coin. Town public funds and each owner's local receipts/costs are separate; local costs already belong to the owner's total. Loans and asset sales are cash flows, not trading profit. Two bounded annual aggregate books per institutional chest, no household ledger or new transaction/journal rows; reports never scan history. Self-transfers and refunded relief holds are excluded. Older net books cannot reconstruct prior gross flows; resumed records label partial years.
@@ -51,7 +53,7 @@ Updated 2026-10-10 in the cloud checkout after implementing daily storage decisi
     - Back with the meat agent: foods that rot are not laid in for the month; the table's meat gives way to its price as wine does; butchers buy up to the herds' yearly increase wherever the carcass pays; cattle and sheep valued by their real yields; butchers as many as the meat trade keeps; pannage at the year's price.
   - Agents' single-world runs (42 sea, 720 days): lords' and the crown's coin up, village hunger level or lower, no roads worn, two of nine mills let, meat level with bread at about 4× base by year 2. Open from it: #53 (dairy counted as grain; a cow's yield undervalued) and #54 (meat reaches the market slowly: families sell beasts only to the reeve, and the lords' halls buy no meat, a calibration of flesh and fast days left for later).
 - **Branch.** Work stays on `main`, as `CLAUDE.md` now requires. The remote `determinism` branch was already merged; its deletion remains an inherited task.
-- Batches 11c, 11d and 11e and the river correction are local only; no release has been pushed from this checkout.
+- Batches 11c, 11d and 11e, general eyre and the river correction were published with `c479429` and the other validated daily-order/storage work.
 
 ## Next, in order
 
@@ -676,16 +678,13 @@ game-script SHA256
 `d1f288cccb96401b1fa1b617045ef9aa80535f614bd1cd042510e9121377647a`.
 Local evidence: `tools/soak-results/daily-storage-20261010/`.
 
-Two additional read-only Luna surveys record the next bounded design in
-`docs/SIMULATION-GROWTH-INPUTS.md`; it is not implemented. The outer six-day
-guard makes annual widening/vacancy/refit/maintenance unreachable for settlement
-indexes not divisible by six. Split daily occupancy/due falls, funded housing,
-widening/reuse and fabric work from elapsed vacancy, physical progress and true
-maintenance obligations. A property-grid base certificate can compare explicit
-ordered scalars/points/streets and retain Float32 intermediates, recomposing with
-current fear/walls and population scale; `townWorth` needs its own current policy.
-Preserve arithmetic order and keep query misses request-local. No cache
-invalidation proof or speed gain for that next design is claimed.
+Two additional read-only Luna surveys recorded the bounded design in
+`docs/SIMULATION-GROWTH-INPUTS.md` before implementation. The current candidate
+implements live property certificates, daily occupancy/due falls and independent
+annual widening/vacancy dates. Funded housing/fabric progress remains next.
+Current fear/walls/population and town worth stay live; query misses remain
+request-local. The later operation-scope survey and diagnostic are recorded in
+the same document.
 
 Both serial one-year native Chrome worlds (42:42 sea and 1001:42 sea) pass all
 eight conservation/sanity checks, with no simulation faults, zero yearly money
@@ -713,7 +712,119 @@ Stamped HTML SHA256
 The game script is byte-identical to the timing/proof/browser source after
 stamping. All 58 post-stamp source/advisor/order/storage/architecture/search
 guards pass (6.39 s CPU / 3.23 s wall; initial load 0.56/1.10/1.22), as does
-the unchanged 52-phase/168-edge AST contract. Prepared locally; no push.
-#15 remains in progress. Next implement the recorded daily growth/rate and
-current property-value input split, retaining real actors/payments and exact
-history across speeds.
+the unchanged 52-phase/168-edge AST contract. Published at `c479429`; workflow
+38058032409 succeeds and Pages serves that exact HTML and all three assets.
+#15 remains in progress. The subsequent growth/property and settlement-layout
+batch is recorded below; paid housing/fabric progress remains further work.
+
+
+## Continuation, 2026-10-10: live growth inputs and fitted settlement layouts
+
+Recorded before implementation in `SIMULATION-GROWTH-INPUTS.md` and
+`OPEN-SPACES-AND-CASTLE-SITING.md`. Property fields use complete ordered native
+input certificates in a private sidecar, current fear/walls/population and live
+town worth. Query misses remain request-local. Daily occupancy precedes due
+falls; annual widening/vacancy dates are independent of the six-day guard.
+Housing/fabric retain the explicitly unfinished six-day rate throttle pending
+paid progress. These freshness and cadence corrections deliberately change old
+histories; they remain independent of speed, drawing and host yields.
+
+Operation-local fields share unchanged roof/lot selections, buyer rent averages
+and landlord tests. Native identity guards preserve overridden-helper paths;
+retries, street extension, construction, widening and refits obtain fresh fields.
+No daily stale snapshot is introduced. Storage quotes use scalar `landValue`,
+not these property kernels. The reviewed search inventory records the remaining
+certificate work; nine pre-existing unresolved hot searches remain migration
+work, not a claim of completed search debt.
+
+Greens/markets fit the available terrain, roads, standing fabric and protected
+land, then fit a modest founding-only expansion against actual frontages. Saved
+layouts keep recorded shapes. Explicit green vertices use the existing seasonal
+grass/dormancy/snow uniforms. Fresh motte layouts choose a usable terrain-fitted
+courtyard and shortest feasible graded approach; retained canonical access
+avoids the future hall, longhouse and existing buildings. The current convex
+fortification format and real keep/hall/longhouse remain. Further bailey types,
+stairs/bridges and paid service buildings remain development work.
+
+The user's first-keep question exposed #60: `tickCastles` skips settlements with
+neither keep nor castle ring, while town walls work independently. Changing a
+lord's seat or royal capital cannot commission its first castle. The recorded
+next operation requires actual authority and funds, a retained live site survey,
+saved daily paid material/labour progress, changed-owner/siege/site checks and
+canonical building/fort/route completion. It is not implemented in this batch.
+
+The final eight-way suite passes 1,517/1,518 checks. Its only failure is the
+unchanged 30-second VM full-world graph capture limit under parallel load;
+that exact check passes unchanged in isolation, including native save/replay.
+All 1,518 checks are thus covered, without relaxing a timeout or assertion.
+Suite CPU/wall 1,061.47/534.04 s, load 0.73/0.82/1.28→2.39/3.59/2.76;
+isolated boundary 95.61/86.94 s, load 0.45/2.56/2.47→0.98/2.18/2.34.
+The dispatcher remains 52 phases with 168 AST-checked prerequisites.
+
+Two native 150-day proofs pass: indexed versus full-scan founding road
+clearance, then operation-local fields versus the unbatched candidate. Each
+also compares steady Reel with all seven speed settings and host yields.
+Complete logical W/global/closure/layout/RNG graphs match at days 0/37/90/150,
+as do every daily RNG/command/annal/sequence and all 1,812 accepted raw storage
+events, encoded individually with Float64/UTF16. Playback preferences and async
+chunk packing alone are excluded; no authoritative value is normalized. Native
+motte access streets avoid every standing footprint at boot. Final batching
+proof CPU/wall 327.66/297.73 s, initial loads 0.47/0.42/1.39, 0.92/0.59/1.35
+and 1.10/0.76/1.33 for its three serial drivers.
+
+The serial raw-journal diagnostic on 1001:42 sea, ticks 41–360, measures
+96.89→132.17→103.56 CPU ms/day (published→fresh-input/layout→scope reuse).
+Only the last two are the same model; both end with 2,497 people, 1,060
+households, 667 buildings and twelve places. Scope reuse reduces avoidable work
+and is identity-proven; this single sequence is not a speedup claim against the
+published changed model. Compression/IndexedDB and late-world scaling are
+excluded. Century-scale throughput remains #15.
+
+Both serial one-year native Chrome worlds (42:42 and 1001:42 sea) pass all eight
+conservation/sanity checks: no simulation faults, zero yearly money residual,
+zero payments to nobody, 720 independent inventory checks each with no mismatch,
+and fully settled durable journals. Populations 2,702→2,062 and 2,703→2,497;
+famine person-day shares 0% and 10.02%. These changed histories are not economy
+calibration clearance. Assets resolve in this run. Serial wall 114.38 s,
+load 0.59/1.97/2.27→1.53/1.92/2.21; runner CPU 1.83 s excludes Chromium
+descendants. Instrumented per-year tick timings are not performance claims.
+
+Tested pre-stamp HTML SHA256
+`7257f3fa0a45f309bbf7657f0ecedbf88cc1eea8d7254358c53d5bb5f9dc0396`;
+game-script SHA256
+`e22d3a13d43a00a5d5e17cd6ccc648792826e06f3a44a22cb89aa7c0c15c9ec9`.
+Ignored evidence: `tools/soak-results/live-growth-20261010/`.
+
+
+The native Chrome worker/reference gate passes 180 days plus 180 after
+save/resume. Full authoritative graph/RNG/commands/annals/settings/storage
+sequence match at days 180 and 360; all eleven selected view projections match
+and leave W/RNG unchanged. Journals settle, and foreground heartbeat stays
+responsive during worker advancement. Coverage is bootstrap, landscape,
+settlement/court inspectors, governance, accounts, actors and four overlays,
+not every inspector in #27. Serial wall 178.10 s,
+load 0.09/1.10/1.85→1.55/1.31/1.79; runner CPU 4.00 s excludes Chrome.
+
+Stamped HTML SHA256
+`7edf97504618186c53c1d4aa1a1e41510fb5cc7216c74dc8965c7c26a963cb52`.
+The game script is byte-identical to the proof/timing/browser source.
+
+
+All 64 post-stamp source/advisor/order-input/property/batching/geometry/search
+checks pass (9.52 s CPU / 12.72 s wall, load
+2.08/1.46/1.82→2.70/1.63/1.87). The unchanged 52-phase/168-edge AST contract
+passes separately. The stamped drawn review loads the atlas and captures a
+winter green, summer market and summer castle without shader/runtime/console or
+worker faults. Root inspected all three images. The winter green receives snow,
+and the actual castle street follows the surveyed partial-turn approach between
+the working buildings. Seasonal palettes are forced on day 0 for this visual
+check; it does not claim natural seasonal advancement or hardware/Safari play.
+Serial drawn wall 71.77 s, load 1.11/1.22/1.76→2.83/1.72/1.89;
+runner CPU 2.63 s excludes Chrome descendants.
+
+Release target is `origin/main` and
+[GitHub Pages](https://healdgar.github.io/furlong-kingdom-annals/), with the exact
+stamped HTML and all three assets checked after deployment. #59's bounded
+fresh-layout/seasonal correction is complete; #60 remains open. Next: daily paid
+housing/fabric progress, first-castle proposals/projects, then remaining daily
+eligibility/rate splits and measured fast-forward work. #15 is still in progress.
