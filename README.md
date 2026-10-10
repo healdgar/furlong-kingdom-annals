@@ -1,5 +1,7 @@
 # Furlong: Kingdom Annals
 
+## [▶ Play in your browser](https://healdgar.github.io/furlong-kingdom-annals/)
+
 *A living medieval kingdom in a single file, from the strip of field to the crown.*
 
 A procedurally generated (or real-region) medieval kingdom rendered in real-time 3D that you can
@@ -15,6 +17,14 @@ camera to the story as it unfolds.
 Vanilla JS + Three.js r128 from CDN. No build step, no framework, no backend;
 the terrain, buildings, heraldry and names are procedural, and three small
 textures live in `assets/`.
+
+## In the kingdom
+
+![A medieval town with textured houses, streets and public spaces](assets/screenshots/town.png)
+
+![A timber motte-and-bailey castle beside a riverside town](assets/screenshots/castle.png)
+
+Screenshots from the running game.
 
 ## Run it
 
