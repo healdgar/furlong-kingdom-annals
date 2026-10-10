@@ -4,11 +4,11 @@ Recorded 2026-10-10 from `8980908` and the subsequent exact kernel patch, before
 implementing a persistent proposal cache. This is a source-backed audit, not a
 complete invalidation proof. Functions remain sections of `index.html`.
 
-Storage investment is the next bounded daily decision conversion. Its monthly
-settlement-index stagger has no contractual reason. Physical construction is
+Storage investment now makes daily decisions. Its former monthly
+settlement-index stagger had no contractual reason. Physical construction is
 already daily: a grange needs 90 paid working days, a warehouse 150; funding,
 materials and site access can stall a day. An active commission suppresses new
-proposals. Keep those rules when replacing the stagger.
+proposals. Those physical rules are preserved by the conversion below.
 
 ## Cheap current economics
 
@@ -19,10 +19,10 @@ others a grange. Eligibility reads actual means and type cost. Net return reads
 current exposed amount, type capacity, grain price, handling and the site's cost.
 Execution still checks the payer and posts the real commission.
 
-`storageReport.exposed` is currently computed during local carriage, before
+`storageReport.exposed` is computed during local carriage, before
 later stock writers. It cannot certify exposure at financial close. A daily
-conversion must read current ledger exposure or a summary maintained by every
-custody writer. Total exposure alone cannot certify ownership: a transfer can
+decision now reads current ledger exposure. Total exposure alone cannot certify
+ownership: a transfer can
 change the investor without changing the quantity.
 
 ## Expensive quote inputs
@@ -77,5 +77,33 @@ reuse. Synchronous `STORAGE_ROUTE_BATCHES` also supplies no cross-day guarantee.
    90/150 paid-day completion/stalls. Then measure the daily conversion against
    its frozen model and prove identical history across speeds.
 
-The investment conversion changes old histories intentionally. The current
-trade/commodity optimization does not implement or claim this cache.
+## Bounded daily conversion selected after the audit
+
+The first conversion uses no cross-day proposal cache. The audit found no cheap,
+complete certificate for the private hashes, terrain and access inputs. Instead,
+each daily close reads current exposure and means. Under native read-only quote
+helpers, the greatest possible avoided loss must exceed labour and materials
+amortized over five years before any site is surveyed. Land and handling add
+nonnegative costs, so omitting them gives a safe profitability upper bound. This
+also avoids recording daily negative proposals that cannot pay back even on free
+ground beside the market; it does not impose a calendar throttle.
+
+Ordered proposals are shared by building type only within that synchronous pass.
+Their land values and material prices are recomputed on the next day. A first
+survey clears both street graph caches so same-count point, road, water and fort
+edits are observed; this is deliberately broader than the old signatures. Native
+survey functions are registered privately when a layout is made or restored.
+Before a full quote, the private street hash must contain an eligible segment
+within 32 metres of the door, with a connector clear of the proposed footprint.
+These are necessary conditions from `storageRoadPlan`, checked without the
+terrain, building or access survey. No segment membership is retained across days.
+Changed quote/economic/route helpers, event callbacks or audit observers retain
+per-owner evaluation without the bound or proposal sharing. A chosen commission
+still re-quotes, posts the existing outcome and starts work tomorrow.
+
+This bounded implementation changes old histories intentionally: decisions are
+daily, exposure is current, negative-record policy follows the profitability
+bound, and eligible investment surveys use fresh graphs. It does not claim a
+persistent geometry certificate or fix graph invalidation for other callers.
+Cross-day proposal reuse remains a later optimization, contingent on a complete
+certificate and measurements showing that it is worth maintaining.

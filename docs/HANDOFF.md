@@ -1,6 +1,6 @@
 # Handoff: state of work
 
-Updated 2026-10-10 in the cloud checkout while continuing exact daily simulation kernels and recording storage-decision inputs for fast forward (#15), after the daily-order refactor, general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-10 in the cloud checkout after implementing daily storage decisions and recording the next growth/property-input refactor for fast forward (#15), after the daily-order refactor, general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
@@ -10,7 +10,7 @@ Updated 2026-10-10 in the cloud checkout while continuing exact daily simulation
 - **2026-10-09, criminal presentments (#37, batch 11e):** native riots present up to three resident adult household heads under the named three-days-of-family-bread custom. Robbed caravans and actual outlaw recruitment add bounded evidence to a separate royal roll; royal hearings, forfeiture and charges remain pending. No settlement camp raids are invented.
 - **2026-10-09, river surface (#58):** the drawing had sampled each terrain bump directly, allowing the water to rise downstream. Draw-only profiles now pool across bed bumps; junction backwater extends upstream. Canal levels and simulation geometry remain unchanged. The 150-day whole-world/RNG proof and final drawn check pass; evidence follows below.
 - **2026-10-09, general eyre (#37, batch 11f):** from AD 1166, monthly reviews send profitable, funded circuits. Two lettered capital heads chosen by law skill enter the annals as justices, keeping their actual households, lodging, education and mortality. Each scheduled sitting hears one town and its nearest villages and funds its whole return journey to the capital. Robbery levies and real road-upkeep shortfalls use shared spare-purse caps. Felony forfeits only the living outlaw’s witnessed/current share of remaining assets; subsistence, food, tools, winter fodder and working/breeding beasts survive. Goods change native ownership and become Crown sale stock without adding physical stock; their zero purchase cost blends into the Crown’s actual old cost reserve. Coin and officials’ pay use transfer. Detailed cases retire once; folded counts carry no guessed liability. Worker-side accounts, named justices, royal rulings and a journaled send order are implemented. Validation and remaining work follow below.
-- **Local state:** batches 11c, 11d, 11e and 11f, the river correction, the first exact-cache optimization, daily-order refactor and subsequent exact daily kernels are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: continue the recorded daily refactor and fast-forward performance (#15); the capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
+- **Local state:** batches 11c, 11d, 11e and 11f, the river correction, the first exact-cache optimization, daily-order refactor, subsequent exact daily kernels and daily storage decisions are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: daily growth and current property-value inputs as recorded in `docs/SIMULATION-GROWTH-INPUTS.md`, then continue the daily refactor and fast-forward performance (#15). The capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
 
 - **2026-10-09, fort development and annual accounts (#56, #57):** roads, town-wall siting, building enlargement and parcel clipping respect the elongated bailey's contour instead of its maximum-radius circle. Mound, ditch and curtain clearances remain. Deliberate layout/history change; existing buildings are not relocated.
 - Town, domain and crown records show calendar-year income, expenses, surplus/deficit and causes; treasury statements reconcile opening and closing coin. Town public funds and each owner's local receipts/costs are separate; local costs already belong to the owner's total. Loans and asset sales are cash flows, not trading profit. Two bounded annual aggregate books per institutional chest, no household ledger or new transaction/journal rows; reports never scan history. Self-transfers and refunded relief holds are excluded. Older net books cannot reconstruct prior gross flows; resumed records label partial years.
@@ -615,3 +615,105 @@ stamping. All 41 post-stamp source/advisor/order/actor/commodity guards and the
 52-phase/168-edge AST contract pass. Prepared locally; no push. #15 remains in progress. Next separate
 storage-investment live economics from reusable site/route inputs as recorded,
 then continue the daily-cadence table with real rates, dates and durations.
+
+### 2026-10-10 continuation — daily storage decisions (#15)
+
+The recorded storage input audit is now implemented as a bounded daily
+conversion. `storageInvestment` drops the arbitrary monthly settlement-index
+guard and stale `storageReport.exposed` gate, reading current exposed custody,
+owner/role, funds and prices at daily close. Owner volume/rank and first-wins
+candidate order are retained. Native proposals that cannot repay labour and
+materials even on free ground with free handling skip the full survey and daily
+negative note. A necessary street-segment check precedes each full quote.
+Ordered proposals share by type only within the synchronous read-only pass,
+with the actual investor rebound; the selected commission still re-quotes.
+Native helper/event guards and privately registered generated/restored survey
+closures disable bounds/sharing for supported instrumentation, preserving
+per-site interleaving. This is not an arbitrary monkeypatch sandbox.
+
+The first eligible survey clears `_sg` and `_storageRouteSignature`, covering
+same-count geometry changes missing from the old signatures. There is no
+cross-day proposal memo or claim of complete persistent invalidation. Existing
+real land/material/labour payments, 90/150 paid working days, funding/material/
+access stalls and tomorrow's start are unchanged. Current exposure, daily
+cadence, fresh graphs and negative-record policy intentionally change old
+histories; determinism across speeds remains required.
+
+All 95 focused checks pass (6.17 s CPU / 4.71 s wall; initial load
+1.14/0.49/0.20). Twenty-three new cases cover current exposure and means/prices,
+owner transfer at constant quantity, stable rank/ties, helper/callback fallbacks,
+same-count native street edits, 90/150 paid-day completion/stalls, exact 32-metre
+street bounds, flags, rotated doors and 600 randomized road-plan samples.
+The eight-way full gate passes 1,492/1,493 checks (832.53 s CPU / 418.31 s wall;
+load 0.95/0.48/0.20→2.47/3.41/1.85). Its only failure is the existing 30-second
+end-graph capture limit in the native boundary check. The same file/source
+passes alone with all limits unchanged (70.51 s CPU / 62.61 s wall; initial
+load 0.27/2.18/1.60). All 1,493 checks are verified across those runs; a fresh
+all-pass eight-way run is not claimed. Three fresh-realm world-save continuations,
+including the forced 1166 eyre, pass in the broad gate.
+
+Native 1001:42 sea steady Reel and changing among all seven speed settings with
+host yields match logical world/global/closure/layout graphs at days 0/37/90/150,
+every day's RNG/commands/annals/storage sequence and every one of 1,812 accepted
+outcomes in canonical one-record Float64/UTF16 encoding. Commands are applied at
+days 37 and 90; commits drain at checkpoints. No authoritative value is
+normalized; only playback preferences are omitted. CPU including captures/hashes
+is 81.08/82.99 s at initial loads 0.04/1.08/1.29 and 0.83/1.09/1.27. This proves
+logical speed independence, not paced-pump throughput or async archive packing.
+
+One final-source serial unprofiled raw-journal CPU pair (1001:42 sea, AD 850,
+ticks 41–360) costs 92.35→92.30 ms/day at loads 1.1→1.1 and 1.0→1.2. No speed
+gain is established. Storage-investment wall cost is 0.410→3.724 ms/day;
+year-end buildings/households are 701/1081→699/1069 because the model changes.
+An earlier no-precheck diagnostic cost 106.20 CPU ms/day and motivated the
+necessary street filter. Final runner CPU is 39.05/39.10 s, wall 31.11/30.82 s.
+Compression/IndexedDB and late-world scaling are excluded; the early-world gap
+to 100 years/minute remains about 55× before durable writes.
+
+Pre-stamp tested HTML SHA256
+`36c4f28aa8e67b26a0b8b8ad427edb7bab63f77f296c74716f7838ae241a0f01`,
+game-script SHA256
+`d1f288cccb96401b1fa1b617045ef9aa80535f614bd1cd042510e9121377647a`.
+Local evidence: `tools/soak-results/daily-storage-20261010/`.
+
+Two additional read-only Luna surveys record the next bounded design in
+`docs/SIMULATION-GROWTH-INPUTS.md`; it is not implemented. The outer six-day
+guard makes annual widening/vacancy/refit/maintenance unreachable for settlement
+indexes not divisible by six. Split daily occupancy/due falls, funded housing,
+widening/reuse and fabric work from elapsed vacancy, physical progress and true
+maintenance obligations. A property-grid base certificate can compare explicit
+ordered scalars/points/streets and retain Float32 intermediates, recomposing with
+current fear/walls and population scale; `townWorth` needs its own current policy.
+Preserve arithmetic order and keep query misses request-local. No cache
+invalidation proof or speed gain for that next design is claimed.
+
+Both serial one-year native Chrome worlds (42:42 sea and 1001:42 sea) pass all
+eight conservation/sanity checks, with no simulation faults, zero yearly money
+residual or payments to nobody, 720 independent inventory checks per world and
+no mismatch, and fully settled durable journals. Populations are 2,702→2,500 and
+2,703→2,499; famine person-day shares 0% and 7.08%. These changed histories are
+not calibration clearance (#23 remains open). The snapshot matches the tested
+pre-stamp source. This is an undrawn model check in SwiftShader browsers, with
+no hardware/Safari or throughput claim. Texture requests in the soak snapshot
+directory returned 404, so this run is not visual texture validation. Serial
+wall time is 101.49 s at load 1.00/1.07/1.24→1.46/1.20/1.26;
+the runner's 1.90 s CPU excludes Chromium descendants and is not model CPU.
+
+The native Chrome worker/reference gate passes 180 days plus another 180 after
+save/replay. Full authoritative graph/RNG/commands/annals/settings/storage
+sequence parity and 11 selected view projections match; views leave world and
+RNG unchanged, journals fully settle, and the foreground heartbeat remains
+responsive. Both resumed drivers stop at day 360. The tested views cover
+bootstrap, landscape, settlement/court inspectors, governance, accounts, actors
+and four overlays, not every #27 inspector. Serial wall time is 163.36 s at load
+1.14/1.14/1.24→1.53/1.35/1.30; runner CPU again excludes Chrome descendants.
+
+Stamped HTML SHA256
+`efcae463d140bc4ff620129aece180e4154fbece2569e3d62ce56559fe8dd387`.
+The game script is byte-identical to the timing/proof/browser source after
+stamping. All 58 post-stamp source/advisor/order/storage/architecture/search
+guards pass (6.39 s CPU / 3.23 s wall; initial load 0.56/1.10/1.22), as does
+the unchanged 52-phase/168-edge AST contract. Prepared locally; no push.
+#15 remains in progress. Next implement the recorded daily growth/rate and
+current property-value input split, retaining real actors/payments and exact
+history across speeds.

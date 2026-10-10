@@ -128,6 +128,45 @@ current dealer/driver selectors against frozen `8980908` and singleton planning
 against the unchanged general path, including live intervening mutations,
 ranked custody, missed loads, RNG, spoilage, crumbs, transit and callback fallbacks.
 
+### Daily storage decisions, 10 October 2026
+
+Storage investment now reads current exposed custody, owners, means and prices
+each day. A native profitability upper bound rejects proposals that cannot repay
+even with free ground and handling. Ordered quotes are shared by type only within
+one synchronous pass; an inexpensive necessary street check precedes the full
+survey. The first eligible survey rebuilds both route graphs. Instrumented helper
+and callback paths retain per-site evaluation. No cross-day proposal cache is
+installed: its complete invalidation certificate remains unproven. Granges and
+warehouses still require 90/150 funded working days, current materials and access.
+The input audit and bounded design are in
+[SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md).
+
+One serial unprofiled native raw-journal pair compares frozen `8d92a4f` with the
+final source on 1001:42 sea, AD 850, ticks 41–360: **92.35→92.30 CPU ms/day**,
+at window loads 1.1→1.1 and 1.0→1.2. This establishes no speed gain. The histories
+deliberately differ (701→699 buildings, 1081→1069 households at day 360), so it
+is a cost comparison of the model conversion, not an equal-work kernel proof.
+Storage-investment phase wall time grows 0.410→3.724 ms/day with daily visits.
+A preliminary conversion without the street precheck cost 106.20 CPU ms/day;
+that diagnostic motivated the bounded precheck and is not a final paired result.
+Compression/IndexedDB, mature worlds and hardware/Safari throughput are excluded.
+The remaining early-world CPU gap to 100 years/minute is about 55× before writes.
+
+Native 150-day steady/changing-speed runs match the full logical graph at days
+0/37/90/150, every daily RNG/command/annal digest and all 1,812 accepted storage
+outcomes. The 23 new focused cases cover live economics/ownership, interleaved
+fallbacks, graph edits, paid-day construction and the necessary street filter.
+Local evidence: `tools/soak-results/daily-storage-20261010/`; full validation and
+source hashes follow in HANDOFF.md.
+
+The next growth/input audit is recorded in
+[SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md). A six-day outer guard
+currently makes annual widening and vacancy/refit/maintenance visits unreachable
+except at settlement indexes divisible by six. Split occupancy, due falls,
+economic decisions, paid physical work and genuine maintenance obligations;
+certify reusable property-value geometry while keeping population/security live.
+That next conversion is recorded but not implemented.
+
 ### Work in order
 
 The user has since authorized changes to the model/history while retaining exact
@@ -144,13 +183,14 @@ its throughput is to be remeasured, not inferred from the ordering.
    Separate mixed decision/rate/contract functions before changing their cadence.
    Make daily trade eligibility cheap using current driver/merchant means and
    stock/price/inbound/route changes; preserve live balances at execution.
-   The first validated exact optimization retained commodity quantity-cache slots
-   across writes. The next batch adds singleton withdrawal planning and trade-pass
-   actor candidates; privately ranked live-cell handles remain a candidate.
-   Storage-investment quote inputs/writers are recorded in
-   [SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md) before that daily
-   conversion. Cache geography separately from current population/security
-   inputs before enabling daily building choices. Reads must see each intervening
+   Validated exact optimizations retain commodity quantity-cache slots across
+   writes, singleton withdrawal planning and trade-pass actor candidates;
+   privately ranked live-cell handles remain a candidate. Daily storage uses
+   bounded within-pass reuse as recorded in
+   [SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md). The next growth/rate
+   split and geography certificate are recorded in
+   [SIMULATION-GROWTH-INPUTS.md](SIMULATION-GROWTH-INPUTS.md). Keep current
+   population/security inputs live. Reads must see each intervening
    purchase and consumption; a whole-day food snapshot becomes stale.
 
 2. **Bound cost by the living world.** Profile later eras and distinguish active

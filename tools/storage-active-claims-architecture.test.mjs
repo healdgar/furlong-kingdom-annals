@@ -124,7 +124,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // multiple locations and overridden entries retain the old path. No quantity/title/claim/record writer changes.
  // Generic-planner differential fixtures, fresh world-save continuations and the native 8980908 150-day identity/pace
  // proof (all world/RNG/command/annal values and every accepted binary storage outcome) renew this bounded read review.
- assert.equal(digest(source.slice(a,b)),"72f5ef779974739cb9cb6ccc99301142630e5f2fb797eefc5ed4d32d77be8486");
+ // Daily storage (#15): live exposure and daily funded proposals replace the monthly gate.
+ // Native necessary profit bounds and synchronous payer-independent quote reuse add no stock/title writer.
+ // Fresh investment graphs deliberately change old route/history decisions; paid construction remains unchanged.
+ // Daily investment/road-connector fixtures and pace/save-replay/conservation gates review this model conversion.
+ assert.equal(digest(source.slice(a,b)),"b8731349eb54c7d1a099cc38a6fdc369520ffc19cfe06053ddadb2405a815318");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
