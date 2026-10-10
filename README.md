@@ -286,6 +286,11 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - **Decrees** (gold + cooldown): royal feast, open the granaries,
   extraordinary levy, bounty riders, charter a village on the map, raise the
   royal host, sue for peace, pay the wyrm, send champions against it.
+- **Royal justice** (from AD 1166): profitable, funded eyres hear robbery,
+  felony and neglected-road presentments. Two real justices are paid for
+  sittings and return travel; fines and forfeitures protect subsistence
+  and working stock. The Crown panel sends a circuit and shows its
+  accounts; each place’s court roll links the held cases and royal rulings.
 - **Works** (orders the world carries out over time, each marked on the map
   while it is in hand): lay a road between two places (surveyed and priced
   by the ground, built by gangs month by month, used by the carts when

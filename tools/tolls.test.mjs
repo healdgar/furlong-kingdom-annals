@@ -37,6 +37,12 @@ function world({cash=100,crown=1000,gold=1000,households=8}={}){
   const snap=()=>{start=purses();f0={...(r.W._flow||{})};};
   return {...r,t,purses,audit,snap};
 }
+test('annual upkeep presents the actual unfunded duty against its payer, and full upkeep presents nothing',()=>{
+  const r=world({gold:0}),{W,s}=r;W.roads=[{a:0,b:1,len:2000,cond:1}];r.eval('day=()=>360;tickWays()');r.audit();assert.equal(s.royalPleas.rows.length,1);assert.equal(s.royalPleas.rows[0].kind,'neglect');assert.equal(s.royalPleas.rows[0].against,W.houses[1]);near(s.royalPleas.rows[0].v,W.roads[0]._upW/2);assert.equal(r.t.royalPleas,undefined,'the Crown cannot pay a fine to itself');
+  r.eval('day=()=>720;tickWays()');assert.equal(s.royalPleas.rows.length,1);assert.equal(s.royalPleas.rows[0].incidents,2);near(s.royalPleas.rows[0].v,W.roads[0]._upW);r.audit();
+  const q=world({gold:1000});q.W.roads=[{a:0,b:1,len:2000,cond:1}];q.eval('day=()=>360;tickWays()');q.audit();assert.equal(q.s.royalPleas,undefined);
+});
+
 // a building of place s on road ri's street, lived in by household head h (its keeper), owned as given
 function bldg(r,s,{arch='toll',ri=0,keeper=null,owner,x=40,state='sound'}={}){const b={arch,tier:0,state,s,x,z:0,w:8,d:7,st:{kind:'road',ri},hh:keeper?[keeper]:[]};if(keeper)keeper.bh=b;if(owner!==undefined)b.ownerId=owner;
   s.buildings.push(b);b.idx=r.W.bldList.length;r.W.bldList.push(b);return b;}

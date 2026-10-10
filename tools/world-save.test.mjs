@@ -14,7 +14,7 @@ const SOURCE=inlineGameScript(fs.readFileSync(new URL('../index.html',import.met
 const N=37,K=55; // the save falls on no week, month or year: the journal's flushes, the month's reckoning and the year's turn come after it
 const KEYS=process.env.FURLONG_WORLD_SAVE_KEYS==='1'; // name the keys of W that differ (slower)
 
-const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,capture,keys}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
+const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,capture,keys,royal}}=require('node:worker_threads'),vm=require('node:vm'),{createHash}=require('node:crypto');
   for(const k of ['localStorage','sessionStorage','navigator'])Object.defineProperty(globalThis,k,{value:undefined,writable:true,configurable:true});
   Object.assign(globalThis,{FURLONG_HEADLESS:true,FURLONG_OPTIONS:{hash:'#s='+seed+'&f='+fate+'&c='+coast+'&y=850'},addEventListener(){},removeEventListener(){},requestAnimationFrame(){}});
   globalThis.__hashWorldGraph=graph=>{const digest=createHash('sha256'),feed=v=>{ // as tools/simulation-boundary.mjs hashes it
@@ -47,12 +47,16 @@ const REALM=`{const {parentPort,workerData:{source,seed,fate,coast,N,K,doc,captu
         courtEnrol(s,'entry',h,{field:f.k,paid:0,assessed:10,left:10,...lord});
         courtEnrol(s,'merchet',h,{payer:h.id,payerName:folkName(h),partner:-1,partnerName:'',paid:0,assessed:10,...lord});
         courtEnrol(s,'heriot',h,{beast:'horses',qty:1,...lord});})()\`); // exercise every scalar witness shape across a native save, separately from its live pleas
+      if(royal)R(\`(()=>{W.startAD=1166;const s=W.capital,h=headsOf(s).find(p=>!p.office&&ageYrs(p)>=18);if(!h)throw Error('royal fixture needs an adult');
+        transfer('crown',h,foodYr()*100,'royal save fixture stake',s);h.outlawCampId=7;courtFelony(s,h,{id:7});
+        const r=W.roads.find(r=>r.a===W.settlements.indexOf(s)||r.b===W.settlements.indexOf(s));if(r)courtNeglect(s,r,W.houses[1],40);
+        if(!royalEyreStart())throw Error('royal save fixture must fund a circuit');})()\`); // forced era with native accounts and goods; no claim to a world aged from 850 to 1166
       await R('STORAGE_OUTCOMES.flush()');out.at=summary(); // the save commits the journal: capture after the commit, as the document holds it
       const s0=process.cpuUsage();out.doc=await R('worldSave({source:__source})');out.saveCPU=process.cpuUsage(s0);parentPort.postMessage({doc:out.doc});}
     else{const l0=process.cpuUsage();await R('worldLoad(__doc,{source:__source,outcomeJournal:'+journal+'})');out.loadCPU=process.cpuUsage(l0);
       out.at=summary();out.doc=await R('worldSave({source:__source})');}
     out.days=[];for(let i=N+1;i<=N+K;i++){await play(i);out.days.push(day());}
-    out.end=summary();out.cpu=process.cpuUsage(t0);parentPort.postMessage({done:out});})().catch(e=>parentPort.postMessage({error:String(e.stack||e)}));}`; // in a block: its names stay out of the game's global scope
+    out.end=summary();out.royal=R('W.houses[0]?.justice?.eyre?.sessions||0');out.cpu=process.cpuUsage(t0);parentPort.postMessage({done:out});})().catch(e=>parentPort.postMessage({error:String(e.stack||e)}));}`; // in a block: its names stay out of the game's global scope
 
 // One realm: the played one posts its document as soon as it has saved, then plays on; a loaded one is given a document.
 function realm(world,doc=null,onDoc=()=>{}){return new Promise((resolve,reject)=>{
@@ -62,8 +66,8 @@ function realm(world,doc=null,onDoc=()=>{}){return new Promise((resolve,reject)=
 const differ=(a,b)=>Object.keys({...a,...b}).filter(k=>k!=='keys'&&JSON.stringify(a[k])!==JSON.stringify(b[k])).concat(a.keys&&b.keys?Object.keys({...a.keys,...b.keys}).filter(k=>a.keys[k]!==b.keys[k]).map(k=>'W.'+k):[]);
 const cpu=c=>((c.user+c.system)/1e6).toFixed(1)+' s';
 
-for(const world of [{seed:42,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea'}])
-  test(`world ${world.seed} ${world.coast}: saved on day ${N} and loaded in a fresh realm, it goes on as the world that was saved`,async t=>{
+for(const world of [{seed:42,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea',royal:true}])
+  test(`world ${world.seed} ${world.coast}${world.royal?' (forced 1166 eyre)':''}: saved on day ${N} and loaded in a fresh realm, it goes on as the world that was saved`,async t=>{
     let loaded;const played=realm(world,null,doc=>{loaded=realm(world,doc);});
     const A=await played,B=await loaded;
     t.diagnostic(`document ${(A.doc.length/1e6).toFixed(2)} MB, gzipped ${(gzipSync(A.doc).length/1e6).toFixed(2)} MB; save ${cpu(A.saveCPU)} CPU, load ${cpu(B.loadCPU)} CPU; realms ${cpu(A.cpu)} and ${cpu(B.cpu)} CPU`);
@@ -72,4 +76,5 @@ for(const world of [{seed:42,fate:42,coast:'sea'},{seed:1001,fate:42,coast:'sea'
     assert.equal(createHash('sha256').update(B.doc).digest('hex'),createHash('sha256').update(A.doc).digest('hex'),'saved again, the loaded world is the same document');
     for(let i=0;i<K;i++)assert.deepEqual(B.days[i],A.days[i],`day ${N+1+i}`);
     assert.deepEqual(differ(A.end,B.end),[],`the worlds after ${K} more days`);
+    if(world.royal){assert.ok(A.royal>0,'the continued native fixture actually hears royal cases');assert.equal(A.royal,B.royal);}
   });

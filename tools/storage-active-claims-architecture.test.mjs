@@ -147,6 +147,12 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Courts (#37, batch 11e): the only added outside claim line is courtFelony's direct native owner-row
  // lookup for evidence at joining. Coin, goods and beasts remain with the household; no claim, balance,
  // ownership or journal writer changed. Justice and fresh-save fixtures cover the snapshot and live reference.
- assert.equal(digest(outside),"9cc514a8f1e13e92c7dc5e23d025c3ba2c70196cfb90e06920df037695b6f725");
+ // Royal justice (#37, batch 11f): scratch stock is quoted from the defendant's existing row. A funded
+ // hearing moves canonical balances by transfer (cause forfeiture), or native legacy titles and matched
+ // claim debits/credits. Animals pass from the family's herd to the Crown's sale stock; town totals stay.
+ // Free confiscated stock blends zero purchase cost into the Crown’s old reserve by actual quantities.
+ // royal-justice.test.mjs covers both ledgers, cost basis, spent evidence, protected stock, shared budgets and coin;
+ // the forced-era native world-save fixture covers the real accounts, rulings, circuit and continuation.
+ assert.equal(digest(outside),"200b46163503ce4e6583ef2e57d92905603c18e8668a8f87281015bc42840013");
  assert.equal((source.match(/storageTitleDirty\(/g)||[]).length,3);
 });

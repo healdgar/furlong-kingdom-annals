@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 01:40 UTC · after 93968ab</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 02:55 UTC · after e9b8e8c</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -3490,8 +3490,8 @@ const folkName=p=>p.gn+(famName(p)?' '+famName(p):'');
 /* Offices (#35–#43): the named people of a lordship, an abbey, a guild or a town are household heads holding an office, p.office (one
    of OFFICES), and p.officeFor, whom he serves: a house's index (0 the crown), an abbey's or guild's key ('abbey:3'), or none for his
    own place's office (a moneyer, a mayor). Being a head he still eats, marries and dies with his household; the office lapses with him
-   and his master fills it again. Great officers (an abbot, a justice) are notables with a role of their own instead. None is held yet. */
-const OFFICES={steward:'steward',clerk:'clerk',bailiff:'bailiff',moneyer:'moneyer',collector:'collector',master:'schoolmaster',warden:'warden',cellarer:'cellarer',mayor:'mayor',lender:'lender'};
+   and his master fills it again. Great officers (an abbot, a justice) enter the annals with a role of their own; a justice keeps his real household. */
+const OFFICES={steward:'steward',clerk:'clerk',justice:'justice',bailiff:'bailiff',moneyer:'moneyer',collector:'collector',master:'schoolmaster',warden:'warden',cellarer:'cellarer',mayor:'mayor',lender:'lender'};
 function officeHeld(p){return p&&!p.dead&&p.office&&Object.hasOwn(OFFICES,p.office)?p.office:null;}
 function officeTitle(p){const o=officeHeld(p);if(!o)return null;const f=p.officeFor,c=corpOf(f),who=typeof f==='number'?houseName(f):c?c.name:W.settlements[p.si]?.name;return OFFICES[o]+(who?' of '+who:'');} // "steward of House Gamsburg"
 /* one soul */
@@ -5260,6 +5260,7 @@ function tickTitles(){ // the annals note who held what, and from when
     const H=W.houses[n.house],seat=H&&W.settlements[H.seat];(n.titles||(n.titles=[])).push({d:day(),t:n.role==='monarch'?`${n.sex==='f'?'Queen':'King'} of the realm`:`Head of ${H?H.name:'the house'}${seat?', at '+seat.name:''}`});}}
 function houseOf(n){return W.houses[n.house];}
 function fullTitle(n){
+  if(n.role==='justice')return 'Justice '+n.name;
   if(n.role==='monarch')return (n.sex==='f'?'Queen ':'King ')+n.name+(n.epithet?' '+n.epithet:'');
   if(n.role==='head')return (n.sex==='f'?'Lady ':'Lord ')+n.name+' of '+houseOf(n).name.replace('House ','');
   if(n.role==='heir')return (n.sex==='f'?'Princess ':'Prince ')+n.name;
@@ -10117,7 +10118,7 @@ function inspectorCard(pk,full=false){
     const nl=m=>m?`<a class="nm" data-nm="n${m.id}">${esc(m.name)}</a>`:'',ppl=c=>`<a class="pp" data-pid="${c.id}">${esc(folkName(c))}</a>`;
     if(n.nat&&n.nat.length)h+=row('Natural children',n.nat.map(c=>c.dead?esc(folkName(c))+' †':ppl(c)).join(', '));
     if(n.born)h+=row('Born',`${esc(n.born.fam?n.name.split(' ')[0]+' '+n.born.fam:n.name)}, of a ${esc(n.born.tr||'ploughman')}'s family in ${esc(W.settlements[n.born.si]?.name||'—')}`);
-    if(n.role==='Bandit King'&&n.fp)h+=row('Folk',`<a class="pp" data-pid="${n.fp.id}">${esc(folkName(n.fp))}${n.fp.dead?' †':''}</a>`);
+    if((n.role==='Bandit King'||n.role==='justice')&&n.fp)h+=row('Folk',`<a class="pp" data-pid="${n.fp.id}">${esc(folkName(n.fp))}${n.fp.dead?' †':''}</a>`);
     if(n.spouse){const sp=notableById(n.spouse);if(sp)h+=row('Spouse',nl(sp));}
     if(n.heirs.length)h+=row('Children',n.heirs.map(id=>notableById(id)).filter(Boolean).map(nl).join(', '));
     if(n.alive){const w=notableWhere(n);if(w)h+=row('Now',w.army?`with ${esc(w.army.name)}`:w.camp?'at the outlaw camp':`at ${esc(w.s.name)}`);flyToBtn(fb,w&&w.army?'Find and follow':'Find',()=>goNotable(n));}
@@ -12624,6 +12625,7 @@ function tickPolitics(){
   // notables: birthdays, deaths, births, marriages
   for(const n of livingNotables()){
     if(!n.alive)continue;
+    if(n.role==='justice'&&n.fp){n.age=ageOf(n);if(n.fp.dead){notableSetAlive(n,false);n.deathDay=n.fp.dd??day();nameUse(n.name.split(' ')[0],-1);}continue;} // the justice is this household's living person, not a second life with separate tutors, children and mortality
     if((day()-n.birthDay)%360===0&&day()>n.birthDay){
       n.age=ageOf(n);
       if(n.sk){educate(n,n.age,null,true);if(n.age<=30&&!n.fixedTraits)n.traits=deriveTraits(n);} // a year's tutors, squiring and court
@@ -14418,7 +14420,60 @@ function courtSession(s,si){
   C.sessions++;C.last=day();C.recovered+=recovered;C.fines+=fines;C.fees+=fees;C.profit+=means(lord)-start;C.pleaFees=(C.pleaFees||0)+pleaFees;C.distraints=(C.distraints||0)+distraints;C.loanRecovered=(C.loanRecovered||0)+loanRecovered;
   if(income>0&&lord===lordAcct(s))lordTake(s,income); // the lord's book names the receipts; his seat's reckoning includes them
   if(!W.prehistory)emit('trade',1,s.pos,`The hallmote at ${s.name} hears ${plans.filter(Boolean).length} pleas, recovers ${Math.round(recovered)} in debts and dues and takes ${Math.round(fines)} in amercements.`);}
-function tickJustice(){W.settlements.forEach((s,si)=>{if(dueOn(si,90,37)&&s.pleas?.rows.length)courtSession(s,si);});}
+/* THE GENERAL EYRE (#37), from the Assize of Clarendon (1166). Two lettered household heads of the capital become justices.
+   A circuit pays their families for the sitting and the days on the road, at the same daily bread fee as the manor's officers.
+   They return to the capital between sittings; each hearing funds its whole return journey. The ride is a schedule, not a new moving actor. Only the bounded rolls are priced; a vill's owner accounts are read when it is fined.
+   Folded presentments keep their count, not a guessed liability. No fine is collected from a count without its evidence. */
+const EYRE_AD=1166;
+function courtNeglect(s,r,o,v){if(!(v>1e-6)||accountOwner(o)==='crown')return;const R=rollOf(s,'royalPleas'),A=accountOwner(o),p=R.rows.find(p=>p.kind==='neglect'&&p.ref===r&&p.against===A);
+  if(p){p.v+=v;p.incidents++;return p;}return rollAdd(R,{kind:'neglect',d:day(),ref:r,against:A,name:acctLabel(A),v,incidents:1},64);}
+function royalHundreds(){const towns=[];W.settlements.forEach((s,i)=>{if(s===W.capital||s.kind==='town'||s.kind==='city')towns.push(i);});const H=new Map(towns.map(i=>[i,[]]));
+  W.settlements.forEach((s,si)=>{if(!s.royalPleas?.rows.length)return;let to=H.has(si)?si:-1,best=Infinity;if(to<0)for(const i of towns){const p=W.settlements[i].pos,d=(p.x-s.pos.x)**2+(p.z-s.pos.z)**2;if(d<best){best=d;to=i;}}if(to>=0)H.get(to).push(si);});return H;}
+function royalBudget(B,o,s){const A=accountOwner(o),D=courtFunds(B,A);if(D.keep===undefined){D.keep=A?.household?courtKeep(s,A.head):Math.max(0,means(A)-roadSpare(A,s));D.fineLeft=Math.max(0,D.cash-D.keep)*(W.houses[0]?.justice?.cap??JUSTICE_CUSTOM.cap);}return D;}
+function royalFine(B,o,s,v){const D=royalBudget(B,o,s),paid=Math.min(v,Math.max(0,D.cash-D.keep),D.fineLeft);D.cash-=paid;D.fineLeft-=paid;courtFunds(B,'crown').cash+=paid;return paid;}
+function royalPleaPlan(s,p,B,seen){const out={s,p,pay:[],goods:[],beasts:[],value:0,ruling:'pardoned'};
+  if(p.kind==='robbery'){const payers=[];let spare=0;for(const A of householdsOf(s)){if(!A?.household||!A.head||A.head.dead||A.head.outlawCampId||!(A.population.get(s)>0))continue;const D=royalBudget(B,A,s),v=Math.min(Math.max(0,D.cash-D.keep),D.fineLeft);if(v>0){payers.push([A,v]);spare+=v;}}
+    const fine=Math.min(Math.max(0,p.v)*JUSTICE_CUSTOM.rate,spare);for(const[A,v]of payers){const paid=royalFine(B,A,s,fine*v/spare);if(paid>0)out.pay.push([A,paid]);}}
+  else if(p.kind==='neglect'){let A=p.against;while(A?.household&&!A.estate&&A.successors?.length===1&&A.successors[0][1]===1)A=A.successors[0][0];
+    if(A!==p.against||A?.household&&(A.estate||!A.head||A.head.dead)){out.ruling='dismissed';return out;}if(A!=='crown'&&A){const v=royalFine(B,A,s,Math.max(0,p.v)*JUSTICE_CUSTOM.rate);if(v>0)out.pay.push([A,v]);}}
+  else if(p.kind==='felony'){const h=(W._pm||folkIndex()).get(p.who);let A=p.against;while(A?.household&&!A.estate&&A.successors?.length===1&&A.successors[0][1]===1)A=A.successors[0][0];
+    if(!h||h.dead||h.outlawCampId!==p.camp||h._royalForfeitCamp===p.camp||seen.has(h.id)||!A?.household||A.estate||!A.members.has(h)||householdAccount(h)!==A){out.ruling='dismissed';return out;}seen.add(h.id);out.h=h;
+    let n=0;for(const q of A.members)if(!q.dead)n++;const share=Math.min(p.share,1/Math.max(1,n)),D=royalBudget(B,A,s),v=Math.min(p.coin,means(A)*share,Math.max(0,D.cash-D.keep));if(v>0){D.cash-=v;courtFunds(B,'crown').cash+=v;out.pay.push([A,v]);}
+    let I=D.stock?.get(s);if(!I){if(!D.stock)D.stock=new Map();const x=s._owners?.get(A);I={held:{...x?.held},sale:{...x?.sale},animals:{...x?.animals}};D.stock.set(s,I);}
+    for(const [g,witness] of Object.entries(p.goods)){const total=(I.held[g]||0)+(I.sale[g]||0),keep=FOODS.includes(g)?n*NEED.grain*30:g==='tools'?n*NEED.tools*360:g==='hay'?BEASTS.reduce((t,k)=>t+(I.animals[k]||0)*(LU[k]||0),0)*WINTER_HAY:0;
+      let q=Math.min(witness,total*share,Math.max(0,total-keep));for(const k of ['sale','held']){const take=Math.min(q,I[k][g]||0);if(take>0){out.goods.push({A,g,k,q:take});I[k][g]-=take;q-=take;out.value+=take*price(s,g);}}}
+    for(const [k,witness] of Object.entries(p.beasts)){const keep=k==='cattle'?Math.max(1,Math.min(4,(A.head._strips||0)*0.5)):k==='horses'?Math.max(['carter','merchant'].includes(A.head.tr)?2:1,Math.min(4,(A.head._strips||0)*0.5)):1,q=Math.min(witness,(I.animals[k]||0)*share,Math.max(0,(I.animals[k]||0)-keep));
+      if(q>0){out.beasts.push({A,k,q});I.animals[k]-=q;out.value+=q*price(s,k);}}}
+  out.cash=out.pay.reduce((v,[,q])=>v+q,0);if(out.cash>0||out.value>0)out.ruling=p.kind==='felony'?'forfeited':'amerced';return out;}
+function royalPlans(places,B,seen=new Set()){const plans=[];for(const si of places){const s=W.settlements[si];for(const p of s?.royalPleas?.rows||[])plans.push(royalPleaPlan(s,p,B,seen));}return plans;}
+function royalOfficers(){const s=W.capital,si=W.settlements.indexOf(s),J=W.houses[0]?.justice,PM=W._pm||folkIndex(),old=(J?.eyre?.officers||[]).map(id=>notableById(id)),picked=old.map(n=>n?.alive&&n.fp&&!n.fp.dead&&!n.fp.outlawCampId&&n.fp.si===si&&householdHead(n.fp)===n.fp&&n.fp.office==='justice'&&n.fp.officeFor===0?n.fp:null);
+  while(picked.length<2)picked.push(null);if(picked.some(p=>!p)){const heads=headsOf(s);for(let i=0;i<2;i++){if(picked[i])continue;let best=null,score=-1;for(const p of heads){if(picked.includes(p)||p.dead||p.outlawCampId||p.away&&day()<p.away.until||p.si!==si||ageYrs(p)<18||!(p.sk?.[KL]>0)||p.office&&!(p.office==='justice'&&p.officeFor===0))continue;const v=p.sk?.[KLaw]||0;if(v>score||v===score&&p.id<best.id){best=p;score=v;}}picked[i]=best;}}
+  if(picked.some(p=>!p))return null;return{picked,fees:picked.map(p=>Math.max(1,householdSize(s,p))*foodYr()/360)};}
+function royalTravel(a,b){const A=W.settlements[a].pos,B=W.settlements[b].pos;return Math.ceil(Math.hypot(A.x-B.x,A.z-B.z)/CART_MPD);}
+function royalAppoint(E,O){E.officers=O.picked.map((p,i)=>{p.office='justice';p.officeFor=0;const n=notableById(E.officers?.[i]);if(n?.alive&&n.fp===p)return n.id;if(n?.alive){notableSetAlive(n,false);n.retiredDay=day();n.endReason='The office passed to another household';nameUse(n.name.split(' ')[0],-1);}return notableFromFolk(p,{role:'justice',house:0,oldBlood:true}).id;});}
+function royalEyreStart(){if(AD()<EYRE_AD||W.houses[0]?.justice?.eyre?.trip)return false;const H=royalHundreds();let towns=[...H].filter(([,places])=>places.length).map(([si])=>si);if(!towns.length)return false;
+  const B=new Map(),start=means('crown'),plans=royalPlans(towns.flatMap(si=>H.get(si)),B),cash=courtFunds(B,'crown').cash-start,value=plans.reduce((v,q)=>v+q.value,0);if(!(cash+value>2*foodYr()/360))return false;const O=royalOfficers();if(!O)return false;
+  const cap=W.settlements.indexOf(W.capital),daily=O.fees.reduce((a,b)=>a+b,0);towns=towns.filter(si=>{const places=new Set(H.get(si));return plans.filter(q=>places.has(W.settlements.indexOf(q.s))).reduce((v,q)=>v+(q.cash||0)+q.value,0)>(1+2*royalTravel(cap,si))*daily;});if(!towns.length)return false;
+  const finalBudget=new Map(),finalPlans=royalPlans(towns.flatMap(si=>H.get(si)),finalBudget),receipts=courtFunds(finalBudget,'crown').cash-start,worth=finalPlans.reduce((v,q)=>v+q.value,0),cost=towns.reduce((v,si)=>v+(1+2*royalTravel(cap,si))*daily,0);if(!(receipts+worth>cost)||!(start+receipts-cost>=chestReserve(0)))return false;
+  const J=W.houses[0].justice||(W.houses[0].justice={}),E=J.eyre||(J.eyre={circuits:0,sessions:0,heard:0,fines:0,forfeitCoin:0,chattelValue:0,fees:0,profit:0});royalAppoint(E,O);
+  E.circuits++;E.expected=receipts+worth;E.cost=cost;E.trip={towns,at:cap,next:day()+1+royalTravel(cap,towns[0])};return true;}
+function royalStockReserve(y,g,had,q){const r=costBlend(y.reserve[g],had,0,q);if(r>0)y.reserve[g]=r;else delete y.reserve[g];} // confiscated stock has no purchase cost; blend it into the Crown's actual old stock, never pin its sale price
+function royalForfeitGoods(s,items,beasts){for(const{A,g,k,q}of items){const x=s._owners.get(A),y=stockOf(s,'crown'),had=y.sale[g]||0;if(commodityActive(s)&&!BEASTS.includes(g))s.storage.transfer({owner:A,good:g,availability:k},q,'crown',{availability:'sale',cause:'forfeiture'});
+    else{if(s.storage&&!BEASTS.includes(g)){storageTitles(s);let left=q;for(const l of s.storage.matching({owner:A,good:g,availability:k})){const take=Math.min(left,l.qty);if(take>0){s.storage.transfer(l,'crown',take,'sale');left-=take;}if(!(left>0))break;}if(left>1e-8)throw Error('Unbacked royal forfeiture');}x[k][g]-=q;y.sale[g]=(y.sale[g]||0)+q;storageTitleKnownDirty(s,g);}royalStockReserve(y,g,had,q);}
+  for(const{A,k,q}of beasts){const x=s._owners.get(A),y=stockOf(s,'crown'),had=y.sale[k]||0;x.animals[k]-=q;y.sale[k]=(y.sale[k]||0)+q;royalStockReserve(y,k,had,q);}}
+function royalEyreVisit(){const E=W.houses[0]?.justice?.eyre,T=E?.trip;if(!T||day()<T.next)return;const si=T.towns[0],s=W.settlements[si],H=royalHundreds(),B=new Map(),start=means('crown'),plans=royalPlans(H.get(si)||[],B),value=plans.reduce((v,q)=>v+q.value,0),cash=courtFunds(B,'crown').cash-start,O=royalOfficers(),days=1+2*royalTravel(W.settlements.indexOf(W.capital),si),cost=O?days*O.fees.reduce((a,b)=>a+b,0):Infinity;
+  if(O&&cash+value>cost&&start+cash-cost>=chestReserve(0)){royalAppoint(E,O);let fines=0,coin=0;for(const q of plans){const p=q.p;let paid=0;for(const[A,v]of q.pay){const got=transfer(A,'crown',v,p.kind==='felony'?'felons’ chattels':'royal amercements',q.s);if(Math.abs(got-v)>1e-8)throw Error('Royal judgement cannot fund its levy');paid+=got;}royalForfeitGoods(q.s,q.goods,q.beasts);if(q.h)q.h._royalForfeitCamp=p.camp;
+      if(p.kind==='felony')coin+=paid;else fines+=paid;const C=q.s.royalCourt||(q.s.royalCourt={heard:0,fines:0,forfeitCoin:0,chattelValue:0,roll:{rows:[],over:{}}});C.heard++;C.fines+=p.kind==='felony'?0:paid;C.forfeitCoin+=p.kind==='felony'?paid:0;C.chattelValue+=q.value;
+      rollAdd(C.roll,{kind:p.kind,d:day(),who:p.who??-1,name:p.name||'',paid,value:q.value,ruling:q.ruling,...(p.kind==='neglect'?{road:W.roads.indexOf(p.ref),incidents:p.incidents}:{}),...(q.goods.length?{goods:q.goods.map(({g,q})=>[g,q])}:{}),...(q.beasts.length?{beasts:q.beasts.map(({k,q})=>[k,q])}:{})});q.s.royalPleas.rows=q.s.royalPleas.rows.filter(x=>x!==p);}
+    let fees=0;O.picked.forEach((p,i)=>{fees+=transfer('crown',p,days*O.fees[i],'justices’ fees and travel',s);});E.sessions++;E.heard+=plans.length;E.fines+=fines;E.forfeitCoin+=coin;E.chattelValue+=value;E.fees+=fees;E.profit+=means('crown')-start;E.last=day();if(!W.prehistory)emit('trade',2,s.pos,`The justices in eyre at ${s.name} hear ${plans.length} royal pleas, take ${+fines.toFixed(2)} in amercements and ${+coin.toFixed(2)} coin in forfeitures, and pay ${+fees.toFixed(2)} for their service and journey.`);}
+  T.towns.shift();if(T.towns.length)T.next=day()+royalTravel(si,T.at)+1+royalTravel(T.at,T.towns[0]);else delete E.trip;}
+function royalEyreCmd(){if(sovOn()&&plyH()===0)royalEyreStart();}
+function royalJusticeHTML(){const E=W.houses[0]?.justice?.eyre,T=E?.trip,row=(k,v)=>`<div class="cstat"><span>${k}</span><b>${v}</b></div>`;let h='<div class="dhead">Royal justice</div>';
+  h+=`<p>${AD()<EYRE_AD?'The general eyre begins in AD '+EYRE_AD+'. Presentments are held until then.':'The clerk reviews held pleas monthly. Two justices ride only when expected receipts and chattels exceed fees and travel, with coin to pay them. Families retain their subsistence and working stock.'}</p>`;
+  for(const [si,places]of royalHundreds()){const n=places.reduce((v,i)=>v+(W.settlements[i].royalPleas?.rows.length||0),0);if(n)h+=row(esc(W.settlements[si].name)+' hundred',places.map(i=>`<a class="nm" data-nm="court:${i}">${esc(W.settlements[i].name)}: ${W.settlements[i].royalPleas.rows.length}</a>`).join(' · '));}
+  if(E){h+=row('Next sitting',T?esc(W.settlements[T.towns[0]].name)+', '+esc(dateStr(T.next)):'Awaiting profitable business')+row('Circuits / sittings / pleas heard',E.circuits+' / '+E.sessions+' / '+E.heard)+row('Amercements / forfeited coin',+E.fines.toFixed(2)+' / '+(+E.forfeitCoin.toFixed(2)))+row('Chattels acquired (market value)',+E.chattelValue.toFixed(2))+row('Fees and travel / net cash receipts',+E.fees.toFixed(2)+' / '+(+E.profit.toFixed(2)))+row('Justices',(E.officers||[]).map(id=>{const n=notableById(id);return n?`<a class="nm" data-nm="n${id}">${esc(n.name)}</a>`:'Vacant';}).join(' · '));}
+  if(AD()>=EYRE_AD)h+=`<button class="wbtn" data-cmd="c-eyre"${T?' disabled':''}>Send the justices</button><p>The same cost and funding rules apply to this order.</p>`;return h;}
+function tickJustice(){W.settlements.forEach((s,si)=>{if(dueOn(si,90,37)&&s.pleas?.rows.length)courtSession(s,si);});if(AD()<EYRE_AD)return;royalEyreVisit();if(day()%30===17)royalEyreStart();} // the royal clerk reviews the held rolls monthly; only profitable, funded circuits ride
 function justiceCmd(arg){const[a,k,v,...rest]=String(arg).split(':'),s=W.settlements[+a];if(rest.length||!s||!sovOn()||s.owner!==plyH()||k!=='cap'||!Number.isFinite(+v)||+v<0||+v>1)return;
   const h=W.houses[s.owner];if(h)(h.justice||(h.justice={})).cap=+v;}
 function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||W._folkIndex||new Map(),person=(id,name)=>{const p=PM.get(id);return id>=0||p||name?`<a class="nm" data-nm="p${id}">${esc(p?folkName(p):name||'Person '+id)}</a>`:'No one appointed';},row=(k,v)=>`<div class="row"><span>${k}</span><b>${v}</b></div>`; // a court read does not populate the world's person index
@@ -14427,12 +14482,14 @@ function courtCard(s,si){const C=s.court,J=W.houses[s.owner]?.justice,PM=W._pm||
     for(const[k,v]of Object.entries(C.byKind||{}))h+=row(k==='assize'?'Bread and ale assize':k==='riot'?'Breach of the peace':'Grazing trespass',v.heard+' heard, '+v.pardoned+' pardoned, '+(+v.fines.toFixed(2))+' amerced');
     for(const p of C.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${person(p.who,p.name)}, ${esc(p.kind==='assize'?'assize of bread and ale':p.kind==='trespass'?'grazing trespass':p.kind)}${p.creditor?` to <a class="nm" data-nm="${esc(p.creditor)}">${esc(p.creditorName)}</a>`:''} — ${courtOffence(p)?p.kind==='riot'?(p.incidents||1)+' riot presentments, '+(+p.owed.toFixed(2))+' customary amercement':(+p.owed.toFixed(2))+(p.kind==='assize'?' in recorded receipts':' in lost grazing'):Math.round(p.paid)+' paid, '+Math.round(p.left)+' owing'}; ${p.pardoned?'amercement pardoned':(+p.fine.toFixed(2))+' amerced'}${p.beasts?`; sold ${p.beasts.map(([k,q])=>q+' '+esc(k)).join(', ')}`:''}${p.pleaFee?`; ${+p.pleaFee.toFixed(2)} plea fee from the recovery`:''}.</p>`;
     for(const[k,n]of Object.entries(C.roll.over))h+=row('Earlier '+esc(k)+' rulings',n);}
-  const R=s.royalPleas;if(R){const witness=p=>`<a class="nm" data-nm="p${p.who}">${esc(p.name||'Person '+p.who)}</a>`,coin=v=>+v.toFixed(2);h+='<div class="dhead">Pleas held for royal justice</div><p>Robbery is presented against this place; felony names the recruit and his share at joining. These cases await the eyre. No royal fine or forfeiture has been collected.</p>';
-    h+=row('Held presentments',R.rows.length+Object.values(R.over).reduce((n,v)=>n+v,0));
+  const R=s.royalPleas;if(R){const witness=p=>`<a class="nm" data-nm="p${p.who}">${esc(p.name||'Person '+p.who)}</a>`,coin=v=>+v.toFixed(2);h+='<div class="dhead">Pleas held for royal justice</div><p>Robbery is presented against this place; felony names the recruit and his share at joining; neglect names the road’s responsible payer and unpaid upkeep. Detailed cases await the eyre from AD 1166. Goods remain with the household until judgement.</p>';
+    h+=row('Detailed presentments awaiting hearing',R.rows.length);
     for(const p of R.rows){let text;if(p.kind==='robbery'){const route=[p.origin,p.dest].map(i=>W.settlements[i]).filter(Boolean).map(t=>esc(t.name)).join(' → ');text=`robbery on this place’s ground${route?' ('+route+')':''}: ${+p.qty.toFixed(2)} ${esc(p.good)}, recorded load value ${coin(p.v)}${p.who>=0?'; carrier '+witness(p):''}`;}
+      else if(p.kind==='neglect'){text=`neglected road ${W.roads.indexOf(p.ref)+1}: ${esc(p.name)}, ${coin(p.v)} unpaid upkeep in ${p.incidents} presentments`;}
       else{text=`felony presentment of ${witness(p)}: ${+(p.share*100).toFixed(2)}% household share at joining, ${coin(p.coin)} coin`;for(const [k,q] of Object.entries(p.goods))text+=`; ${+q.toFixed(2)} ${esc(k)}`;for(const [k,q] of Object.entries(p.beasts))text+=`; ${+q.toFixed(2)} ${esc(k)}`;text+=' (evidence at joining; goods remain with the household)';}
-      h+=`<p>${esc(dateStr(p.d))}: ${text}; camp ${p.camp}.</p>`;}
+      h+=`<p>${esc(dateStr(p.d))}: ${text}${p.camp!=null?'; camp '+p.camp:''}.</p>`;}
     for(const [k,n] of Object.entries(R.over))h+=row('Earlier '+esc(k)+' presentments (details folded)',n);}
+  const RC=s.royalCourt;if(RC){h+='<div class="dhead">Royal rulings</div>';h+=row('Pleas heard',RC.heard)+row('Amercements / forfeited coin',+RC.fines.toFixed(2)+' / '+(+RC.forfeitCoin.toFixed(2)))+row('Chattels acquired (market value)',+RC.chattelValue.toFixed(2));for(const p of RC.roll.rows)h+=`<p>${esc(dateStr(p.d))}: ${esc(p.kind)}${p.name?' — '+esc(p.name):''}; ${esc(p.ruling)}, ${+p.paid.toFixed(2)} coin${p.value?`, ${+p.value.toFixed(2)} in chattels`:''}${p.goods?'; goods: '+p.goods.map(([g,q])=>+q.toFixed(2)+' '+esc(g)).join(', '):''}${p.beasts?'; beasts: '+p.beasts.map(([g,q])=>+q.toFixed(2)+' '+esc(g)).join(', '):''}.</p>`;for(const[k,n]of Object.entries(RC.roll.over))h+=row('Earlier royal '+esc(k)+' rulings',n);}
   const E=s.enrolments;if(E){const witness=(id,name)=>id>=0?`<a class="nm" data-nm="p${id}">${esc(name||PM.get(id)&&folkName(PM.get(id))||'Person '+id)}</a>`:esc(name||'Not named'),lord=p=>`<a class="nm" data-nm="${p.lord==='crown'?'h0':esc(p.lord)}">${esc(p.lordName)}</a>`,field=p=>p.field>=0?`<a class="nm" data-nm="field:${p.field}">holding ${p.field+1}</a>`:'the holding',coin=v=>+v.toFixed(2),labels={land:'land',entry:'entry fine',merchet:'merchet',heriot:'heriot'};
     h+='<div class="dhead">Land and customary entries</div><p>Recorded at the transaction. These entries are separate from the court’s rulings.</p>';
     for(const p of E.rows){let text;if(p.kind==='land'){const rights=r=>`${esc(r.ten||'unassigned')}; owner ${r.own>=0?witness(r.own,r.ownName):lord(p)}; occupier ${r.wk>=0?witness(r.wk,r.workName):r.ten==='demesne'?'the lord’s home farm':'vacant'}${r.dower>=0?`; dower ${witness(r.dower,r.dowerName)} (${+(r.dowerFraction*100).toFixed(2)}%)`:''}`;
@@ -14540,7 +14597,7 @@ function manorLines(s){ // the settlement card's lines on the manor: the mill's 
     else if(mill&&(o==='lord'||o===undefined))out.push(['Mill',`The lord keeps the mill in hand${b._tk&&b._tk.mult>0?`; ${Math.round(b._tk.mult)} grain of multure this year`:''}`]);}
   const V=tilledOf(s,si).filter(f=>f.ten==='villein');if(V.length)out.push(['Villein holdings',`${V.filter(f=>f.svc==='money').length} of ${V.length} commuted to a money rent${s.svc==='money'?', by order':s.svc==='works'?'; services kept in hand by order':''}`]);
   const C=s.custom?Object.keys(CUSTOMS).filter(k=>s.custom[k]!=null&&s.custom[k]!==CUSTOMS[k]):[];if(C.length)out.push(['Customs',C.map(k=>`${esc((CUSTOM_NAMES[k]||[k])[0])} ${CUSTOM_NAMES[k]?.[2]?+(s.custom[k]*100).toFixed(2)+'%':+s.custom[k].toFixed(3)}`).join('; ')]);
-  if(s.court||s.pleas?.rows.length||s.enrolments||s.royalPleas)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year${s.royalPleas?' · '+(s.royalPleas.rows.length+Object.values(s.royalPleas.over).reduce((n,v)=>n+v,0))+' held for royal justice':''}${s.enrolments?' · '+(s.enrolments.rows.length+Object.values(s.enrolments.over).reduce((n,v)=>n+v,0))+' land and customary entries':''}</a>`]);
+  if(s.court||s.pleas?.rows.length||s.enrolments||s.royalPleas)out.push(['Court',`<a class="nm" data-nm="court:${si}">${s.pleas?.rows.length||0} pleas waiting · ${Math.round(s.court?.year===Math.floor(day()/360)?s.court.profit:0)} net receipts this year${s.royalPleas?' · '+s.royalPleas.rows.length+' held for royal justice':''}${s.enrolments?' · '+(s.enrolments.rows.length+Object.values(s.enrolments.over).reduce((n,v)=>n+v,0))+' land and customary entries':''}</a>`]);
   return out;}
 function manorCmd(cmd,arg){const[a,k,v]=String(arg).split(':'),s=W.settlements[+a];if(!s||!sovOn()||s.owner!==plyH())return; // a lord orders his own places, the crown its own
   if(cmd==='s-custom'){if(!Object.hasOwn(CUSTOMS,k)||!(+v>=0)||+v>CUSTOMS[k]*4)return;(s.custom||(s.custom={}))[k]=+v;}
@@ -14980,7 +15037,7 @@ function tollReview(r,ri,T,up){ // once a year on each road, after its reckoning
    as the custom of the realm binds the landholders whose land the highway crosses, whether or not it pays them. Every payer lays out only
    what his chest holds beyond its reserve (roadSpare); mended as far as it is paid for, else it wears to a rutted track: slower, narrower,
    never quite gone (#36: it was mended while tolls that no one collected would have repaid it). A road left unmended is neglect for the
-   courts to present (#37: no court yet). */
+    royal courts to present (#37): only the responsible payer's actual unpaid share, never a guessed loss. */
 function tickWays(){
   let dirty=false;
   W.settlements.forEach((s,si)=>{if(!dueOn(si,360,41))return;const on=new Set();for(const b of s.buildings)if(!b.removed&&b.state!=='gone'&&b.st)on.add(b.st);
@@ -14991,8 +15048,8 @@ function tickWays(){
     for(const b of T){const o=ownerAcct(b,b.s),k=tollKeeper(b),e=K.get(o)||K.set(o,{tk:0,wg:0,s:b.s}).get(o);e.tk+=b._tk||0;b._wgY=k&&accountOwner(k)!==accountOwner(o)?transfer(o,k,tollWage()*Math.min(1,(day()-(b._tollSince??-1e9))/360),'tolls',b.s):0;e.wg+=b._wgY;} // the keepers' year
     if(K.size){let tk=0;for(const e of K.values())tk+=e.tk; // the toll houses' owners, each by what his took
       for(const[o,e]of K){const sh=tk>0?up*e.tk/tk:up/K.size,t=Math.min(sh,Math.max(0,e.tk-e.wg),Math.max(0,means(o))),v=t+Math.min(sh-t,Math.max(0,roadSpare(o,e.s)-t)); // the takings first, then his chest beyond its reserve
-        if(v>0){buildWorks(e.s,v,o,'road upkeep');paid+=v;fromT+=t;}}}
-    else for(const s of[A,B]){const o=lordAcct(s),v=Math.min(up/2,roadSpare(o,s));if(v>0){buildWorks(s,v,o,'road upkeep');paid+=v;}} // the lords at either end, each his half
+        if(v>0){buildWorks(e.s,v,o,'road upkeep');paid+=v;fromT+=t;}courtNeglect(e.s,r,o,sh-v);}}
+    else for(const s of[A,B]){const o=lordAcct(s),v=Math.min(up/2,roadSpare(o,s));if(v>0){buildWorks(s,v,o,'road upkeep');paid+=v;}courtNeglect(s,r,o,up/2-v);} // the lords at either end, each his half
     r.cond=clamp(c0+0.35*Math.min(1,paid/up)-0.15,0.15,1); // a fifth better mended in full, three-twentieths worse unmended
     r._upY=paid;r._upW=up;r._upT=fromT;r._wvY=r._wv||0;r._wv=0;for(const b of T){b._tkY=b._tk||0;b._tk=0;} // the year's account, kept for its card
     tollReview(r,ri,T,up);
@@ -15417,12 +15474,13 @@ function goPerson(p,s){ // fly to wherever this person is now (walking the stree
   G.followPid=p.id;if(G.citList&&G.citList.length&&!G.citList.some(c=>c.p===p))G.citList=[]; // the town's walkers are chosen about the eye, this one first
   cam.follow={pid:p.id,pos:{x:at.x,z:at.z,y:hAt(at.x,at.z)}};}
 function notableResidence(n){ // nobles retain their existing dynasty and purse; their lodging is an ordinary canonical building
+  if(n.role==='justice'&&n.fp){const s=W.settlements[n.fp.si],b=n.fp.bh;return s?{s,b:b?.s===s&&!b.removed&&b.state==='sound'?b:null,secure:false,lines:0}:null;}
   if(n.role==='Bandit King')return null;const H=houseOf(n),s=n.house===0?W.capital:W.settlements[H&&H.seat];if(!s||s.owner!==n.house)return null;
   const b=casKeep(s)||s.buildings.find(b=>b.arch==='hall'&&b.inst&&!b.removed&&b.state==='sound');if(!b)return{s,b:null,secure:false,lines:0};
   let lines=0;for(const c of fortCircuits(s))if(c.wallRad&&!(c.breachUntil>day())&&fortContains(c,b.x,b.z))lines++;
   return{s,b,secure:b.arch==='keep'&&b.state==='sound',lines};}
 function notableResidents(b){if(b.arch!=='keep'&&b.arch!=='hall')return[];const s=b.s,H=W.houses[s.owner],head=s.owner===0?W.monarch:H&&notableById(H.head),R=head&&notableResidence(head);if(!R||R.b!==b)return[];
-  return livingNotableCandidates(n=>n.alive&&n.role!=='Bandit King'&&n.house===s.owner&&!W.armies.some(a=>!a.gone&&a.commander===n.id));}
+  return livingNotableCandidates(n=>n.alive&&n.role!=='Bandit King'&&n.role!=='justice'&&n.house===s.owner&&!W.armies.some(a=>!a.gone&&a.commander===n.id));}
 function notableWhere(n){ // with the host they command, otherwise in the keep of their seat
   const a=W.armies.find(a=>!a.gone&&a.commander===n.id);if(a)return{army:a};
   if(n.role==='Bandit King'){const camp=(W.banditCamps||[]).find(c=>c.kingId===n.id);return camp?{x:camp.x,z:camp.z,camp}:null;}
@@ -16384,6 +16442,7 @@ function crownPanelHTML(){
     }
     h+=`<div class="note">Click a crown host to give it orders.</div>`;
   }
+  h+=royalJusticeHTML();
   h+=`<div class="dhead">Decrees</div>`;
   for(const d of DECREES){
     if(d.ok&&d.ok()!==true&&(d.k==='host'||d.k==='peace'))continue; // war decrees only in war
@@ -16461,6 +16520,7 @@ function runCmd(cmd,arg){
     case 's-work':{const[a,b]=arg.split(':');settlementWork(+a,b);break;}
     case 's-relief':case 's-garrison':case 's-callout':case 's-levy':case 's-walls':case 's-seal':case 's-suppress':settlementCmd(cmd.slice(2),+arg);break;
     case 's-justice':justiceCmd(arg);break;
+    case 'c-eyre':royalEyreCmd();break;
     case 's-custom':case 's-svc':manorCmd(cmd,arg);break; // the customs of a manor, and its services commuted or kept in hand (#36)
     case 'a-order':case 'a-road':case 'a-raft':case 'a-objective':case 'a-hold':case 'a-release':case 'a-disband':case 'a-split':case 'a-merge':case 'a-garrison':armyCmd(cmd.slice(2),arg);break;
   }
@@ -18773,6 +18833,7 @@ function workerCommandTarget(e){
         const [si,k,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||!WORKS.some(w=>w[0]===k))throw Error('Invalid works command');return 'worker';
       }
       if(c==='s-justice'){const [si,k,v,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||k!=='cap'||!/^\d+(\.\d+)?$/.test(v||'')||+v>1)throw Error('Invalid justice command');return 'worker';}
+      if(c==='c-eyre'){if(a!=='')throw Error('Invalid eyre command');return 'worker';}
       if(c==='s-custom'||c==='s-svc'){
         const [si,k,v,...rest]=a.split(':');if(rest.length||!workerCommandIndexText(si,W.settlements.length)||(c==='s-custom'?!Object.hasOwn(CUSTOMS,k)||!/^\d+(\.\d+)?$/.test(v||'')||+v>CUSTOMS[k]*4:v!==undefined||!['money','works','auto'].includes(k)))throw Error('Invalid manor command');return 'worker';
       }
@@ -20423,6 +20484,11 @@ Acts are sealed while you rule; the crown's own levers take their place:
 - **Decrees** (gold + cooldown): royal feast, open the granaries,
   extraordinary levy, bounty riders, charter a village on the map, raise the
   royal host, sue for peace, pay the wyrm, send champions against it.
+- **Royal justice** (from AD 1166): profitable, funded eyres hear robbery,
+  felony and neglected-road presentments. Two real justices are paid for
+  sittings and return travel; fines and forfeitures protect subsistence
+  and working stock. The Crown panel sends a circuit and shows its
+  accounts; each place’s court roll links the held cases and royal rulings.
 - **Works** (orders the world carries out over time, each marked on the map
   while it is in hand): lay a road between two places (surveyed and priced
   by the ground, built by gangs month by month, used by the carts when
@@ -21420,17 +21486,35 @@ until a sitting; an amercement or pardon retires the case.
 The roll also shows pleas held for royal justice. A caravan robbery is
 recorded against the place nearest the ambush, with its carrier and load
 value. Joining an outlaw camp presents the recruit and records his share
-of the household's coin, goods and beasts at joining. This is evidence for
-the later eyre: the household retains its goods and no royal fine or
-forfeiture is collected yet. There are at most 64 recent held cases per
-place; earlier presentments are counted by kind.
+of the household's coin, goods and beasts at joining. Unpaid road upkeep
+presents the responsible payer's actual shortfall. There are at most 64
+recent held cases per place; earlier presentments are counted by kind.
+
+From AD 1166, two lettered heads of the capital serve as royal justices.
+The clerk reviews the rolls monthly; a circuit rides when real receipts
+and chattels exceed the fees and travel, with coin beyond the Crown's
+reserve to pay them. Each sitting hears the town and its nearest villages.
+The justices return to the capital between sittings, and each hearing pays
+for its whole return journey. Robbery levies and neglect fines share the
+Crown's spare-purse cap. No repair principal is paid to the Crown.
+
+A felony hearing takes only the named, living outlaw's remaining share,
+bounded by the joining evidence and current household share. Dead or
+returned outlaws and duplicate cases are dismissed. The next month's bread
+and rent, food stocks, tools, winter fodder, breeders and working team are
+protected. Forfeited goods and beasts become actual Crown sale stock;
+market value is separate from cash receipts. A heard case retires once.
+The court roll shows recent royal rulings; **Crown → Royal justice** shows
+the circuit, justices and receipts. **Send the justices** is journaled and
+uses the same profit and funding rules as an automatic circuit.
 
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that
 work, within the same spare-purse cap. It is a licence, not a claim that
 loaves are short weight. Trespass and assize are amerced or pardoned once,
 without a debt or forced beast sale. The roll shows the harm or receipts,
-amercements by kind and the next great court. Royal justice remains to come.
+amercements by kind and the next great court. The capital’s bench and
+sheriff’s courts remain to come.
 
 ## Cards
 

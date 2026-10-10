@@ -109,17 +109,35 @@ until a sitting; an amercement or pardon retires the case.
 The roll also shows pleas held for royal justice. A caravan robbery is
 recorded against the place nearest the ambush, with its carrier and load
 value. Joining an outlaw camp presents the recruit and records his share
-of the household's coin, goods and beasts at joining. This is evidence for
-the later eyre: the household retains its goods and no royal fine or
-forfeiture is collected yet. There are at most 64 recent held cases per
-place; earlier presentments are counted by kind.
+of the household's coin, goods and beasts at joining. Unpaid road upkeep
+presents the responsible payer's actual shortfall. There are at most 64
+recent held cases per place; earlier presentments are counted by kind.
+
+From AD 1166, two lettered heads of the capital serve as royal justices.
+The clerk reviews the rolls monthly; a circuit rides when real receipts
+and chattels exceed the fees and travel, with coin beyond the Crown's
+reserve to pay them. Each sitting hears the town and its nearest villages.
+The justices return to the capital between sittings, and each hearing pays
+for its whole return journey. Robbery levies and neglect fines share the
+Crown's spare-purse cap. No repair principal is paid to the Crown.
+
+A felony hearing takes only the named, living outlaw's remaining share,
+bounded by the joining evidence and current household share. Dead or
+returned outlaws and duplicate cases are dismissed. The next month's bread
+and rent, food stocks, tools, winter fodder, breeders and working team are
+protected. Forfeited goods and beasts become actual Crown sale stock;
+market value is separate from cash receipts. A heard case retires once.
+The court roll shows recent royal rulings; **Crown → Royal justice** shows
+the circuit, justices and receipts. **Send the justices** is journaled and
+uses the same profit and funding rules as an automatic circuit.
 
 At the great court twice a year, the bread and ale assize takes the
 customary twentieth of bakers' and brewers' recorded payments for that
 work, within the same spare-purse cap. It is a licence, not a claim that
 loaves are short weight. Trespass and assize are amerced or pardoned once,
 without a debt or forced beast sale. The roll shows the harm or receipts,
-amercements by kind and the next great court. Royal justice remains to come.
+amercements by kind and the next great court. The capital’s bench and
+sheriff’s courts remain to come.
 
 ## Cards
 
