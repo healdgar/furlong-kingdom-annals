@@ -4,15 +4,115 @@ Fresh maps, every daily tick, every named person and household, and existing own
 inheritance rules remain intact. No era presets, saved-world bank, actor culling or SQLite were added.
 The app remains a single HTML file with no build step.
 
-## Fast-forward limits and next work
+## Exact fast forward (current priority, 2026-10-09)
 
-Reel years (speed 5) requests 360 days/second. `animate` executes daily ticks
-on the main thread for up to 28 ms per frame, then animates the world, rebuilds
-dirty geometry, refreshes UI and renders. A slow single tick can exceed that
-budget. Later-era generation also executes every day, although it omits the
-normal frame loop. Removing rendering alone cannot solve slow era generation.
-850 to 1066 requires 77,760 daily ticks. One simulated year per second allows
-only 2.78 ms per day before display and persistence costs.
+The user’s target is hundreds of simulated years per real minute, with exactly the
+same history at every speed for the same seed and commands on the same simulation
+days. Source-file splitting offers no demonstrated speed
+advantage here; keep the sectioned file and the authoritative simulation worker.
+
+Reel already runs daily transactions continuously through the worker’s unpaced
+pump. Its nominal `SPEEDS[5]` value of 360 is not a throughput ceiling. Display
+acknowledgements limit landscape publication, while simulation can continue.
+Raising the speed number or removing frames cannot eliminate daily model cost.
+
+With 360-day years, the complete simulation and persistence budget is:
+
+| Years per minute | Simulated days per second | Milliseconds per day |
+|---|---:|---:|
+| 100 | 600 | 1.667 |
+| 200 | 1,200 | 0.833 |
+| 300 | 1,800 | 0.556 |
+
+Recent audited year-three profiles on this host put core `simTick` at 83.076 ms/day
+for 42:42 sea and 66.532 for 1001:1001 sea, at loads 0.06→0.96 and 0.96→1.26.
+They include profiler/audit effects; they are diagnostic profiles, not shipping
+throughput measurements. Daily household feeding, economy and commodity queries
+dominate. Most Proxy key enumeration in those profiles comes from the independent
+inventory audit, outside simulation; optimizing it would mainly speed the test.
+
+Two unprofiled native 1001:42 sea comparisons cover ticks 41–360 (320 measured
+days each), using the worker’s raw capture/binary journal with an in-memory
+acknowledgement sink. Compression and IndexedDB are excluded. Baseline/candidate
+CPU is 94.73/85.49 ms/day (loads 0.3→0.6 / 0.2→0.5), then 91.51/86.64
+(0.3→0.6 / 0.3→0.6): 9.8% and 5.3% less CPU. Median cost is 93.12→86.065 ms/day,
+a 7.6% reduction, with identical year-end censuses. The shorter portable-journal
+windows varied more; these modes and windows are not pooled into one speed claim.
+The rejected missing-stock/combined candidates offer no demonstrated advantage
+over the smaller retained-slot change.
+
+Slots are private derived caches; each write still clears all twelve scopes, and
+stock arithmetic, rank order, callbacks, writers and records remain unchanged.
+Cold save/load rebuilds them; estate retirement drops the owner’s cache. Keeping
+arrays increases retained cache memory per queried owner/good pair; native goods
+are bounded, but late-world memory has not been measured. No memory improvement
+is claimed.
+
+This early-world measurement still exceeds the 100-years/minute budget by roughly
+52× before durable browser storage. It is not a century-scale clearance or a
+Safari/browser throughput claim. The Mac’s late farm snapshots remain unavailable.
+Validation and artifact hashes follow in HANDOFF.md. Local evidence is in
+`tools/soak-results/fast-forward-20261009/`.
+
+To measure the current raw capture path without profiles:
+
+```sh
+node tools/model-run.cjs --seed 1001 --fate 42 --coast sea --journal raw --days 360 --measure 40:360 --prof 0 --phases 1 --hotlist 0 --out tools/soak-results/fast-forward-raw.json
+```
+
+`--journal portable` remains the tool’s historical default. Both sinks acknowledge
+records in memory, so neither measures archive compression or IndexedDB writes.
+
+### Work in order
+
+1. **Make each exact day cheaper.** Keep canonical writers and arithmetic order;
+   reduce repeated Map traversal, row creation and scratch allocation. The first
+   validated local change retains commodity quantity-cache slots across writes
+   instead of deleting and reinserting their Map entries. Next measure native
+   single-cell consumption and privately ranked live-cell handles. Reads must see each purchase and consumption at its
+   original point; a whole-day food snapshot would become stale.
+2. **Bound cost by the living world.** Profile later eras and distinguish active
+   actors/stock from expired routes, empty accounts and historical records. Use
+   derived active/due indexes only where all invalidation paths and canonical visit
+   order can be proved. Keep every named actor and household in the model.
+3. **Budget presentation by real time during Reel.** Measure the daily clock
+   messages, thirty-day landscape packets and annual autosave barriers. The
+   nominal target cadences imply 600–1,800 daily clock messages, 20–60 landscape
+   publications and 1.67–5 annual saves per second; acknowledgements and autosave
+   coalescing reduce actual delivery, while urgent updates add exceptions.
+   Coalesce display publication while preserving
+   pending events, geometry dirtiness, wire order and urgent pause/endgame updates.
+   Display cadence must not determine simulation outcomes.
+4. **Separate exact history from eager audit materialization.** Current three-year
+   archives record roughly 201–235 kB binary and 55–63 kB compressed per day.
+   Extrapolating this early-world rate to 100 years/minute requires 121–141 MB/s of
+   binary processing and 33–38 MB/s of durable compressed writes. Measure journal
+   worker CPU and IndexedDB waits separately. Lossless encoding can change without
+   dropping canonical events. A later reconstructable archive could retain exact
+   engine identity, seed, ordered commands/settles and day-boundary checkpoints,
+   then regenerate an older requested economic segment in an isolated replay
+   worker. That changes the current always-on audit-retention contract and needs
+   an explicit design and continuation/export proof; checkpoints alone do not
+   accelerate future days. Preserve annals, biographies and genealogy.
+5. **Prove each gain.** Freeze a baseline; compare every world node, closure,
+   recorder, RNG stream, command, annal and storage outcome over at least 150 days.
+   Include cold-cache save/load, worker/reference/replay and money/goods checks.
+   Measure repeated CPU windows with load recorded and validate late-world scaling
+   before claiming the target is met.
+
+### Why an arbitrary calendar jump cannot preserve this model
+
+Institutions, folk, land and livestock already run on monthly, quarterly or annual
+schedules. Their dispatch can be cheaper, but skipping their guard calls does not
+remove the daily critical path. Food output, purchases, consumption, births/deaths,
+prosperity, unrest, SIR epidemics, travelling loads and military actions affect the
+following day. Politics and threats consume shared RNG streams in daily order.
+Multiplying a rate by a month, using a closed-form population update or sampling a
+next-event date would change rounding, thresholds, transaction order or RNG draws.
+An event skip is admissible only where its entire interval is proved equivalent to
+executing the original days. Approximate fast-forward is outside the user’s request.
+
+## Earlier exact optimizations (historical notes)
 
 This batch removes repeated work without additional simulation indexes or events:
 
@@ -31,7 +131,7 @@ All 916 source tests pass. Focused tests cover household food, hunger, debt and 
 recipient ordering, migration-root values and panel visibility. They establish
 removed work, not a measured whole-game speedup or century-scale clearance.
 
-Remaining architectural work, in order:
+Architecture planned at that time (worker separation is now implemented):
 
 1. Eliminate remaining household-by-population and owner-history scans using
    authoritative household membership and existing active balance membership.

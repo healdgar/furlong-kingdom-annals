@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 02:55 UTC · after e9b8e8c</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 03:59 UTC · after 069787e</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -4029,12 +4029,12 @@ globalThis.CommodityBalanceLedger = (() => {
     state.notes.set(cause, note);
   }
   function clearBuffer(state) { state.rows = new Map(); state.locations = new Map(); state.flows = new Map(); state.notes = new Map(); }
-  // One cached total per (availability filter, transit scope) for an (owner, good): slots 0..11. Invalidated slot arrays are reused.
-  const QUANTITY_SLOTS = [];
+  // One cached total per (availability filter, transit scope) for an (owner, good): slots 0..11.
+  // Keep the private slots when stock changes: invalidation clears their values without deleting and reinserting the Map entry.
   function invalidateQuantity(state, owner, good) {
     const goods = state.quantityCache.get(owner); if (!goods) return;
     const slots = goods.get(good); if (slots === undefined) return;
-    goods.delete(good); slots.fill(undefined); QUANTITY_SLOTS.push(slots);
+    slots.fill(undefined);
   }
   function ownerFacilitySet(state, owner, good, make = false) {
     let goods = state.ownerFacilities.get(owner);
@@ -4317,7 +4317,7 @@ globalThis.CommodityBalanceLedger = (() => {
       if (availability !== undefined && availability !== null && !AVAILABILITY.has(availability)) fail('invalid availability');
       const state = DAILY.get(this), token = availability == null ? undefined : availability;
       let goods = state.quantityCache.get(owner); if (!goods) state.quantityCache.set(owner, goods = new Map());
-      let slots = goods.get(good); if (slots === undefined) goods.set(good, slots = QUANTITY_SLOTS.pop() || new Array(12));
+      let slots = goods.get(good); if (slots === undefined) goods.set(good, slots = new Array(12));
       const clock = this.spoilage.get(good), clockN = clock?.n ?? 0; if (slots.n !== clockN) { slots.fill(undefined); slots.n = clockN; } // a day riper: remembered totals are stale
       const scope = !!includeTransit || token === 'transit';
       const slot = (token === undefined ? 0 : token === 'held' ? 1 : token === 'sale' ? 2 : token === 'unassigned' ? 3 : token === 'transit' ? 4 : 5) * 2 + (scope ? 1 : 0);

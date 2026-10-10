@@ -1,15 +1,16 @@
 # Handoff: state of work
 
-Updated 2026-10-09 in the cloud checkout after the general-eyre phase of #37, following the reported river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-09 in the cloud checkout while prioritizing exact-history fast forward (#15), after the general-eyre phase of #37 and river correction (#58). Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
+- **2026-10-09, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. Keep the sectioned file and simulation/render boundary. Reel is already unpaced; native daily food/storage work and recording are the costs to reduce. The measured plan is in `docs/PERFORMANCE.md`; verification of the first private-cache change is in the continuation below. Century-scale throughput is not yet achieved.
 - **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
 - **2026-10-09, land and customary entries (#37, batch 11d):** the next phase adds a separate twelve-entry register of existing admissions, inheritance, marriage, assarts, surrenders, sales and letting; entry-fine payments and their original shortfalls; actual household merchet payments; and one real heriot beast in kind. It adds no charge, sitting, household debt or transaction scan. Verification and conservation evidence follow below.
 - **2026-10-09, criminal presentments (#37, batch 11e):** native riots present up to three resident adult household heads under the named three-days-of-family-bread custom. Robbed caravans and actual outlaw recruitment add bounded evidence to a separate royal roll; royal hearings, forfeiture and charges remain pending. No settlement camp raids are invented.
 - **2026-10-09, river surface (#58):** the drawing had sampled each terrain bump directly, allowing the water to rise downstream. Draw-only profiles now pool across bed bumps; junction backwater extends upstream. Canal levels and simulation geometry remain unchanged. The 150-day whole-world/RNG proof and final drawn check pass; evidence follows below.
 - **2026-10-09, general eyre (#37, batch 11f):** from AD 1166, monthly reviews send profitable, funded circuits. Two lettered capital heads chosen by law skill enter the annals as justices, keeping their actual households, lodging, education and mortality. Each scheduled sitting hears one town and its nearest villages and funds its whole return journey to the capital. Robbery levies and real road-upkeep shortfalls use shared spare-purse caps. Felony forfeits only the living outlaw’s witnessed/current share of remaining assets; subsistence, food, tools, winter fodder and working/breeding beasts survive. Goods change native ownership and become Crown sale stock without adding physical stock; their zero purchase cost blends into the Crown’s actual old cost reserve. Coin and officials’ pay use transfer. Detailed cases retire once; folded counts carry no guessed liability. Worker-side accounts, named justices, royal rulings and a journaled send order are implemented. Validation and remaining work follow below.
-- **Local state:** batches 11c, 11d, 11e and 11f plus the river correction are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: the capital’s bench and the hundred/shire/sheriff tiers, then the credit and hardship bridges. Estates and abbey compounds follow in the recorded institution plan. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
+- **Local state:** batches 11c, 11d, 11e and 11f, the river correction and the first exact-cache optimization are the work beyond `origin/main` at `5c5b121`; no release has been pushed from this checkout. Verification and economy comparisons are in the continuation below. Next: exact fast-forward performance (#15) as requested; the capital’s bench, hundred/shire/sheriff tiers and credit/hardship bridges remain in the institution queue, followed by estates and abbey compounds. #37 remains in progress and #39 has not begun. The Mac’s late-world farm snapshots are absent here, so that farm has not been resumed.
 
 - **2026-10-09, fort development and annual accounts (#56, #57):** roads, town-wall siting, building enlargement and parcel clipping respect the elongated bailey's contour instead of its maximum-radius circle. Mound, ditch and curtain clearances remain. Deliberate layout/history change; existing buildings are not relocated.
 - Town, domain and crown records show calendar-year income, expenses, surplus/deficit and causes; treasury statements reconcile opening and closing coin. Town public funds and each owner's local receipts/costs are separate; local costs already belong to the owner's total. Loans and asset sales are cash flows, not trading profit. Two bounded annual aggregate books per institutional chest, no household ledger or new transaction/journal rows; reports never scan history. Self-transfers and refunded relief holds are excluded. Older net books cannot reconstruct prior gross flows; resumed records label partial years.
@@ -331,3 +332,70 @@ Tested HTML SHA256 da45749f04e94c38257c88919340eca03e02769c48efa62588ddc55544f83
 The final production source also passes serial three-year conservation runs for seeds 42 and 1001, each with its own fate and sea. All eight checks pass; every annual money residual is zero, there are no simulation faults or inventory mismatches, and each world completes 2,160 before/after inventory checks with no coin paid to nobody. Final populations are 2,414 and 2,460. Actual unpaid road shares leave four and eleven neglect presentments respectively. Royal hearings remain gated until 1166 in these native 850–853 worlds; actual hearings are covered by the separate forced-era fixtures above.
 
 Simulation/render separation remains explicit: royal case state, hearing budgets, transfers and rulings are worker-owned; controls submit validated journal commands, and display panels query worker-generated views. The projection drift guard excludes royalCourt from render projections. Full-suite separation checks and browser world/RNG read-stability checks pass.
+
+## Continuation, 2026-10-09: exact fast forward (#15)
+
+The user made centuries per real minute the current priority and confirmed exactly
+the same history at every speed. Keep the existing sections and worker authority.
+Reel already runs unpaced; its 360-days/s label cannot remove the cost of a day.
+The live daily economy, feeding and demographic recurrences rule out arbitrary
+calendar jumps. `docs/PERFORMANCE.md` records the target budgets, current bottlenecks
+and staged work, including exact storage kernels, living-world scaling, bounded
+display cadence and reconstructable older economic audit segments.
+
+The first exact change retains the commodity ledger’s twelve private quantity-cache
+slots across invalidation instead of deleting, pooling and reinserting them. All
+slots still clear; canonical balances, writers, arithmetic, order and records are
+unchanged. Cold world-load starts empty and estate retirement forgets its owner.
+Memory retained per queried owner/good pair increases; late-world memory is still
+unmeasured. Two alternative cache prototypes remain ignored and are not shipped.
+
+The model-run tool now accepts `--journal raw` for the worker’s capture/binary path,
+keeping its historical portable default. Both use an in-memory acknowledgement
+sink; measurements exclude compression and IndexedDB. On native 1001:42 sea,
+ticks 41–360, two unprofiled CPU pairs give 94.73→85.49 ms/day (load 0.3→0.6 /
+0.2→0.5) and 91.51→86.64 (0.3→0.6 / 0.3→0.6): 9.8% and 5.3% less CPU, median
+93.12→86.065 (7.6%). Final censuses match. Shorter portable windows varied more
+and are not pooled with these. The 100-years/minute budget is 1.667 ms/day; this
+early-world candidate is still roughly 52× above it, before durable browser
+storage. No century-scale, late-era, Safari or browser-throughput clearance claim.
+
+Forty-seven focused ledger/equivalence checks pass. Native 150-day comparison on
+1001:42 sea passes with no normalization: full graph/closure/recorder captures at
+0, 37, 90 and 150, all daily RNG/commands/annals/storage-sequence checks, plus
+every accepted raw binary storage chunk match: 68 chunks, 1,812 events and
+36,228,517 bytes per run. Baseline/candidate HTML hashes
+82dc786c6f626a2eecc7a361a501f45f5295f2b427f3f4de9e516acb03f96456 /
+85d51fabb61046020d79ec30291fd397b40e55e35bcd2dc19682c1db1304d798.
+Whole-proof CPU is 78.92/79.21 s at initial loads 0.20/0.29/0.29 and
+0.81/0.47/0.36; hashing/captures are included, so this is identity evidence, not
+a day-cost benchmark. Local evidence: `tools/soak-results/fast-forward-20261009/`.
+The initial eight-way gate passes 1,439/1,440, with the existing boundary/save
+packing VM timeout at unchanged limits (769.64 s CPU, initial load
+0.26/0.46/0.38). The unchanged isolated candidate and frozen 069787e baseline
+both pass: 69.51/69.33 s CPU at initial loads 1.53/3.18/1.98 and
+0.19/1.92/1.70. No time limits are relaxed. The final unchanged eight-way gate
+passes all 1,440 checks: 793.70 s CPU at initial load 0.09/1.13/1.44.
+The production-browser worker/reference comparison passes for 180 days and a
+further 180 after save/replay: full state/RNG/commands/annals/storage parity,
+matching view outputs, unchanged authoritative state and RNG across the tested
+queries, settled journals and a responsive main thread. This checks the listed
+views, not every inspector implicated in #27.
+
+The short native conservation soak passes all eight checks on 42:42 sea and
+1001:1001 sea for one year each, serially: no simulation faults, zero yearly money
+residual and payments to nobody, 720 independent inventory checks per world with
+no mismatch, and settled durable journals. Both snapshots match the tested HTML.
+Populations 2,702→2,500 and 2,703→2,505. The second world's first browser launch
+failed before simulation because the DevTools target list was empty; only that
+world was retried, unchanged, in `soak-1001`. The successful first world remains
+in `soak`. These instrumented checks establish conservation, not throughput.
+No push.
+
+The release stamp yields HTML SHA256
+e061e9c3d2a7335db3e56cafae789033ff2553877a97287d8fd4b602a55cf792.
+Game-script SHA256
+274cfbc8d238ec34db88924eaef4ebd04ff3a8f82f4045c56a7c9da2832c7fd2
+is unchanged by stamping; all seven post-stamp source/advisor checks pass.
+Prepared locally. #15 remains in progress; next measure native single-cell food
+consumption and active stock traversal before changing either. No release push.

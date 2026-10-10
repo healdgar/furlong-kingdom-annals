@@ -8,6 +8,7 @@
      --every N            a measured window every N days (time, CPU, instructions if --ru, parts of the day if --phases 1)
      --measure a:b,c:d    measured windows: ticks a+1..b (ticks count from the day the world is ready)
      --phases 1           time each part of the day inside measured windows
+     --journal raw|portable (portable)   raw uses the shipping worker capture/binary path; the memory sink omits compression and IndexedDB
      --prof a:b,...       CPU-profile these windows; default the first, middle and last 360-day years of the run; 0: none
      --profile-interval µs (1000)   --hotlist file (default tools/soak-results/hotlist.json; 0: none)
      --digest d1,d2       identity digest after these ticks: sha256 of simulation-boundary's capture (world graph,
@@ -56,8 +57,10 @@ function wrapParts(){ // a timer on each part of the day, running only inside me
   globalThis.__PHWRAPPED=true;
 }
 async function boot(){
-  const S=globalThis.__STATE,t0=Date.now();
-  await RUN(`startSimulation({seed:${S.seed>>>0},fate:${S.fate>>>0},coast:${S.coast==='none'?'null':JSON.stringify(S.coast)},startAD:${S.startAD},outcomeJournal:new OutcomeJournal(async entry=>({chunk:entry.chunk,first:entry.first,last:entry.last}),{maxPendingBytes:64*1024*1024})})`);
+  const S=globalThis.__STATE,t0=Date.now(),kind=A.journal||'portable';
+  if(kind!=='raw'&&kind!=='portable')throw Error('--journal must be raw or portable');
+  const Journal=kind==='raw'?'RawOutcomeJournal':'OutcomeJournal';
+  await RUN(`startSimulation({seed:${S.seed>>>0},fate:${S.fate>>>0},coast:${S.coast==='none'?'null':JSON.stringify(S.coast)},startAD:${S.startAD},outcomeJournal:new ${Journal}(async entry=>({chunk:entry.chunk,first:entry.first,last:entry.last}),{maxPendingBytes:64*1024*1024})})`);
   console.error('booted',Date.now()-t0,'ms; settlements',RUN('W.settlements.length'),'day',RUN('W.clock.day'));
 }
 const COUNTS=`(()=>{const s=W.settlements;let b=0,lots=0,folk=0,str=0;for(const x of s){b+=x.buildings.length;folk+=(x.folk||[]).length;str+=(x.streets||[]).length;lots+=x.storage?.lots?.size||0;}

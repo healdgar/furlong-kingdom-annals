@@ -117,7 +117,10 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Courts (#37, batch 11d): marryHouseholds witnesses its existing native title and working-right changes in a scratch
  // Map and the bounded scalar enrolment roll. Ownership transfers, beneficiary setters and their order are unchanged;
  // justice.test.mjs checks the former working head and both rights, and the 150-day whole-graph proof strips only enrolments.
- assert.equal(digest(source.slice(a,b)),"bbe093825a204e9bbe863e17fd99fe1d17159b4572be7c05f297a244416adbcb");
+ // Fast forward (#15): quantity invalidation clears its private slot values in place. Canonical balances,
+ // rank-ordered additions, writers and records are unchanged; caches remain absent from historyState.
+ // The frozen ledger differential, fresh world-save continuation and native 150-day full-graph/RNG proof renew this review.
+ assert.equal(digest(source.slice(a,b)),"86f41a21b85b89ce95af67bd1d08d88fece5b61eb6868c74a8b0d700289ddded");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));
