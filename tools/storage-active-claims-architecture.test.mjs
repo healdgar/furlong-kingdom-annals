@@ -120,7 +120,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Fast forward (#15): quantity invalidation clears its private slot values in place. Canonical balances,
  // rank-ordered additions, writers and records are unchanged; caches remain absent from historyState.
  // The frozen ledger differential, fresh world-save continuation and native 150-day full-graph/RNG proof renew this review.
- assert.equal(digest(source.slice(a,b)),"86f41a21b85b89ce95af67bd1d08d88fece5b61eb6868c74a8b0d700289ddded");
+ // Daily kernels (#15): singleton owner/good withdrawal reads current custody and ripening without a general row list;
+ // multiple locations and overridden entries retain the old path. No quantity/title/claim/record writer changes.
+ // Generic-planner differential fixtures, fresh world-save continuations and the native 8980908 150-day identity/pace
+ // proof (all world/RNG/command/annal values and every accepted binary storage outcome) renew this bounded read review.
+ assert.equal(digest(source.slice(a,b)),"72f5ef779974739cb9cb6ccc99301142630e5f2fb797eefc5ed4d32d77be8486");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

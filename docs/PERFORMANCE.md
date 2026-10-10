@@ -97,6 +97,37 @@ their diagnoses are recorded in `HANDOFF.md`. Local evidence:
 `tools/soak-results/daily-order-20261010/`. Late-world, hardware drawing, Safari
 and centuries-per-minute throughput remain unverified.
 
+### Daily kernels, 10 October 2026
+
+The next exact batch keeps the daily order and model. Trade shares lazy, ordered
+dealer/driver candidates within its synchronous pass, rereading purses and
+absence for each load. A singleton commodity location avoids general withdrawal
+list allocation, while reading live custody and spoilage. Multiple locations,
+overridden entries and guarded trade callbacks retain their general paths.
+Neither optimization freezes a household's budget or food for the day.
+
+Two serial unprofiled CPU pairs compare frozen `8980908` against the combined
+patch: 1001:42 sea, AD 850, ticks 41–360, native raw binary journal acknowledged
+in memory. The second pair ran candidate before baseline.
+
+| Pair | Baseline CPU ms/day (load) | Candidate CPU ms/day (load) |
+|---|---:|---:|
+| 1 | 99.43 (0.5→0.6) | 96.90 (0.6→1.1) |
+| 2 | 98.04 (0.3→0.7) | 95.07 (1.0→1.0) |
+
+Median CPU is **98.735→95.985 ms/day, 2.8% less** for this early world. Phase wall
+diagnostics also fall: trade 10.147→8.596, economy 11.186→9.839 and population
+31.177→30.099 ms/day. Those are whole-batch diagnostics, not separate CPU gains
+assigned to each optimization. Year-end censuses match. Compression, IndexedDB,
+late-world scaling and hardware/Safari throughput are outside these measurements.
+The remaining CPU gap to 100 years/minute is about 58×, before durable writes.
+
+Evidence is in `tools/soak-results/daily-kernels-20261010/`; validation and exact
+source hashes are recorded in HANDOFF.md. The 19 new focused cases compare the
+current dealer/driver selectors against frozen `8980908` and singleton planning
+against the unchanged general path, including live intervening mutations,
+ranked custody, missed loads, RNG, spoilage, crumbs, transit and callback fallbacks.
+
 ### Work in order
 
 The user has since authorized changes to the model/history while retaining exact
@@ -114,8 +145,11 @@ its throughput is to be remeasured, not inferred from the ordering.
    Make daily trade eligibility cheap using current driver/merchant means and
    stock/price/inbound/route changes; preserve live balances at execution.
    The first validated exact optimization retained commodity quantity-cache slots
-   across writes. Next measure native single-cell consumption and privately ranked
-   live-cell handles. Cache geography separately from current population/security
+   across writes. The next batch adds singleton withdrawal planning and trade-pass
+   actor candidates; privately ranked live-cell handles remain a candidate.
+   Storage-investment quote inputs/writers are recorded in
+   [SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md) before that daily
+   conversion. Cache geography separately from current population/security
    inputs before enabling daily building choices. Reads must see each intervening
    purchase and consumption; a whole-day food snapshot becomes stale.
 

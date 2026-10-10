@@ -25,7 +25,7 @@ function realm(places,{roads={},rivers=[],seas={},day=4,inbound=[]}={}){
   const W={settlements:places,caravans:inbound.slice(),ships:[],roads:[],riverPairs:rivers};
   const C=vm.createContext({W,D:day,MOD:{tax:12},PL:()=>1,CART_MPD:500,BARGE_MPD:700,COG_MPD:2800,
     day:()=>C.D,price:(s,g)=>s.px[g]??1,avail:(s,g)=>s.stores[g]||0,spareOf:(s,g)=>s.stores[g]||0,closedToTrade:()=>false,metroOf:s=>s,
-    caravanPriceIndex:()=>null,caravanPriceCandidates:()=>null,dist2d:(a,b,c,d)=>Math.hypot(a-c,b-d),
+    caravanPriceIndex:()=>null,caravanPriceCandidates:()=>null,caravanActorIndex:()=>null,dist2d:(a,b,c,d)=>Math.hypot(a-c,b-d),
     route:(a,b)=>roads[a+'_'+b]||roads[b+'_'+a]||null,seaRoute:(a,b)=>seas[a+'_'+b]||null});
   vm.runInContext('"use strict";\n'+PROGRAM+`
     function ladeOut(c,o){ladeOut.why=null;const d=W.settlements[c.dest],k=c.sea||c.river?'boatmen':'carters';

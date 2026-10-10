@@ -76,7 +76,7 @@ test('freight\'s reckoning includes the tolls on the way: a thin margin the toll
     const W={settlements:S,caravans:[],ships:[],roads:[{a:0,b:1,len:1000,_tolls:[b,b2]}],riverPairs:[],_tollV:1};
     const C=vm.createContext({W,D:4,MOD:{tax:12},PL:()=>1,CART_MPD:500,BARGE_MPD:700,COG_MPD:2800,CELL:27,riverAt:()=>null,
       day:()=>C.D,price:(s,g)=>s.px[g]??1,avail:(s,g)=>s.stores[g]||0,spareOf:(s,g)=>s.stores[g]||0,closedToTrade:()=>false,metroOf:s=>s,
-      caravanPriceIndex:()=>null,caravanPriceCandidates:()=>null,dist2d:(a,b,c,d)=>Math.hypot(a-c,b-d),route:()=>leg,seaRoute:()=>null});
+      caravanPriceIndex:()=>null,caravanPriceCandidates:()=>null,caravanActorIndex:()=>null,dist2d:(a,b,c,d)=>Math.hypot(a-c,b-d),route:()=>leg,seaRoute:()=>null});
     vm.runInContext('"use strict";\n'+PROGRAM+`
       function ladeOut(c,o){ladeOut.why=null;if(!(o.carters>0)){ladeOut.why='driver';return null;}o.carters--;o.stores[c.good]-=c.qty;c.cost=c.qty*2;return c;}`,C);
     vm.runInContext('tickTrade()',C);return W.caravans;};

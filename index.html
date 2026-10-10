@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 06:19 UTC · after 39d929e</div></div>
+<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 08:31 UTC · after 8980908</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
@@ -4380,6 +4380,20 @@ globalThis.CommodityBalanceLedger = (() => {
         const qty = Math.min(quantity, sum);
         return { plan: qty > 0 ? [{ location: selector.location, good: selector.good, owner: selector.owner, availability: selector.availability, qty }] : [], quantity: qty > 0 ? qty : 0, available: sum };
       }
+      // One place holds this owner's good: read its live balance without building an ordered list.
+      if (!own(selector, 'location') && own(selector, 'good') && own(selector, 'owner') && own(selector, 'availability') && this.entries === COMMODITY_NATIVE_ENTRIES) {
+        const ids = ownerFacilitySet(DAILY.get(this), selector.owner, selector.good);
+        if (ids?.size === 1) {
+          const location = ids.values().next().value, facility = this.facilities.get(location);
+          const visible = facility && (includeTransit || !facility.transit) && (selector.exposedOnly !== true || facility.exposed) && AVAILABILITY.has(selector.availability) && (includeTransit || selector.availability !== 'transit');
+          const A = visible ? facility.balances.get(selector.good)?.get(selector.owner) : null, raw = A?.get(selector.availability);
+          const stored = raw > 0 ? ripe(this, this.spoilage.get(selector.good), facility, selector.good, A, raw) : 0, sum = stored > 0 ? stored : 0;
+          const tolerance = Number.EPSILON * Math.max(sum, quantity) * 8;
+          if (quantity > sum + tolerance) fail('insufficient balance');
+          const qty = Math.min(quantity, sum);
+          return { plan: qty > 0 ? [{ location, good: selector.good, owner: selector.owner, availability: selector.availability, qty }] : [], quantity: qty > 0 ? qty : 0, available: sum };
+        }
+      }
       const available = [...this.entries(selector)];
       const sum = available.reduce((n, row) => n + row.qty, 0), tolerance = Number.EPSILON * Math.max(sum, quantity) * 8;
       if (quantity > sum + tolerance) fail('insufficient balance');
@@ -4470,6 +4484,7 @@ globalThis.CommodityBalanceLedger = (() => {
   };
 })();
 
+const COMMODITY_NATIVE_ENTRIES=CommodityBalanceLedger.prototype.entries;
 /* Runtime adapters for numeric commodity custody. */
 const COMMODITY_ACCOUNT_VIEWS=new WeakMap(),COMMODITY_VIEW_PROXIES=new WeakSet(); // the views, known as such (worldSave never writes one as data)
 function commodityActive(s){return s.storage?.version===3;}
@@ -11968,12 +11983,12 @@ function price0(s,g){ // a first reckoning, before the market has traded: an ope
    The freight is so much a load-mile at the place's going rate, which rises when loads wait for want of a driver and falls when drivers stand idle */
 function frtRate(o,mode){const F=o.frt||(o.frt={cart:1,boat:1});return F[mode]??1;}
 function freight(o,qty,len,mode){return qty*(mode==='cart'?0.12+len/1000*0.08:0.05+len/1000*0.025)*0.7*frtRate(o,mode)*PL();} // the beasts' keep and the driver's days, at the day's prices
-function driverFor(o,mode,m,d){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
-  const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62;let L=heads_(o,ok);if(!L.length&&d)L=heads_(d,ok);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
+function driverFor(o,mode,m,d,actors){const tr=mode==='cart'?'carter':'boatman';if(m&&m!=='out'&&m.tr===tr&&!awayNow(m))return m; // a carter who trades on his own account drives his own load
+  const ok=h=>h.tr===tr&&!awayNow(h)&&ageYrs(h)<62,pool=t=>actors?caravanActorHeads(actors,t)[mode==='cart'?'cart':'boat'].filter(h=>!h.dead&&!h.role&&ok(h)):heads_(t,ok);let L=pool(o);if(!L.length&&d)L=pool(d);return L.length?L[Math.floor(frand()*L.length)]:null;} // a carter of the place; or one from the market the load is going to, come out for it
 const DEALERS=['merchant','carter','boatman']; // the trades that buy a load to sell it elsewhere (merchantFor)
-function merchantFor(o,cost,d,unit){let best=null;const half=unit>0?unit:cost*0.5,scan=t=>{if(!t.folk)return;for(const h of householdsOf(t)){const p=h.head;if(!p||p.dead||p.role)continue;const tr=p.tr,w=p.w||0;if((tr==='merchant'||tr==='carter'||tr==='boatman')&&w>half&&(!best||(tr==='merchant'?best.tr!=='merchant'||w>(best.w||0):best.tr!=='merchant'&&w>(best.w||0))))best=p;}};scan(o);if(d&&d!==o)scan(d);return best;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
-function ladeOut(c,o,quiet){ladeOut.why=null;const mode=c.sea||c.river?'boat':'cart',wt=1+(c._wt||0),unit=price(o,c.good)*wt+freight(o,1,c.len,mode),m=merchantFor(o,c.qty*price(o,c.good)*wt+freight(o,c.qty,c.len,mode),W.settlements[c.dest],unit),want=m&&m!=='out'?Math.min(c.qty,Math.max(0,m.w||0)/unit):c.qty;if(want<c.qty){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=c.qty-want;c.qty=want;} /* a dealer buys as much of a load as his purse will pay for with its carriage (#23: a dealer needed half a full load's worth, so grain at a tenth of the capital's price never went to it) */if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}ladeOut.why='merchant';return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
-  const drv=driverFor(o,mode,m,W.settlements[c.dest]);
+function merchantFor(o,cost,d,unit,actors){let best=null;const half=unit>0?unit:cost*0.5,scan=t=>{if(!t.folk)return;const H=actors?caravanActorHeads(actors,t).dealer:null;for(const h of H||householdsOf(t)){const p=H?h:h.head;if(!p||p.dead||p.role)continue;const tr=p.tr,w=p.w||0;if((tr==='merchant'||tr==='carter'||tr==='boatman')&&w>half&&(!best||(tr==='merchant'?best.tr!=='merchant'||w>(best.w||0):best.tr!=='merchant'&&w>(best.w||0))))best=p;}};scan(o);if(d&&d!==o)scan(d);return best;} // a merchant of the place, or a dealer of the market the goods will go to, riding out to buy (strangers come only by sea), with the means to buy the load
+function ladeOut(c,o,quiet,actors){ladeOut.why=null;const mode=c.sea||c.river?'boat':'cart',wt=1+(c._wt||0),unit=price(o,c.good)*wt+freight(o,1,c.len,mode),m=merchantFor(o,c.qty*price(o,c.good)*wt+freight(o,c.qty,c.len,mode),W.settlements[c.dest],unit,actors),want=m&&m!=='out'?Math.min(c.qty,Math.max(0,m.w||0)/unit):c.qty;if(want<c.qty){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=c.qty-want;c.qty=want;} /* a dealer buys as much of a load as his purse will pay for with its carriage (#23: a dealer needed half a full load's worth, so grain at a tenth of the capital's price never went to it) */if(!m){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),Q=o._missQ||(o._missQ={}),nq=Math.max(0,want-(Q[c.good]||0));Q[c.good]=Math.max(Q[c.good]||0,want);U.merchant=(U.merchant||0)+nq*(c.unit??price(o,c.good)*0.1);}ladeOut.why='merchant';return null;} // no one here can buy the load: the chance is lost, and noted at what it would have made (a lesser chance passed over is not noted twice)
+  const drv=driverFor(o,mode,m,W.settlements[c.dest],actors);
   if(!drv){if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want;if(!quiet){const U=o._unmet||(o._unmet={}),tr=mode==='cart'?'carter':'boatman';U[tr]=(U[tr]||0)+freight(o,want,c.len,mode);(o._wait||(o._wait={}))[mode]=(o._wait[mode]||0)+1;}ladeOut.why='driver';return null;} // no one free to drive it: the load waits, the going rate will rise, and the freight it would have paid is work wanting hands (#23: noted once a year per good before, so carters never grew to the trade; a place sends one load a visit, so each visit missed is a load missed)
   c.m=m;c.cost=purchase(o,c.good,m,want);const got=purchase.got;
   if(!o.storage||BEASTS.includes(c.good))o.stores[c.good]+=want-got;if(got<=0.5){if(!o.storage||BEASTS.includes(c.good)){o.stores[c.good]+=got;if(got>0)offer(o,c.good,m,got);}else if(got>0){commodityCreditPurchase(o,m,c.good,got);}ladeOut.why='market';return null;} // nothing for sale at the price: no load (what was taken goes back)
@@ -12308,6 +12323,13 @@ function caravanDestinationCandidates(index, originPrices, sellGoods, minimumFre
 
 /* CARAVAN_PRICE_INDEX_HELPERS_END */
 
+/* CARAVAN_ACTOR_INDEX_BEGIN */
+// Candidates last only for this trade pass. Purchases change purses; departures make drivers absent.
+const CARAVAN_ACTOR_NATIVE={households:householdsOf,heads:heads_,driver:driverFor,merchant:merchantFor,age:ageYrs,away:awayNow,lade:ladeOut,purchase};
+function caravanActorIndex(){const N=CARAVAN_ACTOR_NATIVE;return householdsOf===N.households&&heads_===N.heads&&driverFor===N.driver&&merchantFor===N.merchant&&ageYrs===N.age&&awayNow===N.away&&ladeOut===N.lade&&purchase===N.purchase&&typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER!=='function'&&(typeof storageOutcome==='function'?storageOutcome:null)===STORAGE_TITLE_OUTCOME?new Map():null;}
+function caravanActorHeads(C,s){let H=C.get(s);if(H)return H;H={dealer:[],cart:[],boat:[]};if(s.folk)for(const h of householdsOf(s)){const p=h.head;if(!p||p.dead||p.role)continue;const tr=p.tr;if(tr==='merchant'||tr==='carter'||tr==='boatman')H.dealer.push(p);if(tr==='carter')H.cart.push(p);else if(tr==='boatman')H.boat.push(p);}C.set(s,H);return H;}
+/* CARAVAN_ACTOR_INDEX_END */
+
 const CARAVAN_NATIVE_PRICE=price,CARAVAN_NATIVE_FREIGHT=freight,CARAVAN_NATIVE_LEVEL=PL,CARAVAN_NATIVE_LADE=ladeOut,CARAVAN_NATIVE_ROUTE=route,CARAVAN_NATIVE_CLOSED=closedToTrade;
 function caravanPriceIndex(Ss){
   if(price!==CARAVAN_NATIVE_PRICE||freight!==CARAVAN_NATIVE_FREIGHT||PL!==CARAVAN_NATIVE_LEVEL||ladeOut!==CARAVAN_NATIVE_LADE||route!==CARAVAN_NATIVE_ROUTE||closedToTrade!==CARAVAN_NATIVE_CLOSED||typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER==='function'||(typeof storageOutcome==='function'?storageOutcome:null)!==STORAGE_TITLE_OUTCOME)return null;const rows=[];
@@ -12315,7 +12337,7 @@ function caravanPriceIndex(Ss){
 }
 function caravanPriceCandidates(C,o,po,sell){if(!C)return null;const F=Object.getOwnPropertyDescriptor(o,'frt')?.value;if(!F||Object.getPrototypeOf(F)!==Object.prototype)return null;const rate=Object.getOwnPropertyDescriptor(F,'cart')?.value??1,level=PL();if(!Number.isFinite(rate)||rate<0||!Number.isFinite(level)||level<0)return null;return caravanDestinationCandidates(C,po,sell,0.12*0.7*rate*level);}
 
-/* TRADE. A price is answered by carriage. Every fourth day the dealers of each place weigh every load they might send, by road, by river
+/* TRADE. A price is answered by carriage. Every day the dealers of each place weigh every load they might send, by road, by river
    barge and by coastal cog: what it would fetch where it goes, against its price here, its own carriage, the tolls and a little lost on the
    way, for each day the driver is gone. They send the best, then the next, while one pays, a dealer has the silver and a driver is free.
    Nothing else holds the trade back: the carters and boatmen (each away for his journey there and back), the dealers' purses, the goods on
@@ -12335,7 +12357,7 @@ function tradeSpare(o,g){return LU[g]!==undefined?spareOf(o,g):Math.min(spareOf(
    beasts it lacks. So a gap draws loads enough to close it, and not a glut. */
 function tradeRoom(m,ratio,inb){const on=inb.get(m.k)||0;return Math.max(m.want*ratio-m.sale,m.short)-on;}
 function tickTrade(){
-  const S=W.settlements,NG=GOODS.length,inb=tradeOnTheWay(),markets=new Map(),destinationPrices=caravanPriceIndex(S),tollF=0.05+MOD.tax/100*0.14,harbors=[];
+  const S=W.settlements,NG=GOODS.length,inb=tradeOnTheWay(),markets=new Map(),destinationPrices=caravanPriceIndex(S),actors=caravanActorIndex(),tollF=0.05+MOD.tax/100*0.14,harbors=[];
   for(let i=0;i<S.length;i++)if(S[i].harbor)harbors.push(i);
   const market=(di,g)=>{const k=di*NG+TRADE_GI[g];let m=markets.get(k);if(!m){const d=S[di];m={k,want:tradeWant(d,g),sale:avail(d,g,price(d,g)),short:LU[g]!==undefined&&d._want?(d._want[g]||0)-(d.stores[g]||0):0};markets.set(k,m);}return m;}; // read once a day, and the day's loads counted against it as they go
   const fear=t=>1-Math.min(1,t.infected/Math.max(1,t.pop)*5); // carters and masters shun a town with the pestilence in it, the more the worse
@@ -12366,7 +12388,7 @@ function tickTrade(){
       const g=b.g,di=b.di,d=S[di],sea=b.mode==='sea',river=b.mode==='river';
       if(!o.storage||BEASTS.includes(g))o.stores[g]-=bq; // a drove: the spare beasts, walked to market
       const c={origin:oi,dest:di,good:g,qty:bq,value:bq*price(d,g),poly:b.mode==='cart'?b.leg.poly:null,len:b.len,departDay:day(),arriveDay:day()+b.days,robbed:false,sea,unit:b.unit};if(river)c.river=true;if(b.wt>0){c._wt=b.wt;c._tl=b.leg._tl;}if(b.leg.ris)c._ris=b.leg.ris; // the toll houses it will pass, and the roads it goes by
-      const tk=(b.mode==='cart'?'cart:':'boat:')+g;if(!ladeOut(c,o,told.has(tk))){const why=ladeOut.why;told.add(tk); // the load does not go, and neither will its like
+      const tk=(b.mode==='cart'?'cart:':'boat:')+g;if(!ladeOut(c,o,told.has(tk),actors)){const why=ladeOut.why;told.add(tk); // the load does not go, and neither will its like
         for(const k of C)if(why==='market'?k.g===g:k.di===di&&(why==='driver'?(k.mode==='cart')===(b.mode==='cart'):k.u>=b.u))k.dead=true; // nothing of it on sale here at the price; no driver of the kind here or there; no dealer here or there with the silver for a unit of it, or of anything dearer to that market
         continue;}
       if(!c.poly)c.poly=river?(b.leg.a===oi?b.leg.route.poly:[...b.leg.route.poly].reverse()):oi<di?b.leg.poly:[...b.leg.poly].reverse();

@@ -117,6 +117,35 @@ material totals, price-ranked destination lists and route/topology epochs.
 Neither a whole-day food snapshot nor a single shared purse budget is safe across
 intervening purchases/transfers. Preserve actual transfer limits at execution.
 
+### Reuse within an operation, 10 October 2026
+
+The next exact kernel batch leaves the 52 phases and their cadence unchanged.
+`tickTrade` owns a private, lazy candidate map lasting only for that synchronous
+pass. Its first query visits `householdsOf` in canonical order and separates
+dealers, carters and boatmen. Later selections reread purses and driver absence;
+they retain merchant preference, first-wins ties, origin-before-destination
+scans, destination fetching, self-driving and the same RNG draws. Missing hands
+still enter `ladeOut` and record the existing missed opportunity.
+
+Within the native departure call chain, purchases/borrowing change means,
+`ladeOut` sets a driver's absence and `life` appends records. These operations do
+not change household heads, trades, roles or mortality. Those writers belong to
+earlier phases; the candidate map is discarded before the next phase/day. The
+index falls back when its guarded selectors/purchase or the storage outcome
+callback are replaced. It is not a persistent actor-eligibility certificate.
+
+Commodity withdrawal planning also reads current custody each time. When the
+private owner/good location set has exactly one member, it can read the live
+balance and spoilage clock without allocating/sorting an ordered row list.
+Transit, exposure, crumbs, tolerance, mutation and event order are unchanged.
+Multiple locations and overridden `entries` retain the general path. No pantry,
+quantity or purse is frozen for the day.
+
+The next storage-investment dependency audit is recorded in
+[SIMULATION-CACHE-INPUTS.md](SIMULATION-CACHE-INPUTS.md). It identifies the costly
+site/route inputs separately from current exposure, ownership, means and prices;
+the daily investment conversion and persistent quote cache are still pending.
+
 ## Map activity and payment
 
 Movement can share payment timing without advancing the economy per frame.
