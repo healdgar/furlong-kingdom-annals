@@ -1,12 +1,20 @@
 # Handoff: state of work
 
-Updated 2026-10-10 in the cloud checkout for the daily funded first-castle foundation phase, following the published README/screenshots, daily growth/property and fitted settlement-layout work. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
+Updated 2026-10-10 in the cloud checkout for direct deterministic era starts and the construction capability/site-survey batch, following the published funded first-castle foundation and README/screenshots. Whoever carries the work keeps this file current: what is true now, what is next, what waits on the user.
 
 ## Where things stand
 
+The user selected **Crown & Commons** as the game name on 2026-10-10. The current
+release updates visible titles and advisor descriptions; repository/deployment
+URLs, internal APIs and save formats retain their existing compatibility names.
+
+- **Direct-era release (2026-10-10):** Crown & Commons defaults to AD 1066; AD 850 retains the original sparse founding path, and later accepted start years generate their opening world directly without prehistory ticks. Construction has a pure calendar capability seam (current stone-keep gate 1070, proposal 1080 pending #44) and conservative foundation bounds with exact geometry authority. Cold settlement/toll/road inspections now avoid ownership, shoreline, prominence and building-name/sign writes; simulation-side behavior is unchanged.
+- **Release evidence:** all 1,549 unique checks verified (full batch 1,548 plus the reviewed UI-search inventory gate rerun); native 150-day same-speed/history comparisons preserve complete logical graphs, every RNG stream and all 1,812 raw accepted events. The final inspector revision uses no source/value normalization. All 42 native cold-opening summary/detail, toll-building and road queries preserve world/RNG. Worker/reference state, ten selected views, and 75+75-day continuations from each driver's own save match; their views leave world/RNG/commands/annals/settings/storage sequence unchanged. Three one-year direct-opening worlds at 1066/1250/1350 pass whole-day cash/goods and fault checks. Tested HTML `cdb06152f4e563f45801694b91f3988987ce8a006494c89f8f409b533f65d45f`; final stamped/drawn evidence follows below.
+- **Next:** legal opening housing-capacity completion (#61), shared castle/storage paid work (#62), and exact fort-route reuse (#15) are recorded or prepared privately. They are not included in this release. General compound composition and abbeys require real endowed title, income and staffing (#35); existing castle upgrades remain annual instant work. Inspector purity coverage is target-specific (#27), and first-year economy calibration and century-scale throughput remain open.
+
 - **README publication (2026-10-10, `55f1eca`):** the browser play link is directly below the title, with two native screenshots from the previously verified build in `assets/screenshots/`. Embedded advisor rules match the README; seven focused advisor/source checks pass and the executable scripts are byte-identical to `5b3f2f8`. GitHub Pages and container workflow 38076759405 succeeded; live HTML matches the commit (`8155d50486c1655f0fb64749791144a4e22b50c9b144445d28cec7f9ac514fae`). Castle foundation code remained outside this documentation-only release while its gates ran.
 
-- **Current castle phase (2026-10-10, #60):** an eligible, funded capital or lord's actual defensive seat can commission its first tower, fitted palisaded yard and connected approach. Native materials are bought from actual sellers; only paid labour advances the saved work, and the retained site is checked against current terrain, buildings, roads and title. Completion installs the canonical keep, ward, route and occupied ground in the simulation. The full 1,536-check suite, native 150-day mixed-speed/RNG/raw-outcome comparison, mid-project save continuation, worker/main completion parity and two one-year conservation worlds pass; final stamped drawing evidence follows below. Existing upgrades remain annual instant work, housing/fabric retain their six-day rate throttle, and general compound/abbey construction is not implemented. Next operable phase: direct deterministic AD 1066 starts retaining 850, tested through the 1066–1350 period, with explicit future technology hooks; then shared castle/abbey components and the remaining daily paid construction/rate splits. Century-scale throughput remains #15.
+- **Published castle foundation phase (2026-10-10, #60):** an eligible, funded capital or lord's actual defensive seat can commission its first tower, fitted palisaded yard and connected approach. Native materials are bought from actual sellers; only paid labour advances the saved work, and the retained site is checked against current terrain, buildings, roads and title. Completion installs the canonical keep, ward, route and occupied ground in the simulation. The full 1,536-check suite, native 150-day mixed-speed/RNG/raw-outcome comparison, mid-project save continuation, worker/main completion parity and two one-year conservation worlds pass; final stamped drawing evidence follows below. Existing upgrades remain annual instant work, housing/fabric retain their six-day rate throttle, and general compound/abbey construction is not implemented. The direct-era batch is the active continuation. Shared castle/storage paid bookkeeping is prepared privately; a general compound framework and endowed abbeys remain separate future phases. Century-scale throughput remains #15.
 
 - **2026-10-10, current user priority (#15):** make hundreds of simulated years per real minute possible, with exactly the same history at every speed. The user explicitly authorizes model/history changes for efficiency and accuracy; ordinary decisions should be daily, with other intervals justified by a simulation reason. Keep the sectioned file and simulation/render boundary. Four Luna surveys and root review are recorded in `docs/SIMULATION-ORDER.md` and `.json`: all 42 old phases, 52 current boundaries and 168 same-day prerequisites. The first refactor follows that order; mixed calendar decisions still need quantities, obligations and eligibility separated. The measured plan is in `docs/PERFORMANCE.md`; evidence follows below. Century-scale throughput is not yet achieved.
 - **2026-10-09, court presentments (#37, batch 11c):** grazing trespass and the bread/ale assize are implemented and tested locally. The existing monthly livestock reckoning presents overstocked holders; actual bakery/brewery payments fund the customary licence at each place’s twice-yearly great court. Fines preserve the next month’s bread and rent, never recover invented principal or force a beast sale, and retire when amerced or pardoned. Mergers follow the surviving family; extinct estates leave no personal presentment for an heir or institutional chest.
@@ -928,3 +936,163 @@ construction-availability hook with the current calendar fallback; it does not
 implement technology knowledge/adoption (#44). `COMPOUND-BUILDINGS.md` records
 the general multi-purpose component framework and genuine abbey authority,
 rights, income, stock and funded construction; those remain future work.
+
+
+## Continuation, 2026-10-10: direct contemporary starts and technology boundary
+
+The direct-start phase makes AD 1066 the default, retains AD 850, and adds a
+1350 choice alongside 1250/1400. Later accepted years generate their requested
+calendar world at day zero, rather than running earlier centuries. Native
+full-scale place draws provide the contemporary opening; the sparse 850 branch
+is retained. These openings deliberately differ from an 850-forward history.
+No synthetic lineage, past chronicle, payments or institutional income is seeded.
+The pure `constructionCapability` seam gates generated castle forms, foundations,
+timber/motte conversion and stone demand by the existing AD 1070 fallback. The
+#44 proposal's 1080 date is explicit; discovery/adoption remain unimplemented.
+Physical stone, custody, sellers, ground, authority and funding remain separate.
+
+Fresh foundation AABBs skip only provably disjoint exact geometry tests. The
+rotated-footprint and connector bounds expand conservatively by sqrt(2) for
+corner padding; invalid bounds fail open. There is no cross-day validity cache.
+Focused geometry tests cover rotated corner contact, same-count road/lot edits
+and a fully unfiltered oracle. One focused fixture reduces exact segment tests
+from 322,386 to 50; that is not a general throughput measurement.
+
+The initial frozen HTML `6dda0a828a2bd03d5f3e32bbb2ad6eb622808c1cc4635848e2fac90e2685bf53`
+passes 1,545 tests. The native 850 comparison against the published foundation
+baseline preserves complete logical graphs at days 0/37/90/150, daily RNG,
+commands, annals, storage sequence and every one of 1,812 raw accepted events.
+Only two equivalent bound keep-method source descriptors are aliased for the
+legacy graph comparison; exact aliases and raw hashes are retained. No model
+values are normalized. The default-1066 unfiltered/steady run and explicit-year
+filtered/all-seven-speed run also preserve those graphs and events with no
+source alias. These MODEL_ONLY native runs prove logical history independence,
+not paced worker throughput. The combined comparison costs 1,265.43 runner CPU
+seconds, load 0.94/2.09/2.21 to 1.12/1.10/1.35. Full generation and evidence
+capture are included; differently loaded single runs support no speedup claim.
+
+All three serial one-year modern worlds pass all nine chronology, sanity and
+conservation checks. Every day has cash and independent inventory checks; all
+money residuals are zero, no coin is minted, nobody is paid without a recipient,
+there are no bad inventory days or simulation faults, and the journals settle.
+Opening audits run after the harness's existing ownership setup; they do not
+change the product initializer. Canonical `s.pop` remains at the raw opening draw. `seedFolk` can create slightly
+more actors by adding a complete final family; this does not increase the
+weighted opening census.
+
+| Opening | Seed / coast | Population, start → end | Headed households / native capacity | Famine person-day share |
+| --- | --- | ---: | ---: | ---: |
+| 1066 | 1001 / sea | 7,723 → 7,317 | 2,628 / 2,412 | 25.03% |
+| 1250 | 42 / sea | 7,709 → 6,758 | 2,676 / 1,169 | 2.69% |
+| 1350 | 1001 / land | 7,535 → 7,036 | 2,589 / 1,327 | 12.02% |
+
+These different-seed/coast samples are not era-effect comparisons. Day-zero
+home assignment is deferred to the first population pass; separately, the
+physical household-capacity shortfall is real (#61). Conservation does not
+establish calibration (#12/#23). `DIRECT-ERA-CAPACITY.md` records the exact
+population/fabric/land dependencies and the next legal capacity-completion
+proposal without population multipliers, overbooking or fabricated income.
+No abbeys, guilds or offices were invented; later native keeps are conditional.
+
+The first worker gate matches worker/main histories and each driver's own save
+continued to day 150, with identical view outputs and no RNG change, but reveals
+a cold inspector changing two toll buildings' `ownerId`. The native diagnostic
+confirmed those keys, not the initial `s._prom` hypothesis. The final inspector
+reads toll payee labels without assigning ownership or creating world indexes;
+its shore lookup caches only on a disposable settlement copy. Full details
+also warmed building `nm` and business-sign `_bn` caches; these now use a
+per-card native-order naming map over disposable buildings and used signs.
+A separate cold
+fort regression prevents prominence initialization during inspection. These
+changes preserve the simulation-side ownership, shoreline and prominence paths.
+
+The prior fort-read candidate
+`63ae1966320045522dca823d830c3b17d9255f8fabd66df30460f9e87d306845`
+verified all 1,546 checks: 1,545/1,546 passed in the full run; the remaining
+startup/replay test hit its 15-second VM tick limit under parallel load and
+passed in isolation with the unchanged limit and source. Full run CPU 1,502.50 s,
+load 4.15/2.41/1.63 to 1.02/2.25/2.63; isolated retry CPU 106.90 s, load
+0.73/2.10/2.57 to 0.87/1.77/2.40. The final candidate
+`cdb06152f4e563f45801694b91f3988987ce8a006494c89f8f409b533f65d45f`
+adds three passing cold toll/port/name regressions; its 42 native cold-opening inspectors preserve the world graph and every RNG
+stream (summaries/full details, toll buildings and roads). The full batch passed
+1,548/1,549; its sole failure was the static inventory omitting the two new
+presentation-only scan sites. Review registered exactly one building scan for
+per-card naming and one cold folk-index fallback for toll labels, with no new
+daily/transaction work. The unchanged game then passed all five inventory-gate
+checks, verifying all 1,549 unique checks. Full-batch CPU 1,542.06 s, load
+0.82/0.89/1.06 to 1.02/2.13/2.38; no VM deadline failed in this final run.
+The final worker/reference browser gate passes on the same candidate: complete
+state at day 75 and at day 150 after each driver replays its own save match,
+and all ten selected view types have identical outputs and preserve world,
+RNG, commands, annals, settings and storage sequence on fresh/resumed drivers.
+The journals settle without faults and worker advancement leaves the UI responsive.
+Start/end load 0.48/1.83/2.27 to 1.35/1.55/2.01. Its wrapper CPU excludes Chrome
+child work and is not a throughput measurement. The final native 150-day comparison passes with
+no source/value normalization: complete logical graphs at days 0/37/90/150,
+daily RNG/commands/annals/storage sequence and every one of 1,812 accepted raw
+events match the original contemporary model. CPU 534.25 s, start load
+0.02/0.27/1.10; this includes initialization, 42 view probes and graph capture,
+so it is not a tick-throughput measurement. The opening probe now covers
+settlement summaries and full details, toll buildings and roads. The worker
+audit rejects changes to world, RNG, commands, annals, settings or storage
+sequence for all ten selected view types.
+
+The modern profiles put repeated foundation surveys first in 1066 (about 200.7
+sampled CPU ms/day in `tickCastles`) and fort/street routing in 1350 (about 217.8
+in `tickStorage`). These instrumented sample costs include harness work and do
+not measure century throughput. `CASTLE-SURVEY-INPUTS.md` inventories current
+geometry/title/environment writers and exact reuse limits;
+`STORAGE-FORT-ROUTE-INPUTS.md` records a narrower synchronous gate/circuit reuse
+proposal. Neither proposal is applied to the release. A private native-helper-guarded
+`streetGraph` circuit/gate reuse patch is prepared at
+`/workspace/furlong-castle-audit-20261010/streetgraph-fort-context.patch`; syntax and
+patch checks plus read-only peer review pass. The private focused differential
+file passes 4/4 (full graph equality on a town/outer/ward/motte fixture, lazy
+gate counts, cache hits and patched-helper arities); native identity and
+release gates remain pending. No guessed retry throttle is added.
+
+Prepared next slice: `/workspace/furlong-construction-shared/construction-shared.patch`
+shares actual stock installation and paid work between first castles and storage.
+It preserves castle affordability and corrects storage work advancing when no
+wages are paid (#62). Native purchases return the paid amount and expose only `.got`;
+final fractional work reserves only its remaining wage share. Peer review and
+light unit checks pass; this private patch is not applied or released. The
+abbey adapter still needs genuine endowed land/title, income, staffing and
+consumption (#35), as recorded in `COMPOUND-BUILDINGS.md`. Paid housing/fabric
+and annual instant castle upgrades also remain unfinished.
+
+Ignored evidence is in `tools/soak-results/direct-era-20261010/`; the original
+one-year audit harness had a syntax typo before ticks and was corrected without
+a game change. An early revised-suite attempt was stopped to repair a test's
+literal function-signature extraction; the game source was unchanged by that
+harness repair. Heavy jobs are run serially by root, with at most one Chrome.
+Chrome uses software graphics here; no Safari/hardware performance claim is made.
+
+
+### Crown & Commons release stamp and drawn checks (2026-10-10)
+
+The user-approved name is in the loading screen, browser title, HUD/About panel,
+README and advisor descriptions. Existing repository/deployment URLs, save magic,
+storage keys, environment variables and API names remain compatible.
+
+Stamped HTML SHA256 `7996e8a56b4ab0ede79181feba37eee381c9895179b61160cf1c7b5d3dd8c02f`;
+executable game script `13251d88fe82921a428a8f9d2746bfa1eb646128be05097cba0c5ef9d518ae35`
+is byte-identical to the fully gated candidate. All 32 post-stamp focused
+source, advisor, era, foundation geometry, read-only presentation and inventory
+checks pass. Native AD 1066/default (1001:42 sea) and AD 1350 (42:42 sea) drawn
+openings both begin on day zero with no prehistory, correct dates and the native
+stone-keep gate. Both load the texture atlas, draw roads and geometry, and have
+no runtime, console or worker errors. The AD 1350 frame uses Campoolmo's actual
+stone keep; no castle or compound is inserted for a screenshot. Drawn evidence
+is in `tools/soak-results/direct-era-20261010/drawn-release/`. Software graphics
+are used here; this is an operability check, not a hardware performance claim.
+
+The README images are refreshed native captures from that stamped build: the
+AD 1066/default Rougecastel town and its AD 850 motte-and-bailey founding option,
+both 1001:42 sea. The additional AD 850 drawing also passes its date, no-prehistory,
+texture and error checks (`drawn-850/`). These are actual generated assets and
+camera views, with no inserted structures or copied book artwork.
+
+- `assets/screenshots/town.png`: 1405993 bytes, SHA256 `ad5b7d86bf26ef212096db674d031b9e41c1a6301fc5b1d5b4b84eaa091e8833`.
+- `assets/screenshots/castle.png`: 1268317 bytes, SHA256 `708330bccaf967ffdb795d51ad528fd50417bcb150edf7cbade48383965a747e`.

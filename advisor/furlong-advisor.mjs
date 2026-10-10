@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* furlong-advisor: a stateless MCP server (stdio) that lets any agent app, on any model, see and play the game of
-   Furlong the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
+   Crown & Commons the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
    pairs with it from its Advisor dialog (Menu → Advisor), with a code this bridge gives in its answers; the bridge speaks to the page over
    a WebSocket on 127.0.0.1 only. The game's rules (its README and its guide to the screen, bundled) are searchable before pairing.
    No dependencies:  npx -y furlong-advisor   (FURLONG_PORT to change the port, default 7357) */
@@ -94,7 +94,7 @@ function attach(s) {
   s.on('close', () => { if (sock === s) { sock = null; log('the game closed the connection'); } });
   s.on('error', () => { });
 }
-const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s Advisor dialog (Menu → Advisor).'); });
+const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Crown & Commons advisor bridge. Pair from the game’s Advisor dialog (Menu → Advisor).'); });
 server.on('upgrade', (req, s) => {
   const u = new URL(req.url, 'http://x');
   if (!req.headers['sec-websocket-key']) { s.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
@@ -127,7 +127,7 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { scope: { type: 'string' } } } },
   { name: 'execute', description: 'Use a control or verb by the name discover gives it: press a button, set a slider/list/box ({value}), or run a verb (game:state {path}, game:find {name}, game:inspect {name} or {code, full}, game:panel {kind, town, house}, game:chronicle {n, cat, from, to, q}, game:persona, game:place {at, target} or {cancel:true}, game:plan {kind, points, commit}, game:advise). Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); each control lists its label, cost, why it is disabled, target and any risk. Answers with the game’s own reply and the annals the press wrote. Acts on the player’s real game: do it only when the player asks.',
     inputSchema: { type: 'object', properties: { tool: { type: 'string' }, args: { type: 'object' } }, required: ['tool'] } }];
-const INSTRUCTIONS = `You are the advisor in Furlong, a medieval kingdom simulation the player has open.
+const INSTRUCTIONS = `You are the advisor in Crown & Commons, a medieval kingdom simulation the player has open.
 Call execute {tool:"game:persona"} first and keep to it: when the player rules, you are their closest confidant at court (a named person in the game, speaking in character, in the first person, using the realm's own names); otherwise you are the game master.
 Read before you speak: game:state, game:panel, game:chronicle, game:inspect, and search for the rules. Explain why things happen from the game's own workings.
 Counsel, don't seize the reins: change the game (execute a control) only when the player asks you to.

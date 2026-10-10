@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Furlong: Kingdom Annals</title>
+<title>Crown &amp; Commons</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap');
 :root{
@@ -22,7 +22,7 @@ canvas{display:block;}
 #loading{position:absolute;inset:0;background:radial-gradient(ellipse at center,#1d2430 0%,#0c0f14 100%);
   display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:var(--parch);
   transition:opacity .8s;}
-#loading h1{font-family:'IM Fell English',Georgia,serif;font-size:42px;letter-spacing:2px;margin-bottom:14px;color:var(--gold);}
+#loading h1{font-family:'IM Fell English',Georgia,serif;font-size:clamp(26px,6vw,42px);letter-spacing:2px;margin-bottom:14px;color:var(--gold);}
 #loadline{font-family:'IM Fell English',Georgia,serif;font-size:18px;font-style:italic;opacity:.85;min-height:26px;}
 #loadbar{width:280px;height:3px;background:#2b3242;margin-top:18px;border-radius:2px;overflow:hidden;}
 #loadbar>div{height:100%;width:0;background:var(--gold);transition:width .2s;}
@@ -497,10 +497,10 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">FURLONG</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">Kingdom Annals</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 19:14 UTC · after 55f1eca</div></div>
+<div id="loading"><h1 id="loadtitle">CROWN &amp; COMMONS</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">A living medieval realm</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 21:42 UTC · after 089fb90</div></div>
 
 <div id="hud">
-  <button type="button" id="brand" class="hudlink" aria-label="About Furlong" aria-controls="contextpanel">Furlong</button>
+  <button type="button" id="brand" class="hudlink" aria-label="About Crown &amp; Commons" aria-controls="contextpanel">Crown &amp; Commons</button>
   <button type="button" class="chip hudlink" id="datechip" aria-label="View timeline" aria-controls="contextpanel">—</button>
   <span class="chip" id="wxchip">☀</span>
   <span class="chip" id="crownchip" style="cursor:pointer;pointer-events:auto" title="Find the monarch"><img class="sig" id="crownsig" alt=""><b id="crownname">—</b></span>
@@ -902,9 +902,18 @@ let W=null;               // the world
 /* the age the annals open in: the Dark Ages (motte-and-bailey, timber and thatch, no town walls) or the High
    Middle Ages; technology then arrives with the years: charters, framed houses, stone keeps, stone walls,
    stone houses, bastions */
-const FOUNDING_AD=850; // every realm is founded the same way, as hamlets, fords and a lord's motte
-let START_AD=850;      // the year play begins; anything later is the same history, run forward unseen
+const FOUNDING_AD=850; // the early start: hamlets, fords and a lord's motte
+const DEFAULT_START_AD=1066; // the ordinary new game starts directly in this age
+let START_AD=DEFAULT_START_AD;
 const AD=()=>((W&&W.startAD)||1250)+Math.max(0,year()-1);
+// Shared model-side construction gate. #44 is still a proposal, so this is
+// deliberately only its historical-calendar fallback; it owns no tech state,
+// random draws, resources, sites, prices, or adoption decisions.
+const CONSTRUCTION_METHODS=Object.freeze({stoneKeep:{historicalYear:1070,proposalYear:1080}});
+function constructionCapability(s,method,ad=AD()){
+  const rule=CONSTRUCTION_METHODS[method];if(!rule)return{available:false,reason:'unknown-method'};
+  return{available:ad>=rule.historicalYear,reason:ad>=rule.historicalYear?'historical-fallback':'before-historical-gate',historicalYear:rule.historicalYear,proposalYear:rule.proposalYear,source:'calendar-fallback-pending-tech-tree'};
+}
 const tierCap=()=>AD()<1000?0:AD()<1200?1:2;
 const MOTTEH=9;
 let MOD=null;             // rate sliders (multipliers)
@@ -1412,9 +1421,10 @@ function slopeAt(cx,cz){
    WORLD GENERATION — runs once per seed, deterministic from the gen stream
    ========================================================================= */
 async function generateWorld(seed,progress){
+  const directEra=START_AD>FOUNDING_AD;
   SEED=seed>>>0; RS=seedStreams(SEED,FATE);
   const n1=makeNoise(SEED^0xA53), n2=makeNoise(SEED^0x5EED), n3=makeNoise(SEED^0xF00D), nMoist=makeNoise(SEED^0xB0A);
-  W={startAD:FOUNDING_AD,seed:SEED,fate:FATE,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
+  W={startAD:directEra?START_AD:FOUNDING_AD,seed:SEED,fate:FATE,h:new Float32Array(GRID*GRID),water:new Uint8Array(GRID*GRID),flow:new Float32Array(GRID*GRID),
      biome:new Uint8Array(GRID*GRID),moist:new Float32Array(GRID*GRID),
      settlements:[],roads:[],routes:{},houses:[],notables:[],armies:[],caravans:[],banditCamps:[],
      riverPaths:[],bridges:[],roadCells:new Uint8Array(GRID*GRID),treasury:2200,legitimacy:70,
@@ -1604,7 +1614,7 @@ async function generateWorld(seed,progress){
   while(townRoles.length<nTowns)townRoles.push(chance('gen',0.35)?'fort':'market');
   townRoles.length=nTowns;
   const vilRoles=['farm',coastal?'fishing':'timber','farm','mining','timber','farm'];
-  const PS=0.35; // a thinly peopled land at the founding
+  const PS=directEra?1:0.35; // the founding is sparse; direct-era starts use the native place-size draws
   const wanted=[{kind:'capital',role:'seat',pop:Math.round((2200+randi('gen',700))*PS),minD:0},
     ...Array.from({length:nTowns},(_,k)=>({kind:'town',role:townRoles[k],pop:Math.round((420+randi('gen',760))*PS),minD:850})),
     ...Array.from({length:nVill},(_,k)=>({kind:'village',role:vilRoles[k%vilRoles.length],pop:Math.max(40,Math.round((70+randi('gen',220))*(PS*1.3))),minD:520}))];
@@ -2338,7 +2348,7 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
   s.wallRad=null;s.wallKind=null;s.natDef=0;s.plazaR=0;s.coreR=Rmax;s.radius=80;s.wallR=80;}
   const segH=makeHash(24),placed=makeHash(16);
   let curE=saved?saved.curE:0;
-  const era=saved?saved.era:AD(),early=saved?saved.early:era<1000,motteAge=saved?saved.motteAge:era<1070; // what the builders of this age know how to build
+  const era=saved?saved.era:AD(),early=saved?saved.early:era<1000,motteAge=saved?saved.motteAge:!constructionCapability(s,'stoneKeep',era).available; // generated keep material uses the same #44 fallback gate
   const E=saved?saved.E:early?(isVil?2:3):isCap?6:isTown?5:3;
   const FRAC=saved?saved.FRAC:early?(E===2?[0.5,1]:[0.3,0.65,1]):isCap?[0.06,0.16,0.32,0.52,0.76,1]:isTown?[0.1,0.26,0.5,0.76,1]:[0.4,0.75,1];
   const agoYears=e=>Math.round((E-e)*(isVil?70:55)/10)*10;
@@ -3183,9 +3193,9 @@ function layoutSettlement(s,saved){ // saved: a laid-out place's context (worldL
       s.ward={...site.ward,wallRad:Float32Array.from(site.ward.wallRad)};s.keepPos={x:keep.x,z:keep.z,y:keep.y};
       keep.st=addStreet(site.path.map(p=>({x:p.x,z:p.z})),1.3,'lane',{straight:true,castlePath:true});
       hist(0,`A first ${a.timber?'timber':'stone'} keep and palisaded yard were built beside the road.`);live=false;return keep;},
-    stoneTimberKeep(){if(!keep||keep.removed||!keep.timberKeep||AD()<1070)return false;live=true;curE=E;keep.timberKeep=false;keep.tier=2;keep.h=ARCH.keep[2]*1.3*0.8;updateBuildingInstance(keep);
+    stoneTimberKeep(){if(!keep||keep.removed||!keep.timberKeep||!constructionCapability(s,'stoneKeep').available)return false;live=true;curE=E;keep.timberKeep=false;keep.tier=2;keep.h=ARCH.keep[2]*1.3*0.8;updateBuildingInstance(keep);
       hist(0,'The timber tower was rebuilt in stone on its own ground.');live=false;return true;},
-    rebuildKeep(){if(keep&&keep.motte&&!keep.removed){if(AD()<1070)return false;live=true;keep.motte=false;keep.shell=true;keep.tier=2;keep.w=keep.d=11;updateBuildingInstance(keep);
+    rebuildKeep(){if(keep&&keep.motte&&!keep.removed){if(!constructionCapability(s,'stoneKeep').available)return false;live=true;keep.motte=false;keep.shell=true;keep.tier=2;keep.w=keep.d=11;updateBuildingInstance(keep);
         hist(0,'The timber tower on the motte was replaced by a keep of stone.');live=false;return true;}
       if(!keep||keep.removed||s._keepRebuilt||AD()<1150||s.motte)return false; /* on a motte, the stone bailey is the castle's second stage */live=true;curE=E;s._keepRebuilt=true;
       enlarge(keep,isCap?24:20,isCap?28:24,isCap?1.25:1.05,'The old tower keep was rebuilt as a castle of stone on the same ground.');live=false;return true;},
@@ -6987,7 +6997,7 @@ function castleFoundationAuthority(s,hi=s.owner){ // a real seat or defensive pu
   return s===W.capital||hi>0&&W.settlements[W.houses[hi].seat]===s||['seat','fort','border'].includes(s.role);
 }
 function castleFoundationSpec(s){
-  const timber=AD()<1070,w=timber?8:13,tier=timber?0:2,hm=timber?0.85:0.8,h=ARCH.keep[2]*(0.8+tier*0.25)*hm;
+  const timber=!constructionCapability(s,'stoneKeep').available,w=timber?8:13,tier=timber?0:2,hm=timber?0.85:0.8,h=ARCH.keep[2]*(0.8+tier*0.25)*hm;
   return {w,d:w,tier,hm,h,timber,timberTower:timber?w*w*h*0.06:w*w*0.08,stone:timber?0:stoneFor(s,'keep')}; // construction quantities: CASTLE-FOUNDATIONS.md
 }
 function castleFoundationLandOK(f,s,si){ // a ruler may use his unheld demesne, never a household's holding or home lot
@@ -7002,32 +7012,39 @@ function castleFoundationReserved(s,f){ // paid native proposals hold their yard
     for(let k=1;k<q.site.path.length;k++)if(streetFootprintOverlap(f,{a:q.site.path[k-1],b:q.site.path[k],hw:1.3},0.6))return true;
   }return false;
 }
+function castleFoundationBoxMayHit(x,z,b,pad=0){ // conservative point-to-AABB broad phase; exact geometry remains authoritative
+  if(!b||![x,z,b.minX,b.maxX,b.minZ,b.maxZ,pad].every(Number.isFinite))return true;const dx=Math.max(b.minX-x,0,x-b.maxX),dz=Math.max(b.minZ-z,0,z-b.maxZ);return Math.hypot(dx,dz)<=pad+1e-6;
+}
+function castleFoundationSegmentMayHitBox(a,b,box,pad=0){ // rotated OBB padding grows a corner by up to sqrt(2)*pad in world axes
+  if(!box||![a?.x,a?.z,b?.x,b?.z,box.minX,box.maxX,box.minZ,box.maxZ,pad].every(Number.isFinite))return true;const d=Math.SQRT2*pad+1e-6;return !(Math.max(a.x,b.x)+d<box.minX||Math.min(a.x,b.x)-d>box.maxX||Math.max(a.z,b.z)+d<box.minZ||Math.min(a.z,b.z)-d>box.maxZ);
+}
 function castleFoundationSite(s,spec,retained=null){ // fresh operation-local geometry; a retained project is rechecked, never treated as a validity cache
-  const si=W.settlements.indexOf(s),B=makeHash(24),H=makeHash(24),anchors=[],reach=(s.radius||90)+100,near=(x,z,r)=>dist2d(x,z,s.pos.x,s.pos.z)<reach+r+10,circuits=W.settlements.flatMap(t=>fortCircuits(t)).filter(R=>{const C=fortCenter(R);return near(C.x,C.z,R.wallRad?Math.max(...R.wallRad):R.r||0);}),protectedGround=[];
+  const si=W.settlements.indexOf(s),B=makeHash(24),H=makeHash(24),anchors=[],blockBounds=new WeakMap(),reach=(s.radius||90)+100,near=(x,z,r)=>dist2d(x,z,s.pos.x,s.pos.z)<reach+r+10,circuits=W.settlements.flatMap(t=>fortCircuits(t)).filter(R=>{const C=fortCenter(R);return near(C.x,C.z,R.wallRad?Math.max(...R.wallRad):R.r||0);}),protectedGround=[];
   for(const t of W.settlements){for(const p of t.places||[])if(near(p.x,p.z,Math.max(...p.r)))protectedGround.push({place:p});
     if(t.citadel&&near(t.citadel.x,t.citadel.z,t.citadel.S))protectedGround.push({circle:{x:t.citadel.x,z:t.citadel.z,r:t.citadel.S*0.85}});
     for(const r of t.remnants||[])if(near(r.x,r.z,r.r))protectedGround.push({circle:r});
     if(t.burgRing&&near(t.burgRing.x,t.burgRing.z,t.burgRing.r))protectedGround.push({ring:t.burgRing});
     for(const P of t.relicWalls||[])for(let k=0;k<P.length;k++)if(segDist(s.pos.x,s.pos.z,P[k],P[(k+1)%P.length])<reach+10)protectedGround.push({a:P[k],b:P[(k+1)%P.length]});}
   const projects=(W.projects||[]).filter(q=>!q.dead&&q.site!==retained);
+  const bounds=P=>{if(!P?.length||P.some(q=>!Number.isFinite(q.x)||!Number.isFinite(q.z)))return null;let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;for(const q of P){minX=Math.min(minX,q.x);maxX=Math.max(maxX,q.x);minZ=Math.min(minZ,q.z);maxZ=Math.max(maxZ,q.z);}return{minX,maxX,minZ,maxZ};};
   const addBlock=b=>{const r=Math.max(Math.hypot(b.w||0,b.d||0)/2,...[b.poly,b.lot].flatMap(p=>p?.map(q=>dist2d(b.x,b.z,q.x,q.z))||[]));
-    if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>reach+r)return;B.add({...b},r+3);};
-  const addLine=(a,b,hw,st,pending=false)=>{if(segDist(s.pos.x,s.pos.z,a,b)>reach+hw)return;H.add({a,b,hw,st,pending,x:(a.x+b.x)/2,z:(a.z+b.z)/2},dist2d(a.x,a.z,b.x,b.z)/2+hw+3);};
+    if(dist2d(b.x,b.z,s.pos.x,s.pos.z)>reach+r)return;const copy={...b},polys=[bounds(b.poly),bounds(b.lot)],parts=[bounds(obbCorners(b.x,b.z,b.w||0,b.d||0,b.rot||0)),...polys].filter(Boolean),box=parts.length?{minX:Math.min(...parts.map(q=>q.minX)),maxX:Math.max(...parts.map(q=>q.maxX)),minZ:Math.min(...parts.map(q=>q.minZ)),maxZ:Math.max(...parts.map(q=>q.maxZ))}:null;blockBounds.set(copy,{box,polys});B.add(copy,r+3);};
+  const addLine=(a,b,hw,st,pending=false)=>{if(segDist(s.pos.x,s.pos.z,a,b)>reach+hw)return;H.add({a,b,hw,st,pending,x:(a.x+b.x)/2,z:(a.z+b.z)/2,minX:Math.min(a.x,b.x),maxX:Math.max(a.x,b.x),minZ:Math.min(a.z,b.z),maxZ:Math.max(a.z,b.z)},dist2d(a.x,a.z,b.x,b.z)/2+hw+3);};
   for(const t of W.settlements){for(const b of t.buildings||[])if(!b.removed&&b.state!=='gone'){addBlock(b);if(b._graveyard&&!b._graveyard.removed)addBlock(b._graveyard);}
     for(const st of t.streets||[])if(!st.gone&&st.kind!=='edge')for(let k=1;k<st.pts.length;k++){const a=st.pts[k-1],b=st.pts[k];addLine(a,b,st.hw||2,st);
-      if(t===s&&!st.hidden&&!st.planQ&&!st.castlePath&&(st.kind!=='quay'||st.serviceLinked)&&dist2d(a.x,a.z,b.x,b.z)>1)anchors.push({a,b,st,hw:st.hw||2});}}
+      if(t===s&&!st.hidden&&!st.planQ&&!st.castlePath&&(st.kind!=='quay'||st.serviceLinked)&&dist2d(a.x,a.z,b.x,b.z)>1)anchors.push({a,b,st,hw:st.hw||2,minX:Math.min(a.x,b.x),maxX:Math.max(a.x,b.x),minZ:Math.min(a.z,b.z),maxZ:Math.max(a.z,b.z)});}}
   for(const r of W.roads||[]){const P=r.open||r.path||[];for(let k=1;k<P.length;k++)addLine(P[k-1],P[k],4,null);}
   for(const key of W.trackSet||[]){const e=W.tg.E.get(key);if(e)addLine(W.tg.pts[e.a],W.tg.pts[e.b],1.8,null);}
   for(const q of projects){if(q.type==='road'){const P=q.P?.path||[];for(let k=1;k<P.length;k++)addLine(P[k-1],P[k],4,null,true);}
     if(q.type==='plan')for(const st of q.kind==='quarter'?q.sts||[]:q.kind==='street'?[q.st]:[])if(st)for(let k=1;k<st.pts.length;k++)addLine(st.pts[k-1],st.pts[k],st.hw||2,null,true);}
-  const publicAt=(x,z)=>anchors.some(g=>segDist(x,z,g.a,g.b)<g.hw+0.2);
+  const publicAt=(x,z)=>anchors.some(g=>castleFoundationBoxMayHit(x,z,g,g.hw+0.2)&&segDist(x,z,g.a,g.b)<g.hw+0.2);
   const clear=(x,z,pad=0,access=false)=>{
     if(!planCellOK(x,z)||riverAt(x,z,1)||lakeAt(s,x,z,2))return false;
     const onPublic=access&&publicAt(x,z),f=W.land&&furlongAt(x,z);
     if(!onPublic&&!castleFoundationLandOK(f,s,si))return false;
-    for(const b of B.near(x,z,pad+2)){for(const poly of[b.poly,b.lot])if(poly?.length&&(inPoly(poly,x,z)||poly.some((q,k)=>segDist(x,z,q,poly[(k+1)%poly.length])<pad)))return false;
-      const dx=x-b.x,dz=z-b.z,c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0);if(!b.poly&&Math.abs(dx*c-dz*sn)<(b.w||0)/2+pad&&Math.abs(dx*sn+dz*c)<(b.d||0)/2+pad)return false;}
-    if(H.near(x,z,pad+8).some(g=>(!access||g.pending)&&segDist(x,z,g.a,g.b)<g.hw+pad))return false;
+    for(const b of B.near(x,z,pad+2)){const meta=blockBounds.get(b);for(let k=0;k<2;k++){const poly=k?b.lot:b.poly,box=meta?.polys[k];if(poly?.length&&castleFoundationBoxMayHit(x,z,box,pad)&&(inPoly(poly,x,z)||poly.some((q,j)=>segDist(x,z,q,poly[(j+1)%poly.length])<pad)))return false;}
+      const dx=x-b.x,dz=z-b.z,c=Math.cos(b.rot||0),sn=Math.sin(b.rot||0);if(!b.poly&&castleFoundationBoxMayHit(x,z,meta?.box,Math.SQRT2*pad)&&Math.abs(dx*c-dz*sn)<(b.w||0)/2+pad&&Math.abs(dx*sn+dz*c)<(b.d||0)/2+pad)return false;}
+    if(H.near(x,z,pad+8).some(g=>(!access||g.pending)&&castleFoundationBoxMayHit(x,z,g,g.hw+pad)&&segDist(x,z,g.a,g.b)<g.hw+pad))return false;
     for(const p of protectedGround){if(p.place&&placeHit(p.place,x,z,pad+1)||p.circle&&dist2d(x,z,p.circle.x,p.circle.z)<p.circle.r+pad+1||p.ring&&Math.abs(dist2d(x,z,p.ring.x,p.ring.z)-p.ring.r)<pad+3.5||p.a&&segDist(x,z,p.a,p.b)<pad+3.5)return false;}
     for(const R of circuits){const C=fortCenter(R),d=dist2d(x,z,C.x,C.z),r=wallRadAt(R,Math.atan2(z-C.z,x-C.x));if(Math.abs(d-r)<pad+7)return false;}
     for(const q of projects){if(q.type==='castle'&&q.site){if(dist2d(x,z,q.site.ward.x,q.site.ward.z)<q.site.ward.r+pad+2)return false;for(let k=1;k<q.site.path.length;k++)if(segDist(x,z,q.site.path[k-1],q.site.path[k])<pad+2)return false;}
@@ -7051,7 +7068,7 @@ function castleFoundationSite(s,spec,retained=null){ // fresh operation-local ge
     for(const p of obbCorners(F.x,F.z,F.w,F.d,F.rot))if(!clear(p.x,p.z,1.3))return false;
     for(const b of B.near(F.x,F.z,Math.hypot(F.w,F.d)/2+3))if(obbOverlap({...F,w:F.w+2.6,d:F.d+2.6},b))return false;
     const samples=resample(P,1,true);for(let k=0;k<samples.length;k++){const p=samples[k];if(!clear(p.x,p.z,1.4,true)||k&&Math.abs(hAt(p.x,p.z)-hAt(samples[k-1].x,samples[k-1].z))>dist2d(p.x,p.z,samples[k-1].x,samples[k-1].z)*0.35)return false;}
-    for(let k=1;k<P.length;k++){const g={a:P[k-1],b:P[k],hw:1.3};for(const b of B.near((g.a.x+g.b.x)/2,(g.a.z+g.b.z)/2,dist2d(g.a.x,g.a.z,g.b.x,g.b.z)/2+3))if(streetFootprintOverlap(b,g,0.3))return false;}
+    for(let k=1;k<P.length;k++){const g={a:P[k-1],b:P[k],hw:1.3};for(const b of B.near((g.a.x+g.b.x)/2,(g.a.z+g.b.z)/2,dist2d(g.a.x,g.a.z,g.b.x,g.b.z)/2+3)){const box=blockBounds.get(b)?.box;if(box&&!castleFoundationSegmentMayHitBox(g.a,g.b,box,g.hw+0.3))continue;if(streetFootprintOverlap(b,g,0.3))return false;}}
     return true;
   };
   if(retained)return check(retained)?retained:null;
@@ -7109,8 +7126,8 @@ function casNext(s,ad){ // the castle works worth doing next: each weighed by wh
   const V=townWorth(s)*(seat||s===W.capital?1.6:1)+3000*(lv),th=townThreat(s),have=s.stores.stone||0,L=[];
   const add=(k2,cr,stn,t2,g,dign)=>{const cost=Math.round((cr+(stn-Math.min(have,stn))*3)*PL()),gain=g*th*V+(dign||0)*V;L.push({k:k2,cr,st:stn,t:t2,cost,gain,net:gain-cost});};
   const dm=castleDamage(s);if(dm>0.02||fortCircuits(s).some(q=>q!==s&&q.breachUntil>day()))add('repair',Math.round(200+dm*1500),Math.round(dm*200),'the battered castle repaired',Math.max(0.1,dm)*0.6);
-  if(k&&k.motte&&!s.motteStone&&ad>=1070&&ok('keep'))add('keep',500,150,'the keep rebuilt in stone',0.06);
-  if(k&&k.timberKeep&&ad>=1070&&ok('timberStone'))add('timberStone',500*k.w*k.d/169,150*k.w*k.d/169,'the timber keep rebuilt in stone',0.06);
+  if(k&&k.motte&&!s.motteStone&&constructionCapability(s,'stoneKeep',ad).available&&ok('keep'))add('keep',500,150,'the keep rebuilt in stone',0.06);
+  if(k&&k.timberKeep&&constructionCapability(s,'stoneKeep',ad).available&&ok('timberStone'))add('timberStone',500*k.w*k.d/169,150*k.w*k.d/169,'the timber keep rebuilt in stone',0.06);
   if(s.bailey&&!s.baileyStone&&ad>=1150)add('bailey',600,120,'the bailey walled in stone',0.05);
   if(!R&&k&&!k.motte&&ad>=1000&&ok('ward'))add('ward',ad>=1150?900:400,ad>=1150?120:0,ad>=1150?'a curtain of stone about the keep':'a palisade about the keep',0.06);
   if(R){
@@ -10027,7 +10044,7 @@ function accountSheetHTML(town=null,prefix='ledger'){
 }
 function infoHTML(){
   if(infoUI.kind==='reference')return referenceInfoHTML();
-  if(infoUI.kind==='about')return '<p>Furlong: Kingdom Annals</p><p>A living realm of households, towns, trade and dynasties.</p><p>© 2026 Six Cailloux, LLC.</p><p>Released under the <a href="LICENSE" target="_blank" rel="noopener">MIT licence</a>, retaining the original source notice: Copyright (c) 2026 healdgar.</p>';
+  if(infoUI.kind==='about')return '<p>Crown &amp; Commons</p><p>A living realm of households, towns, trade and dynasties.</p><p>© 2026 Six Cailloux, LLC.</p><p>Released under the <a href="LICENSE" target="_blank" rel="noopener">MIT licence</a>, retaining the original source notice: Copyright (c) 2026 healdgar.</p>';
   if(infoUI.kind==='timeline'){
     const rows=[['Now',esc(dateStr())],['History begins','AD '+W.startAD],['Annals begin','AD '+START_AD],['Years since the annals began',detailNumber(Math.max(0,AD()-START_AD))],['Monarch',esc(fullTitle(W.monarch))],['Current reign began',esc(dateStr(W.reignStart||0))],['Recorded annals',detailNumber(entryCount)]];
     let h=detailTable('timeline-overview','Your realm through time',['Milestone','Date or count'],rows);
@@ -10089,7 +10106,7 @@ function contextPlacement(anchor,width,height,viewport,side){
 function contextTitle(){
   const k=contextUI.kind;
   if(k==='event')return esc(eventTitle(eventUI.current));
-  if(k==='info')return infoUI.kind==='reference'?esc(referenceTitle(infoUI.reference)):infoUI.kind==='about'?'About Furlong':infoUI.kind==='timeline'?'The timeline':infoUI.town?esc(infoUI.town.name)+' · Accounts':'Kingdom ledger';
+  if(k==='info')return infoUI.kind==='reference'?esc(referenceTitle(infoUI.reference)):infoUI.kind==='about'?'About Crown &amp; Commons':infoUI.kind==='timeline'?'The timeline':infoUI.town?esc(infoUI.town.name)+' · Accounts':'Kingdom ledger';
   if(k==='insp')return document.getElementById('insptitle').innerHTML;
   if(k==='drawer')return {crown:'The Crown',rates:'Rates',acts:'Acts',over:'Map overlays',world:'The realm'}[drawerTab];
   if(k==='chron')return esc('The Annals of '+W.name);
@@ -10195,28 +10212,36 @@ function detailNumber(v){return Number.isFinite(v)?v.toLocaleString(undefined,{m
 function detailPopulation(s){if(s._popValid)return s._popTotal;const H=s.households;if(s._populationReady){let n=0;for(const h of H||[])n+=h.population?.get(s)||0;return n;}if(!Array.isArray(H)||!H.length)return s.pop||0;let n=0;for(const h of H)n+=h.population?.get(s)||0;return n;}
 function detailPrice(s,g){return s.px?.[g]!=null?s.px[g]:price0(s,g);}
 function detailPerson(p){return p?`<a class="pp" data-pid="${p.id}">${esc(folkName(p))}</a>`:'—';}
-function detailBuilding(b,s=b.s){const si=W.settlements.indexOf(s),bi=s.buildings.indexOf(b);return `<button data-detail-building="${si}:${bi}">${esc(buildingName(b)||((TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4]))}</button>`;}
+function detailNaming(){ // each card names a disposable copy, in native building order, with its own used signs
+  const places=new Map();return b=>{let q=places.get(b.s);if(!q){const s={...b.s,_bn:new Set(b.s._bn||[])},names=new Map();for(const x of b.s.buildings||[])names.set(x,buildingName({...x,s}));q={s,names};places.set(b.s,q);}if(!q.names.has(b))q.names.set(b,buildingName({...b,s:q.s}));return q.names.get(b);};}
+function detailBuilding(b,s=b.s,name=detailNaming()){const si=W.settlements.indexOf(s),bi=s.buildings.indexOf(b);return `<button data-detail-building="${si}:${bi}">${esc(name(b)||((TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4]))}</button>`;}
 function detailTable(id,title,heads,rows){return `<section class="detail-section" id="${id}"><table class="detail-table${heads.length>3?' detail-wide':''}"><caption>${title}</caption><thead><tr>${heads.map(k=>`<th scope="col">${k}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((v,i)=>i===0?`<th scope="row">${v}</th>`:`<td data-label="${esc(heads[i])}">${v}</td>`).join('')}</tr>`).join('')}</tbody></table>${rows.length?'':'<p class="note">None recorded.</p>'}</section>`;}
 function detailFamilies(s){const counts=new Map();for(const p of s.folk||[])if(!p.dead){const n=famName(p);if(n)counts.set(n,(counts.get(n)||0)+1);}return [...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));}
 function detailHead(p){const h=p._hh;return h?.head&&!h.head.dead?h.head:oldHouseholdHead(p);}
 function detailHouseholds(s){const groups=new Map();for(const p of s.folk||[])if(!p.dead){const head=detailHead(p),account=p._hh||head._hh,key=account||head;if(!groups.has(key))groups.set(key,{account,head:account?account.head:head,members:[]});groups.get(key).members.push(p);}return [...groups.values()];}
 function detailResidents(b){const groups=new Map();for(const p of b.s.folk||[])if(!p.dead){const h=detailHead(p);if(h.bh===b){if(!groups.has(h))groups.set(h,[]);groups.get(h).push(p);}}return [...groups].map(([head,members])=>({head,members}));}
 function detailOwner(b){const o=b.title?.owner;if(o?.household)return detailPerson(o.head);if(o?.name)return esc(o.name);if(o==='crown')return 'The crown';const p=b.title?.beneficiary||((b.ownerId>=0)?findPerson(b.ownerId)?.p:null);return p?detailPerson(p):'No recorded private owner';}
+function detailTollOwner(b,s=b.s){ // a toll defaults to the lord; reading its payee never assigns the title or creates an account
+  const title=b.title?.owner;if(title?.household)return acctLabel(title.head||title);const o=b.ownerId===undefined?'lord':b.ownerId;
+  if(o==='lord')return acctLabel(lordAcct(s));if(o==='church')return parishOf(s)?'the church':acctLabel(lordAcct(s));if(o==='town')return acctLabel(s);
+  const c=corpOf(o);if(c&&!c.gone)return acctLabel(c);let P=W._pm||W._folkIndex;
+  if(!P){P=new Map();for(const place of W.settlements)for(const p of place.folk||[])P.set(p.id,p);for(const h of (W.households||new Map()).values())for(const p of h.members||[])if(!p.dead)P.set(p.id,p);}
+  const p=P.get(o);return acctLabel(p&&!p.dead?p:lordAcct(s));}
 function detailGoods(s){return [...new Set([...Object.keys(s.stores||{}),...Object.keys(s.px||{})])].sort().map(g=>{const quote=s.px?.[g],px=Number.isFinite(quote)?quote:GOODBASE[g]!==undefined?price0(s,g):null;return [esc(g[0].toUpperCase()+g.slice(1)),detailNumber(s.stores?.[g]||0),detailNumber(px)];});}
-function detailSettlement(s){
+function detailSettlement(s,name=detailNaming()){
   const si=W.settlements.indexOf(s),B=s.buildings||[],F=detailFamilies(s),H=detailHouseholds(s);
   let h=accountSheetHTML(s,'detail')+detailTable('detail-stores','Stores and market',['Good','In store','Crowns / unit'],detailGoods(s));
   h+='<p class="note">Prices are the latest market quote, or an initial estimate before trading. Store quantities include the owners’ goods held in this place.</p>';
-  h+=detailTable('detail-buildings',`Buildings · ${B.length}`,['Building','State','Owner'],B.map(b=>[detailBuilding(b,s),esc(b.removed?'removed':b.state),detailOwner(b)]));
+  h+=detailTable('detail-buildings',`Buildings · ${B.length}`,['Building','State','Owner'],B.map(b=>[detailBuilding(b,s,name),esc(b.removed?'removed':b.state),detailOwner(b)]));
   h+=detailTable('detail-households',`Households · ${H.length}`,['Household','Members here','Crowns'],H.map(a=>[a.head&&!a.head.dead?detailPerson(a.head):'Household awaiting a head',detailNumber(a.members.length),detailNumber(a.account?.assets?.w??a.head?.w)]));
   h+=detailTable('detail-families',`Families · ${F.length}`,['Family','People here'],F.map(([n,c])=>[esc(n),detailNumber(c)]));return h;
 }
-function detailHousehold(s,p){
+function detailHousehold(s,p,name=detailNaming()){
   const a=p._hh,hd=a?.head||p,H=s._owners?.get(a),rows=[],holdings=[];
   for(const g of [...new Set(['held','sale','animals','reserve'].flatMap(k=>Object.keys(H?.[k]||{})))].sort())rows.push([esc(g),detailNumber(H.held?.[g]||0),detailNumber(H.sale?.[g]||0),detailNumber(H.animals?.[g]||0),detailNumber(H.reserve?.[g]||0)]);
   for(const [si,place] of W.settlements.entries()){for(const [fi,f] of (place.furl||[]).entries()){const owns=a?f.title?.own?.owner===a||!f.title&&f.own===hd.id:f.own===hd.id,works=a?f.title?.work?.owner===a||!f.title&&f.wk===hd.id:f.wk===hd.id;
     if(owns||works)holdings.push([esc(place.name),`<a class="nm" data-nm="land:${si}:${fi}">${esc(landName(f))}</a> · ${detailNumber(f.area/10000)} ha`,owns&&works?'Owned and worked':owns?'Owned':'Worked']);}
-    for(const b of place.buildings||[])if(!b.removed&&b.state!=='gone'&&(a?b.title?.owner===a||!b.title&&b.ownerId===hd.id:b.ownerId===hd.id))holdings.push([esc(place.name),detailBuilding(b,place),'Owned']);}
+    for(const b of place.buildings||[])if(!b.removed&&b.state!=='gone'&&(a?b.title?.owner===a||!b.title&&b.ownerId===hd.id:b.ownerId===hd.id))holdings.push([esc(place.name),detailBuilding(b,place,name),'Owned']);}
   let h=detailTable('detail-pantry',`Household goods in ${esc(s.name)}`,['Good','Held','For sale','Beasts','Reserve target'],rows);
   h+=detailTable('detail-property','Household property and holdings',['Place','Property','Right'],holdings);
   if(a?.members)h+=detailTable('detail-members','Household members',['Person','Age','Place'],[...a.members].filter(q=>!q.dead).map(q=>[detailPerson(q),detailNumber(Math.floor(ageYrs(q))),esc(W.settlements[q.si]?.name||'Away')]));return h;
@@ -10234,6 +10259,7 @@ function inspectorCard(pk,full=false){
   const flyToBtn=(button,label,fn)=>{follow={label,type:pk.type,code:inspectorPickCode(pk)};};
   full=!!full;
   const row=(k,v)=>`<div class="row${String(v).replace(/<[^>]*>/g,'').length>26?' long':''}"><span>${k}</span><b>${v}</b></div>`; // a long value reads left to right under itself, not squeezed against its label
+  const name=detailNaming();
   if(pk.type==='court'){title.innerHTML='The hallmote';sub.textContent=pk.s.name;h=courtCard(pk.s,W.settlements.indexOf(pk.s));}
   else if(pk.type==='settlement'){
     const s=pk.s,house=W.houses[s.owner],population=detailPopulation(s);
@@ -10253,10 +10279,10 @@ function inspectorCard(pk,full=false){
     if(s.mother)h+=row('Daughter of',s.mother);
     if(s.wardOf!=null){const b=W.settlements[s.wardOf];h+=row('Ward of',`${esc(b.name)} since ${s.wardSince}; one market, one lord`);}
     {const wd=W.settlements.filter(o=>o.wardOf!=null&&W.settlements[o.wardOf]===s);if(wd.length)h+=row('Wards',`${wd.map(o=>esc(o.name)).join(', ')}; ${Math.round(population+wd.reduce((t,o)=>t+detailPopulation(o),0)).toLocaleString()} souls in all`);}
-    {const f=fortOf(s);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
+    {const f=fortOf(s,true);if(f.mult>1.02)h+=row('Defences',`×${f.mult.toFixed(1)} — ${f.parts.join('; ')}`);}
     if((s.migIn||0)+(s.migOut||0)>0.5){const yr=v=>Math.round(v*12/12.5),arriving=s.migIn||0,leaving=s.migOut||0,trend=arriving>leaving?'more arriving':leaving>arriving?'more leaving':'balanced movement';h+=row('Moving',`~${yr(arriving)} newcomers and ~${yr(leaving)} leaving a year · ${trend}`);}
     h+=row('Garrison',`${Math.round(s.garrison)} men of the watch${s.garrison<garrisonNeed(s,population)*0.85?` (wants ${Math.round(garrisonNeed(s,population))}: mustering)`:''}${s.militia>0?`; ${Math.round(s.militia)} townsmen under arms (call to arms)`:''}`);
-    if(s.harbor){const B=berthsOf(s),wf=B.filter(b=>!b.shore).length/2,sh=(W.ships||[]).filter(x=>x.port===W.settlements.indexOf(s));
+    if(s.harbor){const B=berthsOf({...s}),wf=B.filter(b=>!b.shore).length/2,sh=(W.ships||[]).filter(x=>x.port===W.settlements.indexOf(s)); // a cold shore lookup writes only to this disposable reading
       h+=row('Port',`${wf?wf+' wharf'+(wf>1?'s':''):'no wharf; boats come to the shore'}; ${B.length} berth${B.length>1?'s':''}; ${sh.filter(x=>x.phase==='dock').length} ship${sh.filter(x=>x.phase==='dock').length===1?'':'s'} alongside${sh.some(x=>x.phase==='in'&&x.waited)?', others lying off':''}; berths ${((s.portLoad||0)/Math.max(1,B.length)*100).toFixed(0)}% taken last year`);
       if((s.stores.spice||0)+(s.stores.silk||0)>=1)h+=row('From over the sea',`${Math.round(s.stores.spice||0)} spice, ${Math.round(s.stores.silk||0)} silk in the warehouses`);}
     if(s.hm){const H=s.stores,M=s.hm,g=s._graze||grazeOf(s),r=v=>Math.round(v||0).toLocaleString();
@@ -10272,20 +10298,20 @@ function inspectorCard(pk,full=false){
       const nm=[f.master&&f.master.sk[KCr]>=0.5?`${esc(folkName(f.master))}, master ${esc(f.master.tr)}`:'',f.scholar&&f.scholar.sk[KL]>=0.6?`${esc(folkName(f.scholar))}, a lettered ${f.scholar.sx==='f'?'woman':'man'}`:''].filter(Boolean);
       if(nm.length)h+=row('Of note',nm.join('; '));}
     {const w=Object.keys(s.works||{}).map(k=>({mill:'a mill',granary:'a granary',market:'a chartered market'}[k])).filter(Boolean);if(s.clearUntil>day())w.push('assarters at work');if(w.length)h+=row('Works',w.join(', '));}
-    {const T=s.buildings.filter(tollStands);if(T.length)h+=row('Tolls',T.map(b=>{const r=b.st&&W.roads[b.st.ri],o=r&&W.settlements[r.a===W.settlements.indexOf(s)?r.b:r.a];return `${o?'on the road to '+esc(o.name):'off the king\'s roads'}, for ${esc(acctLabel(ownerAcct(b,s)))}: ${Math.round(b._tkY||0)} last year, ${Math.round(b._tk||0)} this${tollKeeper(b)?'':' (no keeper: the carts go by free)'}`;}).join('; ')+` · ${+(customOf(s,'toll')*100).toFixed(1)}% of each load's worth`);}
+    {const T=s.buildings.filter(tollStands);if(T.length)h+=row('Tolls',T.map(b=>{const r=b.st&&W.roads[b.st.ri],o=r&&W.settlements[r.a===W.settlements.indexOf(s)?r.b:r.a];return `${o?'on the road to '+esc(o.name):'off the king\'s roads'}, for ${esc(detailTollOwner(b,s))}: ${Math.round(b._tkY||0)} last year, ${Math.round(b._tk||0)} this${tollKeeper(b)?'':' (no keeper: the carts go by free)'}`;}).join('; ')+` · ${+(customOf(s,'toll')*100).toFixed(1)}% of each load's worth`);}
     for(const[k,v]of manorLines(s))h+=row(k,v);
     if(s.infected>0.5)h+=row('Plague',Math.round(s.infected)+' sick, '+Math.round(s.plagueDead)+' dead');
     if(s.siegeBy)h+=row('Under siege by',s.siegeBy.houseName);
     if(s.ruinCount)h+=row('Ruins',s.ruinCount);
     if(s.quarantineUntil>day())h+=row('Gates','sealed until '+dateStr(s.quarantineUntil));
-    if(full)h+=detailSettlement(s);
+    if(full)h+=detailSettlement(s,name);
     if(s.history&&s.history.length)h+=`<section class="detail-section" id="detail-history" aria-labelledby="detail-history-title"><h4 class="dhead" id="detail-history-title">History</h4><div class="agline">${s.history.map(x=>(x.yr?`<i>AD ${W.startAD+x.yr-1}:</i> `:x.ago?`<i>c. ${x.ago} years before the annals:</i> `:'')+esc(x.t)).join('<br>')}</div></section>`;
     flyToBtn(fb,'Visit',()=>flyTo(s.pos.x,s.pos.z,s.kind==='capital'?520:340));
     if(sovOn())actsH=settlementActsHTML(s);
   }else if(pk.type==='churchyard'){
     const {s,b,yard}=pk,markers=graveyardMarkers(yard,yard.capacity||24),recent=graveyardBurials(s,b,markers.length);
     setHTML(title,esc(yard.adjunct?'Parish graveyard':'Churchyard'));sub.textContent=s.name;
-    h+=row('Parish',`<a class="nm" data-nm="${buildingReference(b)}">${esc(buildingName(b)||'Parish church')}</a>`);
+    h+=row('Parish',`<a class="nm" data-nm="${buildingReference(b)}">${esc(name(b)||'Parish church')}</a>`);
     h+=row('Plot',`${detailNumber(yard.area||polyArea(yard.poly))} m² · ${yard.adjunct?'separate parcel with a low boundary wall':'on church property'}`);
     h+=row('Access',yard.adjunct?'Footpath from the church':'Beside the church');
     h+=row('Grave spaces',`${markers.length} · fixed plot; reused after 20 years`);
@@ -10294,7 +10320,7 @@ function inspectorCard(pk,full=false){
     flyToBtn(fb,'Visit',()=>flyTo(yard.x,yard.z,100));
   }else if(pk.type==='building'){
     const b=pk.b;
-    const bn=buildingName(b),what=(TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4];
+    const bn=name(b),what=(TIERNAME[b.tier]||'')+' '+ARCH[b.arch][4];
     setHTML(title,esc(bn||what));
     sub.textContent=(bn?what+' · ':'')+b.s.name+' · '+b.district+' district'+(b.state!=='sound'?' · '+b.state:'');
     if(full){h+=detailPlaceBack(b.s);h+=row('Owner',detailOwner(b));h+=row('Footprint',`${detailNumber(b.w)} × ${detailNumber(b.d)} m`);h+=row('Height',`${detailNumber(b.h)} m`);}
@@ -10313,7 +10339,7 @@ function inspectorCard(pk,full=false){
     if(b.home0&&b.why&&b.why.since)h+=row('Opened',`AD ${b.why.since}, in what was a ${ARCH[b.home0][4]}`);
     h+=row('State',b.state);
     if(b.arch==='toll'){const r=b.st&&W.roads[b.st.ri],si=W.settlements.indexOf(b.s),o=r&&W.settlements[r.a===si?r.b:r.a],br=!!riverAt(b.x,b.z,28);
-      h+=row('Toll',o&&tollStands(b)?`${br?'pontage at the bridge':'pavage at the gate'} on the road to ${esc(o.name)}: ${+(customOf(b.s,'toll')*100).toFixed(1)}% of the worth of each load that passes, for ${esc(acctLabel(ownerAcct(b,b.s)))}`:'it stands on no king\'s road and takes nothing');
+      h+=row('Toll',o&&tollStands(b)?`${br?'pontage at the bridge':'pavage at the gate'} on the road to ${esc(o.name)}: ${+(customOf(b.s,'toll')*100).toFixed(1)}% of the worth of each load that passes, for ${esc(detailTollOwner(b,b.s))}`:'it stands on no king\'s road and takes nothing');
       h+=row('Takings',`${Math.round(b._tk||0)} this year, ${Math.round(b._tkY||0)} last year; the keeper's pay ${Math.round(b._wgY||0)}${tollKeeper(b)?'':' — no one lives here, and the carts go by free'}`);}
     if(STORAGE_TYPES[b.arch]){const R=storageBuildingReport(b.s,b);if(R){h+=row('Storage',`${R.used.toFixed(1)} / ${R.capacity.toFixed(0)} load-volume (${R.public?'shared intake':'owner only'})`);h+=row('Contents',Object.entries(R.goods).map(([g,q])=>`${esc(g)} ${q.toFixed(2)}`).join(' · ')||'empty');h+=row('Custody owners',R.owners.map(([o,q])=>`${esc(o)}: ${q.toFixed(1)} load-volume`).join(' · ')||'none');h+=row('Protection',`${Math.round((1-R.protection)*100)}% lower base spoilage; exposed stock spoils at four times base`);h+=row('Market carriage',Number.isFinite(R.marketDistance)?`${Math.round(R.marketDistance)} m along accessible streets`:'route blocked');}}
     if(b.why){const w=b.why,bits=[];
@@ -10338,7 +10364,7 @@ function inspectorCard(pk,full=false){
     setHTML(title,`<img src="${sigURL(n.house)}">`+esc(fullTitle(n)));
     sub.textContent=n.role+' · '+houseOf(n).name+(n.alive?'':n.retiredDay!=null?' · title ended':' · deceased');
     h+=row('Age',n.alive?ageOf(n):(n.age??'—'));
-    if(n.alive){const at=notableWhere(n);if(at?.army)h+=row('Lodging','with '+esc(at.army.name));else if(at?.b)h+=row('Lodging',`${esc(buildingName(at.b)||ARCH[at.b.arch][4])}, ${esc(at.s.name)}${at.secure?' — private chambers in the keep':''}`);}
+    if(n.alive){const at=notableWhere(n);if(at?.army)h+=row('Lodging','with '+esc(at.army.name));else if(at?.b)h+=row('Lodging',`${esc(name(at.b)||ARCH[at.b.arch][4])}, ${esc(at.s.name)}${at.secure?' — private chambers in the keep':''}`);}
     h+=row('Traits',n.traits.join(', '));h+=`<div class="note"><a class="tr" data-tree="${tKey(n)}">Family tree${n.titles&&n.titles.length?', titles and the line of succession':''}</a></div>`;
     if(n.g){h+=row('Nature',natureWords(n));h+=row('Learning',learningWords(n));}
     const nl=m=>m?`<a class="nm" data-nm="n${m.id}">${esc(m.name)}</a>`:'',ppl=c=>`<a class="pp" data-pid="${c.id}">${esc(folkName(c))}</a>`;
@@ -10421,7 +10447,7 @@ function inspectorCard(pk,full=false){
     setHTML(title,'The king\'s road');sub.textContent=A.name+' — '+Bs.name;
     h+=row('Length',(polyLen(r.path)/1000).toFixed(1)+' km');
     h+=row('Traffic',(r.vol||0)>3?'busy':(r.vol||0)>1?'steady':(r.vol||0)>0.2?'light':'quiet');
-    {const T=(r._tolls||[]).filter(tollStands),up=r._upW||0;if(T.length)h+=row('Tolls',T.map(b=>`at ${esc(b.s.name)}, for ${esc(acctLabel(ownerAcct(b,b.s)))}: ${Math.round(b._tkY||0)} last year`).join('; '));
+    {const T=(r._tolls||[]).filter(tollStands),up=r._upW||0;if(T.length)h+=row('Tolls',T.map(b=>`at ${esc(b.s.name)}, for ${esc(detailTollOwner(b,b.s))}: ${Math.round(b._tkY||0)} last year`).join('; '));
       h+=row('Kept by',T.length?'the owners of its toll houses, from the tolls first and their chests after':'the lords at either end, each his half, by the custom of the realm');
       if(r._upY!=null)h+=row('Mending',r._upY>0?`${Math.round(r._upY)} last year of the ${Math.round(up)} it wants${T.length?`, ${Math.round(r._upT||0)} of it from the tolls`:''}${r._upY<up-0.5?': the rest unpaid, it wears':''}`:`none last year of the ${Math.round(up)} it wants: no keeper had it beyond his reserve, and it wears`);}
     const carts=(W.caravans||[]).filter(c=>!c.sea&&!c.river&&day()>=c.departDay&&day()<c.arriveDay&&((c.origin===r.a&&c.dest===r.b)||(c.origin===r.b&&c.dest===r.a))).length;
@@ -10473,7 +10499,7 @@ function inspectorCard(pk,full=false){
       if(t)h+=row('Now',`on the road from ${esc(W.settlements[t.from]?.name||'?')} to ${esc(W.settlements[t.to]?.name||'?')} — ${t.home?{market:'home from market',kin:'home from seeing her mother',pilgrim:'home from pilgrimage'}[t.why]||'coming home':{bride:'a bride going to her husband\'s house',migrant:'leaving for a new home',market:'to market, with eggs, cheeses and wool to sell',kin:'to see her mother',pilgrim:'on pilgrimage to the shrine'}[t.why]||'on the road'}; there ${dateStr(Math.ceil(t.arrive))}`);
       else if(aw)h+=row('Now',esc(aw.what)+`; home by ${dateStr(Math.ceil(aw.until))}`);
       else if(pk.c&&pk.c.doing)h+=row('Now',esc(pk.c.doing));}
-    if(home)h+=row('Home',`${esc(buildingName(home)||((TIERNAME[home.tier]||'')+' '+ARCH[home.arch][4]))} in the ${esc(home.district||'')} quarter`);
+    if(home)h+=row('Home',`${esc(name(home)||((TIERNAME[home.tier]||'')+' '+ARCH[home.arch][4]))} in the ${esc(home.district||'')} quarter`);
     if(p.sp&&!p.sp.dead)h+=row(p.sx==='f'?'Husband':'Wife',pl(p.sp));
     if(p.ma)h+=row('Mother',p.ma.dead?esc(folkName(p.ma))+' †':pl(p.ma));
     if(p.bast){const sire=p.sire&&notableById(p.sire);h+=row('Father',sire?esc(fullTitle(sire))+' (natural child)':p.pa?(p.pa.dead?esc(folkName(p.pa))+' †':pl(p.pa))+' (born out of wedlock)':'unknown');}
@@ -10486,7 +10512,7 @@ function inspectorCard(pk,full=false){
     {const o=officeTitle(p);if(o)h+=row('Office',esc(o));}
     if(fm)h+=row('Family',`${esc(fm.n)} — ${{occ:'named for a founder\'s trade',loc:'named for where the first of them lived',nick:'named for how a founder looked or carried himself',patr:'named for a founder\'s father',fitz:'a lord\'s natural line'}[fm.k]||'an old name'}, first in ${esc(W.settlements[fm.home]?.name||'the realm')}`);
     h+=`<div class="note"><a class="tr" data-tree="${tKey(p)}">Family tree</a></div>`;
-    if(full){h+=detailHousehold(s,p);h+=detailTable('detail-skills','Learning and skills',['Skill','Ability'],SKILLS.map((k,i)=>[esc(k),`${esc(skillWord(p.sk?.[i]||0)||'untaught')} · ${detailNumber((p.sk?.[i]||0)*100)}%`]));}
+    if(full){h+=detailHousehold(s,p,name);h+=detailTable('detail-skills','Learning and skills',['Skill','Ability'],SKILLS.map((k,i)=>[esc(k),`${esc(skillWord(p.sk?.[i]||0)||'untaught')} · ${detailNumber((p.sk?.[i]||0)*100)}%`]));}
     h+=row('Nature',p.nat??natureWords(p));h+=row('Learning',p.lrn??learningWords(p));if(p.dead&&p.dd!=null)h+=row('Died',dateStr(p.dd)+`, aged ${Math.floor((p.dd-p.b)/360)}`);
     {const E=p.ev||[];h+=`<div class="dhead" style="margin-top:6px">Life</div><div class="note">Born ${dateStr(p.b)}</div>`+E.map(([d,t])=>`<div class="note">${dateStr(d)}: ${esc(t)}</div>`).join('');}
     if(!p.dead)flyToBtn(fb,'Find and follow',()=>goPerson(p,s)); // the card has one button: the living are found where they are
@@ -12016,7 +12042,7 @@ function tickStone(){ // closing demand: what remains to be built, for departing
   const ad=AD();
   for(const s of W.settlements){
     let w=0;if(ad>=1150){if(s.walls===1||s.kind!=='village'&&!s.wallRad&&s.pop>750)w+=stoneFor(s,'wall');if(s.bailey&&!s.baileyStone)w+=stoneFor(s,'bailey');if(s.bastions&&!s.citadel)w+=stoneFor(s,'citadel');}
-    if(ad>=1070&&!s.motteStone&&(s.motte||ad>=1150)&&!(W.projects||[]).some(q=>q.type==='castle'&&!q.dead&&W.settlements[q.si]===s))w+=stoneFor(s,'keep');for(const b of s.buildings)if(b.ch&&b.ch.next&&!b.removed)w+=b.ch.next.st||0; // what the parish masons will want
+    if(constructionCapability(s,'stoneKeep',ad).available&&!s.motteStone&&(s.motte||ad>=1150)&&!(W.projects||[]).some(q=>q.type==='castle'&&!q.dead&&W.settlements[q.si]===s))w+=stoneFor(s,'keep');for(const b of s.buildings)if(b.ch&&b.ch.next&&!b.removed)w+=b.ch.next.st||0; // what the parish masons will want
     if(s.cas&&s.cas.next)w+=s.cas.next.st||0;
     if(ad>=1200&&s.prosperity>55&&s.kind!=='village')w+=stoneFor(s,'house')*12;if(ad>=1250&&s.harbor)w+=stoneFor(s,'wharf');
     s._stoneWant=w+storageMaterialDemand(s,'stone')+castleFoundationDemand(s,'stone');s._timberWant=castleFoundationDemand(s,'timber');}
@@ -13720,17 +13746,17 @@ function inRevolt(hi){ // is this house in arms against the crown right now?
   return !!W.war&&hi!==0&&(hi===W.war.rebel||W.armies.some(x=>x.side==='rebel'&&!x.gone&&x.house===hi));
 }
 function sheltered(s,peacekeeping=false){const si=W.settlements.indexOf(s),bucket=armySettlementIndex().bySettlement.get(si)||[];let total=0;for(const b of bucket)if(!b.gone&&!b.field&&(b.state==='idle'||b.state==='arrived')&&(peacekeeping?friendlyTown(b,s):b.house===s.owner))total+=b.strength;return total;}
-function prominence(s){ // height of the town above the country within ~300 m: high ground tires an assault
-  if(s._prom==null){let t=0;for(let k=0;k<12;k++){const an=k/12*Math.PI*2;t+=hAt(s.pos.x+Math.cos(an)*300,s.pos.z+Math.sin(an)*300);}s._prom=hAt(s.pos.x,s.pos.z)-t/12;}
+function prominence(s,readOnly=false){ // height of the town above the country within ~300 m: high ground tires an assault
+  if(s._prom==null){let t=0;for(let k=0;k<12;k++){const an=k/12*Math.PI*2;t+=hAt(s.pos.x+Math.cos(an)*300,s.pos.z+Math.sin(an)*300);}const pr=hAt(s.pos.x,s.pos.z)-t/12;if(readOnly)return pr;s._prom=pr;}
   return s._prom;}
-function fortOf(s){
+function fortOf(s,readOnly=false){
   const c=activeFort(s),parts=[];let mult=1;
   if(c){const dm=wallDamage(c),n=c.wallRad.length,k=Math.max(0,1-0.7*dm-(c.wallRazed||0)/n)*(c.wallBuild?(c.wallBuild.upgrade?0.6+0.4*wallProg(c):wallProg(c)):1);
     mult+=(c.walls>=2?1.5:0.6)*k;parts.push((c===s?'town ':c===s.motte?'summit ':'castle ')+(c.walls>=2?'stone walls':'palisade and ditch')+(dm>0.05?`, ${Math.round(dm*100)}% battered`:''));
     if(c===s&&s.bastions){mult+=1;parts.push('bastioned trace');}
     if(c===s&&s.citadel){mult+=0.4;parts.push('citadel');}
     if(c!==s){parts.push(`${Math.round((c.protectedShare||0)*100)}% of homes enclosed`);const cfg=s.cas;if(cfg){mult+=Math.max(0,(cfg.towers||0)-4)*0.04+(cfg.gate>=2?0.22:cfg.gate?0.12:0);}}
-    const pr=c===s?prominence(s):c.relief||0;if(pr>8){mult*=1+Math.min(0.4,pr/100);parts.push(`high ground (${Math.round(pr)} m)`);}
+    const pr=c===s?prominence(s,readOnly):c.relief||0;if(pr>8){mult*=1+Math.min(0.4,pr/100);parts.push(`high ground (${Math.round(pr)} m)`);}
     if(c===s&&s.wallKind&&s.natDef>0.02){const k=s.wallKind,n=k.length,nat=k.reduce((t,x)=>t+(x===2||x===1?1:x===3?0.5:0),0)/n;mult*=1+nat*0.8;parts.push(`${Math.round(nat*100)}% natural defence`);}}
   return{mult,parts,circuit:c};}
 
@@ -17107,7 +17133,7 @@ function buildDrawer(tab){
     body.innerHTML=`
       <div class="wrow">Land (map seed)<br><input type="text" id="seedin" value="${SEED}"></div>
       <div class="wrow">Fate (history seed)<br><input type="text" id="fatein" value="" placeholder="a new history (this one: ${FATE})"></div>
-      <div class="wrow">Begin play in<br><select id="erain">${[[850,'AD 850 — the founding: hamlets, motte and bailey'],[1066,'AD 1066 — the realm run forward 216 years'],[1250,'AD 1250 — run forward 400 years'],[1400,'AD 1400 — run forward 550 years']].map(([y,t])=>`<option value="${y}"${START_AD===y?' selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="wrow">Begin play in<br><select id="erain">${[[850,'AD 850 — founding: hamlets, motte and bailey'],[1066,'AD 1066 — direct start: an established realm'],[1250,'AD 1250 — direct start'],[1350,'AD 1350 — direct start'],[1400,'AD 1400 — direct start']].map(([y,t])=>`<option value="${y}"${START_AD===y?' selected':''}>${t}</option>`).join('')}</select></div>
       <div class="wrow">Land<br><select id="emap"><option value="">generated from the seed</option>${Object.entries(REALMAPS).map(([k,M])=>`<option value="${k}"${REALMAP_ID===k?' selected':''}>${esc(M.title)}</option>`).join('')}</select></div>
       <div class="wrow">Coast<br><select id="ecoast">${[['','as the seed falls (about 2 in 5 by the sea)'],['sea','by the sea'],['land','inland']].map(([v,t])=>`<option value="${v}"${(COAST_PREF||'')===v?' selected':''}>${t}</option>`).join('')}</select></div>
       <button class="wbtn" id="btnreforge">Reforge the realm</button>
@@ -19341,7 +19367,7 @@ function createSimulationWorker(options){
   if(MODEL_ONLY||typeof Worker==='undefined')throw Error('Simulation workers are unavailable');
   const scripts=[...document.querySelectorAll('script')].filter(s=>!s.src&&s.type!=='text/plain'),source=scripts.find(s=>s.textContent.includes('function simTick('))?.textContent;
   if(!source)throw Error('Simulation source is unavailable');
-  const hash=options.hash??`#s=${options.seed}&f=${options.fate}${options.coast?'&c='+options.coast:''}&y=${options.startAD??850}`;
+  const hash=options.hash??`#s=${options.seed}&f=${options.fate}${options.coast?'&c='+options.coast:''}&y=${options.startAD??DEFAULT_START_AD}`;
   const prefix='globalThis.FURLONG_HEADLESS=true;globalThis.KA_MAPS='+JSON.stringify(REALMAPS)+';globalThis.FURLONG_OPTIONS='+JSON.stringify({hash,build:buildId()})+';\n';
   const url=URL.createObjectURL(new Blob([prefix,source,'\nsimulationWorkerRuntime();'],{type:'text/javascript'}));let worker;try{worker=new Worker(url);}finally{URL.revokeObjectURL(url);}
   const client=new SimulationWorkerClient(worker);client.ready=client.request('init',{...options,source:scripts.map(s=>s.textContent).join('\n')});return client;
@@ -19350,7 +19376,7 @@ function createSimulationWorker(options){
 
 async function startSimulation(options={}){
   if(options.outcomeJournal)STORAGE_OUTCOMES.journal=options.outcomeJournal;
-  FATE=(options.fate??1)>>>0;COAST_PREF=options.coast??null;START_AD=clamp(options.startAD??850,850,1500);
+  FATE=(options.fate??1)>>>0;COAST_PREF=options.coast??null;START_AD=clamp(options.startAD??DEFAULT_START_AD,850,1500);
   await generateWorld((options.seed??1234567)>>>0,options.progress??(async()=>{}));
   initializeSimulation();await advancePrehistory(options.progress);beginChronicle();return W;
 }
@@ -19367,11 +19393,11 @@ async function boot(){
   {const sv=location.hash.match(/[#&]save=([\w-]+)/);RESUME_CODE=sv?sv[1]:null;} // a save to read again: the world's own params are the rest of the link
   const cm=location.hash.match(/c=(sea|land)/);COAST_PREF=cm?cm[1]:null;
   const ym=location.hash.match(/y=(\d{3,4})/),em=location.hash.match(/e=(dark|high)/);
-  START_AD=clamp(ym?+ym[1]:em&&em[1]==='high'?1250:850,850,1500);
+  START_AD=clamp(ym?+ym[1]:em?(em[1]==='high'?1250:850):DEFAULT_START_AD,850,1500);
   const m=location.hash.match(/s=(\d+)/);
   const seed=m?parseInt(m[1],10)>>>0:Math.floor(Math.random()*1e9);
   const fm=location.hash.match(/f=(\d+)/);FATE=fm?parseInt(fm[1],10)>>>0:1+Math.floor(Math.random()*1e9); // a new history each time, unless the link names one
-  {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+(ym?'&y='+ym[1]:em?'&e='+em[1]:'')+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:'')+(MAPKM!==9?'&km='+MAPKM:'')+(REALMAP_ID?'&map='+REALMAP_ID:''));}
+  {const hm=location.hash.match(/[#&](h=\d+)/);history.replaceState(null,'','#s='+seed+'&f='+FATE+'&y='+START_AD+(cm?'&c='+cm[1]:'')+(hm?'&'+hm[1]:'')+(MAPKM!==9?'&km='+MAPKM:'')+(REALMAP_ID?'&map='+REALMAP_ID:''));}
   const line=document.getElementById('loadline'),bar=document.querySelector('#loadbar>div');
   const progress=(txt,f,delay=30)=>{line.textContent=txt;bar.style.width=Math.round(f*100)+'%';
     return new Promise(r=>setTimeout(r,delay));};
@@ -19467,7 +19493,7 @@ async function packSave(o){const s=JSON.stringify(o);
   return 'J1'+b64u(unescape(encodeURIComponent(s)));}
 async function unpackSave(code){code=String(code||'').trim().replace(/^[\s\S]*[#&]save=/,'').replace(/[&\s][\s\S]*$/,'');const kind=code.slice(0,2),bin=unb64u(code.slice(2));let o;
   if(kind==='F1'){const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);o=JSON.parse(await new Response(new Blob([u]).stream().pipeThrough(new globalThis.DecompressionStream('deflate-raw'))).text());}
-  else if(kind==='J1')o=JSON.parse(decodeURIComponent(escape(bin)));else throw new Error('That is not a Furlong save.');return validateSaveDocument(o);}
+  else if(kind==='J1')o=JSON.parse(decodeURIComponent(escape(bin)));else throw new Error('That is not a Crown & Commons save.');return validateSaveDocument(o);}
 const SAVEK='furlong-saves';
 function savesList(){try{return JSON.parse(localStorage.getItem(SAVEK)||'[]');}catch(e){return[];}}
 function savesPut(L){try{localStorage.setItem(SAVEK,JSON.stringify(L));return true;}catch(e){return false;}}
@@ -19632,9 +19658,9 @@ const worldSaveCodeHash=s=>{let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.ch
 async function worldSaveSHA256(text){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));return [...new Uint8Array(d)].map(n=>n.toString(16).padStart(2,'0')).join('');}
 async function worldSaveZip(bytes){return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());}
 async function worldSaveUnzip(bytes){bytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);return bytes[0]===0x1f&&bytes[1]===0x8b?new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()):bytes;}
-function worldSaveHeader(bytes){const m=WORLD_SAVE.magic;for(let i=0;i<m.length;i++)if(bytes[i]!==m.charCodeAt(i))throw Error('That is not a saved Furlong world.');
+function worldSaveHeader(bytes){const m=WORLD_SAVE.magic;for(let i=0;i<m.length;i++)if(bytes[i]!==m.charCodeAt(i))throw Error('That is not a saved Crown & Commons world.');
   const k=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint32(m.length,true),at=m.length+4;
-  const header=JSON.parse(new TextDecoder().decode(bytes.subarray(at,at+k)));if(header.format!==WORLD_SAVE.format)throw Error('That is not a saved Furlong world.');return {header,body:at+k};}
+  const header=JSON.parse(new TextDecoder().decode(bytes.subarray(at,at+k)));if(header.format!==WORLD_SAVE.format)throw Error('That is not a saved Crown & Commons world.');return {header,body:at+k};}
 // The accessors a world may hold, by their source text, with the binder that makes each (read off the binders themselves).
 function worldSaveFamilies(){if(WORLD_SAVE.families)return WORLD_SAVE.families;const F=new Map(),src=f=>Function.prototype.toString.call(f);
   const probe=(family,o,keys)=>{for(const k of keys){const d=Object.getOwnPropertyDescriptor(o,k);if(d.get)F.set(src(d.get),family);if(d.set)F.set(src(d.set),family);}};
@@ -19870,7 +19896,7 @@ function worldSaveInstall({history:H,extra:X}){
    says, so a new button is a new tool with no upkeep. A few verbs no button carries: read the state, find a thing by
    name, open its card, read the chronicle, speak as whom. An agent reaches it through the connect dialog (a local MCP
    bridge), or, where the game runs in the agent's own browser, as window.FURLONG. */
-const ADV_PROMPT=()=>`Be my advisor in Furlong, a medieval kingdom simulation I am playing in my browser on this computer. Set yourself up, then stay in role.
+const ADV_PROMPT=()=>`Be my advisor in Crown & Commons, a medieval kingdom simulation I am playing in my browser on this computer. Set yourself up, then stay in role.
 
 1. Check that Node 18 or later is installed (node --version); install it if not.
 2. Save the program at the end of this message, exactly as given, as furlong-advisor.mjs in a folder of its own (for example ~/furlong-advisor/furlong-advisor.mjs). It is the advisor bridge: one file, no dependencies. It listens only on 127.0.0.1 and accepts only my game, which must give the pairing code.
@@ -20301,7 +20327,7 @@ state:'none',ready:null,
       {name:'discover',description:'List the controls usable now, with names to pass to execute. Scope: "hud", "menu", "crown", "rates", "acts", "over", "world", "annals", and while open "card", "petition", "plan", "context", "info", "event", "legend", "place", "dialog"; omit for all.',inputSchema:{type:'object',properties:{scope:{type:'string'}}},execute:i=>run('discover',{scope:i.scope?String(i.scope):undefined})},
       {name:'execute',description:'Use a control by the name discover gives (press a button; {value} for a slider, list or box), or "game:place" with {at: a place name or {x,z}, target: a code such as a host a12} to finish an act that wants a place ({cancel:true} gives it up), or "game:plan" {kind, points, commit} for the plan brush. Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); answers with the game’s own reply and the annals the press wrote. Changes the player’s game: only when the player asked for it.',inputSchema:{type:'object',properties:{tool:{type:'string'},args:{type:'object'}},required:['tool']},execute:i=>run('execute',{tool:String(i.tool||''),args:i.args&&typeof i.args==='object'?i.args:{}})}];},
   async brief(){const[P,st,ch]=await Promise.all([ADV.view('advisor-persona'),ADV.view('advisor-state',{path:'realm'}),ADV.view('annals',{count:6})]);ADVCHAT.who=P;
-    return `You are the advisor in Furlong, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
+    return `You are the advisor in Crown & Commons, a medieval kingdom simulation the player is playing in this page. ${P.speak}${P.name?` You are ${P.name}${P.of?`, of ${P.of}`:''}${P.traits?`; your character: ${P.traits.join(', ')}`:''}.`:''}
 Keep to that role. Answer briefly and concretely, with the realm's own names. Read before you speak: use the tools (state, panel, chronicle, inspect, search for the rules) rather than guessing, and explain why things happen from the game's workings. Suggest how to play; change the game (execute) only when the player asks you to. Write in Markdown. Whenever you name a place, house, lord, host or any of the folk, make it a link the player can click to go there: [[Name]] with the name exactly as the tools give it, or [words](game:CODE) with the code the tools give (s… places, h… houses, n… lords and ladies, a… hosts, p… the folk; inspect lists a card's links with their codes).${ADV.muted?' The player has asked for quiet: answer only what is asked, offer no counsel unasked.':''}${ADVCHAT.tools?'':' (Your tools are unavailable in this view: answer from the realm as given below.)'}
 
 ${ADV_PRIMER}
@@ -20379,7 +20405,7 @@ boot();
 <script type="text/plain" id="advbridge">
 #!/usr/bin/env node
 /* furlong-advisor: a stateless MCP server (stdio) that lets any agent app, on any model, see and play the game of
-   Furlong the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
+   Crown & Commons the player has open in a browser on the same machine. Three tools: search, discover, execute. The game
    pairs with it from its Advisor dialog (Menu → Advisor), with a code this bridge gives in its answers; the bridge speaks to the page over
    a WebSocket on 127.0.0.1 only. The game's rules (its README and its guide to the screen, bundled) are searchable before pairing.
    No dependencies:  npx -y furlong-advisor   (FURLONG_PORT to change the port, default 7357) */
@@ -20473,7 +20499,7 @@ function attach(s) {
   s.on('close', () => { if (sock === s) { sock = null; log('the game closed the connection'); } });
   s.on('error', () => { });
 }
-const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Furlong advisor bridge. Pair from the game’s Advisor dialog (Menu → Advisor).'); });
+const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('Crown & Commons advisor bridge. Pair from the game’s Advisor dialog (Menu → Advisor).'); });
 server.on('upgrade', (req, s) => {
   const u = new URL(req.url, 'http://x');
   if (!req.headers['sec-websocket-key']) { s.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
@@ -20506,7 +20532,7 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { scope: { type: 'string' } } } },
   { name: 'execute', description: 'Use a control or verb by the name discover gives it: press a button, set a slider/list/box ({value}), or run a verb (game:state {path}, game:find {name}, game:inspect {name} or {code, full}, game:panel {kind, town, house}, game:chronicle {n, cat, from, to, q}, game:persona, game:place {at, target} or {cancel:true}, game:plan {kind, points, commit}, game:advise). Names are stable (crown:h-honour:3 is honouring house 3 whatever the day); each control lists its label, cost, why it is disabled, target and any risk. Answers with the game’s own reply and the annals the press wrote. Acts on the player’s real game: do it only when the player asks.',
     inputSchema: { type: 'object', properties: { tool: { type: 'string' }, args: { type: 'object' } }, required: ['tool'] } }];
-const INSTRUCTIONS = `You are the advisor in Furlong, a medieval kingdom simulation the player has open.
+const INSTRUCTIONS = `You are the advisor in Crown & Commons, a medieval kingdom simulation the player has open.
 Call execute {tool:"game:persona"} first and keep to it: when the player rules, you are their closest confidant at court (a named person in the game, speaking in character, in the first person, using the realm's own names); otherwise you are the game master.
 Read before you speak: game:state, game:panel, game:chronicle, game:inspect, and search for the rules. Explain why things happen from the game's own workings.
 Counsel, don't seize the reins: change the game (execute a control) only when the player asks you to.
@@ -20554,7 +20580,7 @@ process.stdin.on('end', () => process.exit(0));
 
 </script>
 <script type="text/plain" id="advrules">
-# Furlong: Kingdom Annals
+# Crown & Commons
 
 ## [▶ Play in your browser](https://healdgar.github.io/furlong-kingdom-annals/)
 
@@ -20578,7 +20604,7 @@ textures live in `assets/`.
 
 ![A medieval town with textured houses, streets and public spaces](assets/screenshots/town.png)
 
-![A timber motte-and-bailey castle beside a riverside town](assets/screenshots/castle.png)
+![A castle and its fortified grounds](assets/screenshots/castle.png)
 
 Screenshots from the running game.
 
@@ -20635,8 +20661,7 @@ remaining broad searches and reject new or increased recognized scans.
 
 `node --test tools/provision.test.mjs` checks food replenishment, ownership,
 credit and payment conservation against the functions in `index.html`.
-`tools/soak.mjs` measures longer histories in isolated Chrome instances using
-the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
+`tools/soak.mjs` measures longer histories in isolated Chrome instances. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
 
 Population/census caching and shared route trees reduce repeated computation.
 A background routing worker retains the same synchronous fallback. [Implementation and matched-history checks](docs/PERFORMANCE.md).
@@ -21656,14 +21681,15 @@ What happens is decided by quantities the economy produces, not by numbers cross
   the sea can feed them.
 - Beyond the map the unknown lands fade into the haze and the sea runs on.
 - Speed ⏩ (key 5) reels through about a year a second to watch growth.
-- One history. Every realm is founded the same way in AD 850: thinly
-  peopled hamlets, fords and landings in timber and thatch, the lord's
-  seat a motte and bailey. Everything after that (walls, stone, charters,
-  new towns, parishes and friaries, bastions, the lords' wars and
-  bargains) is the live simulation. Choosing a later start (World tab, or
-  `#s=SEED&y=1250`) runs that same history forward unseen to the chosen
-  year, then hands you the realm as it has become. The one date-dependent
-  rule is what builders of a year know how to make: charters c. 950,
+- A new realm opens directly in AD 1066 by default; choose AD 850 in the
+  World tab for the founding, with hamlets, fords and landings in timber
+  and thatch, and the lord's seat a motte and bailey. Later starts (World
+  tab, or `#s=SEED&y=1250`) generate their opening settlement fabric and
+  people in that age; no earlier centuries are simulated. The same seed,
+  fate and start year give the same initial world at every speed. The lords'
+  wars, bargains, building and growth after opening are live simulation.
+  The date-dependent rule is what builders of a year know how to make:
+  charters c. 950,
   framed houses and rebuilt churches c. 1000, stone keeps c. 1070, planned
   towns c. 1120, stone walls and baileys c. 1150, stone houses in town
   cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.
@@ -21749,7 +21775,7 @@ within sane bounds — and the realm still produces story.
 
 The date (click it for the **timeline**), the treasury of the crown or house you
 rule (click it for the **kingdom accounts**), **Pause**, the **speed** list and
-**Menu**. Clicking *Furlong* shows what the game is.
+**Menu**. Clicking *Crown & Commons* shows what the game is.
 
 ## Speeds
 

@@ -18,6 +18,8 @@ function declaration(name){
   assert.fail(`unterminated ${name}`);
 }
 const functions=['castleFoundationAuthority','castleFoundationSpec','castleFoundationProposal','castleFoundationCommission','castleFoundationTick','castleFoundationDemand','casKeep','casRing','tickProjects','tickCastles'];
+const constructionMethods=html.match(/^const CONSTRUCTION_METHODS=.*$/m)?.[0];
+assert.ok(constructionMethods,'missing shared construction methods');
 
 function fixture({ad=1000,cash=10000,timber=0,stone=0,workers=true}={}){
   const account={gold:cash},workersAccount={gold:0},house={name:'Ash',seat:0,gold:cash,exiled:false},s={name:'Seat',owner:1,kind:'town',role:'seat',pos:{x:0,z:0},buildings:[],stores:{timber,stone},furl:[],places:[],streets:[],history:[]};
@@ -35,7 +37,7 @@ function fixture({ad=1000,cash=10000,timber=0,stone=0,workers=true}={}){
     buildWorks:(town,v,who,why)=>{const paid=workers>0?Math.min(v*workers,Math.max(0,who?.gold||0)):0;if(paid){who.gold-=paid;workersAccount.gold+=paid;}payments.push(['labour',why,paid]);return paid;},
     castleFoundationSite:(town,spec,retained=null)=>{if(!reachable||!siteAvailable)return null;if(!retained)site.spec=spec;return retained||site;},
   });
-  vm.runInContext(functions.map(declaration).join('\n'),ctx);
+  vm.runInContext([constructionMethods,declaration('constructionCapability'),...functions.map(declaration)].join('\n'),ctx);
   return {ctx,W,s,house,account,site,payments,events,get completeCalls(){return completeCalls;},set reachable(v){reachable=v;},set siteAvailable(v){siteAvailable=v;},set cash(v){house.gold=v;account.gold=v;},set workers(v){workers=v;},set ad(v){ad=v;},set day(v){currentDay=v;},
     evaluate(code){return vm.runInContext(code,ctx);},propose(){ctx.s=s;return ctx.castleFoundationProposal(s,0);},commission(){return ctx.castleFoundationCommission(s,0);},tick(q){ctx.castleFoundationTick(q);}};
 }
@@ -53,6 +55,16 @@ test('current purse and live site determine whether a first foundation can be pr
   const r=fixture();assert.ok(r.propose());
   r.cash=1;assert.equal(r.propose(),null,'a depleted current owner cannot commission it');
   r.cash=10000;r.reachable=false;assert.equal(r.propose(),null,'a lost site quote cannot commission it');
+});
+
+test('the first keep uses the shared historical method gate at its calendar boundary',()=>{
+  const r=fixture({ad:1069});
+  assert.equal(r.evaluate("constructionCapability(s,'stoneKeep').available"),false);
+  assert.equal(r.evaluate('castleFoundationSpec(s).timber'),true);
+  r.ad=1070;
+  assert.equal(r.evaluate("constructionCapability(s,'stoneKeep').available"),true);
+  assert.equal(r.evaluate('castleFoundationSpec(s).timber'),false);
+  assert.equal(r.evaluate("constructionCapability(s,'unknown').available"),false);
 });
 
 test('commission stores one native project and suppresses a duplicate proposal',()=>{

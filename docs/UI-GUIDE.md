@@ -4,7 +4,7 @@
 
 The date (click it for the **timeline**), the treasury of the crown or house you
 rule (click it for the **kingdom accounts**), **Pause**, the **speed** list and
-**Menu**. Clicking *Furlong* shows what the game is.
+**Menu**. Clicking *Crown & Commons* shows what the game is.
 
 ## Speeds
 

@@ -1,6 +1,6 @@
 # Daily first-castle foundations
 
-Recorded 2026-10-10 before implementation, following the dependency audit for #60.
+Implemented first-foundation runtime, updated 2026-10-10 following the dependency audit for #60.
 
 The existing simulation supplies ruler authority, named purses, property value and
 threat assessments, real construction wages/materials, saved daily projects,
@@ -71,6 +71,13 @@ the native timber-wall cost by fitted perimeter, and approach length. Defence us
 are valued at current native prices for the proposal and bought from actual
 sellers when work proceeds.
 
+Stone availability goes through the shared pure `constructionCapability`
+calendar seam. This preserves the existing AD 1070 gate for generated castle
+forms, first-foundation quotes, timber/motte conversions and stone-demand
+forecasting; it does not read or write a technology tree. The proposed AD 1080
+stone-keep date remains a documented compatibility mismatch pending #44; see
+[TECH-TREE.md](TECH-TREE.md).
+
 The tower's timber frame is calibrated at 0.06 abstract loads per cubic metre of
 its envelope; stone towers require timber floors/roof at 0.08 loads per square
 metre. Palisade timber is 0.25 loads per metre. The existing 150-load stone keep
@@ -83,6 +90,19 @@ of historical calibration. Materials are secured and consumed into the unfinishe
 The ward and 2.6 m approach polygons use `occupiedGroundCells`, the existing 15 m agricultural-mask resolution. The same union of newly occupied cells governs rights, foregone value summed across all affected fields, and completion's `markOccupiedGround`. No cash flow is posted for the ruler's own land. Completion removes the yard and approach from production and clears trees inside those surveyed boundaries.
 
 The saved quote is a decision at commission time. Labour/material quantities stay fixed; material purchases use current prices and each day checks current cash. Changed prices may exhaust the purse or strand a project. Previously spent wages and installed material are sunk work.
+
+## Site broad phase
+
+The site survey keeps its existing local building and street hashes and adds
+operation-local axis-aligned bounds for candidate blocks, polygon/lot outlines
+and street segments. These bounds only skip exact tests when disjoint. Point
+checks still use the canonical polygon, rotated-footprint and segment tests;
+approach-versus-building checks still use `streetFootprintOverlap`. For rotated
+building footprints, the broad-phase padding expands by up to `sqrt(2)` in world
+axes, so corners remain candidates. Invalid or missing bounds fail open to the
+exact geometry check. This is not a maintained index or a replacement for exact
+site authority. The current live dependencies and exact reuse limits are recorded
+in [CASTLE-SURVEY-INPUTS.md](CASTLE-SURVEY-INPUTS.md).
 
 ## Verification boundary
 
@@ -121,11 +141,10 @@ must follow the chosen building and materials; there is no single obligatory
 sequence for every castle, abbey or cathedral.
 
 The user requests a commit, push and browser link after each operable, verified
-phase. Following this foundation release, retain the AD 850 option, implement
-deterministic generation of established era starts without centuries of
-prehistory ticks, and test AD 1066–1350. Changing the initial world model is
-authorized; history after that initialization must remain identical at every
-speed.
+phase. The direct-era batch retains AD 850 and initializes contemporary starts
+without centuries of prehistory ticks; AD 1066–1350 opening evidence is recorded
+in the handoff. Changing the initial world model is authorized; history after
+that initialization must remain identical at every speed.
 
 The user's compound clarification is recorded in
 [COMPOUND-BUILDINGS.md](COMPOUND-BUILDINGS.md): castles and abbeys share canonical

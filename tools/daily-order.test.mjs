@@ -10,6 +10,9 @@ const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const contract=JSON.parse(fs.readFileSync(new URL('../docs/SIMULATION-ORDER.json',import.meta.url),'utf8'));
 const dispatch=dailyDispatch(html),names=dispatch.phases.map(p=>p.name);
 const fn=name=>{const n=dispatch.functions.get(name);assert.ok(n,name);return dispatch.source.slice(n.start,n.end);};
+const constructionMethods=html.match(/^const CONSTRUCTION_METHODS=.*$/m)?.[0];
+assert.ok(constructionMethods,'missing shared construction methods');
+const constructionCapability=html.slice(html.indexOf('function constructionCapability('),html.indexOf('\n}',html.indexOf('function constructionCapability('))+2);
 
 test('the actual daily dispatcher covers the survey and obeys its acyclic dependencies',()=>{
   assert.deepEqual(validateDailyOrder(dispatch,contract),[]);
@@ -60,7 +63,7 @@ test('daily quarry production keeps the former monthly physical rate and respect
 test('remaining stone demand is refreshed daily without producing another stone batch',()=>{
   const s={stores:{stone:8},buildings:[],res:{},kind:'village',pop:100},q={type:'pave',r:{a:0,len:100},done:.25},castle={type:'castle',si:0,stone:5,stoneInstalled:2,timber:8,timberInstalled:1};
   const c=vm.createContext({W:{settlements:[s],projects:[q,castle]},AD:()=>850,storageMaterialDemand:()=>2});
-  vm.runInContext(fn('castleFoundationDemand')+'\n'+fn('tickStone'),c);vm.runInContext('tickStone()',c);near(s._stoneWant,14);near(s._timberWant,7);
+  vm.runInContext(constructionMethods+'\n'+constructionCapability+'\n'+fn('castleFoundationDemand')+'\n'+fn('tickStone'),c);vm.runInContext('tickStone()',c);near(s._stoneWant,14);near(s._timberWant,7);
   q.done=.75;vm.runInContext('tickStone()',c);near(s._stoneWant,8);near(s.stores.stone,8);
   castle.stoneInstalled=5;castle.timberInstalled=8;vm.runInContext('tickStone()',c);near(s._stoneWant,5);near(s._timberWant,0);
 });

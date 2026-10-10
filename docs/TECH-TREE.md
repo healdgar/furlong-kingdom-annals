@@ -1,6 +1,18 @@
 # Technology: a proposal
 
-Status: proposal only (2026-10-06). Nothing here is in the game yet.
+Status: proposal only (2026-10-06). Realm discovery, stored knowledge, place
+adoption, patronage and the inventions in this proposal are not implemented.
+The runtime has one narrow construction seam: a pure calendar fallback for the
+stone-keep method, shared by generated castle forms, first-foundation quotes,
+existing timber/motte upgrades and stone-demand forecasting. It stores no
+technology state and does not make other entries in this proposal operative.
+
+For compatibility, the runtime seam currently exposes the existing stone-keep
+gate at AD 1070. This proposal's stone-keep row is dated AD 1080. The difference
+is explicit and remains unresolved until #44 supplies real historical knowledge
+and local adoption. The fallback query has no RNG, resource, price, site,
+payment, adoption or world-write behavior; actual stone and eligible work still
+depend on their ordinary simulation systems.
 
 ## The idea
 

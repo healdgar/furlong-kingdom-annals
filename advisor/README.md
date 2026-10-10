@@ -1,6 +1,6 @@
 # furlong-advisor
 
-An AI advisor for **Furlong**, a medieval kingdom simulation. It is a small MCP server (stdio, no dependencies)
+An AI advisor for **Crown & Commons**, a medieval kingdom simulation. It is a small MCP server (stdio, no dependencies)
 that lets the agent app of your choice, on any model, see the game you have open in your browser, answer for its
 rules, and suggest how to play. When you rule, it speaks as your closest confidant at court; otherwise it is the
 game master. It changes the game only when you ask, and keeps quiet when you tell it to.

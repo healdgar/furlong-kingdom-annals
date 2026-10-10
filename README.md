@@ -1,4 +1,4 @@
-# Furlong: Kingdom Annals
+# Crown & Commons
 
 ## [▶ Play in your browser](https://healdgar.github.io/furlong-kingdom-annals/)
 
@@ -22,7 +22,7 @@ textures live in `assets/`.
 
 ![A medieval town with textured houses, streets and public spaces](assets/screenshots/town.png)
 
-![A timber motte-and-bailey castle beside a riverside town](assets/screenshots/castle.png)
+![A castle and its fortified grounds](assets/screenshots/castle.png)
 
 Screenshots from the running game.
 
@@ -79,8 +79,7 @@ remaining broad searches and reject new or increased recognized scans.
 
 `node --test tools/provision.test.mjs` checks food replenishment, ownership,
 credit and payment conservation against the functions in `index.html`.
-`tools/soak.mjs` measures longer histories in isolated Chrome instances using
-the hardware GPU. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
+`tools/soak.mjs` measures longer histories in isolated Chrome instances. [Commands and limits](docs/SOAK.md); [provisioning fix and measurements](docs/PROVISIONING.md); [household ownership and inheritance](docs/HOUSEHOLDS.md); [livestock conservation repair](docs/INVENTORY.md); [physical storage and construction](docs/STORAGE.md).
 
 Population/census caching and shared route trees reduce repeated computation.
 A background routing worker retains the same synchronous fallback. [Implementation and matched-history checks](docs/PERFORMANCE.md).
@@ -1100,14 +1099,15 @@ What happens is decided by quantities the economy produces, not by numbers cross
   the sea can feed them.
 - Beyond the map the unknown lands fade into the haze and the sea runs on.
 - Speed ⏩ (key 5) reels through about a year a second to watch growth.
-- One history. Every realm is founded the same way in AD 850: thinly
-  peopled hamlets, fords and landings in timber and thatch, the lord's
-  seat a motte and bailey. Everything after that (walls, stone, charters,
-  new towns, parishes and friaries, bastions, the lords' wars and
-  bargains) is the live simulation. Choosing a later start (World tab, or
-  `#s=SEED&y=1250`) runs that same history forward unseen to the chosen
-  year, then hands you the realm as it has become. The one date-dependent
-  rule is what builders of a year know how to make: charters c. 950,
+- A new realm opens directly in AD 1066 by default; choose AD 850 in the
+  World tab for the founding, with hamlets, fords and landings in timber
+  and thatch, and the lord's seat a motte and bailey. Later starts (World
+  tab, or `#s=SEED&y=1250`) generate their opening settlement fabric and
+  people in that age; no earlier centuries are simulated. The same seed,
+  fate and start year give the same initial world at every speed. The lords'
+  wars, bargains, building and growth after opening are live simulation.
+  The date-dependent rule is what builders of a year know how to make:
+  charters c. 950,
   framed houses and rebuilt churches c. 1000, stone keeps c. 1070, planned
   towns c. 1120, stone walls and baileys c. 1150, stone houses in town
   cores c. 1200, friaries c. 1220, bastions c. 1500. Dates are shown AD.

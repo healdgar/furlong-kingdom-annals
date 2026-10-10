@@ -7,7 +7,7 @@ import vm from 'node:vm';
 
 const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=name=>{const hit=source.match(new RegExp(`^function ${name}\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))`,'m'));assert.ok(hit,`missing ${name}`);return hit[0];};
-const REAL=['lerpPt','segDist','resample','obbCorners','makeHash','streetFootprintOverlap','serviceDoor','locW','inPoly','lakeAt','wallRadAt','fortCenter','casRing','fortCircuits','fortContains','placeR','placeHit','placeFitRadii','furlongAt','castleFoundationLandOK','circuitLen','castleFoundationSite'];
+const REAL=['lerpPt','segDist','resample','obbCorners','obbOverlap','makeHash','streetFootprintOverlap','serviceDoor','locW','inPoly','lakeAt','wallRadAt','fortCenter','casRing','fortCircuits','fortContains','placeR','placeHit','placeFitRadii','furlongAt','castleFoundationLandOK','castleFoundationBoxMayHit','castleFoundationSegmentMayHitBox','circuitLen','castleFoundationSite'];
 function runtime({water=()=>false,ground=()=>true,field={dom:0,lord:-1,own:-1,wk:-1,jx:0,jz:0},street=null}={}){
   const s={pos:{x:0,z:0},radius:70,owner:0,buildings:[],streets:[],places:[],remnants:[],relicWalls:[]};
   const st=street||{kind:'lane',hw:2,pts:[{x:0,z:-100},{x:0,z:100}]};s.streets=[st];
@@ -32,6 +32,16 @@ function legacyPlaceFitRadii(p,clear,stretch=1){ // previous full scan, before t
   return r.every(v=>Number.isFinite(v)&&v>=3)?r:null;
 }
 const siteShape=q=>q&&({f:{x:q.f.x,z:q.f.z,w:q.f.w,d:q.f.d,rot:q.f.rot},ward:{x:q.ward.x,z:q.ward.z,r:q.ward.r,rad:Array.from(q.ward.wallRad),gateA:q.ward.gateA},path:q.path.map(p=>[p.x,p.z])});
+
+function compareBroadPhase(R){
+  const C=R.C,exactBox=C.castleFoundationBoxMayHit,exactConnector=C.castleFoundationSegmentMayHitBox,exactSeg=C.segDist;let calls=0;
+  C.segDist=(...a)=>{calls++;return exactSeg(...a);};C.castleFoundationBoxMayHit=C.castleFoundationSegmentMayHitBox=()=>true;
+  const original=R.survey(),originalCalls=calls;calls=0;C.castleFoundationBoxMayHit=exactBox;C.castleFoundationSegmentMayHitBox=exactConnector;
+  const filtered=R.survey(),filteredCalls=calls;
+  assert.deepEqual(siteShape(filtered),siteShape(original),'the exact clear/site result is unchanged');
+  assert.ok(filteredCalls<originalCalls,`broad phase skips exact segment distances (${filteredCalls} vs ${originalCalls})`);
+  C.segDist=exactSeg;return {original,filtered,originalCalls,filteredCalls};
+}
 
 test('fresh survey chooses an accessible convex yard and retained survey revalidates it',()=>{
   const R=fixture(),{site}=R;
@@ -91,4 +101,36 @@ test('minimum-radius cutoff rejects the same later-ray and road-clearance failur
   const target=40/128*Math.PI*2;
   run((x,z)=>!(Math.hypot(x,z)>16&&Math.abs(Math.atan2(z,x)-target)<0.025));
   run((x,z)=>!(x>13&&Math.abs(z)<1.2)); // a narrow road corridor rejected by the clearance callback
+});
+
+
+test('operation-local bounds preserve exact surveys with moved lots, long narrow polygons, and roads',()=>{
+  const R=runtime(),b={x:500,z:500,w:8,d:8,rot:0,state:'sound'};R.s.buildings.push(b);const initial=R.survey();assert.ok(initial);
+  b.x=initial.ward.x;b.z=initial.ward.z+34;b.lot=[{x:initial.ward.x-80,z:initial.ward.z+32},{x:initial.ward.x+80,z:initial.ward.z+32},{x:initial.ward.x+80,z:initial.ward.z+33},{x:initial.ward.x-80,z:initial.ward.z+33}];
+  R.s.streets.push({kind:'lane',hidden:true,hw:2,pts:[{x:initial.ward.x-120,z:initial.ward.z+48},{x:initial.ward.x+120,z:initial.ward.z+48}]});
+  assert.ok(compareBroadPhase(R).filtered,'the long lot and current hidden road still permit another accurate site');
+});
+
+test('the AABB broad phase remains conservative at and just inside exact-distance boundaries',()=>{
+  const C=runtime().C,b={minX:1,maxX:2,minZ:1,maxZ:2};
+  assert.equal(C.castleFoundationBoxMayHit(0,1.5,b,1),true,'equality must reach the exact strict-distance test');
+  assert.equal(C.castleFoundationBoxMayHit(-1e-7,1.5,b,1),true,'the floating-point allowance preserves near-boundary candidates');
+  assert.equal(C.castleFoundationBoxMayHit(-0.01,1.5,b,1),false,'a safely distant point is rejected');
+  assert.equal(C.castleFoundationBoxMayHit(NaN,1.5,b,1),true,'invalid bounds defer to exact logic');
+});
+
+
+test('OBB broad phase keeps the diagonal corners of its rectangular padding',()=>{
+  const C=runtime().C,pad=1,f={x:0,z:0,w:10,d:10,rot:0},box=(()=>{const P=C.obbCorners(f.x,f.z,f.w,f.d,f.rot);return{minX:Math.min(...P.map(p=>p.x)),maxX:Math.max(...P.map(p=>p.x)),minZ:Math.min(...P.map(p=>p.z)),maxZ:Math.max(...P.map(p=>p.z))};})(),x=5+0.9*pad,z=5+0.9*pad;
+  assert.ok(Math.abs(x)<f.w/2+pad&&Math.abs(z)<f.d/2+pad,'the exact local-axis OBB test includes this padded corner');
+  assert.equal(C.castleFoundationBoxMayHit(x,z,box,pad),false,'the old circular pad would incorrectly reject this point');
+  assert.equal(C.castleFoundationBoxMayHit(x,z,box,Math.SQRT2*pad),true,'sqrt(2) keeps the exact OBB check in play');
+});
+
+test('connector broad phase keeps a 45-degree expanded-footprint corner',()=>{
+  const C=runtime().C,f={x:0,z:0,w:10,d:10,rot:Math.PI/4},P=C.obbCorners(f.x,f.z,f.w,f.d,f.rot),box={minX:Math.min(...P.map(p=>p.x)),maxX:Math.max(...P.map(p=>p.x)),minZ:Math.min(...P.map(p=>p.z)),maxZ:Math.max(...P.map(p=>p.z))};
+  const g={a:{x:8.87,z:0},b:{x:8.87,z:0.1},hw:1.3},padding=0.3,margin=g.hw+padding;
+  assert.equal(Math.min(g.a.x,g.b.x)-margin>box.maxX,true,'the old margin would discard this near-corner connector');
+  assert.equal(C.streetFootprintOverlap(f,g,padding),true,'the exact rotated footprint test says it overlaps');
+  assert.equal(C.castleFoundationSegmentMayHitBox(g.a,g.b,box,margin),true,'sqrt(2) retains the exact overlap test');
 });

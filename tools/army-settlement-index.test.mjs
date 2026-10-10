@@ -6,7 +6,7 @@ import {runInNewContext} from 'node:vm';
 const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
 function between(start,end){const a=html.indexOf(start);assert.notEqual(a,-1,`missing ${start}`);const b=html.indexOf(end,a);assert.notEqual(b,-1,`missing ${end}`);return html.slice(a,b);}
 const source=between('/* ARMY_SETTLEMENT_INDEX_HELPERS_BEGIN */','/* ARMY_SETTLEMENT_INDEX_HELPERS_END */')+
-  between('function sheltered(','function prominence(s){');
+  between('function sheltered(','function prominence(');
 
 function fixture(){
   const c={};
