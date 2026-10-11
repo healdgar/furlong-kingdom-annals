@@ -79,5 +79,5 @@ test('the selected access path becomes the motte street consumed by rendering an
   assert.match(renderer,/st\.earthwork==='bailey'\?s\.bailey:s\.motte/,'rendering drapes the saved motte street on the motte surface');
   const walker=declaration(source,'streetGraph');
   assert.match(walker,/for\(const st of s\.streets\|\|\[\]\)/);
-  assert.match(walker,/for\(const run of fortStreetRuns\(s,st\)\)/,'the walking graph consumes the same canonical saved street');
+  assert.match(walker,/fortStreetRuns\(s,st,fortLocal\):fortStreetRuns\(s,st\)/,'the walking graph consumes the same canonical saved street');
 });

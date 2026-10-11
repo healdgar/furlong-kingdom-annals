@@ -6,7 +6,7 @@ const source=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const fn=n=>source.match(new RegExp('^function '+n+'\\b[\\s\\S]*?(?=^function |^const |^/\\*|$(?![\\s\\S]))','m'))[0];
 function fixture(){
   const s={pos:{x:0,z:0},pop:1000,buildings:[],streets:[],bailey:{x:0,z:0,r:30,wallR:30,wallRad:new Float32Array(32).fill(30),gateA:0}};
-  const C=vm.createContext({BACKGROUND:null,s,W:{settlements:[s],roads:[]},G:{},Math,SEA_SURFACE:0,
+  const C=vm.createContext({streetGraphFortContext:()=>null,BACKGROUND:null,s,W:{settlements:[s],roads:[]},G:{},Math,SEA_SURFACE:0,
     dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),lerp:(a,b,t)=>a+(b-a)*t,clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
     wallBuilt:(c)=>!c.unbuilt,wallProg:c=>c.unbuilt?0:1,wallDmgAt:c=>c.damage||0,wallDamage:c=>c.damage||0,
     hAt:()=>3,lakeAt:()=>false,riverAt:()=>false,paidRoadAt:()=>false});

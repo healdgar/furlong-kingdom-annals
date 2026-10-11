@@ -23,6 +23,8 @@ function declaration(name){
 const investmentSource=declaration('storageInvestment');
 const sitesSource=declaration('storageInvestmentSites');
 const sharedSource=declaration('storageInvestmentShared');
+const constructionMaterialsSource=declaration('constructionProjectMaterials');
+const constructionWorkSource=declaration('constructionProjectPaidWork');
 const projectTickSource=declaration('storageProjectTick');
 
 const TYPES={
@@ -211,29 +213,63 @@ test('fallback quote callbacks keep current price reads interleaved with each si
   assert.ok(Math.abs(chosen(r).z-22*Math.sin(7*Math.PI/4))<1e-12,'the final price read selects the last ordered quote');
 });
 
+function projectTickFixture(project,{cash=100,quotePurchase=()=>0,workPaid}={}){
+  const events=[],payer=project.payer,s={name:'worksite',history:[],buildings:[]},location={capacity:project.capacity||100};
+  const K={day:0,locations:new Map([['new-store',location]]),event:(cause,lot,qty,metadata)=>events.push({cause,qty,metadata})};
+  const context=vm.createContext({W:{settlements:[s],houses:[]},s,G:{},storageInit:()=>K,day:()=>44,year:()=>850,accountOwner:o=>o,
+    means:()=>cash,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),price:()=>1,avail:()=>10,consumeOwnStock:()=>0,commodityCreditPurchase:()=>{},consumeOwned:()=>1,
+    storageFacilities:()=>K,bindPropertyRights:()=>{},syncLive:()=>{},emit:()=>{},storageOutcomeAssert:()=>{},storageOwnerId:o=>o?.id||'unassigned',storageProjectState:q=>({...q}),
+    buildWorks:(town,amount)=>workPaid?workPaid(amount):amount});
+  const purchase=(...args)=>quotePurchase(...args);context.purchase=purchase;
+  context.s._lay={live:{storageSite(x,z,arch,dry){if(dry)return{x,z};const b={storageId:'new-store',arch,tier:0,state:'sound',x,z};s.buildings.push(b);return b;}}};
+  vm.runInContext(`${constructionMaterialsSource}\n${constructionWorkSource}\n${projectTickSource}`,context);
+  return{context,events,s,purchase,tick:()=>context.storageProjectTick(project)};
+}
+
+test('storage records purchase return cash without relying on purchase.paid, and funds a final fractional day',()=>{
+  let materialPurchase;const buyer=owner('builder',20),materialProject={type:'storage',si:0,payer:buyer,arch:'grange',x:12,z:8,land:0,labour:10,cost:10,days:2,timber:1,stone:0,materials:false,done:0,paid:0,dead:false,capacity:100};
+  const material=projectTickFixture(materialProject,{cash:20,quotePurchase:(...args)=>{materialPurchase.got=1;return 3;}});
+  // Use the same native purchase contract: cash is returned; only physical quantity is attached as `.got`.
+  materialPurchase=material.purchase;
+  material.tick();
+  assert.equal(material.purchase.paid,undefined,'native purchase exposes cash in its return value, not `.paid`');
+  assert.equal(materialProject.materialPaid,3);
+  assert.equal(material.events.find(e=>e.cause==='construction-material-installed').metadata.paid,3);
+
+  const finalBuyer=owner('final-builder',2.5),finalProject={type:'storage',si:0,payer:finalBuyer,arch:'grange',x:12,z:8,land:0,labour:10,cost:10,days:2,timber:0,stone:0,materials:true,done:1.5,worked:1.5,paid:7.5,dead:false,capacity:100};
+  let worked=0;const final=projectTickFixture(finalProject,{cash:2.5,workPaid:amount=>{worked+=amount;return amount;}});
+  final.tick();
+  assert.equal(worked,2.5,'the final half-day requires only the remaining quoted wages');
+  assert.equal(finalProject.paid,10);assert.equal(finalProject.done,2);assert.equal(finalProject.dead,true);
+});
+
 for(const [arch,days] of [['grange',90],['warehouse',150]])test(`${arch} construction needs ${days} paid working days and a stall adds no progress`,()=>{
   const payer=owner('builder',10000),s={name:'worksite',history:[],buildings:[]},events=[];
   let poor=false,work=0,placed=0;
   const location={capacity:arch==='grange'?800:1000};
   const K={day:0,locations:new Map([['new-store',location]]),event:(cause,lot,qty,metadata)=>events.push({cause,qty,metadata})};
-  const project={si:0,payer,arch,x:12,z:8,land:0,labour:days,cost:days,days,timber:0,stone:0,materials:true,done:0,paid:0,dead:false,capacity:location.capacity};
+  const project={type:'storage',si:0,payer,arch,x:12,z:8,land:0,labour:days,cost:days,days,timber:0,stone:0,materials:true,done:0,paid:0,dead:false,capacity:location.capacity};
   const context=vm.createContext({
     W:{settlements:[s],houses:[]},s,G:{},
     storageInit:()=>K,day:()=>44,year:()=>850,accountOwner:o=>o,
     means:()=>poor?0:10000,storageProjectState:q=>({...q}),
-    buildWorks:(town,share)=>{work+=share;},
+    clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
+    buildWorks:(town,share)=>{work+=share;return share;},
     storageFacilities:()=>K,bindPropertyRights:()=>{},syncLive:()=>{},emit:()=>{},
     storageOutcomeAssert:()=>{},
     storageOwnerId:o=>o?.id||'unassigned',
     arch,
   });
   context.s._lay={live:{storageSite(x,z,which,dry){if(dry)return {x,z};placed++;return {storageId:'new-store',arch:which,tier:0,state:'sound',x,z};}}};
-  vm.runInContext(projectTickSource,context);
+  vm.runInContext(`${constructionMaterialsSource}\n${constructionWorkSource}\n${projectTickSource}`,context);
   const tick=()=>context.storageProjectTick(project);
   for(let i=0;i<12;i++)tick();
   const before={done:project.done,paid:project.paid,work,progress:events.filter(e=>e.cause==='construction-progress').length};
   poor=true;tick();poor=false;
   assert.deepEqual({done:project.done,paid:project.paid,work,progress:events.filter(e=>e.cause==='construction-progress').length},before);
+  context.buildWorks=()=>0;tick();
+  assert.deepEqual({done:project.done,paid:project.paid,work,progress:events.filter(e=>e.cause==='construction-progress').length},before,'no recipient receives wages, so no work is recorded');
+  context.buildWorks=(town,share)=>{work+=share;return share;};
   for(let i=before.done;i<days;i++)tick();
   assert.equal(project.done,days);
   assert.equal(events.filter(e=>e.cause==='construction-progress').length,days);

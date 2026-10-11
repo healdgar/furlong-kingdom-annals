@@ -89,7 +89,9 @@ of historical calibration. Materials are secured and consumed into the unfinishe
 
 The ward and 2.6 m approach polygons use `occupiedGroundCells`, the existing 15 m agricultural-mask resolution. The same union of newly occupied cells governs rights, foregone value summed across all affected fields, and completion's `markOccupiedGround`. No cash flow is posted for the ruler's own land. Completion removes the yard and approach from production and clears trees inside those surveyed boundaries.
 
-The saved quote is a decision at commission time. Labour/material quantities stay fixed; material purchases use current prices and each day checks current cash. Changed prices may exhaust the purse or strand a project. Previously spent wages and installed material are sunk work.
+The saved quote is a decision at commission time. Labour/material quantities stay fixed; material purchases use current prices and each day checks current cash. Changed prices may exhaust the purse or strand a project. Previously spent wages and installed material are sunk work. Material installation and paid-day advancement use the same helpers as native storage projects; castle authority, site validation, economics and canonical keep/ward completion remain castle-specific.
+
+Storage projects previously advanced a full day after calling `buildWorks` even when it paid no wages. They now require positive actual wage payments before advancing; a day with no paid recipient stalls. This intentionally changes histories for storage projects that formerly advanced without paid labor.
 
 ## Site broad phase
 

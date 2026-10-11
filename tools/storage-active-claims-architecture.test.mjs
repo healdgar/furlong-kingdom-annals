@@ -128,7 +128,11 @@ test('managed claim and commodity balance architecture remains reviewed',()=>{
  // Native necessary profit bounds and synchronous payer-independent quote reuse add no stock/title writer.
  // Fresh investment graphs deliberately change old route/history decisions; paid construction remains unchanged.
  // Daily investment/road-connector fixtures and pace/save-replay/conservation gates review this model conversion.
- assert.equal(digest(source.slice(a,b)),"b8731349eb54c7d1a099cc38a6fdc369520ffc19cfe06053ddadb2405a815318");
+ // Shared construction (#62): native material credit/consumption is preserved;
+ // paid work now records only buildWorks net wage cash and saves fractional days.
+ // The storage client retains its existing land policy (#63). Commodity ownership,
+ // physical title/claim writers and arithmetic provenance are unchanged.
+ assert.equal(digest(source.slice(a,b)),"0c25c072ad61f5a764276235b759c288da409aa01ba98ef227a57a3013703997");
  // This explicit worker inspector copies existing balances. Pin the entire line
  // before excluding it so a future mutation cannot hide behind the read exemption.
  const inspectorLine=source.split('\n').find(l=>l.trim().startsWith("if(kind==='household'){const h=W.households.get(payload.id);"));

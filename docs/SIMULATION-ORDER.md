@@ -37,6 +37,14 @@ custody and actual freight transfers, provisioning before meals, quarry rate,
 remaining construction demand, refreshed actor lookup and ward field handover.
 Passing the graph check alone does not prove determinism or conservation.
 
+Shared construction remains within these existing phases: each client validates
+its authority/site/funding, `constructionProjectMaterials` installs actual owned
+or purchased stock, and `constructionProjectPaidWork` advances saved fractional
+days from actual net wages. Canonical completion then changes buildings/circuits
+and the remaining demand. Castle and storage clients retain their own eligibility,
+recipes, site checks and completion. Storage's legacy land-payment policy is
+separate (#63); extracting wages does not certify that quoted land field.
+
 ## The fixed day
 
 | Stage | Order and source | Same-day meaning |
@@ -92,13 +100,13 @@ daily forecast, separate from the quantity produced by quarries.
 | Existing phase family | Current cadence/debt | Daily conversion needed |
 |---|---|---|
 | Growth, land | Six-day building pass; monthly field pass | Separate daily labor/duration and demand from annual redevelopment/random hazards. Dirty plots/households enter a canonical candidate queue. The current `%6==0` and `%30==15` guards are disjoint in the fixed calendar; that fact does not justify the cadence. |
-| Castles, churches | Staggered annual visit | Castle checking is an artificial throttle. Church visits mix gifts/tithes with choices. Separate real obligations, funded proposals and physical progress; do not multiply instant building steps by 360. |
+| Castles, churches | First-castle proposals and paid foundations daily; later castle upgrades and church visits annual | First foundations already separate funded proposals, actual material installation and paid work. Later instant upgrades still need that conversion. Church visits mix gifts/tithes with choices; separate real obligations from funded building work. |
 | Streets, courtyards, infill, settlers | Annual redevelopment/plot visits | Use current geometry/vacancy/demand changes and real building effort. `tickCourts` is courtyard housing, separate from judicial `tickJustice`. |
 | Folk, households | Monthly reconciliation/annual aging by place; annual family/career/housing pass | Due birthdays, life hazards and actor eligibility need daily rates/queues. Household choices must be split from annual rent, clothing, wine, winter-hay and pannage quantities. |
 | Livestock, migration | Monthly herd/feed reckoning and opportunity pass | Convert production/feed quantities and stochastic hazards to daily rates; keep seasonal slaughter events. Cache grazing/opportunity inputs by their actual writers. |
 | Tenure, justice, domains, ways | Contracts and assessments mixed with admission/recruitment/investment decisions | Keep genuine rent, quarter-day farms, court sittings and tax/upkeep dates. Separate vacancies, profitable offices, hosts, toll-house and route choices. |
 | Market, metro | Monthly market; monthly pooling/annual amalgamation | Market cadence can be a world rule, but the current monthly horizon is not yet a chosen market-day design. Split pooling and ownership opportunities from dated services; use stock/price/topology changes for candidate invalidation. |
-| Storage investment | Daily, from current exposed custody and funds | Native profitability and nearby-street bounds precede full site surveys; ordered proposals share only one synchronous pass. Eligible surveys start with fresh graphs. Cross-day reuse needs a complete geometry certificate ([audit](SIMULATION-CACHE-INPUTS.md)). Construction retains paid working days. |
+| Storage investment | Daily, from current exposed custody and funds | Native profitability and nearby-street bounds precede full site surveys; ordered proposals share only one synchronous pass. Eligible surveys start with fresh graphs. Cross-day reuse needs a complete geometry certificate ([audit](SIMULATION-CACHE-INPUTS.md)). Construction advances only by actual paid work, including fractional days. |
 | History, repairs, threats | Mixed dated choices, event hazards and physical work | Keep due events; separate ordinary proposals from calendar guards, annual assessments and damage rates. Daily physical hazard conversion changes probabilities intentionally, but must be fixed across speeds. |
 
 Annual land-value and town-worth caches are a prerequisite to cheap accurate

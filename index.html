@@ -497,7 +497,7 @@ body[data-ui-size=large] #contextpanel .row,body[data-ui-size=large] #contextpan
 </head>
 <body>
 <div id="gl"></div>
-<div id="loading"><h1 id="loadtitle">CROWN &amp; COMMONS</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">A living medieval realm</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-10 22:54 UTC · after 896e471</div></div>
+<div id="loading"><h1 id="loadtitle">CROWN &amp; COMMONS</h1><div id="loadsub" style="font-family:'IM Fell English',Georgia,serif;font-style:italic;font-size:17px;letter-spacing:1px;opacity:0.8;margin:-8px 0 14px">A living medieval realm</div><div id="loadline">Forging the realm…</div><div id="loadbar"><div></div></div><div id="buildstamp" style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:11px;opacity:0.55;letter-spacing:0.04em">build 2026-10-11 00:08 UTC · after 8263a58</div></div>
 
 <div id="hud">
   <button type="button" id="brand" class="hudlink" aria-label="About Crown &amp; Commons" aria-controls="contextpanel">Crown &amp; Commons</button>
@@ -1977,10 +1977,10 @@ function streetFootprintOverlap(f,g,pad=0.8){ // segment against the road-width-
 }
 // Water crossings belong to built highways, never to inferred quay or service-lane graphics.
 function paidRoadAt(x,z,riverPad=0){return onRoad(x,z,0,true,riverPad);}
-function roadAccessClear(s,a,b){
+function roadAccessClear(s,a,b,local=null){
   const n=Math.max(1,Math.ceil(dist2d(a.x,a.z,b.x,b.z)));for(let k=0;k<=n;k++){
     const x=lerp(a.x,b.x,k/n),z=lerp(a.z,b.z,k/n);
-    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z,0.4)||fortRoadBlocked(s,x,z))return false;
+    if(hAt(x,z)<=SEA_SURFACE||lakeAt(s,x,z,0)||riverAt(x,z,0.4)&&!paidRoadAt(x,z,0.4)||(local?fortRoadBlocked(s,x,z,0,local):fortRoadBlocked(s,x,z)))return false;
   }return true;
 }
 // A service lane is planned once when its building or quay is laid out.
@@ -2229,17 +2229,30 @@ function fortPoint(s,c,a){const C=fortCenter(c),r=wallRadAt(c,a);return{x:C.x+Ma
 function fortCircuits(s){const out=[];if(s.wallRad)out.push(s);if(s.cas&&s.cas.outerWall&&!s.cas.outerWall.razed)out.push(s.cas.outerWall);const R=casRing(s);if(R&&!R.razed)out.push(R);if(s.motte&&!s.motte.razed)out.push(s.motte);return out;}
 function fortGateAngles(s,c,population){if(BACKGROUND&&s.renderGates&&c===s)return s.renderGates;if(c!==s)return c.gates||[c.gateA??Math.atan2(s.pos.z-c.z,s.pos.x-c.x)];const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);return s._gates&&s._gatesK===key?s._gates:wallGates(s,population);}
 function settleFortGates(s){if(!s.wallRad)return;const key=(s.streets||[]).length+':'+(s.wallR|0)+':'+(s._gateTrafficVersion||0);if(!s._gates||s._gatesK!==key){s._gates=wallGates(s);s._gatesK=key;}}
-function fortRoadBlocked(s,x,z,pad=0){ // roads and walkers share the actual curtain and its authorised apertures
-  for(const c of fortCircuits(s)){if(c.razed||!c.wallRad)continue;const C=fortCenter(c),d=dist2d(x,z,C.x,C.z);if(d>(c.wallR||Math.max(...c.wallRad))+1.3+pad)continue;
+function fortRoadBlocked(s,x,z,pad=0,local=null){ // roads and walkers share the actual curtain and its authorised apertures
+  const memo=local&&STREET_GRAPH_FORT_CONTEXTS.get(local),use=memo?.s===s,circuits=use?memo.circuits:fortCircuits(s);
+  for(const c of circuits){if(c.razed||!c.wallRad)continue;const C=fortCenter(c),d=dist2d(x,z,C.x,C.z);if(d>(c.wallR||Math.max(...c.wallRad))+1.3+pad)continue;
     const a=Math.atan2(z-C.z,x-C.x),r=wallRadAt(c,a);if(Math.abs(d-r)>1.3+pad||wallKindAt(c,a)===1||!wallBuilt(c,a)||wallDmgAt(c,a)>=0.98)continue;
     const half=c===s?7.5:c===s.motte?1.2:2.1;
-    if(fortGateAngles(s,c).some(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))*r<half))continue;return true;}
+    let gates;if(use){gates=memo.gates.get(c);if(!gates){gates=fortGateAngles(s,c);memo.gates.set(c,gates);}}else gates=fortGateAngles(s,c);
+    if(gates.some(g=>Math.abs(Math.atan2(Math.sin(a-g),Math.cos(a-g)))*r<half))continue;return true;}
   return false;
 }
-function fortStreetRuns(s,st){ // clipped centre lines: a grid lane ends before a closed wall instead of implying a gate
-  if(!fortCircuits(s).length)return [st.pts];const runs=[],P=resample(st.pts,1.5,st.kind==='quay'||!!st.serviceAccess);let run=[];
-  for(const p of P){if(fortRoadBlocked(s,p.x,p.z,(st.hw||2)+0.75)){if(run.length>1)runs.push(run);run=[];}else run.push(p);}
+function fortStreetRuns(s,st,local=null){ // clipped centre lines: a grid lane ends before a closed wall instead of implying a gate
+  const memo=local&&STREET_GRAPH_FORT_CONTEXTS.get(local),circuits=memo?.s===s?memo.circuits:fortCircuits(s);
+  if(!circuits.length)return [st.pts];const runs=[],P=resample(st.pts,1.5,st.kind==='quay'||!!st.serviceAccess);let run=[];
+  for(const p of P){const blocked=local?fortRoadBlocked(s,p.x,p.z,(st.hw||2)+0.75,local):fortRoadBlocked(s,p.x,p.z,(st.hw||2)+0.75);if(blocked){if(run.length>1)runs.push(run);run=[];}else run.push(p);}
   if(run.length>1)runs.push(run);return runs;
+}
+// A graph build may reuse immutable-by-convention route geometry only while these native
+// helpers are in place. The context itself is passed down the call stack and never stored
+// on a settlement, so nested builds cannot share or retain it.
+const STREET_GRAPH_FORT_CONTEXTS=new WeakMap();
+const STREET_GRAPH_FORT_NATIVE=Object.freeze({fortCircuits,fortGateAngles,fortStreetRuns,fortRoadBlocked,wallGates,roadAccessClear,fortCenter,wallRadAt,wallKindAt,wallBuilt,wallProg,wallDmgAt,wallDamage,casRing,dist2d,lerp,resample,hAt,lakeAt,riverAt,paidRoadAt,onRoad});
+function streetGraphFortContext(s,circuits){
+  const N=STREET_GRAPH_FORT_NATIVE;
+  if(fortCircuits!==N.fortCircuits||fortGateAngles!==N.fortGateAngles||fortStreetRuns!==N.fortStreetRuns||fortRoadBlocked!==N.fortRoadBlocked||wallGates!==N.wallGates||roadAccessClear!==N.roadAccessClear||fortCenter!==N.fortCenter||wallRadAt!==N.wallRadAt||wallKindAt!==N.wallKindAt||wallBuilt!==N.wallBuilt||wallProg!==N.wallProg||wallDmgAt!==N.wallDmgAt||wallDamage!==N.wallDamage||casRing!==N.casRing||dist2d!==N.dist2d||lerp!==N.lerp||resample!==N.resample||hAt!==N.hAt||lakeAt!==N.lakeAt||riverAt!==N.riverAt||paidRoadAt!==N.paidRoadAt||onRoad!==N.onRoad)return null;
+  const local={};STREET_GRAPH_FORT_CONTEXTS.set(local,{s,circuits,gates:new Map()});return local;
 }
 function fortBaileyShape(m,b){ // one continuous enceinte around courtyard, neck and mound; temporary survey points only
   const P=[],r=b.courtR||30;
@@ -4829,9 +4842,36 @@ function storageMaterialDemand(s,g){const si=W.settlements.indexOf(s);return (W.
 function storageProjectState(q){const state=storageRecordState(q,{payer:p=>storageOwnerId(typeof p==='number'?houseAcct(p):p)});state.id=q.storageProjectId;return state;}
 
 function storageCommission(quote){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();if(!quote?.ok)return false;const q=storageSiteQuote(quote.si,quote.arch,quote.x,quote.z,quote.payer);if(!q.ok)return false;const s=W.settlements[q.si],K=storageInit(s);K.day=day();const project={...q,storageProjectId:'storage-project:'+q.si+':'+K.next++,type:'storage',start:day(),done:0,paid:0,materials:false,dead:false,stalled:false};(W.projects||(W.projects=[])).push(project);K.event('construction-commissioned',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,cost:q.cost,days:q.days,capacity:q.capacity,marketDistance:q.marketDistance,productionDistance:Number.isFinite(q.productionDistance)?q.productionDistance:null,projectAfter:storageProjectState(project)});G.ordersDirty=true;emit('trade',4,{x:q.x,z:q.z},`A ${q.arch} is commissioned at ${s.name}: ${q.capacity} loads, ${Math.round(q.cost)} crowns, ${q.days} working days.`);return project;}
-function storageProjectTick(q){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const s=W.settlements[q.si];if(!s){q.dead=true;return;}const K=storageInit(s);K.day=day();const payer=typeof q.payer==='number'?q.payer===0?'crown':W.houses[q.payer]:accountOwner(q.payer);if(!payer||typeof q.payer==='number'&&s.owner!==q.payer){q.dead=true;K.event('construction-abandoned',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason:'authority-lost',projectAfter:storageProjectState(q)});return;}const stall=reason=>{const changed=!q.stalled||q.reason!==reason;q.stalled=true;q.reason=reason;if(changed)K.event('construction-stalled',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason,projectAfter:storageProjectState(q)});};if(!q.landPaid&&q.land>0){if(means(payer)<q.land){stall('ground-payment');return;}payAmong(heads_(s,h=>tills(h,s)),q.land,payer,'land');q.landPaid=true;q.paid+=q.land;K.event('construction-ground-paid',null,q.land,{owner:storageOwnerId(q.payer),x:q.x,z:q.z,projectAfter:storageProjectState(q)});}const share=q.done<q.days?q.labour/q.days:0;if(means(payer)<share){stall('funds');return;}if(!s._lay.live.storageSite(q.x,q.z,q.arch,true)){stall('site-obstructed');return;}
-  if(!q.materials){for(const g of ['timber','stone']){const installed=q[g+'Installed']||0,need=Math.max(0,q[g]-installed);if(!(need>0))continue;let used=consumeOwnStock(s,payer,g,need),paid=0;const remaining=need-used,unit=price(s,g),affordable=unit>0?Math.max(0,means(payer)-share)/unit:remaining,wanted=Math.min(remaining,affordable,avail(s,g,unit));if(wanted>0){paid=purchase(s,g,payer,wanted,unit);commodityCreditPurchase(s,payer,g,purchase.got);used+=consumeOwned(s,payer,g,purchase.got);}if(used>0){q[g+'Installed']=Math.min(q[g],installed+used);q.materialPaid=(q.materialPaid||0)+paid;K.event('construction-material-installed',null,used,{owner:storageOwnerId(q.payer),arch:q.arch,good:g,paid,projectAfter:storageProjectState(q)});}}if((q.timberInstalled||0)<q.timber||(q.stoneInstalled||0)<q.stone){stall('materials');return;}q.materials=true;K.event('construction-materials',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,timber:q.timber,stone:q.stone,paid:q.materialPaid||0,projectAfter:storageProjectState(q)});}
-  if(q.done<q.days){buildWorks(s,share,payer,'works');q.paid+=share;q.done++;q.stalled=false;q.reason=null;K.event('construction-progress',null,share,{projectAfter:storageProjectState(q)});}if(q.done<q.days)return;const b=s._lay.live.storageSite(q.x,q.z,q.arch,false);if(!b){stall('site-obstructed');return;}b.ownerId=typeof q.payer==='number'?-1:q.payer.head?.id??q.payer.id??-1;b.storagePublic=typeof q.payer==='number'||q.arch==='warehouse';if(typeof q.payer!=='number')b.title={owner:accountOwner(q.payer),beneficiary:q.payer.head||q.payer};q.dead=true;bindPropertyRights(s);storageFacilities(s);syncLive(s);G.detDirty=true;K.event('construction-completed',null,0,{owner:storageOwnerId(q.payer),location:b.storageId,arch:q.arch,x:q.x,z:q.z,paid:q.paid,capacity:K.locations.get(b.storageId).capacity,projectAfter:storageProjectState(q)});s.history.push({yr:year(),t:`A ${q.arch} was completed at (${Math.round(q.x)}, ${Math.round(q.z)}), with room for ${q.capacity} loads.`});emit('trade',5,{x:q.x,z:q.z},`The new ${q.arch} at ${s.name} opens for ${q.capacity} loads.`);}
+/* Shared funded-construction mechanics. Site, ownership and economic eligibility
+   remain with each project client; this layer only installs real stock and turns
+   actual wage payments into saved work on that client's canonical structure. */
+function constructionProjectMaterials(q,s,payer,options){
+  if(q.materials)return true;
+  options=options||{};const buyMaterial=options.buyMaterial||buyBuildingMaterial,available=options.available||(()=>Infinity),onMaterial=options.onMaterial||(()=>{});
+  const rate=(q.labour||0)/Math.max(1,q.days||1),reserve=Number.isFinite(options.workReserve)?Math.max(0,options.workReserve):rate;
+  for(const g of ['timber','stone']){
+    const installed=q[g+'Installed']||0,need=Math.max(0,(q[g]||0)-installed);if(!(need>0))continue;
+    let used=consumeOwnStock(s,payer,g,need),paid=0,left=need-used,unit=price(s,g);
+    const wanted=Math.min(left,unit>0?Math.max(0,means(payer)-reserve)/unit:left,available(s,g,unit,left));
+    if(wanted>0){const before=means(payer),got=buyMaterial(s,g,payer,wanted,unit);if(typeof got==='object'){used+=got.installed||0;paid+=got.paid||0;}else{used+=got||0;paid+=Math.max(0,before-means(payer));}}
+    used=Math.min(used,need);q[g+'Installed']=Math.min(q[g],installed+used);q.materialPaid=(q.materialPaid||0)+paid;if(used>0)onMaterial(g,used,paid);
+  }
+  const complete=(q.timberInstalled||0)>=(q.timber||0)&&(q.stoneInstalled||0)>=(q.stone||0);if(complete)q.materials=true;return complete;
+}
+function constructionProjectPaidWork(q,s,payer,why='works',options){
+  options=options||{};
+  const days=Math.max(1,q.days||1),rate=(q.labour||0)/days,worked=Number.isFinite(q.worked)?q.worked:clamp(q.type==='storage'?(q.done||0):(q.done||0)*days,0,days),remaining=Math.max(0,days-worked);
+  if(!(rate>0)||!(remaining>0)){q.worked=days;q.done=q.type==='storage'?days:1;return{paid:0,worked:0,complete:true};}
+  const due=Math.min(options.share??1,remaining)*rate,budget=Math.min(due,Math.max(0,means(payer)));if(!(budget>0))return{paid:0,worked:0,complete:false,reason:'funds'};
+  const paid=buildWorks(s,budget,payer,why)||0;if(!(paid>0))return{paid:0,worked:0,complete:false,reason:'workers'};
+  const advance=Math.min(remaining,paid>=(due-(options.fullPayTolerance||0))?due/rate:paid/rate);q.worked=worked+advance;q.paid=(q.paid||0)+paid;q.done=q.type==='storage'?q.worked:clamp(q.worked/days,0,1);
+  if(days-q.worked<1e-9){q.worked=days;q.done=q.type==='storage'?days:1;}
+  return{paid,worked:advance,complete:q.worked>=days};
+}
+function storageProjectTick(q){if(typeof storageOutcomeAssert==='function')storageOutcomeAssert();const s=W.settlements[q.si];if(!s){q.dead=true;return;}const K=storageInit(s);K.day=day();const payer=typeof q.payer==='number'?q.payer===0?'crown':W.houses[q.payer]:accountOwner(q.payer);if(!payer||typeof q.payer==='number'&&s.owner!==q.payer){q.dead=true;K.event('construction-abandoned',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason:'authority-lost',projectAfter:storageProjectState(q)});return;}const stall=reason=>{const changed=!q.stalled||q.reason!==reason;q.stalled=true;q.reason=reason;if(changed)K.event('construction-stalled',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,x:q.x,z:q.z,reason,projectAfter:storageProjectState(q)});};if(!q.landPaid&&q.land>0){if(means(payer)<q.land){stall('ground-payment');return;}payAmong(heads_(s,h=>tills(h,s)),q.land,payer,'land');q.landPaid=true;q.paid+=q.land;K.event('construction-ground-paid',null,q.land,{owner:storageOwnerId(q.payer),x:q.x,z:q.z,projectAfter:storageProjectState(q)});}const rate=q.labour/Math.max(1,q.days),worked=Number.isFinite(q.worked)?q.worked:(q.done||0),share=Math.min(1,Math.max(0,q.days-worked))*rate;if(means(payer)<share){stall('funds');return;}if(!s._lay.live.storageSite(q.x,q.z,q.arch,true)){stall('site-obstructed');return;}
+  const materialsBefore=!!q.materials;if(!constructionProjectMaterials(q,s,payer,{workReserve:share,available:(town,g,unit,left)=>unit>0?avail(town,g,unit):left,buyMaterial:(town,g,account,wanted,unit)=>{const paid=purchase(town,g,account,wanted,unit)||0,got=purchase.got;if(got>0){commodityCreditPurchase(town,account,g,got);const installed=consumeOwned(town,account,g,got);return{installed,paid};}return{installed:0,paid:0};},onMaterial:(g,used,paid)=>K.event('construction-material-installed',null,used,{owner:storageOwnerId(q.payer),arch:q.arch,good:g,paid,projectAfter:storageProjectState(q)})})){stall('materials');return;}
+  if(!materialsBefore)K.event('construction-materials',null,0,{owner:storageOwnerId(q.payer),arch:q.arch,timber:q.timber,stone:q.stone,paid:q.materialPaid||0,projectAfter:storageProjectState(q)});
+  const progress=constructionProjectPaidWork(q,s,payer,'works',{share:Math.min(1,Math.max(0,q.days-worked))});if(!progress.complete&&!progress.paid){stall(progress.reason||'workers');return;}if(progress.paid>0){if(q.stalled){q.stalled=false;q.reason=null;}K.event('construction-progress',null,progress.paid,{projectAfter:storageProjectState(q)});}if(!progress.complete)return;const b=s._lay.live.storageSite(q.x,q.z,q.arch,false);if(!b){stall('site-obstructed');return;}b.ownerId=typeof q.payer==='number'?-1:q.payer.head?.id??q.payer.id??-1;b.storagePublic=typeof q.payer==='number'||q.arch==='warehouse';if(typeof q.payer!=='number')b.title={owner:accountOwner(q.payer),beneficiary:q.payer.head||q.payer};q.dead=true;bindPropertyRights(s);storageFacilities(s);syncLive(s);G.detDirty=true;K.event('construction-completed',null,0,{owner:storageOwnerId(q.payer),location:b.storageId,arch:q.arch,x:q.x,z:q.z,paid:q.paid,capacity:K.locations.get(b.storageId).capacity,projectAfter:storageProjectState(q)});s.history.push({yr:year(),t:`A ${q.arch} was completed at (${Math.round(q.x)}, ${Math.round(q.z)}), with room for ${q.capacity} loads.`});emit('trade',5,{x:q.x,z:q.z},`The new ${q.arch} at ${s.name} opens for ${q.capacity} loads.`);}
 function storageInvestmentShared(s,K){const N=STORAGE_INVESTMENT_NATIVE;return storageSiteQuote===N.quote&&storageInvestmentSites===N.sites&&planLand===N.land&&price===N.price&&means===N.means&&storageRoute===N.route&&storageAccess===N.access&&streetGraph===N.graph&&storageRoadNear===N.near&&serviceDoor===N.door&&streetFootprintOverlap===N.footprint&&storageRoadPlan===N.roadPlan&&armyObstacle===N.obstacle&&armySegmentClear===N.segment&&streetAccessAt===N.frontage&&roadAccessClear===N.road&&onRoad===N.onRoad&&trackAt===N.track&&landPrice===N.landPrice&&landValue===N.landValue&&nearestBuildingDist===N.nearest&&price0===N.price0&&storageTitleEvent===N.titleEvent&&STORAGE_INVESTMENT_SURVEYS.has(s._lay?.live?.storageSite)&&(K.event===N.legacyEvent||K.event===N.commodityEvent)&&typeof globalThis.FURLONG_STORAGE_AUDIT_OBSERVER!=='function'&&(typeof storageOutcome==='function'?storageOutcome:null)===STORAGE_TITLE_OUTCOME&&(typeof storageOutcomeAssert==='function'?storageOutcomeAssert:null)===STORAGE_TITLE_ASSERT;}
 function storageInvestmentSites(s,arch,payer,routes,visit){const sites=[],si=W.settlements.indexOf(s),anchors=arch==='grange'?(s.furl||[]).filter(f=>f.state===LS.TILLED).slice(0,12):[(s.places||[]).find(p=>p.kind==='market')||s.pos];for(const a of anchors)for(let k=0;k<8;k++){const theta=k*Math.PI/4,x=a.x+Math.cos(theta)*22,z=a.z+Math.sin(theta)*22;
   if(!visit&&s._lay?.segH&&!storageRoadNear({x,z,w:ARCH[arch][0],d:ARCH[arch][1],rot:0},s._lay.segH))continue;
@@ -5090,18 +5130,20 @@ function renderTravellers(){
   G.travMesh.count=G.travKit.count=k;G.travMesh.instanceMatrix.needsUpdate=G.travKit.instanceMatrix.needsUpdate=true;if(G.travMesh.instanceColor)G.travMesh.instanceColor.needsUpdate=true;}
 /* ---------------- the town's streets as a walking graph, and the walkers who use it ---------------- */
 function streetGraph(s){ // nodes at the street points; streets that meet (or nearly) are joined
-  const fortKey=fortCircuits(s).map(c=>[c.wallR,c.razed?1:0,Math.floor(wallProg(c)*100),c.wallDmg?wallDamage(c):0].join(',')).join(';');
+  const circuits=fortCircuits(s),fortKey=circuits.map(c=>[c.wallR,c.razed?1:0,Math.floor(wallProg(c)*100),c.wallDmg?wallDamage(c):0].join(',')).join(';');
   const key=(W.roads||[]).length+':'+(s.lake?1:0)+':'+(s.streets||[]).length+':'+(s.streets||[]).reduce((t,st)=>t+(st.pts?st.pts.length:0)*4+(st.hidden?1:0)+(st.gone?2:0),0)+':'+fortKey+':'+(s._gateTrafficVersion||0);
   if(s._sg&&s._sg.key===key)return s._sg;
+  const fortLocal=streetGraphFortContext(s,circuits);
+  const accessClear=(a,b)=>fortLocal?roadAccessClear(s,a,b,fortLocal):roadAccessClear(s,a,b);
   const N=[],adj=[],H=new Map(),cell=6,hk=(x,z)=>Math.floor(x/cell)+','+Math.floor(z/cell);
-  const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4&&roadAccessClear(s,N[i],{x,z}))return i;}
+  const node=(x,z,st)=>{const k0=Math.floor(x/cell),k1=Math.floor(z/cell);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=H.get((k0+a)+','+(k1+b));if(L)for(const i of L)if(dist2d(N[i].x,N[i].z,x,z)<4&&accessClear(N[i],{x,z}))return i;}
     const i=N.length;N.push({x,z,st});adj.push([]);const h=hk(x,z);(H.get(h)||H.set(h,[]).get(h)).push(i);return i;};
-  const link=(a,b)=>{if(a===b||!roadAccessClear(s,N[a],N[b]))return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
+  const link=(a,b)=>{if(a===b||!accessClear(N[a],N[b]))return;const d=dist2d(N[a].x,N[a].z,N[b].x,N[b].z);adj[a].push([b,d]);adj[b].push([a,d]);};
   const ends=[];
-  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;for(const run of fortStreetRuns(s,st)){const P=resample(run,7,st.kind==='quay'||!!st.serviceAccess);let prev=-1;
+  for(const st of s.streets||[]){if(st.hidden||st.gone||st.planQ||st.kind==='edge'||!st.pts||st.pts.length<2)continue;for(const run of fortLocal?fortStreetRuns(s,st,fortLocal):fortStreetRuns(s,st)){const P=resample(run,7,st.kind==='quay'||!!st.serviceAccess);let prev=-1;
     for(const q of P){const i=node(q.x,q.z,st);if(prev>=0)link(prev,i);prev=i;}ends.push(node(P[0].x,P[0].z,st),prev);}}
-  for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd&&roadAccessClear(s,N[e],N[i])){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
-  let root=-1,bd=90;for(let i=0;i<N.length;i++)if(!N[i].st.castlePath){const d=dist2d(N[i].x,N[i].z,s.pos.x,s.pos.z);if(d<bd&&roadAccessClear(s,s.pos,N[i])){root=i;bd=d;}}
+  for(const e of ends){let b=-1,bd=10;for(let i=0;i<N.length;i++){if(N[i].st===N[e].st)continue;const d=dist2d(N[i].x,N[i].z,N[e].x,N[e].z);if(d<bd&&accessClear(N[e],N[i])){bd=d;b=i;}}if(b>=0)link(e,b);} // T-junctions
+  let root=-1,bd=90;for(let i=0;i<N.length;i++)if(!N[i].st.castlePath){const d=dist2d(N[i].x,N[i].z,s.pos.x,s.pos.z);if(d<bd&&accessClear(s.pos,N[i])){root=i;bd=d;}}
   const todo=root<0?[]:[root];if(root>=0)N[root].access=true;for(let k=0;k<todo.length;k++)for(const [j]of adj[todo[k]])if(!N[j].access){N[j].access=true;todo.push(j);}
   return s._sg={key,N,adj,H};}
 function streetAccessAt(s,p,g=streetGraph(s)){
@@ -7108,12 +7150,8 @@ function castleFoundationTick(q){
   const stall=reason=>{if(q.reason!==reason){const why={exile:'its patron is in exile',siege:'the place is besieged','site-obstructed':'the surveyed ground or approach is no longer clear',funds:'its patron cannot pay the next day',materials:'the timber or stone is not yet secured',workers:'there are no workers to hire'}[reason];emit(hi>0?'house':'trade',2,s.pos,`The first castle works at ${s.name} wait: ${why}.`);}q.stalled=true;q.reason=reason;},payer=purseAcct(hi);if(hi>0&&W.houses[hi].exiled){stall('exile');return;}if(s.siegeBy){stall('siege');return;}
   if(!castleFoundationSite(s,q.spec,q.site)){stall('site-obstructed');return;}
   const rate=q.labour/q.days,share=Math.min(1,Math.max(0,q.days-q.worked))*rate;if(means(payer)<share){stall('funds');return;}
-  if(!q.materials){for(const g of ['timber','stone']){const installed=q[g+'Installed']||0,need=Math.max(0,q[g]-installed);if(!(need>0))continue;
-      let used=consumeOwnStock(s,payer,g,need);const left=need-used,unit=price(s,g),want=Math.min(left,unit>0?Math.max(0,means(payer)-share)/unit:left);
-      if(want>0){const before=means(payer);used+=buyBuildingMaterial(s,g,payer,want);q.materialPaid+=Math.max(0,before-means(payer));}
-      q[g+'Installed']=Math.min(q[g],installed+used);
-    }if(q.timberInstalled<q.timber||q.stoneInstalled<q.stone){stall('materials');return;}q.materials=true;}
-  if(q.worked<q.days){const paid=buildWorks(s,share,payer,'castle works')||0;if(!(paid>0)){stall('workers');return;}q.paid+=paid;q.worked=Math.min(q.days,q.worked+(paid>=share-1e-9?share/rate:paid/rate));if(q.days-q.worked<1e-9)q.worked=q.days;q.done=q.worked/q.days;}
+  if(!constructionProjectMaterials(q,s,payer,{workReserve:share})){stall('materials');return;}
+  const progress=constructionProjectPaidWork(q,s,payer,'castle works',{share:Math.min(1,Math.max(0,q.days-q.worked)),fullPayTolerance:1e-9});if(!progress.complete&&!progress.paid){stall(progress.reason||'workers');return;}
   q.stalled=false;q.reason=null;if(q.worked<q.days)return;
   const b=s._lay.live.keepFoundation(q.site);if(!b){stall('site-obstructed');return;}markOccupiedGround(s,castleFoundationGround(q.site).polys);q.dead=true;bindPropertyRights(s);syncLive(s);
   emit(hi>0?'house':'trade',5,b,`${hi>0?W.houses[hi].name:'The crown'} completes the first ${q.spec.timber?'timber':'stone'} keep and palisaded yard at ${s.name}.`);

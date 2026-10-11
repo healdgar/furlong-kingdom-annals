@@ -9,7 +9,7 @@ function realm(){
   const C=vm.createContext({Math,W:{roads:[],settlements:[s]},G:{},s,SEA_SURFACE:0,hAt:()=>4,lakeAt:()=>false,
     riverAt:(x,z)=>Math.abs(x)<3?{y:3,hw:3}:null,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),
     dist2d:(x,z,a,b)=>Math.hypot(x-a,z-b),lerp:(a,b,t)=>a+(b-a)*t,
-    fortCircuits:()=>[],fortRoadBlocked:()=>false,fortStreetRuns:(s,st)=>[st.pts]}); // water fixtures have no fortifications
+    streetGraphFortContext:()=>null,fortCircuits:()=>[],fortRoadBlocked:()=>false,fortStreetRuns:(s,st)=>[st.pts]}); // water fixtures have no fortifications
   vm.runInContext(['segDist','lerpPt','resample','onRoad','paidRoadAt','roadAccessClear','streetGraph','streetAccessAt','frontageAccess','ruralRoadAccess'].map(fn).join('\n'),C);
   return C;
 }

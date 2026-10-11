@@ -17,7 +17,7 @@ function declaration(name){
   }
   assert.fail(`unterminated ${name}`);
 }
-const functions=['castleFoundationAuthority','castleFoundationSpec','castleFoundationProposal','castleFoundationCommission','castleFoundationTick','castleFoundationDemand','casKeep','casRing','tickProjects','tickCastles'];
+const functions=['constructionProjectMaterials','constructionProjectPaidWork','castleFoundationAuthority','castleFoundationSpec','castleFoundationProposal','castleFoundationCommission','castleFoundationTick','castleFoundationDemand','casKeep','casRing','tickProjects','tickCastles'];
 const constructionMethods=html.match(/^const CONSTRUCTION_METHODS=.*$/m)?.[0];
 assert.ok(constructionMethods,'missing shared construction methods');
 
@@ -28,7 +28,7 @@ function fixture({ad=1000,cash=10000,timber=0,stone=0,workers=true}={}){
   let reachable=true,siteAvailable=true,completeCalls=0,currentDay=17;const payments=[],events=[];
   s._lay={live:{keepFoundation(qsite){completeCalls++;if(!siteAvailable)return null;const keep={arch:'keep',x:qsite.f.x,z:qsite.f.z,w:qsite.f.w,d:qsite.f.d,tier:qsite.spec.tier,state:'sound',ownerId:1,timberKeep:!!qsite.spec.timber};s.buildings.push(keep);s.ward=qsite.ward;return keep;}}};
   const ctx=vm.createContext({W,s,G:{ordersDirty:false},ARCH:{keep:[20,24,18,1,'keep']},
-    AD:()=>ad,PL:()=>1,day:()=>currentDay,year:()=>850,stoneFor:()=>12,wallCost:()=>100,circuitLen:()=>40,polyLen:()=>10,
+    AD:()=>ad,PL:()=>1,day:()=>currentDay,year:()=>850,clamp:(x,a,b)=>Math.max(a,Math.min(b,x)),stoneFor:()=>12,wallCost:()=>100,circuitLen:()=>40,polyLen:()=>10,
     purse:hi=>hi===0?account.gold:account.gold,purseAcct:()=>account,houseAcct:()=>account,means:o=>o?.gold||0,
     townWorth:()=>10000,townThreat:()=>1,casLvl:()=>2,price:()=>1,landPrice:()=>0,furlongAt:()=>null,
     emit:(...e)=>events.push(e),bindPropertyRights:()=>{},syncLive:()=>{},markOccupiedGround:()=>{},castleFoundationGround:()=>({polys:[],cells:[]}),
@@ -128,6 +128,13 @@ test('a partly paid day resumes at its exact fraction and the last share never e
   assert.equal(r.completeCalls,1);assert.equal(r.s.buildings.length,1);
   const paid=r.payments.filter(p=>p[0]==='labour').reduce((n,p)=>n+p[2],0);
   assert.ok(Math.abs(paid-q.labour)<1e-9,`actual wages ${paid} equal quoted labour ${q.labour}`);
+});
+
+test('shared material service skips its default buyer when stock is already complete and records reported purchase cash',()=>{
+  const r=fixture();
+  assert.equal(r.evaluate("buyBuildingMaterial=undefined;constructionProjectMaterials({materials:true},s,purseAcct(1))"),true);
+  r.s.stores.timber=0;
+  assert.equal(r.evaluate("const q={timber:3,stone:0,labour:10,days:2};constructionProjectMaterials(q,s,purseAcct(1),{available:()=>3,buyMaterial:()=>({installed:3,paid:7})});q.materialPaid"),7);
 });
 
 test('an obstruction after partial work stalls without another payment; restored access resumes from paid progress',()=>{

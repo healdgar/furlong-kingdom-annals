@@ -1,6 +1,6 @@
 # Storage routes and fort gate work: operation-local reuse
 
-This is a read-only dependency note for the storage/fort route profile. The optimization ideas are proposals only; no source changes or tests were made.
+This dependency note records the released narrow street-graph optimization. Wider storage-route reuse remains a proposal.
 
 ## Current route and graph call path
 
@@ -17,6 +17,8 @@ The circuit list and gate arrays must be discarded when that synchronous graph/r
 ## Safe boundary and callback conditions
 
 The narrowest safe first step is inside one `streetGraph` call: capture `fortCircuits(s)` once and lazily memoize the result of the current `fortGateAngles(s,c)` once per circuit in a local map used by that graph's fort checks. Keep the original radial interpolation, wall progress, kind, build, damage, and breach predicates live and in their current order. Do not write the local arrays back to `s`; do not precompute a town gate list eagerly when no point reaches a wall. This removes duplicate list construction and repeated `wallGates` derivation without changing the exact geometric checks for native pure helpers.
+
+The implementation creates a branded local token only after a graph-cache miss and only with the native helper chain intact. A `WeakMap` holds its circuit list and lazy gate map; the token travels down that graph's calls and never enters `W` or a settlement. Patched helpers retain the original call arities and uncached behavior. Unbranded tokens cannot replace circuit data. The differential fixture covers town, outer, ward and motte circuits, exact graph nodes/links/access/hash cells, cache hits, and patched-helper fallback. Full-source history and release gates are recorded in the handoff.
 
 The same local context could be carried by `STORAGE_ROUTE_BATCHES` for repeated `storageAccess` samples, but only for a native, synchronous batch whose route geometry cannot be mutated while the context is in use. The batch wrapper accepts an arbitrary callback, so it cannot assume that every caller is pure. Current native paths include read-only `storageSiteQuote` surveys, `storageInvestment` site comparisons before its final commission, and storage carriage route checks while inventory moves. Their normal stock/project writes do not alter walls or streets, but the native layout/site callback and routing helpers are replaceable. Any implementation should enable the context only when the relevant helper identities and layout callback are the expected native functions, avoid re-entrant use, and fall back to today's calls for patched functions or an operation that can mutate route geometry. Clear the context on every exit, including exceptions. No cached gates should survive a call boundary.
 
