@@ -39,6 +39,13 @@ A coherent direct-era-only ordering is:
 4. Stop with an explicit unsatisfied-capacity result if legal lots, roads, water, terrain, or settlement extent prevent completion. Never make `houseFolk()`'s overflow lodging count as success.
 5. Run ordinary household placement and the existing land pass on the completed opening. Report land/food support separately; do not add fields or stocks as a housing fix.
 
+Refresh the native layout's building-distance quantiles after completion and
+before the land pass: `.92` supplies `extentR`, `radius=extentR+30`, and (only
+without an actual wall circuit) `wallR=extentR+20`; `.45` supplies town paving.
+Preserve `coreR`, the separate founding-road ingress boundary, and standing
+wall geometry. An outermost house beyond a percentile does not prove a defect;
+compare the actual pre/post quantiles.
+
 The implementation must respect deterministic layout RNG and be idempotent across foreground/worker generation and save/load. A capacity completion must use real placed residential buildings and the existing capacity function, not an abstract slot count. If additional extent is needed, use the supported settlement growth path and legal geometry. Avoid inventing an arbitrary outer radius or retry count as a hidden population rule; expose a concrete failure when legal geometry is exhausted.
 
 ## Focused acceptance checks
@@ -52,3 +59,71 @@ For matched seed/coast pairs at AD 1066, 1250, and 1350, and a regression pair a
 - Confirm opening purses/stores still come from existing initialization, with no invented payments, income, institutions, or transactions.
 - Confirm AD 850's layout, population, capacity, and chronology remain byte-for-byte/seed-for-seed unchanged by the direct-era branch.
 - Keep arable acreage, yield, and food sufficiency observations as diagnostics for #12/#23, not as a rule that changes population or housing.
+
+## Private preflight and next correction (2026-10-11)
+
+This is evidence for the private capacity predecessor, not the published browser
+build. Eight serial native openings (1001 and 42, fate 42/sea, at 1066, 1250,
+1350 and 850) pass day-zero chronology and exact physical capacity reporting.
+All six direct openings are idempotent for buildings, streets, slots and RNG;
+the first native housing assignment uses no overflow in complete settlements.
+AD 850 runs no completion pass. No runtime-equivalence, speed, worker or save
+proof has yet been run for this candidate.
+
+| Start | Seed | Heads | Total capacity | Sum of local shortfalls | Short places |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1066 | 1001 | 2,628 | 2,674 | 46 | 2 |
+| 1066 | 42 | 2,667 | 1,799 | 917 | 2 |
+| 1250 | 1001 | 2,652 | 1,934 | 742 | 5 |
+| 1250 | 42 | 2,676 | 1,542 | 1,181 | 3 |
+| 1350 | 1001 | 2,652 | 1,934 | 742 | 5 |
+| 1350 | 42 | 2,676 | 1,542 | 1,181 | 3 |
+
+Realm totals cannot establish local housing sufficiency. Builder exhaustion is
+also not proof that all geographical or legal possibilities are exhausted.
+The user-facing note must state measured opening capacity/demand without
+inventing a cause.
+
+Two bounded AD 1350/42 opening diagnostics record existing predicate outcomes
+without rerunning them. Their opening and lodging records match the uninstrumented
+run. Campoolmo consumes 700 candidates, rejecting 672 at `fits`: 597 road
+overlaps, 52 building overlaps, 22 public-place conflicts and one terrain/water
+failure. Blancpont rejects 431 of 524: 259 road overlaps, 171 building overlaps
+and one public-place conflict. Neither has a frontage-access or final approach
+rejection in this sample. Bourport has no candidates, no street-graph nodes
+and no added streets despite eight extension calls; investigate its network
+generation separately.
+
+The source explains a real burgher frontage defect (#64): its setback is
+`c.hw+0.7+depth/2`, while road overlap reserves a `0.8` margin. A straight own
+frontage of the same width therefore rejects that house. The correction uses
+the ordinary house's `0.9` setback and retains native overlap/access checks.
+This is a geometry/history change, not a relaxed fit predicate or density cap.
+
+Exact `.92` extents change 422.009→492.985 m at Campoolmo and
+306.605→585.963 m at Blancpont; their `.45` values also change. Bourport's
+quantiles do not change. These measurements justify repeating the native
+extent calculation before land classification after opening completion.
+
+Predecessor HTML SHA256
+`13b667c7aaa5ab03d6403d50fde2448171254dd2141bd5c1534f70a362df132f`.
+Eight-opening CPU 479.79 s, load 0.13/0.87/1.27 to 1.03/1.03/1.19; the two
+diagnostics use 68.70 s (load 0.32/0.81/1.10→0.88/0.88/1.10) and 68.63 s
+(0.09/0.42/0.86→0.69/0.54/0.87). These include initialization, observations
+and native housing assignment, not tick throughput. Ignored evidence is in
+`tools/soak-results/opening-capacity-20261011/`. The refined private patch must
+be gated again: predecessor results do not validate the revised model. It
+still needs the batched full suite, AD 850 data/history regression, all-speed
+determinism, worker/own-save parity and multi-world conservation/calibration
+observations before publication.
+
+The refined private HTML is
+`9b994a39967727c1c93d2cdcdeacff3676cd10555f2d62e8a611b49a6d016af3`.
+Seven focused geometry/presentation tests, full inline syntax parsing, diff
+checks and patch application against `877bb31` pass. The geometry check invokes
+production `buildLot` and native `streetFootprintOverlap`: both sides of a
+rotated own frontage clear, while a crossing foreign street still rejects the
+lot. No generated world or runtime/history gate has run on this refinement.
+The private originless implementation is in
+`/workspace/furlong-capacity-implementation`; its refreshed patch is
+`/workspace/issue61-opening-capacity.patch`. Neither is applied to `main`.
